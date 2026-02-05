@@ -102,6 +102,7 @@ impl UIEvent {
             PipelinePhase::FinalValidation => "✅",
             PipelinePhase::Finalizing => "🔄",
             PipelinePhase::Complete => "🎉",
+            PipelinePhase::AwaitingDevFix => "🔧",
             PipelinePhase::Interrupted => "⏸️",
         }
     }
@@ -172,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_phase_emoji_all_phases() {
-        // Verify all phases have emojis
+        // Exhaustive test ensures every phase has an emoji
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::Planning), "📋");
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::Development), "🔨");
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::Review), "👀");
@@ -180,6 +181,7 @@ mod tests {
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::FinalValidation), "✅");
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::Finalizing), "🔄");
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::Complete), "🎉");
+        assert_eq!(UIEvent::phase_emoji(&PipelinePhase::AwaitingDevFix), "🔧");
         assert_eq!(UIEvent::phase_emoji(&PipelinePhase::Interrupted), "⏸️");
     }
 

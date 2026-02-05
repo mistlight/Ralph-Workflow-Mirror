@@ -272,12 +272,21 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     };
     let loop_config = super::EventLoopConfig { max_iterations: 10 };
 
-    let _ = super::run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
-        .expect_err("expected event loop to return Err for non-ErrorEvent handler error");
+    let result =
+        super::run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+            .expect("event loop should return an EventLoopResult even on unrecoverable errors");
+    assert!(
+        !result.completed,
+        "expected unrecoverable handler error to be reported as incomplete"
+    );
 
     assert!(
         workspace.exists(Path::new(super::EVENT_LOOP_TRACE_PATH)),
         "expected trace file to be dumped on unrecoverable handler error"
+    );
+    assert!(
+        workspace.exists(Path::new(".agent/tmp/completion_marker")),
+        "expected completion marker to be written on unrecoverable handler error"
     );
 }
 

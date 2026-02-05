@@ -63,28 +63,46 @@ impl DeltaDisplayFormatter {
     ///
     /// This would require tracking whether the prefix has been displayed
     /// for the current tool block, likely via the streaming session state.
-    pub fn format_tool_input(&self, content: &str, prefix: &str, colors: Colors) -> String {
-        if self.mark_partial {
-            format!(
-                "{}[{}]{} {}  └─ {}{}{}\n",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.dim(),
-                colors.reset(),
-                content,
-                colors.reset()
-            )
-        } else {
-            format!(
-                "{}[{}]{} {}  └─ {}{}\n",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.reset(),
-                content,
-                colors.reset()
-            )
+    pub fn format_tool_input(
+        &self,
+        content: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: crate::json_parser::terminal::TerminalMode,
+    ) -> String {
+        use crate::json_parser::terminal::TerminalMode;
+
+        match terminal_mode {
+            TerminalMode::Full => {
+                // In Full mode, render tool input deltas as they arrive for real-time feedback
+                if self.mark_partial {
+                    format!(
+                        "{}[{}]{} {}  └─ {}{}{}\n",
+                        colors.dim(),
+                        prefix,
+                        colors.reset(),
+                        colors.dim(),
+                        colors.reset(),
+                        content,
+                        colors.reset()
+                    )
+                } else {
+                    format!(
+                        "{}[{}]{} {}  └─ {}{}\n",
+                        colors.dim(),
+                        prefix,
+                        colors.reset(),
+                        colors.reset(),
+                        content,
+                        colors.reset()
+                    )
+                }
+            }
+            TerminalMode::Basic | TerminalMode::None => {
+                // SUPPRESS per-delta tool input in non-TTY modes.
+                // Tool input will be rendered ONCE at tool completion or message_stop.
+                String::new()
+            }
         }
     }
 }

@@ -143,7 +143,9 @@ pub(super) fn reduce_development_event(
             {
                 DevelopmentEvent::ContinuationBudgetExhausted {
                     iteration,
-                    total_attempts: continuation_state.continuation_attempt,
+                    // `continuation_attempt` is 0-based with 0 = initial attempt.
+                    // For the event payload, report total attempts including the initial run.
+                    total_attempts: continuation_state.continuation_attempt + 1,
                     last_status: outcome.status.clone(),
                 }
             } else {
@@ -394,25 +396,78 @@ pub(super) fn reduce_development_event(
         DevelopmentEvent::ContinuationBudgetExhausted {
             iteration,
             total_attempts: _,
-            last_status: _,
+            last_status,
         } => {
-            // Policy: Abort pipeline when continuations exhausted.
-            // Future enhancement: Could try fallback agent instead.
-            PipelineState {
-                phase: crate::reducer::event::PipelinePhase::Interrupted,
-                iteration,
-                continuation: ContinuationState {
-                    context_cleanup_pending: true,
-                    ..ContinuationState::new()
-                },
-                development_context_prepared_iteration: None,
-                development_prompt_prepared_iteration: None,
-                development_xml_cleaned_iteration: None,
-                development_agent_invoked_iteration: None,
-                development_xml_extracted_iteration: None,
-                development_validated_outcome: None,
-                development_xml_archived_iteration: None,
-                ..state
+            // Policy: Switch to next agent when continuations exhausted.
+            // CRITICAL: If all agents are exhausted AND work is incomplete (Failed/Partial status),
+            // transition directly to AwaitingDevFix to emit completion marker and invoke dev-fix flow.
+            // This ensures the pipeline NEVER exits early due to budget exhaustion - it always
+            // continues through the configured remediation path (AwaitingDevFix -> TriggerDevFixFlow
+            // -> completion marker write -> Interrupted -> SaveCheckpoint).
+            let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
+
+            // Check if all agents exhausted AND work incomplete
+            if new_agent_chain.is_exhausted()
+                && matches!(
+                    last_status,
+                    DevelopmentStatus::Failed | DevelopmentStatus::Partial
+                )
+            {
+                // Transition to AwaitingDevFix for remediation attempt
+                PipelineState {
+                    phase: crate::reducer::event::PipelinePhase::AwaitingDevFix,
+                    previous_phase: Some(crate::reducer::event::PipelinePhase::Development),
+                    iteration,
+                    agent_chain: new_agent_chain,
+                    dev_fix_triggered: false, // CRITICAL: ensure TriggerDevFixFlow executes
+                    continuation: ContinuationState {
+                        continuation_attempt: 0,
+                        invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
+                        xsd_retry_session_reuse_pending: false,
+                        same_agent_retry_count: 0,
+                        same_agent_retry_pending: false,
+                        same_agent_retry_reason: None,
+                        context_cleanup_pending: false, // No cleanup needed when transitioning to AwaitingDevFix
+                        ..state.continuation
+                    },
+                    development_context_prepared_iteration: None,
+                    development_prompt_prepared_iteration: None,
+                    development_xml_cleaned_iteration: None,
+                    development_agent_invoked_iteration: None,
+                    development_xml_extracted_iteration: None,
+                    development_validated_outcome: None,
+                    development_xml_archived_iteration: None,
+                    ..state
+                }
+            } else {
+                // Otherwise, fall back to next agent (if available)
+                PipelineState {
+                    phase: crate::reducer::event::PipelinePhase::Development,
+                    iteration,
+                    agent_chain: new_agent_chain,
+                    continuation: ContinuationState {
+                        continuation_attempt: 0,
+                        invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
+                        xsd_retry_session_reuse_pending: false,
+                        same_agent_retry_count: 0,
+                        same_agent_retry_pending: false,
+                        same_agent_retry_reason: None,
+                        context_cleanup_pending: true,
+                        ..state.continuation
+                    },
+                    development_context_prepared_iteration: None,
+                    development_prompt_prepared_iteration: None,
+                    development_xml_cleaned_iteration: None,
+                    development_agent_invoked_iteration: None,
+                    development_xml_extracted_iteration: None,
+                    development_validated_outcome: None,
+                    development_xml_archived_iteration: None,
+                    ..state
+                }
             }
         }
         DevelopmentEvent::ContinuationContextWritten {

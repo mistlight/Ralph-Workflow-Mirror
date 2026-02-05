@@ -77,6 +77,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("cli/mod.rs"),
     },
     SourceFile {
+        path: "ccs_streaming_spam_all_deltas.rs",
+        contents: include_str!("ccs_streaming_spam_all_deltas.rs"),
+    },
+    SourceFile {
         path: "codex_reasoning_spam_regression.rs",
         contents: include_str!("codex_reasoning_spam_regression.rs"),
     },
@@ -155,6 +159,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "reducer_fault_tolerance/model_fallback.rs",
         contents: include_str!("reducer_fault_tolerance/model_fallback.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/continuation_exhaustion.rs",
+        contents: include_str!("reducer_fault_tolerance/continuation_exhaustion.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker.rs",
+        contents: include_str!("reducer_fault_tolerance/failure_completion_marker.rs"),
     },
     SourceFile {
         path: "reducer_hidden_behavior.rs",

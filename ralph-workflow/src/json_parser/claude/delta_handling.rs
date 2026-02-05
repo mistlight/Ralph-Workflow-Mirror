@@ -88,6 +88,10 @@ impl ClaudeParser {
                 // - Hash-based deduplication after sanitization (whitespace-insensitive)
                 let show_prefix = session.on_text_delta(index, &text);
 
+                // `on_text_delta` returns whether the prefix should be shown, not whether output
+                // should be emitted. If the accumulated content is non-empty and not a duplicate,
+                // we still need to render it even when `show_prefix` is false.
+
                 // Get accumulated text for streaming display
                 let accumulated_text = session
                     .get_accumulated(ContentType::Text, &index_str)
@@ -230,7 +234,9 @@ impl ClaudeParser {
 
                     // Show partial tool input in real-time
                     let formatter = DeltaDisplayFormatter::new();
-                    let tool_out = formatter.format_tool_input(&input_str, prefix, *c);
+                    let terminal_mode = *self.terminal_mode.borrow();
+                    let tool_out =
+                        formatter.format_tool_input(&input_str, prefix, *c, terminal_mode);
                     format!("{thinking_finalize}{tool_out}")
                 }
             }
@@ -325,30 +331,68 @@ impl ClaudeParser {
         // In Full mode, finalize any active thinking line.
         let thinking_finalize = self.finalize_thinking_full_mode(session);
 
-        // In non-TTY modes, flush thinking once at message_stop.
-        let thinking_flush_non_tty = match terminal_mode {
-            TerminalMode::Full => String::new(),
+        // In non-TTY modes, flush thinking and text once at message_stop.
+        let (thinking_flush_non_tty, text_flush_non_tty) = match terminal_mode {
+            TerminalMode::Full => (String::new(), String::new()),
             TerminalMode::Basic | TerminalMode::None => {
-                if let Some(index) = self.thinking_active_index.borrow_mut().take() {
+                // Flush accumulated thinking
+                // We format the output directly here because the renderers now suppress
+                // output in non-TTY modes (to prevent per-delta spam).
+                let thinking_output =
+                    if let Some(index) = self.thinking_active_index.borrow_mut().take() {
+                        let index_str = index.to_string();
+                        let accumulated = session
+                            .get_accumulated(ContentType::Thinking, &index_str)
+                            .unwrap_or("");
+                        let sanitized =
+                            crate::json_parser::delta_display::sanitize_for_display(accumulated);
+                        if sanitized.is_empty() {
+                            String::new()
+                        } else {
+                            // Format the line directly (bypass renderer which suppresses in non-TTY)
+                            format!(
+                                "{}[{}]{} {}Thinking: {}{}{}\n",
+                                c.dim(),
+                                &self.display_name,
+                                c.reset(),
+                                c.dim(),
+                                c.cyan(),
+                                sanitized,
+                                c.reset()
+                            )
+                        }
+                    } else {
+                        String::new()
+                    };
+
+                // Flush accumulated text content for all content blocks
+                // We format the output directly here because the renderers now suppress
+                // output in non-TTY modes (to prevent per-delta spam).
+                let mut text_output = String::new();
+                for index in 0..10 {
+                    // Reasonable upper bound for content blocks
                     let index_str = index.to_string();
                     let accumulated = session
-                        .get_accumulated(ContentType::Thinking, &index_str)
+                        .get_accumulated(ContentType::Text, &index_str)
                         .unwrap_or("");
                     let sanitized =
                         crate::json_parser::delta_display::sanitize_for_display(accumulated);
-                    if sanitized.is_empty() {
-                        String::new()
-                    } else {
-                        crate::json_parser::delta_display::ThinkingDeltaRenderer::render_first_delta(
-                            &sanitized,
+                    if !sanitized.is_empty() {
+                        // Format the line directly (bypass renderer which suppresses in non-TTY)
+                        let line = format!(
+                            "{}[{}]{} {}{}{}\n",
+                            c.dim(),
                             &self.display_name,
-                            self.colors,
-                            terminal_mode,
-                        )
+                            c.reset(),
+                            c.white(),
+                            sanitized,
+                            c.reset()
+                        );
+                        text_output.push_str(&line);
                     }
-                } else {
-                    String::new()
                 }
+
+                (thinking_output, text_output)
             }
         };
 
@@ -385,9 +429,9 @@ impl ClaudeParser {
             } else {
                 completion
             };
-            format!("{thinking_finalize}{thinking_flush_non_tty}{completion_with_metrics}")
+            format!("{thinking_finalize}{thinking_flush_non_tty}{text_flush_non_tty}{completion_with_metrics}")
         } else {
-            format!("{thinking_finalize}{thinking_flush_non_tty}")
+            format!("{thinking_finalize}{thinking_flush_non_tty}{text_flush_non_tty}")
         }
     }
 

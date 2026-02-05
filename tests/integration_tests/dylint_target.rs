@@ -34,9 +34,8 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
 
         // Ensure we compute the nightly cargo path via rustup.
         assert!(
-            dylint_body.contains("rustup which cargo --toolchain nightly")
-                || dylint_body.contains("\"$$RUSTUP_BIN\" which cargo --toolchain nightly"),
-            "dylint target should resolve nightly cargo via rustup"
+            dylint_body.contains("rustup which cargo --toolchain \"$$NIGHTLY_TOOLCHAIN\""),
+            "dylint target should resolve nightly cargo via rustup with NIGHTLY_TOOLCHAIN variable"
         );
 
         // Ensure we prepend a PATH entry so that cargo-dylint's internal `cargo`
@@ -49,8 +48,8 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
         // Ensure we use a wrapper `cargo` script which re-exports RUSTUP_TOOLCHAIN
         // to mitigate cargo-dylint unsetting it for driver rebuilds.
         assert!(
-            dylint_body.contains("export RUSTUP_TOOLCHAIN=nightly"),
-            "dylint target should export RUSTUP_TOOLCHAIN=nightly"
+            dylint_body.contains("export RUSTUP_TOOLCHAIN=\"$$NIGHTLY_TOOLCHAIN\""),
+            "dylint target should export RUSTUP_TOOLCHAIN to nightly toolchain variable"
         );
 
         // We should not suppress rustup component installation failures.

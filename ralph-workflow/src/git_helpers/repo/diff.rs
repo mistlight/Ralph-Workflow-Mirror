@@ -68,7 +68,27 @@ pub fn get_git_diff_from_start_with_workspace(workspace: &dyn Workspace) -> io::
     // NOTE: We intentionally discover the repository from the process CWD.
     // The pipeline sets CWD to the repo root early, and many test harnesses use a
     // mock workspace root that doesn't exist on disk.
-    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    //
+    // Prefer the *actual* repo root (workdir) when it exists on disk so tests remain
+    // deterministic even when the process CWD happens to be a real git checkout.
+    //
+    // We still fall back to discovering from CWD when `.git` exists there.
+    let repo_root =
+        crate::git_helpers::get_repo_root().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let repo = if workspace.exists(std::path::Path::new(".git")) {
+        git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?
+    } else {
+        git2::Repository::discover(&repo_root).map_err(|e| git2_to_io_error(&e))?
+    };
+
+    if !workspace.exists(std::path::Path::new(".git")) {
+        // If the caller's workspace doesn't correspond to a real on-disk repo root (e.g.
+        // MemoryWorkspace tests), don't attempt to discover/emit a diff from the process CWD.
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Workspace has no on-disk git repository",
+        ));
+    }
 
     // Ensure a valid start point exists. This is expected to persist across runs, but we also
     // repair missing/corrupt files opportunistically for robustness.

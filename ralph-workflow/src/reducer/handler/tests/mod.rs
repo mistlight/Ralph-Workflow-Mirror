@@ -4,6 +4,7 @@
 
 mod analysis_handler;
 mod commit_handler;
+mod completion_marker;
 mod context_cleanup;
 mod development_outcome;
 mod development_prompt;

@@ -7,7 +7,6 @@ use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use std::cell::RefCell;
-use std::fmt::Write as _;
 use std::rc::Rc;
 
 use crate::json_parser::delta_display::{

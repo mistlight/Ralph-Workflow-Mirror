@@ -29,15 +29,17 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ReviewContinuationNotSupported
         | ErrorEvent::FixContinuationNotSupported
         | ErrorEvent::CommitContinuationNotSupported => {
-            // Invariant violations: terminate cleanly by transitioning to Interrupted.
+            // Invariant violations: route through AwaitingDevFix so unattended orchestration
+            // always emits a completion marker and dispatches dev-fix, rather than terminating.
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false;
             new_state
         }
 
-        // Missing inputs are handler bugs - these should be caught by effect sequencing
+        // Missing inputs are handler bugs - route through AwaitingDevFix for remediation.
         ErrorEvent::ReviewInputsNotMaterialized { .. }
         | ErrorEvent::PlanningInputsNotMaterialized { .. }
         | ErrorEvent::DevelopmentInputsNotMaterialized { .. }
@@ -48,11 +50,13 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ValidatedReviewOutcomeMissing { .. }
         | ErrorEvent::ValidatedFixOutcomeMissing { .. }
         | ErrorEvent::ValidatedCommitOutcomeMissing { .. } => {
-            // Invariant violations: terminate cleanly by transitioning to Interrupted.
+            // Invariant violations: route through AwaitingDevFix so the pipeline never
+            // exits early and a completion marker is reliably written.
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false;
             new_state
         }
 
@@ -104,7 +108,9 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             new_state
         }
 
-        // Workspace operation failures are treated as terminal.
+        // Workspace/Git operation failures must not cause early pipeline termination.
+        // Route these through AwaitingDevFix so TriggerDevFixFlow writes the completion marker
+        // and unattended orchestration can reliably detect completion.
         ErrorEvent::WorkspaceReadFailed { .. }
         | ErrorEvent::WorkspaceWriteFailed { .. }
         | ErrorEvent::WorkspaceCreateDirAllFailed { .. }
@@ -113,19 +119,22 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false;
             new_state
         }
 
-        // Agent chain exhausted - this is a terminal condition
-        // The reducer transitions to Interrupted phase to signal pipeline termination
+        // Agent chain exhausted - transition to AwaitingDevFix for remediation attempt
+        // instead of immediately terminating
         ErrorEvent::AgentChainExhausted { .. } => {
-            // Transition to Interrupted phase
-            // This signals the event loop that the pipeline should terminate
+            // Transition to AwaitingDevFix phase
+            // This signals orchestration to invoke the development agent to diagnose
+            // and fix the pipeline failure before deciding whether to proceed or terminate
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false; // Reset flag for new AwaitingDevFix phase
             new_state
         }
     }
@@ -137,7 +146,7 @@ mod tests {
     use crate::reducer::state::ContinuationState;
 
     #[test]
-    fn test_reduce_continuation_not_supported_errors_transition_to_interrupted() {
+    fn test_reduce_continuation_not_supported_errors_route_to_awaiting_dev_fix() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
         let errors = vec![
@@ -149,26 +158,32 @@ mod tests {
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
-            // Terminate cleanly
             assert_eq!(
                 new_state.phase,
-                crate::reducer::event::PipelinePhase::Interrupted
+                crate::reducer::event::PipelinePhase::AwaitingDevFix
+            );
+            assert!(
+                !new_state.dev_fix_triggered,
+                "expected dev_fix_triggered reset when routing to AwaitingDevFix"
             );
         }
     }
 
     #[test]
-    fn test_reduce_missing_inputs_errors_transition_to_interrupted() {
+    fn test_reduce_missing_inputs_errors_route_to_awaiting_dev_fix() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
         let errors = vec![ErrorEvent::ReviewInputsNotMaterialized { pass: 1 }];
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
-            // Terminate cleanly
             assert_eq!(
                 new_state.phase,
-                crate::reducer::event::PipelinePhase::Interrupted
+                crate::reducer::event::PipelinePhase::AwaitingDevFix
+            );
+            assert!(
+                !new_state.dev_fix_triggered,
+                "expected dev_fix_triggered reset when routing to AwaitingDevFix"
             );
         }
     }
@@ -215,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reduce_agent_chain_exhausted_transitions_to_interrupted() {
+    fn test_reduce_agent_chain_exhausted_transitions_to_awaiting_dev_fix() {
         use crate::agents::AgentRole;
         use crate::reducer::event::PipelinePhase;
 
@@ -230,17 +245,17 @@ mod tests {
 
         let new_state = reduce_error(&state, &error);
 
-        // Should transition to Interrupted phase
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        // Should transition to AwaitingDevFix phase for remediation
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
         assert_eq!(
             new_state.previous_phase,
             Some(state.phase),
-            "previous_phase should be recorded for interrupted transitions"
+            "previous_phase should be recorded for dev-fix transitions"
         );
     }
 
     #[test]
-    fn test_reduce_workspace_failures_transition_to_interrupted_and_set_previous_phase() {
+    fn test_reduce_workspace_failures_transition_to_awaiting_dev_fix_and_set_previous_phase() {
         use crate::reducer::event::{PipelinePhase, WorkspaceIoErrorKind};
 
         let mut state =
@@ -253,11 +268,15 @@ mod tests {
         };
 
         let new_state = reduce_error(&state, &error);
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
         assert_eq!(
             new_state.previous_phase,
             Some(state.phase),
-            "previous_phase should be recorded for interrupted transitions"
+            "previous_phase should be recorded for awaiting-dev-fix transitions"
+        );
+        assert!(
+            !new_state.dev_fix_triggered,
+            "dev_fix_triggered should be reset on awaiting-dev-fix transitions"
         );
     }
 }

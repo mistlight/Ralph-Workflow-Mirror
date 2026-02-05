@@ -373,11 +373,21 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
             )
             .with_file(".agent/PLAN.md", "# Plan\nTest plan");
 
+        use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+        use ralph_workflow::reducer::PipelineState;
+
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        // Run the full pipeline (no special flags)
-        let _ = crate::common::run_ralph_cli_with_handler(&[], executor, config, &mut handler);
+        // Run the full pipeline with both handlers to avoid any real agent/git side effects.
+        let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
+        let _ = crate::common::run_ralph_cli_with_handlers(
+            &[],
+            executor,
+            config,
+            &mut handler,
+            &mut effect_handler,
+        );
 
         let effects = handler.captured();
 

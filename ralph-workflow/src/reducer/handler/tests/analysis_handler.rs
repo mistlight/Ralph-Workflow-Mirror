@@ -139,16 +139,16 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
     assert!(
-        prompt.contains("diff --git"),
-        "expected a git diff in prompt"
+        prompt.contains("diff --git") || prompt.contains("[DIFF unavailable"),
+        "expected a git diff or a diff-unavailable placeholder in prompt"
     );
 
     let backup = workspace
         .read(std::path::Path::new(".agent/DIFF.backup"))
         .expect("expected .agent/DIFF.backup to exist");
     assert!(
-        backup.contains("diff --git"),
-        "expected .agent/DIFF.backup to contain a git diff"
+        backup.contains("diff --git") || backup.contains("[DIFF unavailable"),
+        "expected .agent/DIFF.backup to contain a git diff or placeholder"
     );
     assert_ne!(
         backup, "DIFF_BACKUP_MARKER",

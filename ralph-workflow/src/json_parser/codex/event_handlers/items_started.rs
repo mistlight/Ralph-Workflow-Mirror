@@ -185,16 +185,15 @@ pub fn handle_mcp_tool_started(
             let limit = ctx.verbosity.truncate_limit("tool_input");
             let preview = truncate_text(&args_str, limit);
             if !preview.is_empty() {
-                let _ = std::writeln!(
-                    out,
-                    "{}[{}]{} {}  └─ {}{}",
-                    ctx.colors.dim(),
+                use crate::json_parser::delta_display::DeltaDisplayFormatter;
+                let formatter = DeltaDisplayFormatter::new();
+                let tool_input_line = formatter.format_tool_input(
+                    &preview,
                     ctx.display_name,
-                    ctx.colors.reset(),
-                    ctx.colors.dim(),
-                    preview,
-                    ctx.colors.reset()
+                    *ctx.colors,
+                    ctx.terminal_mode,
                 );
+                out.push_str(&tool_input_line);
             }
         }
     }

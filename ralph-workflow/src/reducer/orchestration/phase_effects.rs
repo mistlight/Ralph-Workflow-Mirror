@@ -487,6 +487,23 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
 
+        PipelinePhase::AwaitingDevFix => {
+            // CRITICAL: Always return TriggerDevFixFlow immediately when in AwaitingDevFix phase.
+            // This effect:
+            // 1. Writes completion marker to .agent/tmp/completion_marker
+            // 2. Dispatches dev-fix agent (if configured)
+            // 3. Emits DevFixTriggered, DevFixCompleted, and CompletionMarkerEmitted events
+            // 4. Transitions to Interrupted phase (via CompletionMarkerEmitted)
+            //
+            // The event loop protects this execution with is_awaiting_dev_fix_not_triggered guard
+            // to ensure at least one iteration executes this effect before checking completion.
+            Effect::TriggerDevFixFlow {
+                failed_phase: state.previous_phase.unwrap_or(PipelinePhase::Development),
+                failed_role: state.agent_chain.current_role,
+                retry_cycle: state.agent_chain.retry_cycle,
+            }
+        }
+
         PipelinePhase::Complete | PipelinePhase::Interrupted => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::Interrupt,
         },

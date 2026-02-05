@@ -406,6 +406,8 @@ pub enum PipelinePhase {
     PostRebase,
     /// During post-review conflict resolution
     PostRebaseConflict,
+    /// Awaiting development agent to fix pipeline failure
+    AwaitingDevFix,
     /// Pipeline was interrupted (e.g., by Ctrl+C)
     Interrupted,
 }
@@ -440,6 +442,7 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                     "PreRebaseConflict" => Ok(PipelinePhase::PreRebaseConflict),
                     "PostRebase" => Ok(PipelinePhase::PostRebase),
                     "PostRebaseConflict" => Ok(PipelinePhase::PostRebaseConflict),
+                    "AwaitingDevFix" => Ok(PipelinePhase::AwaitingDevFix),
                     "Interrupted" => Ok(PipelinePhase::Interrupted),
                     // Legacy phases are no longer supported - reject with clear error
                     "Fix" | "ReviewAgain" => Err(E::custom(format!(
@@ -461,6 +464,7 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                             "PreRebaseConflict",
                             "PostRebase",
                             "PostRebaseConflict",
+                            "AwaitingDevFix",
                             "Interrupted",
                         ],
                     )),
@@ -486,8 +490,8 @@ impl std::fmt::Display for PipelinePhase {
             Self::PreRebaseConflict => write!(f, "Pre-Rebase Conflict"),
             Self::PostRebase => write!(f, "Post-Rebase"),
             Self::PostRebaseConflict => write!(f, "Post-Rebase Conflict"),
+            Self::AwaitingDevFix => write!(f, "Awaiting Dev Fix"),
             Self::Interrupted => write!(f, "Interrupted"),
         }
     }
 }
-

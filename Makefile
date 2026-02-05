@@ -169,68 +169,55 @@ dylint:
 			echo "error: rustup installation succeeded, but rustup is still not on PATH." >&2; \
 			echo "Try sourcing $$HOME/.cargo/env or add $$HOME/.cargo/bin (or $$CARGO_HOME/bin) to PATH." >&2; \
 			exit 1; \
-		fi; \
-		RUSTUP_BIN="$$(command -v rustup)"; \
-		\
-		if ! "$$RUSTUP_BIN" toolchain list | grep -qE "^nightly"; then \
-			echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; \
-			if ! "$$RUSTUP_BIN" toolchain install nightly --profile minimal; then \
-				echo "error: failed to install nightly toolchain." >&2; \
-				echo "If you are offline, pre-provision nightly:" >&2; \
-				echo "  rustup toolchain install nightly --profile minimal" >&2; \
-				exit 1; \
-			fi; \
-		fi; \
-		\
-		INSTALLED_COMPONENTS="$$( "$$RUSTUP_BIN" component list --toolchain nightly --installed 2>/dev/null || true)"; \
-		MISSING=""; \
-		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
-		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
-		if [ -n "$$MISSING" ]; then \
-			echo "Installing required nightly components:$$MISSING" >&2; \
-			if ! "$$RUSTUP_BIN" component add rustc-dev llvm-tools-preview --toolchain nightly; then \
-				echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
-				echo "Provision them ahead of time (offline/sandboxed):" >&2; \
-				echo "  rustup component add rustc-dev llvm-tools-preview --toolchain nightly" >&2; \
-				exit 1; \
-			fi; \
-		fi; \
-		\
-	NIGHTLY_CARGO="$$( "$$RUSTUP_BIN" which cargo --toolchain nightly)"; \
-	NIGHTLY_RUSTC="$$( "$$RUSTUP_BIN" which rustc --toolchain nightly)"; \
-	NIGHTLY_BIN_DIR="$$(dirname "$$NIGHTLY_CARGO")"; \
-	\
-	WRAPPER_DIR="$$(mktemp -d)"; \
-	if [ ! -d "$$WRAPPER_DIR" ]; then \
-		echo "error: failed to create temporary wrapper directory" >&2; \
-		exit 1; \
 	fi; \
-	trap "rm -rf \"$$WRAPPER_DIR\"" EXIT; \
+	RUSTUP_BIN="$$(command -v rustup)"; \
 	\
-	printf "%s\n%s\n%s\n%s\n%s\n" \
-		"#!/bin/sh" \
-		"# Auto-generated cargo wrapper for dylint nightly enforcement" \
-		"export RUSTUP_TOOLCHAIN=nightly" \
-		"export CARGO=\"$$NIGHTLY_CARGO\"" \
+	NIGHTLY_TOOLCHAIN="$$(rustup toolchain list | grep -E "^nightly" | head -n 1 | cut -d" " -f1)"; \
+	if [ -z "$$NIGHTLY_TOOLCHAIN" ]; then \
+		NIGHTLY_TOOLCHAIN="nightly"; \
+	fi; \
+	\
+	if ! rustup toolchain list | grep -qE "^nightly"; then \
+		echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; \
+		if ! "$$RUSTUP_BIN" toolchain install nightly --profile minimal; then \
+			echo "error: failed to install nightly toolchain." >&2; \
+			echo "If you are offline, pre-provision nightly:" >&2; \
+			echo "  rustup toolchain install nightly --profile minimal" >&2; \
+			exit 1; \
+		fi; \
+	fi; \
+	\
+	HOST_TRIPLE="$$(rustup run "$$NIGHTLY_TOOLCHAIN" rustc -vV | grep "^host:" | cut -d" " -f2)"; \
+	rustup target add "$$HOST_TRIPLE" --toolchain "$$NIGHTLY_TOOLCHAIN" >/dev/null 2>&1 || true; \
+	\
+	INSTALLED_COMPONENTS="$$(rustup component list --toolchain "$$NIGHTLY_TOOLCHAIN" --installed 2>/dev/null || true)"; \
+	MISSING=""; \
+	echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
+	echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
+	if [ -n "$$MISSING" ]; then \
+		echo "Installing required nightly components:$$MISSING" >&2; \
+		if ! rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN"; then \
+			echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
+			echo "Provision them ahead of time (offline/sandboxed):" >&2; \
+			echo "  rustup component add rustc-dev llvm-tools-preview --toolchain $$NIGHTLY_TOOLCHAIN" >&2; \
+			exit 1; \
+		fi; \
+	fi; \
+	\
+	NIGHTLY_CARGO="$$(rustup which cargo --toolchain "$$NIGHTLY_TOOLCHAIN")"; \
+	NIGHTLY_RUSTC="$$(rustup which rustc --toolchain "$$NIGHTLY_TOOLCHAIN")"; \
+	NIGHTLY_BIN_DIR="$$(dirname "$$NIGHTLY_CARGO")"; \
+	WRAPPER_DIR="$$(mktemp -d)"; \
+	trap "rm -rf $$WRAPPER_DIR" EXIT; \
+	printf "%s\n" \
+		"#!/usr/bin/env bash" \
+		"export RUSTUP_TOOLCHAIN=\"$$NIGHTLY_TOOLCHAIN\"" \
 		"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
 		> "$$WRAPPER_DIR/cargo"; \
 	chmod +x "$$WRAPPER_DIR/cargo"; \
-	\
-	if [ ! -f "$$WRAPPER_DIR/cargo" ]; then \
-		echo "error: wrapper script creation failed" >&2; \
-		exit 1; \
-	fi; \
-	\
 	export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
-	export RUSTUP_TOOLCHAIN=nightly; \
+	export RUSTUP_TOOLCHAIN="$$NIGHTLY_TOOLCHAIN"; \
 	export RUSTC="$$NIGHTLY_RUSTC"; \
-	export CARGO="$$NIGHTLY_CARGO"; \
-	\
-	RESOLVED_CARGO="$$(command -v cargo)"; \
-	if [ "$$RESOLVED_CARGO" != "$$WRAPPER_DIR/cargo" ]; then \
-		echo "warning: cargo resolves to $$RESOLVED_CARGO instead of $$WRAPPER_DIR/cargo" >&2; \
-		echo "Continuing anyway, but this may cause issues..." >&2; \
-	fi; \
 	\
 	if ! cargo dylint --version >/dev/null 2>&1; then \
 		echo "Installing cargo-dylint (and dylint-link)..." >&2; \
