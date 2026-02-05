@@ -93,12 +93,20 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("ccs_extreme_streaming_regression.rs"),
     },
     SourceFile {
+        path: "ccs_nuclear_full_log_regression.rs",
+        contents: include_str!("ccs_nuclear_full_log_regression.rs"),
+    },
+    SourceFile {
         path: "ccs_nuclear_spam_test.rs",
         contents: include_str!("ccs_nuclear_spam_test.rs"),
     },
     SourceFile {
         path: "ccs_real_world_log_regression.rs",
         contents: include_str!("ccs_real_world_log_regression.rs"),
+    },
+    SourceFile {
+        path: "ccs_streaming_edge_cases.rs",
+        contents: include_str!("ccs_streaming_edge_cases.rs"),
     },
     SourceFile {
         path: "codex_reasoning_spam_regression.rs",

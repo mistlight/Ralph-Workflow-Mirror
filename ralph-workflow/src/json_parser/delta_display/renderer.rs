@@ -1,6 +1,43 @@
 // Delta renderer trait and implementations.
 //
 // Contains the DeltaRenderer trait and TextDeltaRenderer implementation.
+//
+// # CCS Spam Prevention Architecture
+//
+// This module implements a three-layer approach to prevent repeated prefixed lines
+// for streaming deltas in non-TTY modes (logs, CI output):
+//
+// ## Layer 1: Suppression at Renderer Level
+//
+// Delta renderers (`TextDeltaRenderer`, `ThinkingDeltaRenderer`) return empty strings
+// in `TerminalMode::Basic` and `TerminalMode::None` for both `render_first_delta` and
+// `render_subsequent_delta`. This prevents per-delta spam at the source.
+//
+// ## Layer 2: Accumulation in StreamingSession
+//
+// `StreamingSession` (in `streaming_state/session`) accumulates all content by
+// (ContentType, index) across deltas. This state is preserved across all delta
+// events for a single message.
+//
+// ## Layer 3: Flush at Completion Boundaries
+//
+// Parser layer (ClaudeParser, CodexParser) flushes accumulated content ONCE at
+// completion boundaries:
+// - ClaudeParser: `handle_message_stop` (in `claude/delta_handling.rs`)
+// - CodexParser: `item.completed` handlers (in `codex/event_handlers/*.rs`)
+//
+// This ensures:
+// - **Full mode (TTY)**: In-place updates work normally with cursor positioning
+// - **Basic/None modes**: One prefixed line per content block, regardless of delta count
+//
+// ## Validation
+//
+// Comprehensive regression tests validate this architecture:
+// - `ccs_all_delta_types_spam_reproduction.rs`: 1000+ deltas per block
+// - `ccs_streaming_spam_all_deltas.rs`: All delta types (text/thinking/tool)
+// - `ccs_nuclear_full_log_regression.rs`: Real production logs (12,000+ deltas)
+// - `ccs_streaming_edge_cases.rs`: Edge cases (empty deltas, rapid transitions)
+// - `codex_reasoning_spam_regression.rs`: Original Codex reasoning fix
 
 /// Renderer for streaming delta content.
 ///
