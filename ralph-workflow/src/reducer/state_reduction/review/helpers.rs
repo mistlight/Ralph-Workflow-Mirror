@@ -69,6 +69,8 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
+                // Clear review error when starting a new pass
+                last_review_xsd_error: None,
                 ..state.continuation
             }
         },
@@ -101,6 +103,7 @@ fn reduce_fix_output_validation_failure(
     state: PipelineState,
     pass: u32,
     attempt: u32,
+    error_detail: Option<String>,
 ) -> PipelineState {
     // Same policy as review output validation failure
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
@@ -117,6 +120,8 @@ fn reduce_fix_output_validation_failure(
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
                 xsd_retry_session_reuse_pending: false,
+                // Clear error when switching agents
+                last_fix_xsd_error: None,
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
@@ -132,6 +137,8 @@ fn reduce_fix_output_validation_failure(
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
                 xsd_retry_session_reuse_pending: false,
+                // Preserve error detail for XSD retry prompt
+                last_fix_xsd_error: error_detail,
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,

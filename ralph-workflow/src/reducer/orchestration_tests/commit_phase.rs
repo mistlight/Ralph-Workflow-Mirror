@@ -24,6 +24,28 @@ fn test_commit_empty_chain_initializes_agent_chain() {
 }
 
 #[test]
+fn test_commit_role_mismatch_initializes_commit_chain() {
+    // Regression: Commit phase must not reuse developer/reviewer/analysis chains.
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: crate::reducer::state::CommitState::NotStarted,
+        agent_chain: crate::reducer::state::AgentChainState::initial().with_agents(
+            vec!["dev-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        ),
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Commit
+        }
+    ));
+}
+
+#[test]
 fn test_commit_not_started_prepares_prompt() {
     // With initialized agent chain, commit phase should prepare prompt
     use crate::reducer::state::AgentChainState;

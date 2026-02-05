@@ -26,17 +26,12 @@
 {#   DEVELOPMENT_RESULT_XML_PATH - Path to write development result XML        #}
 {#   DEVELOPMENT_RESULT_XSD_PATH - Path to XSD schema                          #}
 {#                                                                             #}
-{# OUTPUT FORMAT:                                                               #}
-{#   <ralph-development-result>                                                 #}
-{#     <ralph-status>completed|partial|failed</ralph-status>                    #}
-{#     <ralph-summary>Brief summary of what was done</ralph-summary>            #}
-{#     <ralph-files-changed>Optional list of files modified</ralph-files-changed> #}
-{#     <ralph-next-steps>Optional next steps</ralph-next-steps>                 #}
-{#   </ralph-development-result>                                                #}
+{# OUTPUT:                                                                      #}
+{#   Development agent produces code changes only. No structured output required. #}
+{#   Progress verification is done independently by the analysis agent.          #}
 {#                                                                             #}
-{# EXTRACTION:                                                                 #}
-{#   Parsed by extract_development_result_xml() in xml_extraction_development_result.rs #}
-{#   Validated by validate_development_result_xml() in xsd_validation_development_result.rs #}
+{# VERIFICATION:                                                               #}
+{#   Analysis agent compares cumulative git diff vs plan after each attempt.    #}
 {# ============================================================================ #}
 
 You are in CONTINUATION MODE. Continue the work from where you left off.
@@ -104,20 +99,19 @@ is finished. If you can only make partial progress, return status="partial"
 with detailed next_steps for the next continuation.
 
 ═══════════════════════════════════════════════════════════════════════════════
-OUTPUT FORMAT
+PROGRESS VERIFICATION
 ═══════════════════════════════════════════════════════════════════════════════
 
-Write your XML to: `{{DEVELOPMENT_RESULT_XML_PATH}}`
-XSD schema at: `{{DEVELOPMENT_RESULT_XSD_PATH}}`
+Your work will be independently verified by comparing the code changes against the
+implementation plan. You do NOT need to produce structured status output.
 
-For special characters, use CDATA: <![CDATA[a < b]]>
+Focus on continuing the implementation. Any text output you produce is for your
+own record keeping and will not affect the verification process.
 
-<ralph-development-result>
-<ralph-status>completed|partial|failed</ralph-status>
-<ralph-summary>Description of what you accomplished in THIS continuation.</ralph-summary>
-<ralph-files-changed>List of files modified in THIS continuation.</ralph-files-changed>
-<ralph-next-steps>If status is not completed, what should be done next.</ralph-next-steps>
-</ralph-development-result>
+The analysis agent will objectively assess your changes by examining:
+- The cumulative code changes since the pipeline started (including previous attempts)
+- The implementation plan
+- Whether the code changes match the planned work
 
-Only <ralph-status> and <ralph-summary> are required.
-Be as detailed as needed to document your work thoroughly.
+NOTE: Previous attempt context above came from the analysis agent's assessment
+of prior work. The analysis agent will similarly assess THIS continuation attempt.

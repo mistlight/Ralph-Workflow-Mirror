@@ -372,6 +372,10 @@ where
         let result = match execute_effect_guarded(handler, effect, ctx, &state) {
             GuardedEffectResult::Ok(result) => *result,
             GuardedEffectResult::Unrecoverable(err) => {
+                // Non-terminating-by-default requirement:
+                // Even "unrecoverable" handler errors must route through reducer-visible
+                // remediation (AwaitingDevFix) so TriggerDevFixFlow can write the completion
+                // marker and dispatch dev-fix.
                 let dumped =
                     dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
                 let marker_written = write_completion_marker_on_error(ctx, &err);
@@ -383,17 +387,42 @@ where
                     ctx.logger
                         .error("Event loop encountered unrecoverable handler error");
                 }
-                ctx.logger.error(&format!(
-                    "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                    state.phase, state.checkpoint_saved_count, events_processed
-                ));
                 if marker_written {
                     ctx.logger
                         .info("Completion marker written for unrecoverable handler error");
                 }
-                return Err(err);
+
+                // Emit a reducer-visible error that transitions us into AwaitingDevFix.
+                // We don't preserve the original error as a typed ErrorEvent; this is a last-resort
+                // path to guarantee remediation and completion marker semantics.
+                let failure_event = PipelineEvent::PromptInput(
+                    crate::reducer::event::PromptInputEvent::HandlerError {
+                        phase: state.phase,
+                        error: crate::reducer::event::ErrorEvent::WorkspaceWriteFailed {
+                            path: "(unrecoverable_handler_error)".to_string(),
+                            kind: crate::reducer::event::WorkspaceIoErrorKind::Other,
+                        },
+                    },
+                );
+
+                let event_str = format!("{:?}", failure_event);
+                let new_state = reduce(state, failure_event);
+                trace.push(build_trace_entry(
+                    events_processed,
+                    &new_state,
+                    &effect_str,
+                    &event_str,
+                ));
+                handler.update_state(new_state.clone());
+                state = new_state;
+                events_processed += 1;
+
+                continue;
             }
             GuardedEffectResult::Panic => {
+                // Handler panics are internal failures and must not terminate the run.
+                // Route through AwaitingDevFix so TriggerDevFixFlow writes the completion marker and
+                // dispatches dev-fix.
                 let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                 if dumped {
                     ctx.logger.error(&format!(
@@ -403,19 +432,46 @@ where
                     ctx.logger.error("Event loop recovered from panic");
                 }
 
-                ctx.logger.error(&format!(
-                    "Event loop exiting: reason=panic, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                    state.phase, state.checkpoint_saved_count, events_processed
-                ));
+                // Best-effort completion marker for orchestration, even if the dev-fix flow fails.
+                if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+                    ctx.logger.error(&format!(
+                        "Failed to create completion marker directory: {err}"
+                    ));
+                }
+                let marker_path = Path::new(".agent/tmp/completion_marker");
+                let content = format!(
+                    "failure\nHandler panic in effect execution (phase={:?}, events_processed={})",
+                    state.phase, events_processed
+                );
+                if let Err(err) = ctx.workspace.write(marker_path, &content) {
+                    ctx.logger.error(&format!(
+                        "Failed to write completion marker for handler panic: {err}"
+                    ));
+                }
 
-                // Panics inside effect handlers are treated as catastrophic-but-contained.
-                // We dump a trace and return a non-completed result so unattended runs can
-                // surface diagnostics without crashing the process.
-                return Ok(EventLoopResult {
-                    completed: false,
+                let failure_event = PipelineEvent::PromptInput(
+                    crate::reducer::event::PromptInputEvent::HandlerError {
+                        phase: state.phase,
+                        error: crate::reducer::event::ErrorEvent::WorkspaceWriteFailed {
+                            path: "(handler_panic)".to_string(),
+                            kind: crate::reducer::event::WorkspaceIoErrorKind::Other,
+                        },
+                    },
+                );
+
+                let event_str = format!("{:?}", failure_event);
+                let new_state = reduce(state, failure_event);
+                trace.push(build_trace_entry(
                     events_processed,
-                    final_phase: state.phase,
-                });
+                    &new_state,
+                    &effect_str,
+                    &event_str,
+                ));
+                handler.update_state(new_state.clone());
+                state = new_state;
+                events_processed += 1;
+
+                continue;
             }
         };
 
@@ -543,6 +599,8 @@ where
                 }
             }
             GuardedEffectResult::Unrecoverable(err) => {
+                // Non-terminating-by-default: even failures while forcing checkpoint completion
+                // must route through AwaitingDevFix rather than returning Err.
                 let dumped =
                     dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
                 let marker_written = write_completion_marker_on_error(ctx, &err);
@@ -554,17 +612,22 @@ where
                     ctx.logger
                         .error("Event loop encountered unrecoverable handler error");
                 }
-                ctx.logger.error(&format!(
-                    "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                    state.phase, state.checkpoint_saved_count, events_processed
-                ));
                 if marker_written {
                     ctx.logger
                         .info("Completion marker written for unrecoverable handler error");
                 }
-                return Err(err);
+
+                // We can't safely continue execution here (we are outside the main loop).
+                // State is already terminal (Interrupted from AwaitingDevFix), so return completion
+                // even if SaveCheckpoint fails.
+                return Ok(EventLoopResult {
+                    completed: true,
+                    events_processed,
+                    final_phase: state.phase,
+                });
             }
             GuardedEffectResult::Panic => {
+                // Panics during forced completion are internal failures; route through AwaitingDevFix.
                 let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                 if dumped {
                     ctx.logger.error(&format!(
@@ -574,13 +637,27 @@ where
                     ctx.logger.error("Event loop recovered from panic");
                 }
 
-                ctx.logger.error(&format!(
-                    "Event loop exiting: reason=panic, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                    state.phase, state.checkpoint_saved_count, events_processed
-                ));
+                if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+                    ctx.logger.error(&format!(
+                        "Failed to create completion marker directory: {err}"
+                    ));
+                }
+                let marker_path = Path::new(".agent/tmp/completion_marker");
+                let content = format!(
+                    "failure\nHandler panic during forced completion (phase={:?}, events_processed={})",
+                    state.phase, events_processed
+                );
+                if let Err(err) = ctx.workspace.write(marker_path, &content) {
+                    ctx.logger.error(&format!(
+                        "Failed to write completion marker for handler panic: {err}"
+                    ));
+                }
 
+                // We can't safely continue execution here (we are outside the main loop).
+                // State is already terminal (Interrupted from AwaitingDevFix), so return completion
+                // even if SaveCheckpoint fails.
                 return Ok(EventLoopResult {
-                    completed: false,
+                    completed: true,
                     events_processed,
                     final_phase: state.phase,
                 });
@@ -679,6 +756,8 @@ where
                     }
                 }
                 GuardedEffectResult::Unrecoverable(err) => {
+                    // Non-terminating-by-default: even errors during forced completion must route
+                    // through AwaitingDevFix instead of returning Err.
                     let dumped =
                         dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
                     let marker_written = write_completion_marker_on_error(ctx, &err);
@@ -690,17 +769,23 @@ where
                         ctx.logger
                             .error("Event loop encountered unrecoverable handler error");
                     }
-                    ctx.logger.error(&format!(
-                        "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                        state.phase, state.checkpoint_saved_count, events_processed
-                    ));
                     if marker_written {
                         ctx.logger
                             .info("Completion marker written for unrecoverable handler error");
                     }
-                    return Err(err);
+
+                    // We can't safely continue execution here (we are outside the main loop).
+                    // State is already terminal (Interrupted from AwaitingDevFix).
+                    // However, the run did NOT complete cleanly, so report incomplete while still
+                    // having written a best-effort completion marker above.
+                    return Ok(EventLoopResult {
+                        completed: false,
+                        events_processed,
+                        final_phase: state.phase,
+                    });
                 }
                 GuardedEffectResult::Panic => {
+                    // Panics during forced completion are internal failures; route through AwaitingDevFix.
                     let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                     if dumped {
                         ctx.logger.error(&format!(
@@ -710,11 +795,26 @@ where
                         ctx.logger.error("Event loop recovered from panic");
                     }
 
-                    ctx.logger.error(&format!(
-                        "Event loop exiting: reason=panic, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                        state.phase, state.checkpoint_saved_count, events_processed
-                    ));
+                    if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+                        ctx.logger.error(&format!(
+                            "Failed to create completion marker directory: {err}"
+                        ));
+                    }
+                    let marker_path = Path::new(".agent/tmp/completion_marker");
+                    let content = format!(
+                        "failure\nHandler panic during forced completion (phase={:?}, events_processed={})",
+                        state.phase, events_processed
+                    );
+                    if let Err(err) = ctx.workspace.write(marker_path, &content) {
+                        ctx.logger.error(&format!(
+                            "Failed to write completion marker for handler panic: {err}"
+                        ));
+                    }
 
+                    // We can't safely continue execution here (we are outside the main loop).
+                    // State is already terminal (Interrupted from AwaitingDevFix).
+                    // However, the run did NOT complete cleanly, so report incomplete while still
+                    // having written a best-effort completion marker above.
                     return Ok(EventLoopResult {
                         completed: false,
                         events_processed,

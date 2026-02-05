@@ -29,15 +29,17 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ReviewContinuationNotSupported
         | ErrorEvent::FixContinuationNotSupported
         | ErrorEvent::CommitContinuationNotSupported => {
-            // Invariant violations: terminate cleanly by transitioning to Interrupted.
+            // Invariant violations: route through AwaitingDevFix so unattended orchestration
+            // always emits a completion marker and dispatches dev-fix, rather than terminating.
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false;
             new_state
         }
 
-        // Missing inputs are handler bugs - these should be caught by effect sequencing
+        // Missing inputs are handler bugs - route through AwaitingDevFix for remediation.
         ErrorEvent::ReviewInputsNotMaterialized { .. }
         | ErrorEvent::PlanningInputsNotMaterialized { .. }
         | ErrorEvent::DevelopmentInputsNotMaterialized { .. }
@@ -48,11 +50,13 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ValidatedReviewOutcomeMissing { .. }
         | ErrorEvent::ValidatedFixOutcomeMissing { .. }
         | ErrorEvent::ValidatedCommitOutcomeMissing { .. } => {
-            // Invariant violations: terminate cleanly by transitioning to Interrupted.
+            // Invariant violations: route through AwaitingDevFix so the pipeline never
+            // exits early and a completion marker is reliably written.
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false;
             new_state
         }
 
@@ -142,7 +146,7 @@ mod tests {
     use crate::reducer::state::ContinuationState;
 
     #[test]
-    fn test_reduce_continuation_not_supported_errors_transition_to_interrupted() {
+    fn test_reduce_continuation_not_supported_errors_route_to_awaiting_dev_fix() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
         let errors = vec![
@@ -154,26 +158,32 @@ mod tests {
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
-            // Terminate cleanly
             assert_eq!(
                 new_state.phase,
-                crate::reducer::event::PipelinePhase::Interrupted
+                crate::reducer::event::PipelinePhase::AwaitingDevFix
+            );
+            assert!(
+                !new_state.dev_fix_triggered,
+                "expected dev_fix_triggered reset when routing to AwaitingDevFix"
             );
         }
     }
 
     #[test]
-    fn test_reduce_missing_inputs_errors_transition_to_interrupted() {
+    fn test_reduce_missing_inputs_errors_route_to_awaiting_dev_fix() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
         let errors = vec![ErrorEvent::ReviewInputsNotMaterialized { pass: 1 }];
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
-            // Terminate cleanly
             assert_eq!(
                 new_state.phase,
-                crate::reducer::event::PipelinePhase::Interrupted
+                crate::reducer::event::PipelinePhase::AwaitingDevFix
+            );
+            assert!(
+                !new_state.dev_fix_triggered,
+                "expected dev_fix_triggered reset when routing to AwaitingDevFix"
             );
         }
     }

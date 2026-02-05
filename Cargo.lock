@@ -1161,6 +1161,7 @@ dependencies = [
  "dirs",
  "flate2",
  "git2",
+ "libc",
  "notify",
  "quick-xml",
  "regex",

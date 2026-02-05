@@ -320,6 +320,26 @@ impl StreamingSession {
         was_in_block
     }
 
+    /// Clear all state for a specific (content_type, key) pair.
+    ///
+    /// This is used when a logical sub-stream completes (e.g., Codex `reasoning`
+    /// item completion) but the overall turn/message continues.
+    pub fn clear_key(&mut self, content_type: ContentType, key: &str) {
+        let content_key = (content_type, key.to_string());
+        self.accumulated.remove(&content_key);
+        self.key_order.retain(|k| k != &content_key);
+        self.output_started_for_key.remove(&content_key);
+        self.delta_sizes.remove(&content_key);
+        self.last_rendered.remove(&content_key);
+        self.last_delta.remove(&content_key);
+        self.consecutive_duplicates.remove(&content_key);
+
+        // Clear any per-key rendered-hash entries so subsequent sub-streams reusing the
+        // same key (e.g., Codex `reasoning`) won't be incorrectly suppressed as duplicates.
+        self.rendered_content_hashes
+            .retain(|(ct, k, _hash)| !(*ct == content_type && k == key));
+    }
+
     /// Check if ANY content has been streamed for this message.
     ///
     /// This is a broader check that returns true if ANY content type

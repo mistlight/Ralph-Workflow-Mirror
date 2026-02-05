@@ -66,9 +66,15 @@ pub struct StreamingSession {
     /// would produce identical output (prevents visual repetition).
     /// Maps `(content_type, key)` → the last accumulated content that was rendered.
     pub(super) last_rendered: HashMap<(ContentType, String), String>,
-    /// Track all rendered content hashes for duplicate detection.
-    /// This is preserved across `MessageStart` boundaries to prevent duplicate rendering.
-    pub(super) rendered_content_hashes: HashSet<u64>,
+    /// Track rendered content hashes for duplicate detection.
+    ///
+    /// This stores a hash of the *sanitized content* together with the `(content_type, key)`
+    /// it was rendered for. This is preserved across repeated `MessageStart` boundaries.
+    ///
+    /// Keying by `(content_type, key)` is important because some parsers reuse keys within the
+    /// same turn (e.g., Codex can reuse `reasoning` for multiple items). When that happens,
+    /// we need `clear_key()` to fully reset per-key deduplication state.
+    pub(super) rendered_content_hashes: HashSet<(ContentType, String, u64)>,
     /// Track the last delta for each key to detect exact duplicate deltas.
     /// This is preserved across `MessageStart` boundaries to prevent duplicate processing.
     /// Maps `(content_type, key)` → the last delta that was processed.

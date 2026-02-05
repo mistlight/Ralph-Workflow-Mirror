@@ -147,9 +147,15 @@ can_commit = true
 glm = "ccs glm"
 ```
 
-**Note**: As of Ralph v0.2.7+, if `print_flag` is missing from your config, Ralph will
-automatically use `--print` as a fallback. However, it's still recommended to explicitly
-configure it to avoid warnings.
+**Note**: As of Ralph v0.2.7+, when using **CCS alias resolution** (agents referenced as
+`ccs/<alias>` or plain `ccs` via the unified config), Ralph will ensure there is a
+non-empty print flag. If the unified-config CCS default `ccs.print_flag` is empty,
+Ralph falls back to `--print` as a safety net.
+
+This fallback is **not** a universal fix for arbitrary custom agents: if you define a
+non-CCS agent (or a custom CCS-like agent) without a `print_flag`, Ralph will not
+invent one for that agent. The built-in example `examples/agents.toml` already sets
+`[agents.ccs].print_flag = "--print"`.
 
 **Manual Workaround Configuration**:
 ```toml
@@ -187,7 +193,9 @@ Older Ralph versions could run `ccs glm -p ...` directly, which can cause CCS to
 Additionally, CCS treats `-p` / `--prompt` as its own headless delegation mode, so `ccs <profile> -p ...` is not a safe way to pass Claude's print flag through CCS.
 
 **Current behavior**:
-Ralph now bypasses the CCS wrapper for `ccs/<alias>` by loading the profile’s env vars from CCS config/settings and invoking `claude` directly. This preserves Claude CLI flag passthrough and stream-json output for `ccs/glm`.
+Ralph can bypass the CCS wrapper only for the **GLM** alias (`ccs/glm`) **when env vars were successfully loaded** from CCS settings. In that case, Ralph invokes the `claude` binary directly (with the loaded env), which preserves Claude CLI flag passthrough and stream-json output.
+
+For other CCS aliases (e.g., `ccs/gemini`, `ccs/codex`), Ralph does **not** bypass the wrapper and will run through `ccs`.
 
 **Optional - `glm-direct` Agent**:
 If you prefer an explicit non-CCS agent (or want `glm` without `ccs/`), you can still configure `glm-direct` to call `claude` directly with `ccs_profile = "glm"`.

@@ -44,6 +44,11 @@ const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
 pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, XsdValidationError> {
     let content = xml_content.trim();
+
+    // Check for illegal XML characters BEFORE parsing
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+    check_for_illegal_xml_characters(content)?;
+
     let mut reader = create_reader(content);
     let mut buf = Vec::new();
 

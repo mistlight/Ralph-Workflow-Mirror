@@ -298,3 +298,34 @@ fn test_review_skips_fix_when_no_issues() {
         effect
     );
 }
+
+#[test]
+fn test_determine_effect_review_phase_with_wrong_role_chain() {
+    // Scenario: Review phase with a non-empty chain, but the role is Commit
+    // This simulates the bug where we transition from CommitMessage back to Review
+    // and the chain was left as AgentRole::Commit
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        total_reviewer_passes: 2,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit, // Wrong role!
+        ),
+        ..create_test_state()
+    };
+
+    // Should initialize a new chain for Reviewer role, not use the Commit chain
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Reviewer
+            }
+        ),
+        "Expected InitializeAgentChain with Reviewer role, got {:?}",
+        effect
+    );
+}

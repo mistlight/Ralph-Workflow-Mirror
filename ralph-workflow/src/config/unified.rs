@@ -249,6 +249,11 @@ pub struct CcsConfig {
     pub streaming_flag: String,
     /// Which JSON parser to use for CCS output.
     pub json_parser: String,
+    /// Session continuation flag template for CCS aliases (Claude CLI).
+    /// The `{}` placeholder is replaced with the session ID at runtime.
+    ///
+    /// Default: "--resume {}"
+    pub session_flag: String,
     /// Whether CCS can run workflow tools (git commit, etc.).
     pub can_commit: bool,
 }
@@ -263,6 +268,7 @@ impl Default for CcsConfig {
             print_flag: "--print".to_string(),
             streaming_flag: "--include-partial-messages".to_string(),
             json_parser: "claude".to_string(),
+            session_flag: "--resume {}".to_string(),
             can_commit: true,
         }
     }

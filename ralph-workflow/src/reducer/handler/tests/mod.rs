@@ -2,6 +2,7 @@
 // Individual test modules will be added here as the handler implementation is
 // decomposed into single-task effects.
 
+mod analysis_handler;
 mod commit_handler;
 mod completion_marker;
 mod context_cleanup;

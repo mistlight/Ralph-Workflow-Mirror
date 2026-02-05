@@ -30,12 +30,16 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             ..state
         },
         // Rate limit (429): immediate agent switch, preserve prompt context.
-        AgentEvent::RateLimited { prompt_context, .. } => {
+        AgentEvent::RateLimited {
+            role,
+            prompt_context,
+            ..
+        } => {
             let state = reset_phase_xml_cleanup_for_retry(state);
             PipelineState {
                 agent_chain: state
                     .agent_chain
-                    .switch_to_next_agent_with_prompt(prompt_context)
+                    .switch_to_next_agent_with_prompt_for_role(role, prompt_context)
                     .clear_session_id(),
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
@@ -95,6 +99,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         }
         AgentEvent::InvocationFailed {
             retriable: false,
+            role,
             error_kind,
             ..
         } => {
@@ -125,7 +130,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                     // reusing stale prompt context on the next invocation.
                     agent_chain: state
                         .agent_chain
-                        .switch_to_next_agent_with_prompt(None)
+                        .switch_to_next_agent_with_prompt_for_role(role, None)
                         .clear_session_id(),
                     continuation: ContinuationState {
                         xsd_retry_count: 0,

@@ -511,3 +511,289 @@ fn test_review_xml_whitespace_only_no_issues_found_is_filtered() {
         );
     });
 }
+
+// =============================================================================
+// ILLEGAL CHARACTER REGRESSION TESTS
+// These test the fix for the bug where NUL bytes in XML caused silent failures
+// =============================================================================
+
+/// Test that NUL byte in review XML is rejected with actionable error.
+///
+/// This is a regression test for the reported bug where a reviewer output
+/// containing a NUL byte (e.g., from `.replace("git diff", "git\0A0diff")`)
+/// would cause validation to fail silently, triggering AgentChainExhausted.
+///
+/// The validation should now detect the NUL byte before parsing and provide
+/// a clear, actionable error message that guides the agent to fix it.
+#[test]
+fn test_review_xml_rejects_nul_byte_with_actionable_error() {
+    with_default_timeout(|| {
+        // Setup: Create XML with NUL byte (the exact bug from the report)
+        // This simulates the pattern: .replace("git diff", "git\0A0diff")
+        let xml_with_nul =
+            "<ralph-issues><ralph-issue>Check git\u{0000}diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_issues_xml(xml_with_nul);
+
+        // Assert: Verify validation fails
+        assert!(result.is_err(), "NUL byte should be rejected");
+
+        let error = result.unwrap_err();
+
+        // Verify error is specific about NUL byte
+        assert!(
+            error.found.contains("NUL") || error.found.contains("0x00"),
+            "Error should identify NUL byte, got: {}",
+            error.found
+        );
+
+        // Verify error includes position information
+        assert!(
+            error.found.contains("position"),
+            "Error should include position, got: {}",
+            error.found
+        );
+
+        // Verify error provides actionable guidance
+        let formatted = error.format_for_ai_retry();
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Formatted error should mention NUL"
+        );
+        assert!(
+            formatted.contains("How to fix") || formatted.contains("fix:"),
+            "Formatted error should provide fix guidance"
+        );
+        // Should suggest common fix (NBSP typo)
+        assert!(
+            formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
+            "Should suggest NBSP as common cause"
+        );
+    });
+}
+
+/// Test that other illegal control characters are also rejected.
+///
+/// This ensures the fix is comprehensive, not just for NUL bytes.
+#[test]
+fn test_review_xml_rejects_other_control_characters() {
+    with_default_timeout(|| {
+        // Test vertical tab (0x0B) - another illegal control character
+        let xml_with_vt =
+            "<ralph-issues><ralph-issue>Text with\u{000B}vertical tab</ralph-issue></ralph-issues>";
+        let result = ralph_workflow::validate_issues_xml(xml_with_vt);
+        assert!(result.is_err(), "Vertical tab should be rejected");
+
+        let error = result.unwrap_err();
+        assert!(
+            error.found.contains("0x0B") || error.found.contains("control character"),
+            "Error should identify illegal character, got: {}",
+            error.found
+        );
+    });
+}
+
+/// Test that valid content with allowed control characters still passes.
+///
+/// This verifies we don't break valid XML that uses tab/newline/CR.
+#[test]
+fn test_review_xml_allows_valid_control_characters() {
+    with_default_timeout(|| {
+        // Setup: Create XML with tab, newline, carriage return (all allowed)
+        let xml =
+            "<ralph-issues><ralph-issue>Line 1\nLine 2\tTabbed\rCR</ralph-issue></ralph-issues>";
+
+        // Execute: Validate the XML
+        let result = ralph_workflow::validate_issues_xml(xml);
+
+        // Assert: Verify validation passes
+        assert!(
+            result.is_ok(),
+            "Valid control characters (tab/LF/CR) should be allowed"
+        );
+    });
+}
+
+/// Test that XSD validation error detail flows correctly.
+///
+/// This integration test verifies:
+/// 1. Validation fails with specific XSD error (NUL byte)
+/// 2. The error detail is actionable and mentions the specific problem
+///
+/// This is a regression test for the bug where validation errors were not
+/// propagated, causing the XSD retry prompt to show only a generic message.
+///
+/// Note: This test currently only validates that the XSD error is detailed.
+/// Full flow testing (event -> state -> prompt) requires internal APIs that
+/// are tested in unit tests.
+#[test]
+fn test_review_xsd_error_is_detailed_for_retry() {
+    with_default_timeout(|| {
+        // Setup: Create XML with NUL byte that will fail validation
+        let xml_with_nul =
+            "<ralph-issues><ralph-issue>Check git\u{0000}diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Verify validation produces specific error about NUL
+        let validation_result = ralph_workflow::validate_issues_xml(xml_with_nul);
+        assert!(
+            validation_result.is_err(),
+            "NUL byte should fail validation"
+        );
+
+        let xsd_error = validation_result.unwrap_err();
+        let error_detail = xsd_error.format_for_ai_retry();
+
+        // Assert: Error detail should be specific and actionable
+        assert!(
+            error_detail.contains("NUL") || error_detail.contains("0x00"),
+            "Error detail should mention NUL byte, got: {}",
+            error_detail
+        );
+
+        assert!(
+            error_detail.contains("How to fix") || error_detail.contains("fix:"),
+            "Error detail should provide fix guidance, got: {}",
+            error_detail
+        );
+
+        // The error should suggest the common NBSP typo fix
+        assert!(
+            error_detail.contains("\\u00A0") || error_detail.contains("non-breaking space"),
+            "Error should suggest NBSP as common cause, got: {}",
+            error_detail
+        );
+    });
+}
+
+/// Test that XSD retry error messages provide sufficient context for convergence.
+///
+/// This test verifies that when validation fails with a NUL byte error,
+/// the error message provides all necessary information for an agent to fix it:
+/// 1. Identifies the problem (NUL byte)
+/// 2. Provides context (position/location)
+/// 3. Suggests the fix (NBSP typo)
+/// 4. Is actionable (has "How to fix" section)
+///
+/// This is a regression test for the bug where review prints "Found N issue(s)"
+/// but validation fails with illegal characters, causing AgentChainExhausted.
+/// The error message must be detailed enough for XSD retry to converge.
+#[test]
+fn test_review_xsd_error_provides_convergence_context() {
+    with_default_timeout(|| {
+        // Setup: Invalid XML with NUL byte (the bug scenario from issue report)
+        // This simulates: .replace("git diff", "git\0A0diff")
+        let invalid_xml =
+            "<ralph-issues><ralph-issue>Check git\u{0000}A0diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Get validation error
+        let result = ralph_workflow::validate_issues_xml(invalid_xml);
+        assert!(result.is_err(), "NUL byte should fail validation");
+
+        let error = result.unwrap_err();
+        let formatted = error.format_for_ai_retry();
+
+        // Assert: Error provides all information needed for agent to fix
+
+        // 1. Identifies the problem (NUL byte)
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Formatted error should identify NUL byte, got: {}",
+            formatted
+        );
+
+        // 2. Provides context (position/location)
+        assert!(
+            error.found.contains("position") || error.found.contains("byte"),
+            "Error should provide position context, got: {}",
+            error.found
+        );
+
+        // 3. Suggests the fix (NBSP typo)
+        assert!(
+            formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
+            "Formatted error should suggest NBSP as likely fix, got: {}",
+            formatted
+        );
+
+        // 4. Is actionable (has "How to fix" section)
+        assert!(
+            formatted.contains("How to fix") || formatted.contains("fix:"),
+            "Formatted error should have actionable fix guidance, got: {}",
+            formatted
+        );
+
+        // The formatted error should be detailed enough for retry convergence
+        assert!(
+            formatted.len() > 100,
+            "Error should be detailed enough for retry convergence, got {} chars",
+            formatted.len()
+        );
+    });
+}
+
+/// Test that XSD retry provides actionable error messages for illegal character errors.
+///
+/// This regression test verifies the complete XSD retry flow when a reviewer produces
+/// XML containing an illegal NUL byte. The error message must be clear enough for
+/// an agent to understand and fix the problem on retry.
+///
+/// This addresses the bug where review prints "Found N issue(s)" but validation fails
+/// with illegal characters, causing retries until AgentChainExhausted.
+#[test]
+fn test_xsd_retry_error_message_for_nul_byte_is_actionable() {
+    with_default_timeout(|| {
+        // Setup: Create XML with NUL byte (simulating the bug scenario)
+        let xml_with_nul =
+            "<ralph-issues><ralph-issue>Check git\u{0000}diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Validate and get error
+        let result = ralph_workflow::validate_issues_xml(xml_with_nul);
+        assert!(result.is_err(), "NUL byte should cause validation error");
+
+        let error = result.unwrap_err();
+
+        // Verify: The error message formatted for AI retry must:
+        let formatted = error.format_for_ai_retry();
+
+        // 1. Clearly identify this as an illegal character issue
+        assert!(
+            formatted.contains("ILLEGAL CHARACTER")
+                || formatted.contains("illegal character")
+                || formatted.contains("CRITICAL"),
+            "Error should prominently identify illegal character issue, got:\n{}",
+            formatted
+        );
+
+        // 2. Identify the specific character (NUL/0x00)
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Error should identify NUL byte, got:\n{}",
+            formatted
+        );
+
+        // 3. Provide actionable fix guidance
+        assert!(
+            formatted.contains("How to fix")
+                || formatted.contains("FIX REQUIRED")
+                || formatted.contains("Solution"),
+            "Error should provide fix guidance, got:\n{}",
+            formatted
+        );
+
+        // 4. Mention the common mistake (NBSP typo)
+        assert!(
+            formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
+            "Error should mention common NBSP typo, got:\n{}",
+            formatted
+        );
+
+        // 5. Include position/context information for finding the error
+        assert!(
+            error.found.contains("position") || error.suggestion.contains("Near:"),
+            "Error should include position/context, got found: {}, suggestion: {}",
+            error.found,
+            error.suggestion
+        );
+    });
+}

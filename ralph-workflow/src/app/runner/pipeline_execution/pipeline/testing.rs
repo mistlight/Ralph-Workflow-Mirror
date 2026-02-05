@@ -210,6 +210,9 @@ where
         ));
     } else {
         ctx.logger.warn("Pipeline exited without completion marker");
+        // Mirror production runner: write a defensive completion marker so orchestration can
+        // reliably detect termination even when the event loop fails unexpectedly.
+        write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
     }
 
     // Save Complete checkpoint before clearing (for idempotent resume)

@@ -151,7 +151,7 @@ impl ClaudeParser {
     /// # Returns
     ///
     /// Self for builder pattern chaining
-    #[cfg(any(test, feature = "test-utils"))]
+    #[cfg(feature = "test-utils")]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -184,8 +184,10 @@ impl ClaudeParser {
     /// ```
     /// Get a clone of the printer used by this parser.
     ///
-    /// This is primarily useful for testing and monitoring.
+    /// This is primarily useful for integration tests and monitoring in this repository.
     /// Only available with the `test-utils` feature.
+    ///
+    /// Note: downstream crates should avoid relying on this API in production builds.
     #[cfg(feature = "test-utils")]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)

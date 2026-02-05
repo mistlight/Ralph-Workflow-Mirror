@@ -13,7 +13,9 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
-            if state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty()
+                || state.agent_chain.current_role != AgentRole::Developer
+            {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
                 };
@@ -124,6 +126,16 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            // Development phase runs two distinct roles (Developer then Analysis). Ensure
+            // we are on the developer chain before preparing/invoking the developer agent.
+            if state.development_agent_invoked_iteration != Some(state.iteration)
+                && state.agent_chain.current_role != AgentRole::Developer
+            {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Developer,
+                };
+            }
+
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
             if state.iteration < state.total_iterations {
@@ -165,6 +177,23 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
                 if state.development_agent_invoked_iteration != Some(state.iteration) {
                     return Effect::InvokeDevelopmentAgent {
+                        iteration: state.iteration,
+                    };
+                }
+
+                // After EVERY development iteration, invoke analysis agent to verify results
+                // Analysis agent produces development_result.xml by comparing git diff vs PLAN.md
+                // This runs AFTER InvokeDevelopmentAgent completes (checked via development_agent_invoked_iteration)
+                // and BEFORE ExtractDevelopmentXml (checked via analysis_agent_invoked_iteration)
+                if state.development_agent_invoked_iteration == Some(state.iteration)
+                    && state.analysis_agent_invoked_iteration != Some(state.iteration)
+                {
+                    if state.agent_chain.current_role != AgentRole::Analysis {
+                        return Effect::InitializeAgentChain {
+                            role: AgentRole::Analysis,
+                        };
+                    }
+                    return Effect::InvokeAnalysisAgent {
                         iteration: state.iteration,
                     };
                 }
@@ -260,7 +289,9 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 // Legacy super-effect placeholder. Removed once the fix chain is complete.
             }
 
-            if state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty()
+                || state.agent_chain.current_role != AgentRole::Reviewer
+            {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Reviewer,
                 };
@@ -358,7 +389,9 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
         PipelinePhase::CommitMessage => {
             // Commit phase requires explicit agent chain initialization like other phases
-            if state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty()
+                || state.agent_chain.current_role != AgentRole::Commit
+            {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Commit,
                 };

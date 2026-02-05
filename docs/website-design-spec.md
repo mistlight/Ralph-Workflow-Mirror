@@ -380,7 +380,10 @@ ralph.dev/
    [ccs]
    output_flag = "--output-format=stream-json"
    verbose_flag = "--verbose"
+   # IMPORTANT: when running via the `ccs` wrapper, avoid `-p` / `--prompt` (CCS delegation).
+   # Use Claude's long-form `--print` flag instead.
    print_flag = "--print"
+   session_flag = "--resume {}"
    yolo_flag = "--dangerously-skip-permissions"
    json_parser = "claude"
    can_commit = true

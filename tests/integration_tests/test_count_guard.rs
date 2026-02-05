@@ -77,6 +77,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("cli/mod.rs"),
     },
     SourceFile {
+        path: "ccs_streaming_spam_all_deltas.rs",
+        contents: include_str!("ccs_streaming_spam_all_deltas.rs"),
+    },
+    SourceFile {
+        path: "codex_reasoning_spam_regression.rs",
+        contents: include_str!("codex_reasoning_spam_regression.rs"),
+    },
+    SourceFile {
         path: "commit/mod.rs",
         contents: include_str!("commit/mod.rs"),
     },
@@ -87,6 +95,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "deduplication/mod.rs",
         contents: include_str!("deduplication/mod.rs"),
+    },
+    SourceFile {
+        path: "dylint_target.rs",
+        contents: include_str!("dylint_target.rs"),
     },
     SourceFile {
         path: "development_xml_validation.rs",
@@ -229,6 +241,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("workflows/mod.rs"),
     },
     SourceFile {
+        path: "workflows/analysis.rs",
+        contents: include_str!("workflows/analysis.rs"),
+    },
+    SourceFile {
         path: "workflows/backup.rs",
         contents: include_str!("workflows/backup.rs"),
     },
@@ -263,6 +279,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "workflows/fallback.rs",
         contents: include_str!("workflows/fallback.rs"),
+    },
+    SourceFile {
+        path: "workflows/iteration_counter.rs",
+        contents: include_str!("workflows/iteration_counter.rs"),
     },
     SourceFile {
         path: "workflows/oversize_prompt.rs",

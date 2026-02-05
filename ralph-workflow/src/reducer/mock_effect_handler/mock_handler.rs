@@ -210,6 +210,13 @@ impl MockEffectHandler {
                 (PipelineEvent::development_agent_invoked(iteration), vec![])
             }
 
+            Effect::InvokeAnalysisAgent { iteration } => (
+                PipelineEvent::Development(
+                    crate::reducer::event::DevelopmentEvent::AnalysisAgentInvoked { iteration },
+                ),
+                vec![],
+            ),
+
             Effect::ExtractDevelopmentXml { iteration } => {
                 let mock_dev_result_xml = r#"<ralph-development-result>
 <ralph-status>completed</ralph-status>
@@ -655,7 +662,7 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                 }
                 let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
                 let content = format!(
-                    "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
+                    "failure\nPipeline failure: phase={}, role={:?}, cycle={}",
                     failed_phase, failed_role, retry_cycle
                 );
                 if let Err(err) = ctx.workspace.write(marker_path, &content) {

@@ -26,6 +26,22 @@ XSD VALIDATION FAILED - FIX XML ONLY
 
 Your XML output at `{{ISSUES_XML_PATH}}` failed XSD validation.
 
+═══════════════════════════════════════════════════════════════════════════════
+XML CHARACTER RESTRICTIONS (CRITICAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+XML 1.0 only allows specific characters:
+- Tab (0x09), Line Feed (0x0A), Carriage Return (0x0D)
+- Printable characters from 0x20 onwards
+- Most Unicode characters
+
+*** FORBIDDEN in XML: ***
+- NUL byte (0x00, \u0000) - COMMON MISTAKE: Using \u0000 instead of \u00A0 (NBSP)
+- Control characters 0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F
+- Any binary or non-printable characters
+
+If you need to reference code with special characters, use <code> elements or CDATA sections.
+
 ERROR: {{XSD_ERROR}}
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -71,9 +87,10 @@ COMMON XML MISTAKES TO FIX
 1. Missing required elements (check XSD)
 2. Wrong element order (check XSD for correct sequence)
 3. Unescaped special characters (use &lt; &gt; &amp; or CDATA)
-4. Missing closing tags
-5. Text before/after root element
-6. Markdown code fences around XML (remove ```)
+4. Illegal control characters (NUL byte, etc.) - common: \u0000 instead of \u00A0
+5. Missing closing tags
+6. Text before/after root element
+7. Markdown code fences around XML (remove ```)
 
 After reading the XSD schema, fix ONLY the XML validation error.
 DO NOT do any other work.

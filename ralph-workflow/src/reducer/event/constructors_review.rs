@@ -38,8 +38,16 @@ impl PipelineEvent {
     }
 
     /// Create a ReviewIssuesXmlMissing event.
-    pub fn review_issues_xml_missing(pass: u32, attempt: u32) -> Self {
-        Self::Review(ReviewEvent::IssuesXmlMissing { pass, attempt })
+    pub fn review_issues_xml_missing(
+        pass: u32,
+        attempt: u32,
+        error_detail: Option<String>,
+    ) -> Self {
+        Self::Review(ReviewEvent::IssuesXmlMissing {
+            pass,
+            attempt,
+            error_detail,
+        })
     }
 
     /// Create a ReviewIssuesXmlValidated event.
@@ -83,8 +91,12 @@ impl PipelineEvent {
         Self::Review(ReviewEvent::FixResultXmlExtracted { pass })
     }
 
-    pub fn fix_result_xml_missing(pass: u32, attempt: u32) -> Self {
-        Self::Review(ReviewEvent::FixResultXmlMissing { pass, attempt })
+    pub fn fix_result_xml_missing(pass: u32, attempt: u32, error_detail: Option<String>) -> Self {
+        Self::Review(ReviewEvent::FixResultXmlMissing {
+            pass,
+            attempt,
+            error_detail,
+        })
     }
 
     pub fn fix_result_xml_validated(
@@ -137,8 +149,16 @@ impl PipelineEvent {
     }
 
     /// Create a ReviewOutputValidationFailed event.
-    pub fn review_output_validation_failed(pass: u32, attempt: u32) -> Self {
-        Self::Review(ReviewEvent::OutputValidationFailed { pass, attempt })
+    pub fn review_output_validation_failed(
+        pass: u32,
+        attempt: u32,
+        error_detail: Option<String>,
+    ) -> Self {
+        Self::Review(ReviewEvent::OutputValidationFailed {
+            pass,
+            attempt,
+            error_detail,
+        })
     }
 
     /// Create a FixContinuationTriggered event.
@@ -176,7 +196,15 @@ impl PipelineEvent {
     }
 
     /// Create a FixOutputValidationFailed event.
-    pub fn fix_output_validation_failed(pass: u32, attempt: u32) -> Self {
-        Self::Review(ReviewEvent::FixOutputValidationFailed { pass, attempt })
+    pub fn fix_output_validation_failed(
+        pass: u32,
+        attempt: u32,
+        error_detail: Option<String>,
+    ) -> Self {
+        Self::Review(ReviewEvent::FixOutputValidationFailed {
+            pass,
+            attempt,
+            error_detail,
+        })
     }
 }

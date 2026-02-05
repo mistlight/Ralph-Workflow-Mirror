@@ -117,7 +117,26 @@ fn test_review_triggers_fix_when_issues_found() {
     // reviewer_pass stays at 0 until CommitCreated
     assert_eq!(state.reviewer_pass, 0);
 
-    // Commit message chain
+    // Commit message chain: initialize commit agent chain first (role-specific).
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Commit
+        }
+    ));
+    state = reduce(
+        state,
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Commit,
+            vec!["claude".to_string()],
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
+    );
+
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::CheckCommitDiff));
     state = reduce(

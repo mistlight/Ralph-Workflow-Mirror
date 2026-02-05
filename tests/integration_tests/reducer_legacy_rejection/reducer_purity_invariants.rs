@@ -337,6 +337,7 @@ fn test_effects_are_single_task() {
             MaterializeDevelopmentInputs,
             PrepareDevelopmentPrompt,
             InvokeDevelopmentAgent,
+            InvokeAnalysisAgent,
             ExtractDevelopmentXml,
             ValidateDevelopmentXml,
             ApplyDevelopmentOutcome,
@@ -405,6 +406,7 @@ fn test_effects_are_single_task() {
                 }
                 Effect::PrepareDevelopmentPrompt { .. } => EffectTask::PrepareDevelopmentPrompt,
                 Effect::InvokeDevelopmentAgent { .. } => EffectTask::InvokeDevelopmentAgent,
+                Effect::InvokeAnalysisAgent { .. } => EffectTask::InvokeAnalysisAgent,
                 Effect::ExtractDevelopmentXml { .. } => EffectTask::ExtractDevelopmentXml,
                 Effect::ValidateDevelopmentXml { .. } => EffectTask::ValidateDevelopmentXml,
                 Effect::ApplyDevelopmentOutcome { .. } => EffectTask::ApplyDevelopmentOutcome,
@@ -492,6 +494,7 @@ fn test_effects_are_single_task() {
             },
             Effect::CleanupDevelopmentXml { iteration: 0 },
             Effect::InvokeDevelopmentAgent { iteration: 0 },
+            Effect::InvokeAnalysisAgent { iteration: 0 },
             Effect::ExtractDevelopmentXml { iteration: 0 },
             Effect::ValidateDevelopmentXml { iteration: 0 },
             Effect::ApplyDevelopmentOutcome { iteration: 0 },
@@ -592,8 +595,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            61,
-            "Expected 61 Effect variants; update this test if variants were added or removed"
+            62,
+            "Expected 62 Effect variants; update this test if variants were added or removed"
         );
     });
 }
@@ -790,6 +793,7 @@ fn test_review_validation_failure_surfaces_via_event() {
             PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
                 pass: 0,
                 attempt: 0,
+                error_detail: None,
             }),
         );
 
@@ -806,6 +810,7 @@ fn test_review_validation_failure_surfaces_via_event() {
             PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
                 pass: 0,
                 attempt: 1,
+                error_detail: None,
             }),
         );
 

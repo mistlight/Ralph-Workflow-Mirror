@@ -58,7 +58,11 @@ fn test_agent_invocation_started_preserves_agent_chain_indices() {
         AgentRole::Developer,
     );
     agent_chain.retry_cycle = 2;
-    agent_chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+    agent_chain.rate_limit_continuation_prompt =
+        Some(crate::reducer::state::RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        });
 
     // Start from a non-zero position so the test actually verifies reset behavior.
     let state = PipelineState {
@@ -87,7 +91,10 @@ fn test_agent_invocation_started_preserves_agent_chain_indices() {
     assert_eq!(new_state.agent_chain.retry_cycle, 2);
     assert_eq!(
         new_state.agent_chain.rate_limit_continuation_prompt,
-        Some("saved prompt".to_string())
+        Some(crate::reducer::state::RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        })
     );
 }
 

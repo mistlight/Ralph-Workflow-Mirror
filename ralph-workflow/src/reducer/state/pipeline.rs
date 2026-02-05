@@ -155,6 +155,13 @@ pub struct PipelineState {
     /// Tracks whether the developer agent was invoked for the current iteration.
     #[serde(default)]
     pub development_agent_invoked_iteration: Option<u32>,
+    /// Tracks whether the analysis agent was invoked for the current iteration.
+    ///
+    /// Analysis agent runs after EVERY development iteration to produce
+    /// an objective assessment of progress by comparing git diff against PLAN.md.
+    /// This ensures continuous verification throughout the development phase.
+    #[serde(default)]
+    pub analysis_agent_invoked_iteration: Option<u32>,
     /// Tracks whether `.agent/tmp/development_result.xml` was extracted for the current iteration.
     #[serde(default)]
     pub development_xml_extracted_iteration: Option<u32>,
@@ -338,6 +345,7 @@ impl PipelineState {
             development_prompt_prepared_iteration: None,
             development_xml_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
+            analysis_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
             development_validated_outcome: None,
             development_xml_archived_iteration: None,
@@ -458,6 +466,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             development_prompt_prepared_iteration: None,
             development_xml_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
+            analysis_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
             development_validated_outcome: None,
             development_xml_archived_iteration: None,

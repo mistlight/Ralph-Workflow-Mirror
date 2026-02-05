@@ -69,7 +69,7 @@ impl CodexParser {
         self
     }
 
-    #[cfg(any(test, feature = "test-utils"))]
+    #[cfg(feature = "test-utils")]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -80,7 +80,9 @@ impl CodexParser {
     /// Create a new parser with a custom printer (for testing).
     ///
     /// This method is public when the `test-utils` feature is enabled,
-    /// allowing integration tests to create parsers with custom printers.
+    /// allowing integration tests (in this repository) to create parsers with custom printers.
+    ///
+    /// Note: downstream crates should avoid relying on this API in production builds.
     #[cfg(feature = "test-utils")]
     pub fn with_printer_for_test(
         colors: Colors,
@@ -97,6 +99,16 @@ impl CodexParser {
     #[cfg(feature = "test-utils")]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(PathBuf::from(path));
+        self
+    }
+
+    /// Set the display name (for testing).
+    ///
+    /// This method is public when the `test-utils` feature is enabled,
+    /// allowing integration tests to configure display name.
+    #[cfg(feature = "test-utils")]
+    pub fn with_display_name_for_test(mut self, display_name: &str) -> Self {
+        self.display_name = display_name.to_string();
         self
     }
 

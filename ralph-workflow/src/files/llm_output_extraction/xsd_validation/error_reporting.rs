@@ -83,13 +83,39 @@ impl XsdValidationError {
                 )
             }
             XsdErrorType::MalformedXml => {
-                format!(
-                    "MALFORMED XML: The XML structure is invalid.\n\n\
-                     What was expected: {}\n\
-                     What was found: {}\n\n\
-                     How to fix: {}{}",
-                    self.expected, self.found, self.suggestion, example_section
-                )
+                // Check if this is an illegal character error (contains "NUL", "0x00", "control character", etc.)
+                let is_illegal_char = self.found.contains("illegal character")
+                    || self.found.contains("NUL")
+                    || self.found.contains("0x00")
+                    || self.found.contains("control character");
+
+                if is_illegal_char {
+                    // Emphasize the illegal character error with prominent formatting
+                    format!(
+                        "*** ILLEGAL CHARACTER IN XML ***\n\n\
+                         Your XML contains a character that is not allowed in XML 1.0.\n\n\
+                         What was expected: {}\n\
+                         What was found: {}\n\n\
+                         *** CRITICAL FIX REQUIRED ***\n\
+                         How to fix: {}\n\n\
+                         Common mistakes:\n\
+                         - Writing \\u0000 (NUL byte) instead of \\u00A0 (non-breaking space)\n\
+                         - Copy-pasting binary data into XML text\n\
+                         - Using literal control characters in code examples\n\n\
+                         Fix: Remove or replace the illegal character. \
+                         For code examples with special chars, use CDATA sections.{}",
+                        self.expected, self.found, self.suggestion, example_section
+                    )
+                } else {
+                    // Standard malformed XML error
+                    format!(
+                        "MALFORMED XML: The XML structure is invalid.\n\n\
+                         What was expected: {}\n\
+                         What was found: {}\n\n\
+                         How to fix: {}{}",
+                        self.expected, self.found, self.suggestion, example_section
+                    )
+                }
             }
         }
     }

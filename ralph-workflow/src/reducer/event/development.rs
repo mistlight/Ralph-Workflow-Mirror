@@ -52,6 +52,15 @@ pub enum DevelopmentEvent {
         iteration: u32,
     },
 
+    /// Analysis agent was invoked to verify development results for an iteration.
+    ///
+    /// Emitted after `Effect::InvokeAnalysisAgent` completes. The analysis agent
+    /// produces `development_result.xml` by comparing git diff against PLAN.md.
+    AnalysisAgentInvoked {
+        /// The iteration number the analysis agent was invoked for.
+        iteration: u32,
+    },
+
     /// Development result XML exists and was read successfully for the iteration.
     ///
     /// Emitted after `Effect::ExtractDevelopmentXml` completes.

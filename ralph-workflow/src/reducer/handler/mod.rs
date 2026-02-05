@@ -12,6 +12,7 @@
 // XML `.processed` files are archives only and are never read as inputs.
 
 mod agent;
+mod analysis;
 mod chain;
 mod checkpoint;
 mod commit;
@@ -165,6 +166,8 @@ impl MainEffectHandler {
             Effect::InvokeDevelopmentAgent { iteration } => {
                 self.invoke_development_agent(ctx, iteration)
             }
+
+            Effect::InvokeAnalysisAgent { iteration } => self.invoke_analysis_agent(ctx, iteration),
 
             Effect::ExtractDevelopmentXml { iteration } => {
                 self.extract_development_xml(ctx, iteration)
@@ -336,7 +339,7 @@ impl MainEffectHandler {
                 let prompt_content = read_or_fallback("PROMPT.md", "PROMPT.md");
                 let plan_content = read_or_fallback(".agent/PLAN.md", ".agent/PLAN.md");
                 let issues_content = format!(
-                    "# Issues\n\n- [High] Pipeline failure: agent chain exhausted (phase: {}, role: {:?}, cycle: {}).\n  Diagnose the root cause and fix the failure.\n",
+                    "# Issues\n\n- [High] Pipeline failure (phase: {}, role: {:?}, cycle: {}).\n  Diagnose the root cause and fix the failure.\n",
                     failed_phase, failed_role, retry_cycle
                 );
                 let dev_fix_prompt = crate::prompts::prompt_fix_with_context(
@@ -364,7 +367,7 @@ impl MainEffectHandler {
                     .unwrap_or_else(|| ctx.developer_agent.to_string());
 
                 let completion_marker_content = format!(
-                    "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
+                    "failure\nPipeline failure: phase={}, role={:?}, cycle={}",
                     failed_phase, failed_role, retry_cycle
                 );
                 Self::write_completion_marker(ctx, &completion_marker_content, true);

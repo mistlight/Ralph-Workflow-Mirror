@@ -12,6 +12,8 @@
 //! - Resume/checkpoint tests (resume/)
 //! - Development XML tests (development_xml.rs)
 //! - Continuation handling tests (continuation.rs)
+//! - Independent result analysis tests (analysis.rs)
+//! - Iteration counter invariant tests (iteration_counter.rs)
 //!
 //! # Integration Test Style Guide
 //!
@@ -23,6 +25,7 @@
 //! - Uses `MockAppEffectHandler` for git/filesystem isolation
 //! - Tests are deterministic and black-box (test the workflow as a user would run it)
 
+pub mod analysis;
 pub mod backup;
 pub mod baseline;
 pub mod cleanup;
@@ -32,6 +35,7 @@ pub mod config_test;
 pub mod continuation;
 pub mod development_xml;
 pub mod fallback;
+pub mod iteration_counter;
 pub mod oversize_prompt;
 pub mod plan;
 pub mod resume;

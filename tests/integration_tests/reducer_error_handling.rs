@@ -28,8 +28,9 @@ fn test_error_events_processed_through_reducer() {
         });
         let new_state = reduce(state.clone(), error_event);
 
-        // Invariant violations should terminate cleanly.
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        // Invariant violations must route through AwaitingDevFix so the pipeline never exits
+        // early and always emits a completion marker.
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
     });
 }
 
@@ -118,7 +119,7 @@ fn test_agent_chain_exhausted_transitions_to_interrupted() {
 }
 
 #[test]
-fn test_continuation_not_supported_errors_transition_to_interrupted() {
+fn test_continuation_not_supported_errors_route_to_awaiting_dev_fix() {
     with_default_timeout(|| {
         let state = PipelineState::initial(1, 1);
 
@@ -136,8 +137,9 @@ fn test_continuation_not_supported_errors_transition_to_interrupted() {
             });
             let new_state = reduce(state.clone(), error_event);
 
-            // Invariant violations should terminate cleanly.
-            assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+            // Invariant violations must route through AwaitingDevFix so the pipeline never exits
+            // early and always emits a completion marker.
+            assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
         }
     });
 }

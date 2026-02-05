@@ -136,7 +136,10 @@ fn test_review_output_validation_failed_increments_state_counter() {
     state.reviewer_pass = 0;
     state.total_reviewer_passes = 2;
 
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
     assert_eq!(new_state.reviewer_pass, 0);
@@ -165,7 +168,10 @@ fn test_review_output_validation_failed_switches_agent_after_limit() {
     state.total_reviewer_passes = 2;
     state.continuation.invalid_output_attempts = 2;
 
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
     assert_eq!(new_state.reviewer_pass, 0);
@@ -256,7 +262,10 @@ fn test_review_pass_started_preserves_agent_chain_on_retry() {
     };
 
     // Simulate switching agents due to XSD retry limit reached.
-    let state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    let state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
     assert!(
         state.agent_chain.current_agent_index > 0,
         "Precondition: review_output_validation_failed should have switched agents when XSD retry limit reached"

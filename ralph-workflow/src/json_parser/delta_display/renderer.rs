@@ -184,16 +184,11 @@ impl DeltaRenderer for TextDeltaRenderer {
                 )
             }
             TerminalMode::Basic | TerminalMode::None => {
-                // Simple line output without cursor positioning
-                format!(
-                    "{}[{}]{} {}{}{}\n",
-                    colors.dim(),
-                    prefix,
-                    colors.reset(),
-                    colors.white(),
-                    sanitized,
-                    colors.reset()
-                )
+                // SUPPRESS per-delta output in non-TTY modes to prevent spam.
+                // The accumulated content will be rendered ONCE at completion boundaries
+                // (message_stop, content_block_stop) by the parser layer.
+                // This prevents repeated prefixed lines in logs and CI output.
+                String::new()
             }
         }
     }
@@ -223,18 +218,11 @@ impl DeltaRenderer for TextDeltaRenderer {
                 )
             }
             TerminalMode::Basic | TerminalMode::None => {
-                // Simple line output without cursor positioning
-                // Note: This will show each update as a new line, which is intentional
-                // for non-TTY or basic terminal output
-                format!(
-                    "{}[{}]{} {}{}{}\n",
-                    colors.dim(),
-                    prefix,
-                    colors.reset(),
-                    colors.white(),
-                    sanitized,
-                    colors.reset()
-                )
+                // SUPPRESS per-delta output in non-TTY modes to prevent spam.
+                // The accumulated content will be rendered ONCE at completion boundaries
+                // (message_stop, content_block_stop) by the parser layer.
+                // This prevents repeated prefixed lines in logs and CI output.
+                String::new()
             }
         }
     }
@@ -266,16 +254,12 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
                 sanitized,
                 colors.reset()
             ),
-            TerminalMode::Basic | TerminalMode::None => format!(
-                "{}[{}]{} {}Thinking: {}{}{}\n",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.dim(),
-                colors.cyan(),
-                sanitized,
-                colors.reset()
-            ),
+            TerminalMode::Basic | TerminalMode::None => {
+                // SUPPRESS per-delta thinking output in non-TTY modes.
+                // Thinking content will be flushed ONCE at completion boundaries
+                // (message_stop for Claude, item.completed for Codex).
+                String::new()
+            }
         }
     }
 
@@ -298,16 +282,12 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
                 sanitized,
                 colors.reset()
             ),
-            TerminalMode::Basic | TerminalMode::None => format!(
-                "{}[{}]{} {}Thinking: {}{}{}\n",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.dim(),
-                colors.cyan(),
-                sanitized,
-                colors.reset()
-            ),
+            TerminalMode::Basic | TerminalMode::None => {
+                // SUPPRESS per-delta thinking output in non-TTY modes.
+                // Thinking content will be flushed ONCE at completion boundaries
+                // (message_stop for Claude, item.completed for Codex).
+                String::new()
+            }
         }
     }
 }

@@ -147,6 +147,19 @@ pub enum Effect {
         iteration: u32,
     },
 
+    /// Invoke the analysis agent for an iteration (single-task).
+    ///
+    /// This effect must only perform agent execution to analyze the git diff
+    /// against PLAN.md and produce development_result.xml. It must not parse
+    /// or validate outputs - those are handled by subsequent ExtractDevelopmentXml
+    /// and ValidateDevelopmentXml effects.
+    ///
+    /// The analysis agent has no context from development execution and produces
+    /// an objective assessment based purely on observable code changes.
+    InvokeAnalysisAgent {
+        iteration: u32,
+    },
+
     /// Extract the development result XML from the canonical workspace path (single-task).
     ///
     /// This effect must only verify that `.agent/tmp/development_result.xml` exists and is readable.

@@ -449,6 +449,7 @@ fn test_ccs_config_has_correct_flags() {
     // When invoking Claude through CCS (e.g. `ccs codex`), we must use Claude's
     // `--print` flag instead of `-p` to avoid triggering CCS delegation.
     assert_eq!(config.print_flag, "--print");
+    assert_eq!(config.session_flag, "--resume {}");
     assert!(config.can_commit);
 
     // CCS always outputs stream-json format, so always use Claude parser
@@ -810,7 +811,7 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     .expect("write config.json");
     std::fs::write(
         ccs_dir.join("glm.settings.json"),
-        r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.example","ANTHROPIC_AUTH_TOKEN":"tok","ANTHROPIC_MODEL":"glm-4.7"}}"#,
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.example","ANTHROPIC_AUTH_TOKEN":"tok","ANTHROPIC_MODEL":"glm-4.7","CUSTOM_ENV":"value"}}"#,
     )
     .expect("write settings");
 
@@ -828,4 +829,16 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
 
     assert_eq!(config.cmd, claude_path.to_string_lossy().to_string());
     assert!(config.env_vars.get("ANTHROPIC_MODEL").is_some());
+
+    // Sanity-check debug summary classification logic.
+    let summary = super::ccs_env_var_debug_summary(&config.env_vars);
+    assert!(
+        summary
+            .whitelisted_keys_present
+            .iter()
+            .any(|k| k == "ANTHROPIC_MODEL"),
+        "Expected ANTHROPIC_MODEL to be whitelisted"
+    );
+    assert_eq!(summary.hidden_non_whitelisted_keys, 1);
+    assert_eq!(summary.redacted_sensitive_keys, 1);
 }

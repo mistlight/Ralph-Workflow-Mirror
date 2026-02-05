@@ -27,7 +27,9 @@
 //! See `tests/system_tests/SYSTEM_TESTS.md` for those guidelines.
 
 mod agent_spawn_errors;
+mod ccs_streaming_spam_all_deltas;
 mod cli;
+mod codex_reasoning_spam_regression;
 mod commit;
 mod common;
 mod deduplication;
@@ -54,3 +56,5 @@ mod test_timeout;
 mod test_traits;
 mod ui_events;
 mod workflows;
+
+mod dylint_target;
