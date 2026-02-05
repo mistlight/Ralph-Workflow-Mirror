@@ -408,14 +408,16 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         ));
 
         // If we exited from AwaitingDevFix without completing, this is the specific bug
-        // we're trying to fix - log it explicitly
+        // we're trying to fix - log it explicitly with state details
         if matches!(
             loop_result.final_phase,
             crate::reducer::event::PipelinePhase::AwaitingDevFix
         ) {
             ctx.logger.error(
                 "BUG DETECTED: Event loop exited from AwaitingDevFix without completing dev-fix flow. \
-                 This should transition to Interrupted and save checkpoint."
+                 This should transition to Interrupted and save checkpoint. \
+                 Check: Was TriggerDevFixFlow executed? Was completion marker written? \
+                 See .agent/tmp/event_loop_trace.jsonl for execution trace."
             );
         }
 

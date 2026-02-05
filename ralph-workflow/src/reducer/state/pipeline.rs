@@ -408,6 +408,10 @@ impl PipelineState {
         matches!(self.phase, PipelinePhase::Complete)
             || (matches!(self.phase, PipelinePhase::Interrupted)
                 && (self.checkpoint_saved_count > 0
+                    // CRITICAL: AwaitingDevFix→Interrupted transition means completion marker
+                    // was written during TriggerDevFixFlow. This is terminal even without
+                    // checkpoint because the failure has been properly signaled to orchestration.
+                    // This prevents "Pipeline exited without completion marker" bug.
                     || matches!(self.previous_phase, Some(PipelinePhase::AwaitingDevFix))))
     }
 

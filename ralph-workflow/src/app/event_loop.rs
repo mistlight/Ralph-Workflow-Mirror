@@ -566,8 +566,15 @@ where
     if events_processed >= config.max_iterations && !state.is_complete() {
         let dumped = dump_event_loop_trace(ctx, &trace, &state, "max_iterations");
 
-        // CRITICAL: If we hit max iterations in AwaitingDevFix, we need to write completion marker
-        // and transition to Interrupted to ensure proper termination
+        // DEFENSIVE: If max iterations reached in AwaitingDevFix without dev_fix_triggered,
+        // this is a bug (TriggerDevFixFlow should execute first). However, to maintain the
+        // non-terminating pipeline principle, we force completion:
+        // 1. Write completion marker (signals orchestration)
+        // 2. Emit CompletionMarkerEmitted event (transitions to Interrupted)
+        // 3. Execute SaveCheckpoint (makes is_complete() return true)
+        //
+        // This ensures the pipeline NEVER exits early due to internal logic bugs.
+        // Budget exhaustion should transition to commit/finalization, not terminate.
         if matches!(state.phase, PipelinePhase::AwaitingDevFix) {
             ctx.logger.error(
                 "BUG: Hit max iterations in AwaitingDevFix phase. \

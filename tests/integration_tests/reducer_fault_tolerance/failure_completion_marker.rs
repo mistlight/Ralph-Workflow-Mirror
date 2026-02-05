@@ -956,3 +956,122 @@ fn test_awaiting_dev_fix_executes_trigger_before_max_iterations() {
         );
     });
 }
+
+#[test]
+fn test_budget_exhaustion_continues_to_commit_not_terminate() {
+    with_default_timeout(|| {
+        // This test verifies that when dev-fix budget is exhausted (simulated by
+        // hitting max iterations in AwaitingDevFix), the pipeline advances to
+        // commit/finalization phase instead of terminating early.
+
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        let mut state = PipelineState::initial(1, 1);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Development);
+
+        let mut handler = StalledAwaitingDevFixHandler::new(state.clone(), SaveBehavior::Ok);
+        let config = EventLoopConfig { max_iterations: 5 };
+
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+            .expect("Event loop should complete");
+
+        // Pipeline should complete (transition to Interrupted, then checkpoint saved)
+        assert!(
+            result.completed,
+            "Pipeline must complete after budget exhaustion, not terminate early"
+        );
+
+        // Verify completion marker was written
+        assert!(
+            fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "Completion marker must be written even when budget exhausted"
+        );
+
+        // Verify we're in Interrupted phase (ready for commit/finalization)
+        assert_eq!(
+            result.final_phase,
+            PipelinePhase::Interrupted,
+            "Budget exhaustion should transition to Interrupted for commit/finalization"
+        );
+    });
+}
+
+#[test]
+fn test_regression_pipeline_exits_without_completion_marker_on_dev_iter_2_failure() {
+    with_default_timeout(|| {
+        // Regression test for: "Pipeline exited without completion marker"
+        // Scenario: Development Iteration 2 fails, Status: Failed, pipeline should
+        // continue via dev-fix flow (or commit if budget exhausted), not exit early.
+
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        // Start at Development iteration 2 (simulating the bug report scenario)
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 2;
+
+        // Simulate AgentChainExhausted during Development
+        let error_event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+            phase: PipelinePhase::Development,
+            error: ErrorEvent::AgentChainExhausted {
+                role: AgentRole::Developer,
+                phase: PipelinePhase::Development,
+                cycle: 3,
+            },
+        });
+
+        let awaiting_fix_state = reduce(state, error_event);
+        assert_eq!(
+            awaiting_fix_state.phase,
+            PipelinePhase::AwaitingDevFix,
+            "AgentChainExhausted should transition to AwaitingDevFix"
+        );
+
+        let mut handler = MockEffectHandler::new(awaiting_fix_state.clone());
+        let config = EventLoopConfig {
+            max_iterations: 100,
+        };
+
+        let result =
+            run_event_loop_with_handler(&mut ctx, Some(awaiting_fix_state), config, &mut handler)
+                .expect("Event loop should not error");
+
+        // CRITICAL: Pipeline must complete, not exit early
+        assert!(
+            result.completed,
+            "REGRESSION: Pipeline exited without completion. \
+             This is the original bug. \
+             Status: Failed should trigger dev-fix flow, not immediate exit. \
+             final_phase={:?}, events_processed={}",
+            result.final_phase, result.events_processed
+        );
+
+        // Verify completion marker was written
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        assert!(
+            fixture.workspace.exists(marker_path),
+            "REGRESSION: Completion marker missing. Original bug reproduced."
+        );
+
+        let marker_content = fixture
+            .workspace
+            .read(marker_path)
+            .expect("Should read completion marker");
+        assert!(
+            marker_content.contains("failure"),
+            "Completion marker should indicate failure"
+        );
+
+        // Verify we transitioned to Interrupted (ready for commit/finalization)
+        assert_eq!(
+            result.final_phase,
+            PipelinePhase::Interrupted,
+            "Should transition to Interrupted after dev-fix flow"
+        );
+    });
+}
