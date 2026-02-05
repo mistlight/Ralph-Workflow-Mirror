@@ -21,7 +21,7 @@ else
     PLATFORM := unknown
 endif
 
-.PHONY: all build release test clean install uninstall check fmt lint dylint help
+.PHONY: all build release test clean install uninstall check fmt lint dylint dylint-verbose help
 
 # Default target
 all: build
@@ -184,33 +184,186 @@ dylint:
 			fi; \
 		fi; \
 		\
-		NIGHTLY_CARGO="$$(rustup which cargo --toolchain nightly)"; \
-		NIGHTLY_RUSTC="$$(rustup which rustc --toolchain nightly)"; \
-		NIGHTLY_BIN_DIR="$$(dirname "$$NIGHTLY_CARGO")"; \
-		WRAPPER_DIR="$$(mktemp -d)"; \
-		trap "rm -rf $$WRAPPER_DIR" EXIT; \
-		printf "%s\n" \
-			"#!/usr/bin/env bash" \
-			"export RUSTUP_TOOLCHAIN=nightly" \
-			"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
-			> "$$WRAPPER_DIR/cargo"; \
-		chmod +x "$$WRAPPER_DIR/cargo"; \
-		export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
-		export RUSTUP_TOOLCHAIN=nightly; \
-		export RUSTC="$$NIGHTLY_RUSTC"; \
+	NIGHTLY_CARGO="$$(rustup which cargo --toolchain nightly)"; \
+	NIGHTLY_RUSTC="$$(rustup which rustc --toolchain nightly)"; \
+	NIGHTLY_BIN_DIR="$$(dirname "$$NIGHTLY_CARGO")"; \
+	\
+	WRAPPER_DIR="$$(mktemp -d)"; \
+	if [ ! -d "$$WRAPPER_DIR" ]; then \
+		echo "error: failed to create temporary wrapper directory" >&2; \
+		exit 1; \
+	fi; \
+	trap "rm -rf \"$$WRAPPER_DIR\"" EXIT; \
+	\
+	printf "%s\n%s\n%s\n" \
+		"#!/usr/bin/env bash" \
+		"export RUSTUP_TOOLCHAIN=nightly" \
+		"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
+		> "$$WRAPPER_DIR/cargo"; \
+	chmod +x "$$WRAPPER_DIR/cargo"; \
+	\
+	export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
+	export RUSTUP_TOOLCHAIN=nightly; \
+	export RUSTC="$$NIGHTLY_RUSTC"; \
+	\
+	if ! cargo dylint --version >/dev/null 2>&1; then \
+		echo "Installing cargo-dylint (and dylint-link)..." >&2; \
+		if ! cargo install cargo-dylint dylint-link; then \
+			echo "error: failed to install cargo-dylint." >&2; \
+			echo "If you are offline, preinstall it into $$CARGO_HOME/bin." >&2; \
+			echo "  cargo install cargo-dylint dylint-link" >&2; \
+			exit 1; \
+		fi; \
+	fi; \
+	\
+	cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
+'
+
+# Run custom dylint lints with verbose debugging output
+dylint-verbose:
+	@bash -euo pipefail -c '\
+		HOME_DIR="$${HOME:-}"; \
+		CARGO_HOME_DIR="$${CARGO_HOME:-}"; \
+		RUSTUP_HOME_DIR="$${RUSTUP_HOME:-}"; \
+		DYLINT_DRIVER_DIR="$${DYLINT_DRIVER_PATH:-}"; \
 		\
-		if ! cargo dylint --version >/dev/null 2>&1; then \
-			echo "Installing cargo-dylint (and dylint-link)..." >&2; \
-			if ! cargo install cargo-dylint dylint-link; then \
-				echo "error: failed to install cargo-dylint." >&2; \
-				echo "If you are offline, preinstall it into $$CARGO_HOME/bin." >&2; \
-				echo "  cargo install cargo-dylint dylint-link" >&2; \
+		if [ -z "$$CARGO_HOME_DIR" ]; then \
+			if [ -n "$$HOME_DIR" ]; then \
+				CARGO_HOME_DIR="$$HOME_DIR/.cargo"; \
+			else \
+				echo "error: HOME is not set and CARGO_HOME is not set." >&2; \
+				echo "Set HOME, or set CARGO_HOME and RUSTUP_HOME to writable locations." >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		if [ -z "$$RUSTUP_HOME_DIR" ]; then \
+			if [ -n "$$HOME_DIR" ]; then \
+				RUSTUP_HOME_DIR="$$HOME_DIR/.rustup"; \
+			else \
+				echo "error: HOME is not set and RUSTUP_HOME is not set." >&2; \
+				echo "Set HOME, or set RUSTUP_HOME to a writable location." >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		if [ -z "$$DYLINT_DRIVER_DIR" ]; then \
+			if [ -n "$$HOME_DIR" ]; then \
+				DYLINT_DRIVER_DIR="$$HOME_DIR/.dylint_drivers"; \
+			else \
+				echo "error: HOME is not set and DYLINT_DRIVER_PATH is not set." >&2; \
+				echo "Set HOME, or set DYLINT_DRIVER_PATH to a writable location." >&2; \
 				exit 1; \
 			fi; \
 		fi; \
 		\
-		cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
-	'
+		export CARGO_HOME="$$CARGO_HOME_DIR"; \
+		export RUSTUP_HOME="$$RUSTUP_HOME_DIR"; \
+		export DYLINT_DRIVER_PATH="$$DYLINT_DRIVER_DIR"; \
+		export PATH="$$CARGO_HOME/bin:$$PATH"; \
+		\
+		for dir in "$$CARGO_HOME" "$$RUSTUP_HOME" "$$DYLINT_DRIVER_PATH"; do \
+			if ! mkdir -p "$$dir" 2>/dev/null; then \
+				echo "error: cannot create required directory: $$dir" >&2; \
+				echo "Set CARGO_HOME/RUSTUP_HOME/DYLINT_DRIVER_PATH to writable locations." >&2; \
+				exit 1; \
+			fi; \
+			if [ ! -w "$$dir" ]; then \
+				echo "error: required directory is not writable: $$dir" >&2; \
+				echo "Set CARGO_HOME/RUSTUP_HOME/DYLINT_DRIVER_PATH to writable locations." >&2; \
+				exit 1; \
+			fi; \
+		done; \
+		\
+		if ! command -v rustup >/dev/null 2>&1; then \
+			echo "rustup not found; installing rustup (required for nightly + rustc-dev)." >&2; \
+			if command -v curl >/dev/null 2>&1; then \
+				curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+			elif command -v wget >/dev/null 2>&1; then \
+				wget -qO- https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+			else \
+				echo "error: need curl or wget to install rustup automatically" >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		if ! command -v cargo >/dev/null 2>&1; then \
+			echo "error: cargo not found. Ensure $$CARGO_HOME/bin is on PATH." >&2; \
+			exit 1; \
+		fi; \
+		\
+		if ! rustup toolchain list | grep -qE "^nightly"; then \
+			echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; \
+			if ! rustup toolchain install nightly --profile minimal; then \
+				echo "error: failed to install nightly toolchain." >&2; \
+				echo "If you are offline, pre-provision nightly:" >&2; \
+				echo "  rustup toolchain install nightly --profile minimal" >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		INSTALLED_COMPONENTS="$$(rustup component list --toolchain nightly --installed 2>/dev/null || true)"; \
+		MISSING=""; \
+		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
+		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
+		if [ -n "$$MISSING" ]; then \
+			echo "Installing required nightly components:$$MISSING" >&2; \
+			if ! rustup component add rustc-dev llvm-tools-preview --toolchain nightly; then \
+				echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
+				echo "Provision them ahead of time (offline/sandboxed):" >&2; \
+				echo "  rustup component add rustc-dev llvm-tools-preview --toolchain nightly" >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+	NIGHTLY_CARGO="$$(rustup which cargo --toolchain nightly)"; \
+	NIGHTLY_RUSTC="$$(rustup which rustc --toolchain nightly)"; \
+	NIGHTLY_BIN_DIR="$$(dirname "$$NIGHTLY_CARGO")"; \
+	\
+	WRAPPER_DIR="$$(mktemp -d)"; \
+	if [ ! -d "$$WRAPPER_DIR" ]; then \
+		echo "error: failed to create temporary wrapper directory" >&2; \
+		exit 1; \
+	fi; \
+	trap "rm -rf \"$$WRAPPER_DIR\"" EXIT; \
+	\
+	printf "%s\n%s\n%s\n" \
+		"#!/usr/bin/env bash" \
+		"export RUSTUP_TOOLCHAIN=nightly" \
+		"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
+		> "$$WRAPPER_DIR/cargo"; \
+	chmod +x "$$WRAPPER_DIR/cargo"; \
+	\
+	export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
+	export RUSTUP_TOOLCHAIN=nightly; \
+	export RUSTC="$$NIGHTLY_RUSTC"; \
+	\
+	echo "=== Dylint Environment Debug Info ===" >&2; \
+	echo "CARGO_HOME: $$CARGO_HOME" >&2; \
+	echo "RUSTUP_HOME: $$RUSTUP_HOME" >&2; \
+	echo "DYLINT_DRIVER_PATH: $$DYLINT_DRIVER_PATH" >&2; \
+	echo "PATH (first 3 entries): $$(echo $$PATH | cut -d: -f1-3)" >&2; \
+	echo "which cargo: $$(which cargo)" >&2; \
+	echo "cargo --version: $$(cargo --version)" >&2; \
+	echo "RUSTUP_TOOLCHAIN: $$RUSTUP_TOOLCHAIN" >&2; \
+	echo "RUSTC: $$RUSTC" >&2; \
+	echo "Nightly cargo: $$NIGHTLY_CARGO" >&2; \
+	echo "Nightly bin dir: $$NIGHTLY_BIN_DIR" >&2; \
+	echo "Wrapper dir: $$WRAPPER_DIR" >&2; \
+	echo "Wrapper script:" >&2; \
+	cat "$$WRAPPER_DIR/cargo" >&2; \
+	echo "===================================" >&2; \
+	\
+	if ! cargo dylint --version >/dev/null 2>&1; then \
+		echo "Installing cargo-dylint (and dylint-link)..." >&2; \
+		if ! cargo install cargo-dylint dylint-link; then \
+			echo "error: failed to install cargo-dylint." >&2; \
+			echo "If you are offline, preinstall it into $$CARGO_HOME/bin." >&2; \
+			echo "  cargo install cargo-dylint dylint-link" >&2; \
+			exit 1; \
+		fi; \
+	fi; \
+	\
+	cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
+'
 
 # Run all checks (format, lint, test)
 ci: fmt-check lint test
@@ -245,6 +398,7 @@ help:
 	echo "  fmt           Format source code"
 	echo "  lint          Run clippy lints"
 	echo "  dylint        Run custom dylint lints (lib only)"
+	echo "  dylint-verbose Run custom dylint lints with debug output"
 	echo "  ci            Run all CI checks"
 	echo "  doc           Build and open documentation"
 	echo "  version       Print version information"

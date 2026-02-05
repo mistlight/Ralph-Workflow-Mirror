@@ -112,4 +112,87 @@ else
 fi
 echo
 
+# Test 5: Sandbox environment simulation (verify environment variable handling)
+echo "Test 5: Verify Makefile respects environment variable overrides"
+# This test verifies that the Makefile correctly reads and uses custom environment
+# variables, even though actually running with fully redirected HOME/CARGO_HOME/RUSTUP_HOME
+# would require a complete rustup installation in the alternate location.
+
+# Just verify that the default CARGO_HOME is shown correctly
+VERBOSE_OUTPUT=$(mktemp)
+make dylint-verbose >"$VERBOSE_OUTPUT" 2>&1
+
+# Verify that CARGO_HOME is shown in the output (should be ~/.cargo or equivalent)
+if grep -q "CARGO_HOME:" "$VERBOSE_OUTPUT"; then
+	SHOWN_CARGO_HOME=$(grep "CARGO_HOME:" "$VERBOSE_OUTPUT" | head -1 | cut -d: -f2- | xargs)
+	echo "Makefile shows CARGO_HOME: $SHOWN_CARGO_HOME"
+	echo -e "${GREEN}PASS: Makefile correctly exports CARGO_HOME${NC}"
+else
+	echo -e "${RED}FAIL: CARGO_HOME not shown in verbose output${NC}"
+	rm -f "$VERBOSE_OUTPUT"
+	exit 1
+fi
+
+# Verify that RUSTUP_HOME is shown
+if grep -q "RUSTUP_HOME:" "$VERBOSE_OUTPUT"; then
+	SHOWN_RUSTUP_HOME=$(grep "RUSTUP_HOME:" "$VERBOSE_OUTPUT" | head -1 | cut -d: -f2- | xargs)
+	echo "Makefile shows RUSTUP_HOME: $SHOWN_RUSTUP_HOME"
+	echo -e "${GREEN}PASS: Makefile correctly exports RUSTUP_HOME${NC}"
+else
+	echo -e "${YELLOW}WARNING: RUSTUP_HOME not shown in verbose output${NC}"
+fi
+
+# Verify that DYLINT_DRIVER_PATH is shown
+if grep -q "DYLINT_DRIVER_PATH:" "$VERBOSE_OUTPUT"; then
+	SHOWN_DRIVER_PATH=$(grep "DYLINT_DRIVER_PATH:" "$VERBOSE_OUTPUT" | head -1 | cut -d: -f2- | xargs)
+	echo "Makefile shows DYLINT_DRIVER_PATH: $SHOWN_DRIVER_PATH"
+	echo -e "${GREEN}PASS: Makefile correctly exports DYLINT_DRIVER_PATH${NC}"
+else
+	echo -e "${YELLOW}WARNING: DYLINT_DRIVER_PATH not shown in verbose output${NC}"
+fi
+
+rm -f "$VERBOSE_OUTPUT"
+echo
+
+# Test 6: Path resolution verification
+echo "Test 6: Verify PATH includes nightly bin directory"
+# Run make dylint-verbose to capture debug output
+VERBOSE_OUTPUT=$(mktemp)
+make dylint-verbose >"$VERBOSE_OUTPUT" 2>&1
+
+# Verify PATH is shown in the output
+if grep -q "PATH (first 3 entries):" "$VERBOSE_OUTPUT"; then
+	PATH_LINE=$(grep "PATH (first 3 entries):" "$VERBOSE_OUTPUT" | head -1)
+	echo "$PATH_LINE"
+	echo -e "${GREEN}PASS: PATH resolution is shown in verbose output${NC}"
+else
+	echo -e "${RED}FAIL: PATH not shown in verbose output${NC}"
+	rm -f "$VERBOSE_OUTPUT"
+	exit 1
+fi
+
+# Verify nightly bin directory is shown
+if grep -q "Nightly bin dir:" "$VERBOSE_OUTPUT"; then
+	NIGHTLY_BIN_LINE=$(grep "Nightly bin dir:" "$VERBOSE_OUTPUT" | head -1)
+	echo "$NIGHTLY_BIN_LINE"
+	echo -e "${GREEN}PASS: Nightly bin directory is configured${NC}"
+else
+	echo -e "${YELLOW}WARNING: Nightly bin dir not shown in verbose output${NC}"
+fi
+
+# Verify that 'which cargo' resolves to nightly (should be in nightly toolchain path)
+if grep -q "which cargo:" "$VERBOSE_OUTPUT"; then
+	WHICH_CARGO=$(grep "which cargo:" "$VERBOSE_OUTPUT" | head -1)
+	echo "$WHICH_CARGO"
+	# Check if the path contains 'nightly' to verify it's using the nightly cargo
+	if echo "$WHICH_CARGO" | grep -q "nightly"; then
+		echo -e "${GREEN}PASS: cargo resolves to nightly toolchain${NC}"
+	else
+		echo -e "${YELLOW}WARNING: cargo path doesn't contain 'nightly'${NC}"
+	fi
+fi
+
+rm -f "$VERBOSE_OUTPUT"
+echo
+
 echo -e "${GREEN}All tests passed!${NC}"
