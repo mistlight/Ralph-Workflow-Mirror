@@ -38,6 +38,13 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # Run dylint in rust:slim container
+# This test is network-dependent (apt-get + potentially rustup downloads).
+# Treat it as opt-in unless explicitly requested.
+if [ "${RALPH_RUN_DOCKER_TESTS:-}" != "1" ]; then
+	echo -e "${YELLOW}SKIP: Docker dylint test is opt-in (set RALPH_RUN_DOCKER_TESTS=1 to run)${NC}"
+	exit 0
+fi
+
 DOCKER_OUTPUT=$(mktemp)
 echo "Running make dylint in rust:slim container..."
 echo "(This may take several minutes on first run)"

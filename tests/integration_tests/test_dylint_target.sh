@@ -42,7 +42,7 @@ echo
 
 # Test 2: Simulate Homebrew/apt environment by checking PATH resolution
 echo "Test 2: Verify cargo resolution in current environment"
-SYSTEM_CARGO=$(which cargo)
+SYSTEM_CARGO=$(command -v cargo)
 echo "System cargo: $SYSTEM_CARGO"
 
 if command -v rustup >/dev/null 2>&1; then
@@ -171,16 +171,16 @@ else
 	echo -e "${YELLOW}WARNING: Nightly bin dir not shown in verbose output${NC}"
 fi
 
-# Verify that 'which cargo' resolves to nightly cargo OR the wrapper
-if grep -q "which cargo:" "$VERBOSE_OUTPUT"; then
-	WHICH_CARGO=$(grep "which cargo:" "$VERBOSE_OUTPUT" | head -1)
-	echo "$WHICH_CARGO"
-	if echo "$WHICH_CARGO" | grep -q "nightly"; then
+# Verify that 'cargo' resolves to nightly cargo OR the wrapper
+# (Makefile prints "Resolved cargo (via command -v):"; older versions may print "which cargo:")
+if grep -q "Resolved cargo (via command -v):" "$VERBOSE_OUTPUT"; then
+	RESOLVED_CARGO=$(grep "Resolved cargo (via command -v):" "$VERBOSE_OUTPUT" | head -1 | cut -d: -f2- | xargs)
+	echo "Resolved cargo (via command -v): $RESOLVED_CARGO"
+	if echo "$RESOLVED_CARGO" | grep -q "nightly"; then
 		echo -e "${GREEN}PASS: cargo resolves to nightly toolchain${NC}"
 	elif grep -q "Wrapper script path:" "$VERBOSE_OUTPUT"; then
 		WRAPPER_PATH=$(grep "Wrapper script path:" "$VERBOSE_OUTPUT" | cut -d: -f2- | xargs)
-		WHICH_CARGO_PATH=$(echo "$WHICH_CARGO" | cut -d: -f2- | xargs)
-		if [ "$WHICH_CARGO_PATH" = "$WRAPPER_PATH" ]; then
+		if [ "$RESOLVED_CARGO" = "$WRAPPER_PATH" ]; then
 			echo -e "${GREEN}PASS: cargo resolves to wrapper script${NC}"
 		else
 			echo -e "${YELLOW}WARNING: cargo resolves unexpectedly${NC}"
@@ -189,6 +189,9 @@ if grep -q "which cargo:" "$VERBOSE_OUTPUT"; then
 	else
 		echo -e "${YELLOW}WARNING: cargo path doesn't contain 'nightly' and wrapper path not shown${NC}"
 	fi
+elif grep -q "which cargo:" "$VERBOSE_OUTPUT"; then
+	WHICH_CARGO=$(grep "which cargo:" "$VERBOSE_OUTPUT" | head -1)
+	echo "$WHICH_CARGO"
 fi
 
 echo
@@ -239,7 +242,8 @@ fi
 # Test 8: Fail fast on unwritable cache directories
 # This asserts the Makefile emits the documented error message.
 echo "Test 8: Verify fail-fast on unwritable cache directories"
-UNWRITABLE_DIR="/"
+# Use a reliably unwritable location. `/` may be writable in root containers.
+UNWRITABLE_DIR="/proc"
 set +e
 HOME="$UNWRITABLE_DIR" CARGO_HOME="$UNWRITABLE_DIR" RUSTUP_HOME="$UNWRITABLE_DIR" DYLINT_DRIVER_PATH="$UNWRITABLE_DIR" make dylint-verbose >/dev/null 2>"$VERBOSE_OUTPUT.unwritable"
 UNWRITABLE_EXIT=$?

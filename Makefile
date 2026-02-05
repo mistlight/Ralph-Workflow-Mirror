@@ -399,7 +399,11 @@ dylint-verbose:
 	echo "Wrapper script contents:" >&2; \
 	while IFS= read -r line; do echo "  $$line" >&2; done < "$$WRAPPER_DIR/cargo"; \
 	echo "Resolved cargo (via command -v): $$(command -v cargo)" >&2; \
-	echo "which cargo: $$(which cargo)" >&2; \
+	if command -v which >/dev/null 2>&1; then \
+		echo "which cargo: $$(which cargo)" >&2; \
+	else \
+		echo "which cargo: <which not found>" >&2; \
+	fi; \
 	echo "cargo --version: $$(cargo --version)" >&2; \
 	echo "RUSTUP_TOOLCHAIN: $$RUSTUP_TOOLCHAIN" >&2; \
 	echo "RUSTC: $$RUSTC" >&2; \
