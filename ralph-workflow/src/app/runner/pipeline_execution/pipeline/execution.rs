@@ -144,7 +144,6 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 /// This is the production entry point - it creates a MainEffectHandler internally.
 fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
     use crate::app::event_loop::EventLoopConfig;
-    #[cfg(not(feature = "test-utils"))]
     use crate::reducer::MainEffectHandler;
     use crate::reducer::PipelineState;
 
@@ -220,25 +219,34 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     }
 
     // Set up git helpers and agent phase
-    // Use workspace-aware versions when test-utils feature is enabled
-    // to avoid real git operations that would cause test failures.
+    // Use workspace-aware marker operations; then attempt hook install / wrapper.
+    // This is best-effort: failures must not terminate the pipeline.
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
 
-    #[cfg(feature = "test-utils")]
-    {
-        use crate::git_helpers::{
-            cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
-        };
-        // Use workspace-based operations that don't require real git
-        cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)?;
-        create_marker_with_workspace(&*ctx.workspace)?;
-        // Skip hook installation and git wrapper in test mode
+    // Marker cleanup/creation are filesystem concerns; use Workspace so tests can run
+    // with MemoryWorkspace, and production stays consistent.
+    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker_with_workspace(
+        &*ctx.workspace,
+        &ctx.logger,
+    ) {
+        ctx.logger
+            .warn(&format!("Failed to cleanup orphaned marker: {err}"));
     }
-    #[cfg(not(feature = "test-utils"))]
-    {
-        cleanup_orphaned_marker(&ctx.logger)?;
-        start_agent_phase(&mut git_helpers)?;
+    if let Err(err) = crate::git_helpers::create_marker_with_workspace(&*ctx.workspace) {
+        ctx.logger
+            .warn(&format!("Failed to create agent phase marker: {err}"));
     }
+
+    // Hook install / wrapper require a real repo; treat as best-effort.
+    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker(&ctx.logger) {
+        ctx.logger
+            .warn(&format!("Failed to cleanup orphaned marker via git helpers: {err}"));
+    }
+    if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
+        ctx.logger
+            .warn(&format!("Failed to start agent phase: {err}"));
+    }
+
     let mut agent_phase_guard =
         AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
 
@@ -345,21 +353,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     let prompt_history_before = phase_ctx.clone_prompt_history();
 
     // Create effect handler and run event loop.
-    // Under test-utils feature, use MockEffectHandler to avoid real git operations.
-    #[cfg(feature = "test-utils")]
-    let loop_result = {
-        use crate::app::event_loop::run_event_loop_with_handler;
-        use crate::reducer::mock_effect_handler::MockEffectHandler;
-        let mut handler = MockEffectHandler::new(initial_state.clone());
-        let phase_ctx_ref = &mut phase_ctx;
-        run_event_loop_with_handler(
-            phase_ctx_ref,
-            Some(initial_state),
-            event_loop_config,
-            &mut handler,
-        )
-    };
-    #[cfg(not(feature = "test-utils"))]
     let loop_result = {
         use crate::app::event_loop::run_event_loop_with_handler;
         let mut handler = MainEffectHandler::new(initial_state.clone());

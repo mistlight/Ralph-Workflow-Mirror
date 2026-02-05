@@ -5,9 +5,9 @@
 fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     use chrono::{DateTime, Local, NaiveDateTime};
 
-    // Display phase with emoji indicator
-    let phase_emoji = get_phase_emoji(checkpoint.phase);
-    logger.info(&format!("{} {}", phase_emoji, checkpoint.description()));
+    // Display phase with stable indicator (ASCII only)
+    let phase_indicator = get_phase_indicator(checkpoint.phase);
+    logger.info(&format!("{} {}", phase_indicator, checkpoint.description()));
 
     // Calculate and display time elapsed
     // Parse the timestamp string which is in "YYYY-MM-DD HH:MM:SS" format

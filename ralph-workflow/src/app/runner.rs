@@ -57,10 +57,6 @@ use crate::files::{
 use crate::git_helpers::{
     abort_rebase, continue_rebase, get_conflicted_files, is_main_or_master_branch, RebaseResult,
 };
-#[cfg(not(feature = "test-utils"))]
-use crate::git_helpers::{
-    cleanup_orphaned_marker, get_start_commit_summary, save_start_commit, start_agent_phase,
-};
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::PhaseContext;

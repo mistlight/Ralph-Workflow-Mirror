@@ -173,21 +173,24 @@ fn create_progress_bar(current: u32, total: u32) -> String {
     format!("{} {}%", bar, percentage)
 }
 
-/// Get an emoji indicator for a pipeline phase.
-fn get_phase_emoji(phase: PipelinePhase) -> &'static str {
+/// Get a stable, ASCII-only indicator for a pipeline phase.
+///
+/// This intentionally avoids emoji glyphs to keep output stable and compatible
+/// with terminals and consumers that parse output.
+fn get_phase_indicator(phase: PipelinePhase) -> &'static str {
     match phase {
-        PipelinePhase::Rebase => "🔄",
-        PipelinePhase::Planning => "📋",
-        PipelinePhase::Development => "🔨",
-        PipelinePhase::Review => "👀",
-        PipelinePhase::CommitMessage => "📝",
-        PipelinePhase::FinalValidation => "✅",
-        PipelinePhase::Complete => "🎉",
-        PipelinePhase::PreRebase => "⏪",
-        PipelinePhase::PreRebaseConflict => "⚠️",
-        PipelinePhase::PostRebase => "⏩",
-        PipelinePhase::PostRebaseConflict => "⚠️",
-        PipelinePhase::AwaitingDevFix => "🔧",
-        PipelinePhase::Interrupted => "⏸️",
+        PipelinePhase::Rebase => "[rebase]",
+        PipelinePhase::Planning => "[plan]",
+        PipelinePhase::Development => "[dev]",
+        PipelinePhase::Review => "[review]",
+        PipelinePhase::CommitMessage => "[commit]",
+        PipelinePhase::FinalValidation => "[validate]",
+        PipelinePhase::Complete => "[complete]",
+        PipelinePhase::PreRebase => "[pre-rebase]",
+        PipelinePhase::PreRebaseConflict => "[rebase-conflict]",
+        PipelinePhase::PostRebase => "[post-rebase]",
+        PipelinePhase::PostRebaseConflict => "[rebase-conflict]",
+        PipelinePhase::AwaitingDevFix => "[dev-fix]",
+        PipelinePhase::Interrupted => "[interrupted]",
     }
 }

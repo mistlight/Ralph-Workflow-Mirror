@@ -133,7 +133,9 @@ pub(super) fn reduce_development_event(
             {
                 DevelopmentEvent::ContinuationBudgetExhausted {
                     iteration,
-                    total_attempts: continuation_state.continuation_attempt,
+                    // `continuation_attempt` is 0-based with 0 = initial attempt.
+                    // For the event payload, report total attempts including the initial run.
+                    total_attempts: continuation_state.continuation_attempt + 1,
                     last_status: outcome.status.clone(),
                 }
             } else {

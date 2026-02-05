@@ -232,15 +232,26 @@ pub fn run_ralph_cli_with_handler(
     // We also track the initial files so we can detect deletions during execution.
     let (workspace, initial_files, initial_handler_files) = create_workspace_from_handler(handler);
 
-    // Use run_with_config_and_resolver with the provided handler, memory config env, and memory workspace
-    let result = ralph_workflow::app::run_with_config_and_resolver(
-        parsed_args,
-        executor,
-        config,
-        registry,
-        &config_env,
-        handler,
-        Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+    // Use run_with_config_and_handlers so reducer-layer operations are also isolated.
+    // This prevents integration tests from spawning real agents or making real git calls.
+    let mut effect_handler = ralph_workflow::reducer::mock_effect_handler::MockEffectHandler::new(
+        // Tests use Config::test_default(), which disables all agent execution and sets
+        // dev/review counts to 0. Hard-code 0/0 here to avoid relying on private Config fields.
+        ralph_workflow::reducer::PipelineState::initial(0, 0),
+    );
+
+    let result = ralph_workflow::app::run_with_config_and_handlers(
+        ralph_workflow::app::RunWithHandlersParams {
+            args: parsed_args,
+            executor,
+            config,
+            registry,
+            path_resolver: &config_env,
+            app_handler: handler,
+            effect_handler: &mut effect_handler,
+            workspace: Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+            _marker: std::marker::PhantomData,
+        },
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
