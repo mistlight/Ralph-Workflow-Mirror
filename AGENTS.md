@@ -272,9 +272,10 @@ The `make dylint` target implements a multi-layered approach to ensure the dylin
 
 1. **Environment validation:** Checks that CARGO_HOME, RUSTUP_HOME, and DYLINT_DRIVER_PATH are writable
 2. **Toolchain bootstrapping:** Installs rustup (if missing) and nightly toolchain with required components (rustc-dev, llvm-tools-preview)
-3. **Cargo wrapper script:** Creates a temporary wrapper script that exports RUSTUP_TOOLCHAIN=nightly before exec'ing the real nightly cargo
+3. **Cargo wrapper script:** Creates a temporary wrapper script that exports RUSTUP_TOOLCHAIN=nightly and CARGO variable before exec'ing the real nightly cargo
 4. **PATH manipulation:** Prepends the wrapper directory and nightly bin directory to PATH, ensuring the wrapper is found first
-5. **Environment export:** Exports RUSTUP_TOOLCHAIN, RUSTC, and all cache location variables
+5. **Environment export:** Exports RUSTUP_TOOLCHAIN, RUSTC, CARGO, and all cache location variables
+6. **Validation:** Verifies that `cargo` resolves to the wrapper script, warning if PATH resolution fails
 
 **How the wrapper works:**
 
@@ -283,9 +284,10 @@ When cargo-dylint runs `env -u RUSTUP_TOOLCHAIN cargo build` to rebuild the driv
 2. Searches PATH for the `cargo` binary
 3. Finds and executes the wrapper script (first in PATH)
 4. Wrapper exports RUSTUP_TOOLCHAIN=nightly
-5. Wrapper execs the real nightly cargo with RUSTUP_TOOLCHAIN set
+5. Wrapper exports CARGO variable pointing to nightly cargo (additional safety mechanism)
+6. Wrapper execs the real nightly cargo with RUSTUP_TOOLCHAIN set
 
-This approach works around cargo-dylint's explicit unsetting of RUSTUP_TOOLCHAIN, addressing the E0554 failure mode where cargo-dylint rebuilds its driver using a stable toolchain.
+This approach works around cargo-dylint's explicit unsetting of RUSTUP_TOOLCHAIN, addressing the E0554 failure mode where cargo-dylint rebuilds its driver using a stable toolchain. The CARGO environment variable export provides an additional fallback if PATH resolution somehow fails.
 
 **Limitations:**
 
@@ -370,6 +372,29 @@ make dylint
 
 ---
 
+**Symptom:** Warning about cargo not resolving to wrapper
+
+```
+warning: cargo resolves to /usr/local/bin/cargo instead of /tmp/xyz/cargo
+Continuing anyway, but this may cause issues...
+```
+
+**Cause:** System PATH configuration or shell aliases override the wrapper
+
+**Solution:** Check for shell aliases or functions that override cargo:
+```bash
+# Check for cargo alias or function
+type cargo
+
+# If an alias exists, unalias it temporarily
+unalias cargo
+
+# Run make dylint again
+make dylint
+```
+
+---
+
 **Debugging with dylint-verbose:**
 
 To see detailed information about PATH, cargo resolution, and toolchain selection:
@@ -380,8 +405,9 @@ make dylint-verbose
 This will display:
 - CARGO_HOME, RUSTUP_HOME, DYLINT_DRIVER_PATH locations
 - PATH resolution (first 3 entries)
-- Which cargo binary is being used
-- RUSTUP_TOOLCHAIN and RUSTC settings
+- Wrapper script path and contents
+- Which cargo binary is being used (via `command -v` and `which`)
+- RUSTUP_TOOLCHAIN, RUSTC, and CARGO environment variables
 - Nightly toolchain bin directory location
 
 Use this output to diagnose PATH resolution issues or verify the nightly toolchain is correctly configured.

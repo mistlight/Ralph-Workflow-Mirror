@@ -195,4 +195,52 @@ fi
 rm -f "$VERBOSE_OUTPUT"
 echo
 
+# Test 7: Verify wrapper script is used
+echo "Test 7: Verify cargo wrapper script is invoked"
+VERBOSE_OUTPUT=$(mktemp)
+make dylint-verbose >"$VERBOSE_OUTPUT" 2>&1
+
+# Check that wrapper script was created and used
+if grep -q "Wrapper script path:" "$VERBOSE_OUTPUT"; then
+	WRAPPER_PATH=$(grep "Wrapper script path:" "$VERBOSE_OUTPUT" | cut -d: -f2- | xargs)
+	echo "Wrapper path: $WRAPPER_PATH"
+	echo -e "${GREEN}PASS: Wrapper script path shown${NC}"
+else
+	echo -e "${RED}FAIL: Wrapper script path not shown${NC}"
+	rm -f "$VERBOSE_OUTPUT"
+	exit 1
+fi
+
+# Verify that resolved cargo matches wrapper path
+if grep -q "Resolved cargo (via command -v):" "$VERBOSE_OUTPUT"; then
+	RESOLVED_CARGO=$(grep "Resolved cargo (via command -v):" "$VERBOSE_OUTPUT" | cut -d: -f2- | xargs)
+	echo "Resolved cargo: $RESOLVED_CARGO"
+	if [ "$RESOLVED_CARGO" = "$WRAPPER_PATH" ]; then
+		echo -e "${GREEN}PASS: cargo resolves to wrapper script${NC}"
+	else
+		echo -e "${YELLOW}WARNING: cargo does not resolve to wrapper${NC}"
+		echo "Expected: $WRAPPER_PATH"
+		echo "Got: $RESOLVED_CARGO"
+	fi
+fi
+
+# Verify wrapper script contents include nightly enforcement
+if grep -q "export RUSTUP_TOOLCHAIN=nightly" "$VERBOSE_OUTPUT"; then
+	echo -e "${GREEN}PASS: Wrapper script exports RUSTUP_TOOLCHAIN=nightly${NC}"
+else
+	echo -e "${RED}FAIL: Wrapper script does not export RUSTUP_TOOLCHAIN=nightly${NC}"
+	rm -f "$VERBOSE_OUTPUT"
+	exit 1
+fi
+
+# Verify wrapper script exports CARGO variable
+if grep -q "export CARGO=" "$VERBOSE_OUTPUT"; then
+	echo -e "${GREEN}PASS: Wrapper script exports CARGO variable${NC}"
+else
+	echo -e "${YELLOW}WARNING: Wrapper script does not export CARGO variable${NC}"
+fi
+
+rm -f "$VERBOSE_OUTPUT"
+echo
+
 echo -e "${GREEN}All tests passed!${NC}"

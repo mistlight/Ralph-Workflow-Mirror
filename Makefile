@@ -195,16 +195,30 @@ dylint:
 	fi; \
 	trap "rm -rf \"$$WRAPPER_DIR\"" EXIT; \
 	\
-	printf "%s\n%s\n%s\n" \
+	printf "%s\n%s\n%s\n%s\n%s\n" \
 		"#!/usr/bin/env bash" \
+		"# Auto-generated cargo wrapper for dylint nightly enforcement" \
 		"export RUSTUP_TOOLCHAIN=nightly" \
+		"export CARGO=\"$$NIGHTLY_CARGO\"" \
 		"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
 		> "$$WRAPPER_DIR/cargo"; \
 	chmod +x "$$WRAPPER_DIR/cargo"; \
 	\
+	if [ ! -f "$$WRAPPER_DIR/cargo" ]; then \
+		echo "error: wrapper script creation failed" >&2; \
+		exit 1; \
+	fi; \
+	\
 	export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
 	export RUSTUP_TOOLCHAIN=nightly; \
 	export RUSTC="$$NIGHTLY_RUSTC"; \
+	export CARGO="$$NIGHTLY_CARGO"; \
+	\
+	RESOLVED_CARGO="$$(command -v cargo)"; \
+	if [ "$$RESOLVED_CARGO" != "$$WRAPPER_DIR/cargo" ]; then \
+		echo "warning: cargo resolves to $$RESOLVED_CARGO instead of $$WRAPPER_DIR/cargo" >&2; \
+		echo "Continuing anyway, but this may cause issues..." >&2; \
+	fi; \
 	\
 	if ! cargo dylint --version >/dev/null 2>&1; then \
 		echo "Installing cargo-dylint (and dylint-link)..." >&2; \
@@ -325,31 +339,47 @@ dylint-verbose:
 	fi; \
 	trap "rm -rf \"$$WRAPPER_DIR\"" EXIT; \
 	\
-	printf "%s\n%s\n%s\n" \
+	printf "%s\n%s\n%s\n%s\n%s\n" \
 		"#!/usr/bin/env bash" \
+		"# Auto-generated cargo wrapper for dylint nightly enforcement" \
 		"export RUSTUP_TOOLCHAIN=nightly" \
+		"export CARGO=\"$$NIGHTLY_CARGO\"" \
 		"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
 		> "$$WRAPPER_DIR/cargo"; \
 	chmod +x "$$WRAPPER_DIR/cargo"; \
 	\
+	if [ ! -f "$$WRAPPER_DIR/cargo" ]; then \
+		echo "error: wrapper script creation failed" >&2; \
+		exit 1; \
+	fi; \
+	\
 	export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
 	export RUSTUP_TOOLCHAIN=nightly; \
 	export RUSTC="$$NIGHTLY_RUSTC"; \
+	export CARGO="$$NIGHTLY_CARGO"; \
+	\
+	RESOLVED_CARGO="$$(command -v cargo)"; \
+	if [ "$$RESOLVED_CARGO" != "$$WRAPPER_DIR/cargo" ]; then \
+		echo "warning: cargo resolves to $$RESOLVED_CARGO instead of $$WRAPPER_DIR/cargo" >&2; \
+		echo "Continuing anyway, but this may cause issues..." >&2; \
+	fi; \
 	\
 	echo "=== Dylint Environment Debug Info ===" >&2; \
 	echo "CARGO_HOME: $$CARGO_HOME" >&2; \
 	echo "RUSTUP_HOME: $$RUSTUP_HOME" >&2; \
 	echo "DYLINT_DRIVER_PATH: $$DYLINT_DRIVER_PATH" >&2; \
 	echo "PATH (first 3 entries): $$(echo $$PATH | cut -d: -f1-3)" >&2; \
+	echo "Nightly cargo: $$NIGHTLY_CARGO" >&2; \
+	echo "Nightly bin dir: $$NIGHTLY_BIN_DIR" >&2; \
+	echo "Wrapper script path: $$WRAPPER_DIR/cargo" >&2; \
+	echo "Wrapper script contents:" >&2; \
+	while IFS= read -r line; do echo "  $$line" >&2; done < "$$WRAPPER_DIR/cargo"; \
+	echo "Resolved cargo (via command -v): $$(command -v cargo)" >&2; \
 	echo "which cargo: $$(which cargo)" >&2; \
 	echo "cargo --version: $$(cargo --version)" >&2; \
 	echo "RUSTUP_TOOLCHAIN: $$RUSTUP_TOOLCHAIN" >&2; \
 	echo "RUSTC: $$RUSTC" >&2; \
-	echo "Nightly cargo: $$NIGHTLY_CARGO" >&2; \
-	echo "Nightly bin dir: $$NIGHTLY_BIN_DIR" >&2; \
-	echo "Wrapper dir: $$WRAPPER_DIR" >&2; \
-	echo "Wrapper script:" >&2; \
-	cat "$$WRAPPER_DIR/cargo" >&2; \
+	echo "CARGO: $$CARGO" >&2; \
 	echo "===================================" >&2; \
 	\
 	if ! cargo dylint --version >/dev/null 2>&1; then \
