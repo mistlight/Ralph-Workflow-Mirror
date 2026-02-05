@@ -33,6 +33,7 @@
 // ## Validation
 //
 // Comprehensive regression tests validate this architecture:
+// - `ccs_delta_spam_systematic_reproduction.rs`: NEW systematic reproduction test (all delta types, both parsers, both modes)
 // - `ccs_all_delta_types_spam_reproduction.rs`: 1000+ deltas per block
 // - `ccs_streaming_spam_all_deltas.rs`: All delta types (text/thinking/tool)
 // - `ccs_nuclear_full_log_regression.rs`: Real production logs (12,000+ deltas)
@@ -214,7 +215,8 @@ pub trait DeltaRenderer {
 /// output.
 ///
 /// See comprehensive regression tests:
-/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (NEW: ultra-comprehensive edge case coverage)
+/// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction & verification)
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (ultra-comprehensive edge case coverage)
 /// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
 /// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
 /// - `tests/integration_tests/ccs_real_world_log_regression.rs` (production log with 12,596 deltas)
@@ -303,7 +305,8 @@ impl DeltaRenderer for TextDeltaRenderer {
 /// The fix is validated with ultra-extreme streaming tests (1000+ thinking deltas).
 ///
 /// See comprehensive regression tests:
-/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (NEW: 1000+ deltas, rapid succession, interleaved blocks)
+/// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction test)
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (1000+ deltas, rapid succession, interleaved blocks)
 /// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
 /// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
 /// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)

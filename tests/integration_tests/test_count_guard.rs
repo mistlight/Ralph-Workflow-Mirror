@@ -89,6 +89,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("ccs_comprehensive_spam_verification.rs"),
     },
     SourceFile {
+        path: "ccs_delta_spam_systematic_reproduction.rs",
+        contents: include_str!("ccs_delta_spam_systematic_reproduction.rs"),
+    },
+    SourceFile {
         path: "ccs_streaming_spam_all_deltas.rs",
         contents: include_str!("ccs_streaming_spam_all_deltas.rs"),
     },

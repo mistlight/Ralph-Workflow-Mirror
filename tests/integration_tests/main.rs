@@ -30,6 +30,7 @@ mod agent_spawn_errors;
 mod ccs_all_delta_types_spam_reproduction;
 mod ccs_basic_mode_nuclear_test;
 mod ccs_comprehensive_spam_verification;
+mod ccs_delta_spam_systematic_reproduction;
 mod ccs_extreme_streaming_regression;
 mod ccs_nuclear_full_log_regression;
 mod ccs_nuclear_spam_test;

@@ -66,7 +66,8 @@ impl DeltaDisplayFormatter {
     /// comprehensive regression tests that simulate real-world streaming scenarios.
     ///
     /// See comprehensive regression tests:
-    /// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (NEW: comprehensive coverage)
+    /// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction test)
+    /// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (comprehensive coverage)
     /// - `tests/integration_tests/ccs_nuclear_spam_test.rs` (tool input with 500+ deltas)
     /// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types including tool input)
     ///

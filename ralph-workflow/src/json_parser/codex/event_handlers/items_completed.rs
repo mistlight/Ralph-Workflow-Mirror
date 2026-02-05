@@ -34,6 +34,7 @@
 // ## Validation
 //
 // Comprehensive regression tests validate this architecture:
+// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` - NEW: systematic reproduction & verification
 // - `tests/integration_tests/ccs_comprehensive_spam_verification.rs` - Architecture verification
 // - `tests/integration_tests/ccs_nuclear_spam_test.rs` - 500+ deltas with hard assertions
 // - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` - 1000+ deltas

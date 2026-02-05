@@ -26,6 +26,7 @@
 // scenarios (1000+ deltas per block, multi-turn sessions, all delta types).
 //
 // See comprehensive regression tests:
+// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction & verification)
 // - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (1000+ deltas per block)
 // - `tests/integration_tests/ccs_nuclear_full_log_regression.rs` (NUCLEAR: real production logs, 12,000+ deltas)
 // - `tests/integration_tests/ccs_streaming_edge_cases.rs` (edge cases: empty deltas, rapid transitions)
