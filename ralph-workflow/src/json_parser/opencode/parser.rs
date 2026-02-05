@@ -76,7 +76,7 @@ impl OpenCodeParser {
         self
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "test-utils")]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -86,19 +86,23 @@ impl OpenCodeParser {
     ///
     /// This is the primary entry point for integration tests that need
     /// to capture parser output for verification.
-    #[cfg(any(test, feature = "test-utils"))]
+    ///
+    /// Defaults to `TerminalMode::Full` for testing streaming behavior.
+    /// Integration tests that verify streaming output need Full mode to
+    /// see per-delta rendering (non-TTY modes suppress deltas and flush at completion).
+    #[cfg(feature = "test-utils")]
     pub fn with_printer_for_test(
         colors: Colors,
         verbosity: Verbosity,
         printer: SharedPrinter,
     ) -> Self {
-        Self::with_printer(colors, verbosity, printer)
+        Self::with_printer(colors, verbosity, printer).with_terminal_mode(TerminalMode::Full)
     }
 
     /// Set the log file path for testing.
     ///
     /// This allows tests to verify log file content after parsing.
-    #[cfg(any(test, feature = "test-utils"))]
+    #[cfg(feature = "test-utils")]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(std::path::PathBuf::from(path));
         self
@@ -107,7 +111,7 @@ impl OpenCodeParser {
     /// Parse a stream for testing purposes.
     ///
     /// This exposes the internal `parse_stream` method for integration tests.
-    #[cfg(any(test, feature = "test-utils"))]
+    #[cfg(feature = "test-utils")]
     pub fn parse_stream_for_test<R: std::io::BufRead>(
         &self,
         reader: R,

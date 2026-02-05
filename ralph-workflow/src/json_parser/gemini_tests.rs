@@ -96,7 +96,10 @@ fn test_gemini_result_success() {
 
 #[test]
 fn test_gemini_message_delta() {
-    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal);
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = GeminiParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let json = r#"{"type":"message","role":"assistant","content":"Streaming","delta":true,"timestamp":"2025-10-10T12:00:04.000Z"}"#;
     let output = parser.parse_event(json);
     assert!(output.is_some());

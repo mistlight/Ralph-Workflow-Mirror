@@ -55,7 +55,10 @@ fn test_codex_reasoning_completed_shows_text() {
 
 #[test]
 fn test_codex_mcp_tool_call() {
-    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
     let json = r#"{"type":"item.started","item":{"type":"mcp_tool_call","tool":"search_files","arguments":{"query":"main"}}}"#;
     let output = parser.parse_event(json);
     assert!(output.is_some());

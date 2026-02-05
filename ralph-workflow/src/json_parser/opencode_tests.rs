@@ -48,13 +48,26 @@ fn test_opencode_streaming_with_tool_use_events() {
 fn test_with_terminal_mode() {
     use crate::json_parser::terminal::TerminalMode;
 
+    // Test that TerminalMode::None suppresses per-delta output (flushed at completion)
     let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal)
         .with_terminal_mode(TerminalMode::None);
 
-    // Verify the parser was created successfully
+    // In non-TTY modes, text deltas are suppressed to prevent repeated prefixed lines
     let json = r#"{"type":"text","timestamp":1768191347231,"sessionID":"test","part":{"id":"prt_001","type":"text","text":"Hello"}}"#;
     let output = parser.parse_event(json);
-    assert!(output.is_some());
+    assert!(
+        output.is_none(),
+        "text delta should be suppressed in TerminalMode::None"
+    );
+
+    // Test that TerminalMode::Full produces streaming output
+    let parser_full = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
+    let output_full = parser_full.parse_event(json);
+    assert!(
+        output_full.is_some(),
+        "text delta should produce output in TerminalMode::Full"
+    );
 }
 
 #[test]

@@ -520,10 +520,11 @@ fn test_completion_with_terminal_mode_basic() {
     );
 }
 
-// Test multiple deltas in None mode produce multiple lines
+// Test multiple deltas in None mode are flushed once
 //
-// Verifies that without cursor positioning, each delta appears on its
-// own line (no in-place updates).
+// In non-TTY modes (Basic/None), per-delta output is suppressed to avoid
+// repeated prefixed lines in logs. The final accumulated content is flushed
+// once at `message_stop`.
 #[cfg(test)]
 #[test]
 fn test_multiple_deltas_none_mode_produces_multiple_lines() {
@@ -547,17 +548,15 @@ fn test_multiple_deltas_none_mode_produces_multiple_lines() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // Each delta should produce output (no in-place updates)
-    // The output should contain both intermediate states
+    // In non-TTY modes, per-delta output is suppressed and we flush once at message_stop.
     assert!(
-        output.contains("Hello"),
-        "Should contain first delta. Output: {output:?}"
+        output.contains("Hello World"),
+        "Should contain final accumulated content. Output: {output:?}"
     );
 
-    // Count newlines - should be at least 2 (first delta + message_stop)
-    let newline_count = output.matches('\n').count();
-    assert!(
-        newline_count >= 2,
-        "Should have at least 2 newlines in None mode. Found {newline_count}. Output: {output:?}"
+    assert_eq!(
+        output.lines().count(),
+        1,
+        "Expected a single flushed line in None mode. Output: {output:?}"
     );
 }

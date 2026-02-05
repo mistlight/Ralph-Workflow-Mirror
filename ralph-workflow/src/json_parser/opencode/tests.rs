@@ -110,7 +110,10 @@ mod tests {
 
     #[test]
     fn test_opencode_text_event() {
-        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        use crate::json_parser::terminal::TerminalMode;
+
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal)
+            .with_terminal_mode(TerminalMode::Full);
         let json = r#"{"type":"text","timestamp":1768191347231,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac63300","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"text","text":"I'll start by reading the plan and requirements to understand what needs to be implemented.","time":{"start":1768191347226,"end":1768191347226}}}"#;
         let output = parser.parse_event(json);
         assert!(output.is_some());

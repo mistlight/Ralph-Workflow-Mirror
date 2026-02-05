@@ -63,17 +63,20 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
         .invoke_analysis_agent(&mut ctx, 0)
         .expect("invoke_analysis_agent should not fail when PLAN/DIFF inputs are missing");
 
-    // Validate that the prompt passed to the agent contains placeholder context.
+    // Validate that the agent was invoked and the prompt has the analysis task structure.
+    // With content references, empty PLAN/DIFF are rendered as empty strings (inline),
+    // not explicit placeholders. The analysis system prompt instructs the agent to handle
+    // empty/unavailable inputs gracefully.
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
     assert!(
-        prompt.contains("[PLAN unavailable"),
-        "expected plan placeholder in prompt, got: {prompt}"
+        prompt.contains("ANALYSIS TASK"),
+        "expected analysis task header in prompt, got: {prompt}"
     );
     assert!(
-        prompt.contains("[DIFF unavailable"),
-        "expected diff placeholder in prompt, got: {prompt}"
+        prompt.contains("If the diff input is EMPTY (or indicates it is unavailable)"),
+        "expected empty input handling instructions in prompt, got: {prompt}"
     );
 }
 

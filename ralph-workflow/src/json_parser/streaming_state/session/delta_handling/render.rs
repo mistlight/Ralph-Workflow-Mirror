@@ -5,6 +5,34 @@ impl StreamingSession {
             .map(std::string::String::as_str)
     }
 
+    /// Return the set of accumulated keys for a given content type.
+    ///
+    /// This is used by non-TTY flush logic to render the final accumulated content
+    /// once at a completion boundary (e.g., `message_stop`) without relying on
+    /// arbitrary index bounds.
+    pub fn accumulated_keys(&self, content_type: ContentType) -> Vec<String> {
+        let mut keys: Vec<String> = self
+            .accumulated
+            .keys()
+            .filter(|(ty, _key)| *ty == content_type)
+            .map(|(_ty, key)| key.clone())
+            .collect();
+
+        // Prefer deterministic output. Many protocols use numeric indices; sort numerically
+        // when possible, otherwise fall back to lexicographic sorting.
+        keys.sort_by(|a, b| {
+            let a_num = a.parse::<u64>();
+            let b_num = b.parse::<u64>();
+            match (a_num, b_num) {
+                (Ok(a), Ok(b)) => a.cmp(&b),
+                _ => a.cmp(b),
+            }
+        });
+
+        keys.dedup();
+        keys
+    }
+
     /// Mark content as having been rendered (HashMap-based tracking).
     ///
     /// This should be called after rendering to update the per-key tracking.

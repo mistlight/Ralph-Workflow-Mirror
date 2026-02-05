@@ -228,12 +228,18 @@ impl ClaudeParser {
                     // Accumulate tool input
                     session.on_tool_input_delta(index, &input_str);
 
-                    // Show partial tool input in real-time
-                    let formatter = DeltaDisplayFormatter::new();
+                    // Tool input is rendered once at tool completion/message_stop in non-TTY modes
+                    // to avoid repeated prefixed lines for partial JSON chunks.
                     let terminal_mode = *self.terminal_mode.borrow();
-                    let tool_out =
-                        formatter.format_tool_input(&input_str, prefix, *c, terminal_mode);
-                    format!("{thinking_finalize}{tool_out}")
+                    if matches!(terminal_mode, TerminalMode::Basic | TerminalMode::None) {
+                        thinking_finalize
+                    } else {
+                        // Show partial tool input in real-time in Full TTY mode
+                        let formatter = DeltaDisplayFormatter::new();
+                        let tool_out =
+                            formatter.format_tool_input(&input_str, prefix, *c, terminal_mode);
+                        format!("{thinking_finalize}{tool_out}")
+                    }
                 }
             }
             _ => String::new(),
@@ -327,27 +333,54 @@ impl ClaudeParser {
         // In Full mode, finalize any active thinking line.
         let thinking_finalize = self.finalize_thinking_full_mode(session);
 
-        // In non-TTY modes, flush thinking and text once at message_stop.
-        let (thinking_flush_non_tty, text_flush_non_tty) = match terminal_mode {
-            TerminalMode::Full => (String::new(), String::new()),
-            TerminalMode::Basic | TerminalMode::None => {
-                // Flush accumulated thinking
-                // We format the output directly here because the renderers now suppress
-                // output in non-TTY modes (to prevent per-delta spam).
-                let thinking_output =
-                    if let Some(index) = self.thinking_active_index.borrow_mut().take() {
-                        let index_str = index.to_string();
+        // In non-TTY modes, flush thinking, tool input, and text once at message_stop.
+        let (thinking_flush_non_tty, tool_input_flush_non_tty, text_flush_non_tty) =
+            match terminal_mode {
+                TerminalMode::Full => (String::new(), String::new(), String::new()),
+                TerminalMode::Basic | TerminalMode::None => {
+                    // Flush accumulated thinking.
+                    // We format the output directly here because the renderers now suppress
+                    // output in non-TTY modes (to prevent per-delta spam).
+                    let thinking_output =
+                        if let Some(index) = self.thinking_active_index.borrow_mut().take() {
+                            let index_str = index.to_string();
+                            let accumulated = session
+                                .get_accumulated(ContentType::Thinking, &index_str)
+                                .unwrap_or("");
+                            let sanitized =
+                                crate::json_parser::delta_display::sanitize_for_display(accumulated);
+                            if sanitized.is_empty() {
+                                String::new()
+                            } else {
+                                // Format the line directly (bypass renderer which suppresses in non-TTY)
+                                format!(
+                                    "{}[{}]{} {}Thinking: {}{}{}\n",
+                                    c.dim(),
+                                    &self.display_name,
+                                    c.reset(),
+                                    c.dim(),
+                                    c.cyan(),
+                                    sanitized,
+                                    c.reset()
+                                )
+                            }
+                        } else {
+                            String::new()
+                        };
+
+                    // Flush accumulated tool input.
+                    // Tool input deltas can arrive as partial JSON chunks; in non-TTY modes we
+                    // render the final accumulated value once at message_stop.
+                    let mut tool_output = String::new();
+                    for index_str in session.accumulated_keys(ContentType::ToolInput) {
                         let accumulated = session
-                            .get_accumulated(ContentType::Thinking, &index_str)
+                            .get_accumulated(ContentType::ToolInput, &index_str)
                             .unwrap_or("");
                         let sanitized =
                             crate::json_parser::delta_display::sanitize_for_display(accumulated);
-                        if sanitized.is_empty() {
-                            String::new()
-                        } else {
-                            // Format the line directly (bypass renderer which suppresses in non-TTY)
-                            format!(
-                                "{}[{}]{} {}Thinking: {}{}{}\n",
+                        if !sanitized.is_empty() {
+                            let line = format!(
+                                "{}[{}]{} {}Tool input: {}{}{}\n",
                                 c.dim(),
                                 &self.display_name,
                                 c.reset(),
@@ -355,42 +388,39 @@ impl ClaudeParser {
                                 c.cyan(),
                                 sanitized,
                                 c.reset()
-                            )
+                            );
+                            tool_output.push_str(&line);
                         }
-                    } else {
-                        String::new()
-                    };
-
-                // Flush accumulated text content for all content blocks
-                // We format the output directly here because the renderers now suppress
-                // output in non-TTY modes (to prevent per-delta spam).
-                let mut text_output = String::new();
-                for index in 0..10 {
-                    // Reasonable upper bound for content blocks
-                    let index_str = index.to_string();
-                    let accumulated = session
-                        .get_accumulated(ContentType::Text, &index_str)
-                        .unwrap_or("");
-                    let sanitized =
-                        crate::json_parser::delta_display::sanitize_for_display(accumulated);
-                    if !sanitized.is_empty() {
-                        // Format the line directly (bypass renderer which suppresses in non-TTY)
-                        let line = format!(
-                            "{}[{}]{} {}{}{}\n",
-                            c.dim(),
-                            &self.display_name,
-                            c.reset(),
-                            c.white(),
-                            sanitized,
-                            c.reset()
-                        );
-                        text_output.push_str(&line);
                     }
-                }
 
-                (thinking_output, text_output)
-            }
-        };
+                    // Flush accumulated text content for all content blocks.
+                    // We format the output directly here because the renderers now suppress
+                    // output in non-TTY modes (to prevent per-delta spam).
+                    let mut text_output = String::new();
+                    for index_str in session.accumulated_keys(ContentType::Text) {
+                        let accumulated = session
+                            .get_accumulated(ContentType::Text, &index_str)
+                            .unwrap_or("");
+                        let sanitized =
+                            crate::json_parser::delta_display::sanitize_for_display(accumulated);
+                        if !sanitized.is_empty() {
+                            // Format the line directly (bypass renderer which suppresses in non-TTY)
+                            let line = format!(
+                                "{}[{}]{} {}{}{}\n",
+                                c.dim(),
+                                &self.display_name,
+                                c.reset(),
+                                c.white(),
+                                sanitized,
+                                c.reset()
+                            );
+                            text_output.push_str(&line);
+                        }
+                    }
+
+                    (thinking_output, tool_output, text_output)
+                }
+            };
 
         // Message complete - add final newline if we were in a content block
         // OR if any content was streamed (handles edge cases where block state
@@ -412,11 +442,18 @@ impl ClaudeParser {
                 *self.cursor_up_active.borrow_mut() = false;
             }
 
-            let completion = format!(
-                "{}{}",
-                c.reset(),
-                TextDeltaRenderer::render_completion(terminal_mode)
-            );
+            let completion = if terminal_mode == TerminalMode::Full {
+                format!(
+                    "{}{}",
+                    c.reset(),
+                    TextDeltaRenderer::render_completion(terminal_mode)
+                )
+            } else {
+                // In non-TTY modes, flush output paths already include newline terminators.
+                // Avoid appending an additional completion newline which would create
+                // extra blank lines in logs.
+                c.reset().to_string()
+            };
             // Show streaming quality metrics in debug mode or when flag is set
             let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
                 && metrics.total_deltas > 0;
@@ -425,9 +462,9 @@ impl ClaudeParser {
             } else {
                 completion
             };
-            format!("{thinking_finalize}{thinking_flush_non_tty}{text_flush_non_tty}{completion_with_metrics}")
+            format!("{thinking_finalize}{thinking_flush_non_tty}{tool_input_flush_non_tty}{text_flush_non_tty}{completion_with_metrics}")
         } else {
-            format!("{thinking_finalize}{thinking_flush_non_tty}{text_flush_non_tty}")
+            format!("{thinking_finalize}{thinking_flush_non_tty}{tool_input_flush_non_tty}{text_flush_non_tty}")
         }
     }
 

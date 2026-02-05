@@ -99,7 +99,8 @@ fn test_ccs_glm_complete_message_deduplication() {
     let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
     let printer: SharedPrinter = test_printer.clone();
 
-    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer);
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
+        .with_terminal_mode(TerminalMode::Full);
 
     // Simulate streaming followed by a complete message event
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}

@@ -109,13 +109,17 @@ fn test_content_block_stop_no_index() {
     );
 }
 
-/// Test complete ccs-glm event sequence
+/// Test complete ccs-glm event sequence in Full terminal mode
 ///
 /// This test verifies that a typical ccs-glm streaming sequence
-/// doesn't produce blank lines from control events.
+/// doesn't produce blank lines from control events and properly
+/// renders streaming deltas in Full mode.
 #[test]
 fn test_ccs_glm_event_sequence() {
-    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal);
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full);
 
     // System init
     let json1 = r#"{"type":"system","subtype":"init","session_id":"test123"}"#;
@@ -135,12 +139,12 @@ fn test_ccs_glm_event_sequence() {
         "content_block_start should produce no output"
     );
 
-    // Content block delta with text
+    // Content block delta with text - in Full mode this produces streaming output
     let json4 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
     let output4 = parser.parse_event(json4);
     assert!(
         output4.is_some(),
-        "content_block_delta with text should produce output"
+        "content_block_delta with text should produce output in Full mode"
     );
 
     // Content block stop - should not produce blank line
@@ -215,7 +219,11 @@ fn test_thinking_deltas_non_tty_flushed_once_on_message_stop() {
     assert!(out.contains(",\""));
     assert!(out.contains("but"));
     assert_eq!(out.matches("Thinking:").count(), 1);
-    assert_eq!(out.matches('\n').count(), 1);
+
+    // The thinking flush should produce a single newline-terminated line.
+    // Avoid asserting on completion newlines; non-TTY completion output should not
+    // add extra blank lines.
+    assert_eq!(out.lines().count(), 1);
 }
 
 #[test]
@@ -230,25 +238,37 @@ fn test_thinking_flushes_before_text_in_non_tty_mode() {
     assert!(parser.parse_event(start).is_none());
 
     let think = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Checking..."}}}"#;
-    assert!(parser.parse_event(think).is_none());
+    assert!(
+        parser.parse_event(think).is_none(),
+        "thinking delta should be suppressed in non-TTY"
+    );
 
-    // In non-TTY mode we do not interleave thinking with streaming text.
-    // Thinking is flushed once at message_stop.
+    // In non-TTY mode, ALL per-delta output is suppressed (thinking, text, tool input).
+    // Everything is flushed once at message_stop to prevent repeated prefixed lines.
     let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
-    let out = parser
-        .parse_event(text)
-        .expect("text delta should produce output");
-
-    assert!(out.contains("Hello"));
-
-    assert!(!out.contains("Thinking:"));
+    assert!(
+        parser.parse_event(text).is_none(),
+        "text delta should be suppressed in non-TTY (flushed at message_stop)"
+    );
 
     let stop = r#"{"type":"stream_event","event":{"type":"message_stop"}}"#;
-    let out2 = parser
+    let out = parser
         .parse_event(stop)
-        .expect("message_stop should flush thinking");
-    assert!(out2.contains("Thinking:"));
-    assert!(out2.contains("Checking..."));
+        .expect("message_stop should flush thinking and text");
+
+    // Both thinking and text should be flushed at message_stop
+    assert!(
+        out.contains("Thinking:"),
+        "thinking should be flushed at message_stop"
+    );
+    assert!(
+        out.contains("Checking..."),
+        "thinking content should be present"
+    );
+    assert!(
+        out.contains("Hello"),
+        "text content should be flushed at message_stop"
+    );
 }
 
 #[test]

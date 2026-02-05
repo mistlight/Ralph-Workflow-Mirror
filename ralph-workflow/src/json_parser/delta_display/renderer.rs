@@ -146,16 +146,19 @@ pub trait DeltaRenderer {
 /// [ccs-glm] Hello World\n\x1b[1B\n       <- Final: move cursor down + newline
 /// ```
 ///
-/// ## Basic/None Mode (colors only or plain text)
+/// ## Basic/None Mode (non-TTY logs)
+///
+/// In non-TTY modes, per-delta output is suppressed to avoid repeated prefixed
+/// lines for partial updates. The parser is responsible for flushing the final
+/// accumulated content once at a completion boundary (e.g. `message_stop`).
 ///
 /// ```text
-/// [ccs-glm] Hello\n                      <- First chunk: simple line output
-/// [ccs-glm] Hello World\n                <- Second chunk: full content (no in-place update)
-///                                       <- Final: just a newline
+/// [ccs-glm] Hello World\n
 /// ```
 ///
-/// The multi-line pattern is the industry standard used by Rich, Ink, Bubble Tea
-/// and other production CLI libraries for clean streaming output.
+/// The multi-line pattern (in-place updates) is the industry standard used by
+/// Rich, Ink, Bubble Tea, and other production CLI libraries for clean streaming
+/// output.
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
