@@ -19,7 +19,12 @@ mod tests {
     #[test]
     fn test_format_tool_input() {
         let formatter = DeltaDisplayFormatter::new();
-        let output = formatter.format_tool_input("command=ls -la", "Claude", test_colors());
+        let output = formatter.format_tool_input(
+            "command=ls -la",
+            "Claude",
+            test_colors(),
+            TerminalMode::Full,
+        );
         assert!(output.contains("command=ls -la"));
         assert!(output.contains("└─"));
     }
@@ -50,14 +55,9 @@ mod tests {
             test_colors(),
             TerminalMode::None,
         );
-        assert!(output.contains("[ccs-glm]"));
-        assert!(output.contains("Hello"));
-        // No cursor positioning in None mode
-        assert!(!output.contains("\x1b[1A"));
-        assert!(!output.contains("\x1b[2K"));
-        // But should still have newline
-        assert!(output.contains('\n'));
-        assert!(output.ends_with('\n'));
+        // Per-delta output is suppressed in None mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(output, "");
     }
 
     #[test]
@@ -68,14 +68,9 @@ mod tests {
             test_colors(),
             TerminalMode::Basic,
         );
-        assert!(output.contains("[ccs-glm]"));
-        assert!(output.contains("Hello"));
-        // No cursor positioning in Basic mode
-        assert!(!output.contains("\x1b[1A"));
-        assert!(!output.contains("\x1b[2K"));
-        // But should still have newline
-        assert!(output.contains('\n'));
-        assert!(output.ends_with('\n'));
+        // Per-delta output is suppressed in Basic mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(output, "");
     }
 
     #[test]
@@ -103,14 +98,9 @@ mod tests {
             test_colors(),
             TerminalMode::None,
         );
-        assert!(!output.contains(CLEAR_LINE));
-        assert!(!output.contains('\r'));
-        assert!(output.contains("Hello World"));
-        // No cursor positioning in None mode
-        assert!(!output.contains("\x1b[1A"));
-        // But should still have newline
-        assert!(output.contains('\n'));
-        assert!(output.ends_with('\n'));
+        // Per-delta output is suppressed in None mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(output, "");
     }
 
     #[test]
@@ -236,10 +226,9 @@ mod tests {
             colors,
             TerminalMode::Basic,
         );
-        assert!(out.contains("Thinking:"));
-        assert!(out.ends_with('\n'));
-        assert!(!out.contains("\x1b[1A"));
-        assert!(!out.contains(CLEAR_LINE));
+        // Per-delta thinking output is suppressed in Basic mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(out, "");
     }
 
     #[test]
@@ -286,15 +275,9 @@ mod tests {
         );
         let complete = TextDeltaRenderer::render_completion(TerminalMode::None);
 
-        // First delta: simple line ending with newline
-        assert!(first.contains("Hello"));
-        assert!(first.ends_with('\n'));
-        assert!(!first.contains('\x1b'));
-
-        // Second delta: simple line with full content (no in-place update)
-        assert!(second.contains("Hello World"));
-        assert!(second.ends_with('\n'));
-        assert!(!second.contains('\x1b'));
+        // Per-delta output is suppressed in None mode to prevent spam
+        assert_eq!(first, "");
+        assert_eq!(second, "");
 
         // Completion: just a newline
         assert_eq!(complete, "\n");
