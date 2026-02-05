@@ -515,6 +515,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             // Fix output is valid but indicates work is incomplete (issues_remain)
             let mut metrics = state.metrics.clone();
             metrics.fix_continuations_total += 1;
+            // Increment fix continuation attempt counter
+            metrics.fix_continuation_attempt += 1;
 
             PipelineState {
                 reviewer_pass: pass,
@@ -536,6 +538,10 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
         } => {
             // Fix continuation succeeded - transition to CommitMessage
             // Use reset() instead of new() to preserve configured limits
+            let mut metrics = state.metrics.clone();
+            // Fix succeeded after continuation - increment review passes completed
+            metrics.review_passes_completed += 1;
+
             PipelineState {
                 phase: crate::reducer::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(crate::reducer::event::PipelinePhase::Review),
@@ -550,6 +556,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 commit_xml_archived: false,
                 continuation: state.continuation.reset(),
                 fix_result_xml_cleaned_pass: None,
+                metrics,
                 ..state
             }
         }

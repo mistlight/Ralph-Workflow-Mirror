@@ -94,6 +94,8 @@ fn test_summary_matches_reducer_state_with_continuations() {
 
         // Iteration 0 with 2 continuations
         state = reduce(state, PipelineEvent::development_iteration_started(0));
+        assert_eq!(state.metrics.dev_continuation_attempt, 0);
+
         state = reduce(state, PipelineEvent::development_agent_invoked(0)); // Attempt 1
         state = reduce(
             state,
@@ -105,6 +107,8 @@ fn test_summary_matches_reducer_state_with_continuations() {
                 next_steps: None,
             }),
         );
+        assert_eq!(state.metrics.dev_continuation_attempt, 1);
+
         state = reduce(state, PipelineEvent::development_agent_invoked(0)); // Attempt 2
         state = reduce(
             state,
@@ -113,6 +117,7 @@ fn test_summary_matches_reducer_state_with_continuations() {
                 total_continuation_attempts: 2,
             }),
         );
+        assert_eq!(state.metrics.dev_iterations_completed, 1);
 
         // Commit after dev
         state = reduce(
@@ -316,5 +321,70 @@ fn test_summary_zero_when_no_work_done() {
         assert_eq!(summary.review_passes_total, 3);
         assert_eq!(summary.review_runs, 0);
         assert_eq!(summary.changes_detected, 0);
+    });
+}
+
+#[test]
+fn test_fix_continuation_metrics_tracked_in_reducer() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::FixStatus;
+
+        let mut state = PipelineState::initial(1, 1);
+
+        // Complete dev iteration
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+        state = reduce(state, PipelineEvent::development_agent_invoked(0));
+        state = reduce(
+            state,
+            PipelineEvent::development_iteration_completed(0, true),
+        );
+        state = reduce(
+            state,
+            PipelineEvent::commit_created("hash0".to_string(), "Dev work".to_string()),
+        );
+
+        // Start review pass
+        state = reduce(state, PipelineEvent::review_pass_started(1));
+        assert_eq!(state.metrics.fix_continuation_attempt, 0);
+
+        state = reduce(state, PipelineEvent::review_agent_invoked(1));
+
+        // Issues found, start fix
+        state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 1 }),
+        );
+
+        // Fix reports issues remain - trigger continuation
+        state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::FixContinuationTriggered {
+                pass: 1,
+                status: FixStatus::IssuesRemain,
+                summary: Some("Fixed some issues".to_string()),
+            }),
+        );
+
+        assert_eq!(state.metrics.fix_continuation_attempt, 1);
+        assert_eq!(state.metrics.fix_continuations_total, 1);
+
+        // Second fix attempt
+        state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 1 }),
+        );
+
+        // Fix succeeds
+        state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::FixContinuationSucceeded {
+                pass: 1,
+                total_attempts: 2,
+            }),
+        );
+
+        assert_eq!(state.metrics.review_passes_completed, 1);
+        assert_eq!(state.metrics.fix_runs_total, 2);
+        assert_eq!(state.metrics.fix_continuations_total, 1);
     });
 }

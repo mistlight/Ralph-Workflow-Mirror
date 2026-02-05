@@ -34,6 +34,10 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
     if state.reviewer_pass != pass {
         metrics.review_passes_started += 1;
     }
+    // Update current pass tracker
+    metrics.current_review_pass = pass;
+    // Reset per-pass fix continuation attempt counter
+    metrics.fix_continuation_attempt = 0;
 
     PipelineState {
         reviewer_pass: pass,

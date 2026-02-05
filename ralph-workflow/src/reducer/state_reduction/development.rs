@@ -32,6 +32,8 @@ pub(super) fn reduce_development_event(
             metrics.dev_iterations_started += 1;
             // Reset per-iteration analysis attempt counter
             metrics.analysis_attempts_in_current_iteration = 0;
+            // Reset per-iteration continuation attempt counter
+            metrics.dev_continuation_attempt = 0;
 
             PipelineState {
                 iteration,
@@ -303,6 +305,10 @@ pub(super) fn reduce_development_event(
             next_steps,
         } => {
             // Trigger continuation with context from the previous attempt
+            let mut metrics = state.metrics.clone();
+            // Increment continuation attempt counter
+            metrics.dev_continuation_attempt += 1;
+
             PipelineState {
                 iteration,
                 continuation: state.continuation.trigger_continuation(
@@ -322,6 +328,7 @@ pub(super) fn reduce_development_event(
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
+                metrics,
                 ..state
             }
         }
