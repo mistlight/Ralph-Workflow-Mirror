@@ -121,16 +121,23 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
                     .map(std::string::ToString::to_string)
             };
 
+            // Format the output directly because the renderers now suppress
+            // output in non-TTY modes (to prevent per-delta spam).
             let rendered = if let Some(thinking) = streamed_thinking {
                 let sanitized = sanitize_for_display(&thinking);
                 if sanitized.is_empty() {
                     String::new()
                 } else {
-                    ThinkingDeltaRenderer::render_first_delta(
-                        &sanitized,
+                    // Format the line directly (bypass renderer which suppresses in non-TTY)
+                    format!(
+                        "{}[{}]{} {}Thinking: {}{}{}\n",
+                        ctx.colors.dim(),
                         ctx.display_name,
-                        *ctx.colors,
-                        ctx.terminal_mode,
+                        ctx.colors.reset(),
+                        ctx.colors.dim(),
+                        ctx.colors.cyan(),
+                        sanitized,
+                        ctx.colors.reset()
                     )
                 }
             } else if let Some(text) = completion_text {
@@ -153,11 +160,16 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
                     if sanitized.is_empty() {
                         String::new()
                     } else {
-                        ThinkingDeltaRenderer::render_first_delta(
-                            &sanitized,
+                        // Format the line directly (bypass renderer which suppresses in non-TTY)
+                        format!(
+                            "{}[{}]{} {}Thinking: {}{}{}\n",
+                            ctx.colors.dim(),
                             ctx.display_name,
-                            *ctx.colors,
-                            ctx.terminal_mode,
+                            ctx.colors.reset(),
+                            ctx.colors.dim(),
+                            ctx.colors.cyan(),
+                            sanitized,
+                            ctx.colors.reset()
                         )
                     }
                 }
