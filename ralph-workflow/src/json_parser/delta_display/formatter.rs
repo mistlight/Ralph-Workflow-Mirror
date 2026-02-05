@@ -49,14 +49,30 @@ impl DeltaDisplayFormatter {
     ///
     /// Tool input is shown with appropriate styling.
     ///
-    /// # Current Behavior
+    /// # Terminal Mode Behavior
     ///
-    /// Every call renders the full `[prefix]   └─ content` pattern.
-    /// This provides clarity about which agent's tool is being invoked.
+    /// - **Full mode (TTY):** Renders the full `[prefix]   └─ content` pattern
+    ///   for each delta, providing real-time feedback with clarity about which
+    ///   agent's tool is being invoked.
+    ///
+    /// - **Basic/None modes (non-TTY):** Suppresses per-delta output to prevent
+    ///   repeated prefixed lines in logs and CI output. Tool input is accumulated
+    ///   and rendered ONCE at completion boundaries (`message_stop`).
+    ///
+    /// # CCS Spam Prevention (Bug Fix)
+    ///
+    /// This implementation prevents repeated "[ccs/glm]" and "[ccs/codex]" prefixed
+    /// lines for tool input deltas in non-TTY modes. The fix is validated with
+    /// comprehensive regression tests that simulate real-world streaming scenarios.
+    ///
+    /// See comprehensive regression tests:
+    /// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (NEW: comprehensive coverage)
+    /// - `tests/integration_tests/ccs_nuclear_spam_test.rs` (tool input with 500+ deltas)
+    /// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types including tool input)
     ///
     /// # Future Enhancement
     ///
-    /// For streaming tool inputs with multiple deltas, consider suppressing
+    /// For streaming tool inputs with multiple deltas in Full mode, consider suppressing
     /// the `[prefix]` on continuation lines to reduce visual noise:
     /// - First tool input line: `[prefix] Tool: name`
     /// - Continuation: `           └─ more input` (aligned, no prefix)

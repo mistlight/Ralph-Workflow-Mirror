@@ -78,6 +78,7 @@ pub trait DeltaRenderer {
     ///
     /// # Returns
     /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
+    /// In Basic/None modes, returns empty string (per-delta output suppressed).
     fn render_first_delta(
         accumulated: &str,
         prefix: &str,
@@ -98,7 +99,8 @@ pub trait DeltaRenderer {
     /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A formatted string with prefix and content.
+    /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
+    /// In Basic/None modes, returns empty string (per-delta output suppressed).
     fn render_subsequent_delta(
         accumulated: &str,
         prefix: &str,
