@@ -430,46 +430,51 @@ impl ClaudeParser {
                         // Flush accumulated tool input.
                         // Tool input deltas can arrive as partial JSON chunks; in non-TTY modes we
                         // render the final accumulated value once at message_stop.
+                        //
+                        // IMPORTANT: Tool inputs can contain secrets. Respect the global verbosity
+                        // policy (same as assistant tool blocks) rather than unconditionally printing.
                         let mut tool_output = String::new();
-                        for index_str in session.accumulated_keys(ContentType::ToolInput) {
-                            let accumulated = session
-                                .get_accumulated(ContentType::ToolInput, &index_str)
-                                .unwrap_or("");
-                            let sanitized = crate::json_parser::delta_display::sanitize_for_display(
-                                accumulated,
-                            );
-                            if !sanitized.is_empty() {
-                                let prefix_fmt = match terminal_mode {
-                                    TerminalMode::Basic => format!(
-                                        "{}[{}]{} {}",
-                                        c.dim(),
-                                        &self.display_name,
-                                        c.reset(),
-                                        c.dim()
-                                    ),
-                                    TerminalMode::None => {
-                                        format!("[{}] ", &self.display_name)
-                                    }
-                                    TerminalMode::Full => unreachable!(),
-                                };
+                        if self.verbosity.show_tool_input() {
+                            for index_str in session.accumulated_keys(ContentType::ToolInput) {
+                                let accumulated = session
+                                    .get_accumulated(ContentType::ToolInput, &index_str)
+                                    .unwrap_or("");
+                                let sanitized = crate::json_parser::delta_display::sanitize_for_display(
+                                    accumulated,
+                                );
+                                if !sanitized.is_empty() {
+                                    let prefix_fmt = match terminal_mode {
+                                        TerminalMode::Basic => format!(
+                                            "{}[{}]{} {}",
+                                            c.dim(),
+                                            &self.display_name,
+                                            c.reset(),
+                                            c.dim()
+                                        ),
+                                        TerminalMode::None => {
+                                            format!("[{}] ", &self.display_name)
+                                        }
+                                        TerminalMode::Full => unreachable!(),
+                                    };
 
-                                let label_fmt = match terminal_mode {
-                                    TerminalMode::Basic => {
-                                        format!("Tool input: {}", c.cyan())
-                                    }
-                                    TerminalMode::None => "Tool input: ".to_string(),
-                                    TerminalMode::Full => unreachable!(),
-                                };
+                                    let label_fmt = match terminal_mode {
+                                        TerminalMode::Basic => {
+                                            format!("Tool input: {}", c.cyan())
+                                        }
+                                        TerminalMode::None => "Tool input: ".to_string(),
+                                        TerminalMode::Full => unreachable!(),
+                                    };
 
-                                let suffix_fmt = match terminal_mode {
-                                    TerminalMode::Basic => c.reset().to_string(),
-                                    TerminalMode::None => String::new(),
-                                    TerminalMode::Full => unreachable!(),
-                                };
+                                    let suffix_fmt = match terminal_mode {
+                                        TerminalMode::Basic => c.reset().to_string(),
+                                        TerminalMode::None => String::new(),
+                                        TerminalMode::Full => unreachable!(),
+                                    };
 
-                                tool_output.push_str(&format!(
-                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
-                                ));
+                                    tool_output.push_str(&format!(
+                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
+                                    ));
+                                }
                             }
                         }
 

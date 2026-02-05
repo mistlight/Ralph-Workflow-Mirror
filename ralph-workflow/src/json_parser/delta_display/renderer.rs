@@ -122,7 +122,10 @@ pub trait DeltaRenderer {
     fn render_completion(terminal_mode: TerminalMode) -> String {
         match terminal_mode {
             TerminalMode::Full => "\x1b[1B\n".to_string(),
-            TerminalMode::Basic | TerminalMode::None => "\n".to_string(),
+            // In non-TTY modes, streamed output is suppressed and the parser flushes
+            // newline-terminated content at completion boundaries. Returning a newline here
+            // would add an extra blank line if a caller invokes `render_completion`.
+            TerminalMode::Basic | TerminalMode::None => String::new(),
         }
     }
 }

@@ -358,19 +358,36 @@ impl OpenCodeParser {
         // `.agent/tmp/*.xml`). Capture `<ralph-commit>...</ralph-commit>` from the accumulated
         // text stream and write it to the standard commit artifact path so the commit phase can
         // validate it via file-based extraction.
+        //
+        // SECURITY: Bound the amount of accumulated text we scan and the size of the extracted
+        // XML we write. This prevents pathological model output from causing unbounded memory/IO.
+        const MAX_COMMIT_XML_SEARCH_BYTES: usize = 512 * 1024;
+        const MAX_COMMIT_XML_BYTES: usize = 128 * 1024;
         if let Some(accumulated) = self
             .streaming_session
             .borrow()
             .get_accumulated(ContentType::Text, "main")
         {
-            if let Some(xml) =
-                crate::files::llm_output_extraction::xml_extraction::extract_xml_commit(accumulated)
-            {
-                workspace.create_dir_all(Path::new(".agent/tmp"))?;
-                workspace.write(
-                    Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::COMMIT_MESSAGE_XML),
-                    &xml,
-                )?;
+            let accumulated_tail = if accumulated.len() > MAX_COMMIT_XML_SEARCH_BYTES {
+                let mut start = accumulated.len() - MAX_COMMIT_XML_SEARCH_BYTES;
+                while start < accumulated.len() && !accumulated.is_char_boundary(start) {
+                    start += 1;
+                }
+                &accumulated[start..]
+            } else {
+                accumulated
+            };
+
+            if let Some(xml) = crate::files::llm_output_extraction::xml_extraction::extract_xml_commit(
+                accumulated_tail,
+            ) {
+                if xml.len() <= MAX_COMMIT_XML_BYTES {
+                    workspace.create_dir_all(Path::new(".agent/tmp"))?;
+                    workspace.write(
+                        Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::COMMIT_MESSAGE_XML),
+                        &xml,
+                    )?;
+                }
             }
         }
         if let Some(warning) = monitor.check_and_warn(*c) {

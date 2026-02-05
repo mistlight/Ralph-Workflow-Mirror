@@ -16,7 +16,6 @@ fn test_parse_opencode_tool_output_object_payload() {
 }
 
 #[test]
-#[cfg(test)]
 fn test_opencode_streaming_with_tool_use_events() {
     use crate::json_parser::printer::{SharedPrinter, TestPrinter};
     use std::cell::RefCell;

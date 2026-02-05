@@ -62,7 +62,6 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This exact content has been rendered before
     /// * `false` - This exact content has not been rendered
-    #[cfg(test)]
     pub fn is_content_rendered(&self, content_type: ContentType, index: &str) -> bool {
         let content_key = (content_type, index.to_string());
 
@@ -110,7 +109,6 @@ impl StreamingSession {
     /// # Arguments
     /// * `content_type` - The type of content
     /// * `index` - The content index (as string for flexibility)
-    #[cfg(test)]
     pub fn mark_content_rendered(&mut self, content_type: ContentType, index: &str) {
         // Also update last_rendered for compatibility
         self.mark_rendered(content_type, index);

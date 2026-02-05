@@ -129,19 +129,21 @@ mod tests {
     #[test]
     fn test_text_delta_renderer_completion_none_mode() {
         let output = TextDeltaRenderer::render_completion(TerminalMode::None);
-        // Just a newline in None mode
+        // No completion sequence in None mode.
+        // In non-TTY modes, streaming output is suppressed and the parser flushes
+        // newline-terminated content at completion boundaries.
         assert!(!output.contains("\x1b[1B"));
-        assert!(output.contains('\n'));
-        assert_eq!(output, "\n");
+        assert_eq!(output, "");
     }
 
     #[test]
     fn test_text_delta_renderer_completion_basic_mode() {
         let output = TextDeltaRenderer::render_completion(TerminalMode::Basic);
-        // Just a newline in Basic mode
+        // No completion sequence in Basic mode.
+        // In non-TTY modes, streaming output is suppressed and the parser flushes
+        // newline-terminated content at completion boundaries.
         assert!(!output.contains("\x1b[1B"));
-        assert!(output.contains('\n'));
-        assert_eq!(output, "\n");
+        assert_eq!(output, "");
     }
 
     #[test]
@@ -279,8 +281,8 @@ mod tests {
         assert_eq!(first, "");
         assert_eq!(second, "");
 
-        // Completion: just a newline
-        assert_eq!(complete, "\n");
+        // Completion: no-op (newline is emitted by the parser's non-TTY flush paths)
+        assert_eq!(complete, "");
     }
 
     #[test]
