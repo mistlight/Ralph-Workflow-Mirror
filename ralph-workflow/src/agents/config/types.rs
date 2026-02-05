@@ -4,6 +4,24 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+fn is_stream_json_output(output_flag: &str) -> bool {
+    let output_flag = output_flag.trim();
+    if output_flag.is_empty() {
+        return false;
+    }
+
+    // Common patterns:
+    // - "--output-format=stream-json" (Claude/CCS)
+    // - "--output-format stream-json" (space-separated)
+    // - "--output-format=stream-json" embedded in a longer string
+    if output_flag.contains("stream-json") {
+        return true;
+    }
+
+    // Fallback for other potential spellings: allow "stream_json".
+    output_flag.contains("stream_json")
+}
+
 /// Default agents.toml template embedded at compile time.
 pub const DEFAULT_AGENTS_TOML: &str = include_str!("../../../examples/agents.toml");
 
@@ -102,7 +120,7 @@ impl AgentConfig {
         // Claude requires --include-partial-messages to stream JSON in print mode.
         if output
             && !self.output_flag.is_empty()
-            && self.output_flag.contains("stream-json")
+            && is_stream_json_output(&self.output_flag)
             && !self.print_flag.is_empty()
             && !self.streaming_flag.is_empty()
         {
@@ -162,7 +180,7 @@ impl AgentConfig {
     }
 
     fn requires_verbose_for_json(&self, json_enabled: bool) -> bool {
-        if !json_enabled || !self.output_flag.contains("stream-json") {
+        if !json_enabled || !is_stream_json_output(&self.output_flag) {
             return false;
         }
 

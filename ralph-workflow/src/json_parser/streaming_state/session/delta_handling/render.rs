@@ -45,8 +45,10 @@ impl StreamingSession {
             current.hash(&mut hasher);
             let hash = hasher.finish();
 
-            // Check if this hash has been rendered before
-            return self.rendered_content_hashes.contains(&hash);
+            // Check if this hash has been rendered before for this key
+            return self
+                .rendered_content_hashes
+                .contains(&(content_type, index.to_string(), hash));
         }
 
         false
@@ -91,7 +93,8 @@ impl StreamingSession {
             let mut hasher = DefaultHasher::new();
             current.hash(&mut hasher);
             let hash = hasher.finish();
-            self.rendered_content_hashes.insert(hash);
+            self.rendered_content_hashes
+                .insert((content_type, index.to_string(), hash));
         }
     }
 
@@ -114,11 +117,15 @@ impl StreamingSession {
         // Also update last_rendered for compatibility
         self.mark_rendered(content_type, index);
 
-        // Add the hash of the content to the rendered set
+        // Add the hash of the content to the rendered set.
+        //
+        // NOTE: We key by (content_type, index) so `clear_key()` can fully reset
+        // per-substream deduplication.
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         let hash = hasher.finish();
-        self.rendered_content_hashes.insert(hash);
+        self.rendered_content_hashes
+            .insert((content_type, index.to_string(), hash));
     }
 
     /// Check if sanitized content has already been rendered.
@@ -136,8 +143,8 @@ impl StreamingSession {
     /// * `false` - This exact content has not been rendered
     pub fn is_content_hash_rendered(
         &self,
-        _content_type: ContentType,
-        _index: &str,
+        content_type: ContentType,
+        index: &str,
         content: &str,
     ) -> bool {
         // Compute hash of exact content
@@ -145,7 +152,8 @@ impl StreamingSession {
         content.hash(&mut hasher);
         let hash = hasher.finish();
 
-        // Check if this hash has been rendered before
-        self.rendered_content_hashes.contains(&hash)
+        // Check if this hash has been rendered before for this (content_type, index)
+        self.rendered_content_hashes
+            .contains(&(content_type, index.to_string(), hash))
     }
 }

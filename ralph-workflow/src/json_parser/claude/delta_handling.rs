@@ -45,6 +45,8 @@ impl ClaudeParser {
                     return String::new();
                 };
                 *self.cursor_up_active.borrow_mut() = false;
+                // Keep `session` in the signature for symmetry with other finalizers.
+                // Thinking finalization is parser-owned state in Full mode.
                 let _ = session;
                 // Finalize the multi-line in-place update pattern for thinking.
                 // This leaves the final thinking line visible and moves the cursor to the next line.

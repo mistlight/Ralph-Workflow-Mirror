@@ -75,6 +75,66 @@ pub fn resolve_ccs_agent(
 /// leakage of sensitive credential values. Keys containing patterns like "token",
 /// "key", "secret", "password", "auth" are always filtered out regardless of
 /// their actual value, to protect against custom credential formats.
+struct CcsEnvVarDebugSummary {
+    whitelisted_keys_present: Vec<String>,
+    redacted_sensitive_keys: usize,
+    hidden_non_whitelisted_keys: usize,
+}
+
+fn ccs_env_var_debug_summary(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
+    // Whitelist of safe-to-log environment variable keys.
+    // These are configuration keys, not credentials, so it's safe to log them.
+    const SAFE_KEYS: &[&str] = &[
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    ];
+
+    let mut whitelisted_keys_present = Vec::new();
+    let mut redacted_sensitive_keys = 0usize;
+    let mut hidden_non_whitelisted_keys = 0usize;
+
+    for key in env_vars.keys() {
+        let key_upper = key.to_uppercase();
+
+        if SAFE_KEYS.contains(&key_upper.as_str()) {
+            whitelisted_keys_present.push(key_upper);
+            continue;
+        }
+
+        // Treat as sensitive if it looks secret-like. Otherwise it's just hidden because it's not on the whitelist.
+        let key_normalized = key_upper
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>();
+
+        let looks_sensitive = key_normalized.contains("TOKEN")
+            || key_normalized.contains("SECRET")
+            || key_normalized.contains("PASSWORD")
+            || key_normalized.contains("AUTH")
+            || key_normalized.contains("KEY")
+            || key_normalized.contains("API")
+            || key_normalized == "AUTHORIZATION";
+
+        if looks_sensitive {
+            redacted_sensitive_keys += 1;
+        } else {
+            hidden_non_whitelisted_keys += 1;
+        }
+    }
+
+    whitelisted_keys_present.sort();
+    whitelisted_keys_present.dedup();
+
+    CcsEnvVarDebugSummary {
+        whitelisted_keys_present,
+        redacted_sensitive_keys,
+        hidden_non_whitelisted_keys,
+    }
+}
+
 fn log_ccs_env_vars_loaded(
     debug_mode: bool,
     alias_name: &str,
@@ -87,52 +147,30 @@ fn log_ccs_env_vars_loaded(
     }
     let profile = profile_used_for_env.map_or(alias_name, |s| s.as_str());
     if env_vars_loaded {
-        // Whitelist of safe-to-log environment variable keys.
-        // These are configuration keys, not credentials, so it's safe to log them.
-        const SAFE_KEYS: &[&str] = &[
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-        ];
-
-        // Filter env vars to only show whitelisted safe keys
-        let safe_keys: Vec<_> = env_vars
-            .keys()
-            .filter(|key| {
-                let key_upper = key.to_uppercase();
-                // Check if key is in our whitelist
-                if SAFE_KEYS.contains(&key_upper.as_str()) {
-                    return true;
-                }
-                // Otherwise, filter out any key that looks sensitive
-                let key_normalized = key_upper
-                    .chars()
-                    .filter(char::is_ascii_alphanumeric)
-                    .collect::<String>();
-                !key_normalized.contains("TOKEN")
-                    && !key_normalized.contains("SECRET")
-                    && !key_normalized.contains("PASSWORD")
-                    && !key_normalized.contains("AUTH")
-                    && !key_normalized.contains("KEY")
-                    && !key_normalized.contains("API")
-                    && key_normalized != "AUTHORIZATION"
-            })
-            .collect();
+        let summary = ccs_env_var_debug_summary(env_vars);
 
         eprintln!(
             "CCS DEBUG: Loaded {} environment variable(s) for profile '{}'",
             env_vars.len(),
             profile
         );
-        // Only show whitelisted safe keys (redact all others for security)
-        for key in &safe_keys {
+
+        for key in &summary.whitelisted_keys_present {
             eprintln!("CCS DEBUG:   - {key}");
         }
-        let filtered_count = env_vars.len().saturating_sub(safe_keys.len());
-        if filtered_count > 0 {
-            eprintln!("CCS DEBUG:   - ({filtered_count} sensitive key(s) redacted)");
+
+        if summary.redacted_sensitive_keys > 0 {
+            eprintln!(
+                "CCS DEBUG:   - ({} sensitive key(s) redacted)",
+                summary.redacted_sensitive_keys
+            );
+        }
+
+        if summary.hidden_non_whitelisted_keys > 0 {
+            eprintln!(
+                "CCS DEBUG:   - ({} non-whitelisted key(s) hidden)",
+                summary.hidden_non_whitelisted_keys
+            );
         }
     } else {
         eprintln!("CCS DEBUG: Failed to load environment variables for profile '{profile}'");
@@ -174,7 +212,9 @@ fn resolve_ccs_command(
                 eprintln!(
                     "  This may cause issues with streaming flags like --include-partial-messages"
                 );
-                eprintln!("  Consider installing the Claude CLI: https://claude.ai/download");
+                eprintln!(
+                    "  Consider installing the Claude CLI (see your internal install docs, or the upstream Claude CLI installer)"
+                );
             }
             original_cmd.to_string()
         },
@@ -304,13 +344,12 @@ fn build_ccs_config_from_flags(
         .clone()
         .unwrap_or_else(|| defaults.streaming_flag.clone());
 
-    // Session continuation flag: use alias-specific override if provided,
-    // otherwise default to "--resume {}" for Claude CLI compatibility.
-    // Verified from `claude --help`: "-r, --resume [value] Resume a conversation by session ID"
+    // Session continuation flag: prefer alias-specific override, then unified-config CCS defaults.
+    // This is used for XSD retry loops to continue an existing conversation.
     let session_flag = alias_config
         .session_flag
         .clone()
-        .unwrap_or_else(|| "--resume {}".to_string());
+        .unwrap_or_else(|| defaults.session_flag.clone());
 
     AgentConfig {
         cmd, // Uses `claude` directly if found, otherwise falls back to original command

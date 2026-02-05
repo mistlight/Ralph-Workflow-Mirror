@@ -1,10 +1,9 @@
 /// Handle `ItemCompleted` event for `agent_message` type.
 pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     let session = ctx.streaming_session.borrow();
-    let is_duplicate = session.get_current_message_id().map_or_else(
-        || session.has_any_streamed_content(),
-        |message_id| session.is_duplicate_final_message(message_id),
-    );
+    let is_duplicate = session
+        .get_current_message_id()
+        .is_some_and(|message_id| session.is_duplicate_final_message(message_id));
     let was_streaming = session.has_any_streamed_content();
     let metrics = session.get_streaming_quality_metrics();
     drop(session);
@@ -50,7 +49,8 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 /// ## Non-TTY Modes (Basic/None)
 /// - Per-delta output was suppressed during streaming
 /// - Now flush the final accumulated thinking content **once** with "Thinking:" label
-/// - If no streamed thinking exists, fall back to verbose mode "Thought:" summary
+/// - If no streamed thinking exists, render the completion text once (non-spam),
+///   and always clear the streaming key to avoid cross-item contamination.
 ///
 /// ## Regression Test
 /// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
@@ -64,55 +64,80 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
         .borrow_mut()
         .clear_key(ContentType::Thinking, "reasoning");
 
-    // In Full mode, we already rendered thinking in-place during deltas.
-    // Just emit a completion sequence if needed.
+    let completion_text = full_reasoning
+        .as_deref()
+        .or(text.map(std::string::String::as_str));
+
     match ctx.terminal_mode {
         TerminalMode::Full => {
-            // In Full mode, thinking was already rendered in-place.
-            // Emit cursor finalization (move cursor down from in-place update position).
-            let session = ctx.streaming_session.borrow();
-            let has_thinking = session
-                .get_accumulated(ContentType::Thinking, "reasoning")
-                .is_some_and(|s| !s.is_empty());
-            drop(session);
+            // In Full mode, most reasoning arrives via deltas rendered in-place.
+            // If Codex provides reasoning only at completion, render it once here.
+            let streamed_thinking = {
+                let session = ctx.streaming_session.borrow();
+                session
+                    .get_accumulated(ContentType::Thinking, "reasoning")
+                    .map(std::string::ToString::to_string)
+            };
 
-            if has_thinking {
-                ThinkingDeltaRenderer::render_completion(ctx.terminal_mode)
-            } else {
-                String::new()
-            }
-        }
-        TerminalMode::Basic | TerminalMode::None => {
-            // In non-TTY modes, we suppressed per-delta output during streaming.
-            // Now flush the final accumulated thinking content once.
-            //
-            // Check if we have accumulated thinking from streaming deltas
-            let session = ctx.streaming_session.borrow();
-            let streamed_thinking = session
-                .get_accumulated(ContentType::Thinking, "reasoning")
-                .map(std::string::ToString::to_string);
-            drop(session);
-
-            // If we have streamed thinking, flush it with "Thinking:" label
-            if let Some(thinking) = streamed_thinking {
-                let sanitized = sanitize_for_display(&thinking);
-                if !sanitized.is_empty() {
-                    return ThinkingDeltaRenderer::render_first_delta(
+            let result = if let Some(thinking) = streamed_thinking {
+                if !thinking.is_empty() {
+                    ThinkingDeltaRenderer::render_completion(ctx.terminal_mode)
+                } else {
+                    String::new()
+                }
+            } else if let Some(text) = completion_text {
+                let sanitized = sanitize_for_display(text);
+                if sanitized.is_empty() {
+                    String::new()
+                } else {
+                    let rendered = ThinkingDeltaRenderer::render_first_delta(
                         &sanitized,
                         ctx.display_name,
                         *ctx.colors,
                         ctx.terminal_mode,
                     );
+                    let completion = ThinkingDeltaRenderer::render_completion(ctx.terminal_mode);
+                    format!("{rendered}{completion}")
                 }
-            }
+            } else {
+                String::new()
+            };
 
-            // Otherwise, in Verbose mode, show summarized "Thought:" line
-            // This handles the case where reasoning comes only in the completion event (no deltas)
-            if ctx.verbosity.is_verbose() {
-                if let Some(text) = full_reasoning.as_ref().or(text) {
+            ctx.streaming_session
+                .borrow_mut()
+                .clear_key(ContentType::Thinking, "reasoning");
+            result
+        }
+        TerminalMode::Basic | TerminalMode::None => {
+            // In non-TTY modes, suppress per-delta output and flush once at completion.
+            //
+            // If we received streamed reasoning deltas, flush the accumulated thinking once.
+            // If reasoning arrives only at completion (no deltas), preserve the existing
+            // verbose-mode "Thought:" summary behavior.
+            let streamed_thinking = {
+                let session = ctx.streaming_session.borrow();
+                session
+                    .get_accumulated(ContentType::Thinking, "reasoning")
+                    .map(std::string::ToString::to_string)
+            };
+
+            let rendered = if let Some(thinking) = streamed_thinking {
+                let sanitized = sanitize_for_display(&thinking);
+                if sanitized.is_empty() {
+                    String::new()
+                } else {
+                    ThinkingDeltaRenderer::render_first_delta(
+                        &sanitized,
+                        ctx.display_name,
+                        *ctx.colors,
+                        ctx.terminal_mode,
+                    )
+                }
+            } else if let Some(text) = completion_text {
+                if ctx.verbosity.is_verbose() {
                     let limit = ctx.verbosity.truncate_limit("text");
                     let preview = truncate_text(text, limit);
-                    return format!(
+                    format!(
                         "{}[{}]{} {}Thought:{} {}{}{}\n",
                         ctx.colors.dim(),
                         ctx.display_name,
@@ -122,10 +147,30 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
                         ctx.colors.dim(),
                         preview,
                         ctx.colors.reset()
-                    );
+                    )
+                } else {
+                    let sanitized = sanitize_for_display(text);
+                    if sanitized.is_empty() {
+                        String::new()
+                    } else {
+                        ThinkingDeltaRenderer::render_first_delta(
+                            &sanitized,
+                            ctx.display_name,
+                            *ctx.colors,
+                            ctx.terminal_mode,
+                        )
+                    }
                 }
-            }
-            String::new()
+            } else {
+                String::new()
+            };
+
+            // Always clear key-scoped streaming state, even if the rendered output is empty.
+            ctx.streaming_session
+                .borrow_mut()
+                .clear_key(ContentType::Thinking, "reasoning");
+
+            rendered
         }
     }
 }

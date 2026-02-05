@@ -80,7 +80,9 @@ impl CodexParser {
     /// Create a new parser with a custom printer (for testing).
     ///
     /// This method is public when the `test-utils` feature is enabled,
-    /// allowing integration tests to create parsers with custom printers.
+    /// allowing integration tests (in this repository) to create parsers with custom printers.
+    ///
+    /// Note: downstream crates should avoid relying on this API in production builds.
     #[cfg(feature = "test-utils")]
     pub fn with_printer_for_test(
         colors: Colors,
