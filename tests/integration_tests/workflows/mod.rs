@@ -14,6 +14,9 @@
 //! - Continuation handling tests (continuation.rs)
 //! - Independent result analysis tests (analysis.rs)
 //! - Iteration counter invariant tests (iteration_counter.rs)
+//! - Premature exit prevention tests (no_premature_exit.rs)
+//! - Continuation budget enforcement tests (continuation_budget.rs)
+//! - Summary consistency tests (summary_consistency.rs)
 //!
 //! # Integration Test Style Guide
 //!
@@ -33,10 +36,13 @@ pub mod commit_tests;
 pub mod config;
 pub mod config_test;
 pub mod continuation;
+pub mod continuation_budget;
 pub mod development_xml;
 pub mod fallback;
 pub mod iteration_counter;
+pub mod no_premature_exit;
 pub mod oversize_prompt;
 pub mod plan;
 pub mod resume;
 pub mod review;
+pub mod summary_consistency;

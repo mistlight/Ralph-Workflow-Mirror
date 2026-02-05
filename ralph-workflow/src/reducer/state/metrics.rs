@@ -14,6 +14,30 @@
 // - `planning.rs`: xsd_retry_planning
 // - `agent.rs`: same_agent_retry_attempts_total, agent_fallbacks_total, model_fallbacks_total, retry_cycles_started_total
 //
+// # Event-to-Metric Mapping
+//
+// | Metric                              | Incremented On Event                                      | Notes                                    |
+// |-------------------------------------|-----------------------------------------------------------|------------------------------------------|
+// | dev_iterations_started              | DevelopmentEvent::IterationStarted                        | Not incremented on continuations         |
+// | dev_iterations_completed            | DevelopmentEvent::IterationCompleted { output_valid: true } | Advanced to commit phase                |
+// |                                     | DevelopmentEvent::ContinuationSucceeded                   | Continuation advanced to commit phase    |
+// | dev_attempts_total                  | DevelopmentEvent::AgentInvoked                            | Includes initial + continuations         |
+// | analysis_attempts_total             | DevelopmentEvent::AnalysisAgentInvoked                    | Total across all iterations              |
+// | analysis_attempts_in_current_iteration | DevelopmentEvent::AnalysisAgentInvoked                 | Reset on IterationStarted                |
+// | review_passes_started               | ReviewEvent::PassStarted                                  | Increments when pass != previous         |
+// | review_passes_completed             | ReviewEvent::Completed { issues_found: false }            | Clean pass                               |
+// |                                     | ReviewEvent::PassCompletedClean                           | Alternative event for clean pass         |
+// |                                     | ReviewEvent::FixAttemptCompleted                          | Fix completed, pass advances             |
+// | review_runs_total                   | ReviewEvent::AgentInvoked                                 | Total reviewer invocations               |
+// | fix_runs_total                      | ReviewEvent::FixAgentInvoked                              | Total fix invocations                    |
+// | fix_continuations_total             | ReviewEvent::FixContinuationTriggered                     | Fix continuation attempts                |
+// | xsd_retry_*                         | *Event::OutputValidationFailed (when will_retry == true)  | Only when retrying, not when exhausted   |
+// | same_agent_retry_attempts_total     | AgentEvent::TimedOut / InternalError (when will_retry)    | Only when retrying same agent            |
+// | agent_fallbacks_total               | AgentEvent::FallbackTriggered                             | Agent switched in chain                  |
+// | model_fallbacks_total               | AgentEvent::ModelFallbackTriggered                        | Model switched for agent                 |
+// | retry_cycles_started_total          | AgentEvent::RetryCycleStarted                             | Chain exhausted, restarting              |
+// | commits_created_total               | CommitEvent::Created                                      | Actual git commit created                |
+//
 // # How to Add New Metrics
 //
 // 1. Add field to `RunMetrics` struct with `#[serde(default)]`
@@ -51,9 +75,14 @@
 pub struct RunMetrics {
     // Development iteration tracking
     /// Number of development iterations started.
+    /// Incremented on `DevelopmentEvent::IterationStarted` (not on continuations).
     #[serde(default)]
     pub dev_iterations_started: u32,
     /// Number of development iterations completed (advanced to commit phase).
+    /// A dev iteration is "completed" when the reducer transitions to `PipelinePhase::CommitMessage`
+    /// after dev output is valid, regardless of whether an actual git commit is created.
+    /// Incremented on `DevelopmentEvent::IterationCompleted { output_valid: true }` and
+    /// `DevelopmentEvent::ContinuationSucceeded`.
     #[serde(default)]
     pub dev_iterations_completed: u32,
     /// Total number of developer agent invocations (includes continuations).
@@ -70,9 +99,14 @@ pub struct RunMetrics {
 
     // Review tracking
     /// Number of review passes started.
+    /// Incremented on `ReviewEvent::PassStarted` when `pass != previous_pass`.
     #[serde(default)]
     pub review_passes_started: u32,
     /// Number of review passes completed (advanced past without issues or after fixes).
+    /// A review pass is "completed" when it advances to the next pass or to commit phase,
+    /// either because no issues were found or because fixes were successfully applied.
+    /// Incremented on `ReviewEvent::Completed { issues_found: false }`,
+    /// `ReviewEvent::PassCompletedClean`, and `ReviewEvent::FixAttemptCompleted`.
     #[serde(default)]
     pub review_passes_completed: u32,
     /// Total number of reviewer agent invocations.

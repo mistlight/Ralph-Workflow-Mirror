@@ -291,7 +291,12 @@ fn reduce_same_agent_retryable_failure(
     // - Fall back to next agent only after exhausting the configured budget.
     let new_retry_count = state.continuation.same_agent_retry_count + 1;
     let mut metrics = state.metrics.clone();
-    metrics.same_agent_retry_attempts_total += 1;
+
+    // Only increment metrics if we're actually retrying (not exhausted)
+    let will_retry = new_retry_count < state.continuation.max_same_agent_retry_count;
+    if will_retry {
+        metrics.same_agent_retry_attempts_total += 1;
+    }
 
     if new_retry_count >= state.continuation.max_same_agent_retry_count {
         PipelineState {

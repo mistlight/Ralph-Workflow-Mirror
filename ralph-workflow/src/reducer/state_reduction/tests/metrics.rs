@@ -552,3 +552,34 @@ fn test_new_metrics_backward_compatible() {
     assert_eq!(restored.metrics.review_passes_started, 2);
     assert_eq!(restored.metrics.review_runs_total, 2);
 }
+
+#[test]
+fn test_same_agent_retry_exhausted_does_not_increment() {
+    let mut state = PipelineState::initial(3, 0);
+    state.continuation.max_same_agent_retry_count = 3;
+    state.continuation.same_agent_retry_count = 2; // One below max
+
+    // First retry (count becomes 3, which is >= max) should NOT increment because will_retry = false
+    let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
+    let state = reduce(state, event);
+
+    // Should be 0 because new_retry_count (3) >= max (3), so we fall back without incrementing
+    assert_eq!(state.metrics.same_agent_retry_attempts_total, 0);
+    // Verify agent chain switched
+    assert!(state.agent_chain.current_agent_index > 0 || state.agent_chain.retry_cycle > 0);
+}
+
+#[test]
+fn test_same_agent_retry_within_budget_does_increment() {
+    let mut state = PipelineState::initial(3, 0);
+    state.continuation.max_same_agent_retry_count = 3;
+    state.continuation.same_agent_retry_count = 0;
+
+    // First retry (count becomes 1, which is < max) should increment
+    let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
+    let state = reduce(state, event);
+
+    assert_eq!(state.metrics.same_agent_retry_attempts_total, 1);
+    assert_eq!(state.continuation.same_agent_retry_count, 1);
+    assert!(state.continuation.same_agent_retry_pending);
+}
