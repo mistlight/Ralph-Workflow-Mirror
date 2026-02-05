@@ -107,6 +107,12 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 state.phase
             };
 
+            // Increment completed passes counter if no issues found (clean pass)
+            let mut metrics = state.metrics.clone();
+            if !issues_found {
+                metrics.review_passes_completed += 1;
+            }
+
             if next_phase == crate::reducer::event::PipelinePhase::CommitMessage {
                 PipelineState {
                     phase: next_phase,
@@ -141,6 +147,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         ..state.continuation
                     },
                     fix_result_xml_cleaned_pass: None,
+                    metrics,
                     ..state
                 }
             } else {
@@ -165,6 +172,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         ..state.continuation
                     },
                     fix_result_xml_cleaned_pass: None,
+                    metrics,
                     ..state
                 }
             }
@@ -301,34 +309,41 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
 
             reduce_review_event(state, next_event)
         }
-        ReviewEvent::FixAttemptCompleted { pass, .. } => PipelineState {
-            phase: crate::reducer::event::PipelinePhase::CommitMessage,
-            previous_phase: Some(crate::reducer::event::PipelinePhase::Review),
-            reviewer_pass: pass,
-            review_issues_found: false,
-            fix_prompt_prepared_pass: None,
-            fix_result_xml_cleaned_pass: None,
-            fix_agent_invoked_pass: None,
-            fix_result_xml_extracted_pass: None,
-            fix_validated_outcome: None,
-            fix_result_xml_archived_pass: None,
-            commit: crate::reducer::state::CommitState::NotStarted,
-            commit_prompt_prepared: false,
-            commit_diff_prepared: false,
-            commit_diff_empty: false,
-            commit_agent_invoked: false,
-            commit_xml_cleaned: false,
-            commit_xml_extracted: false,
-            commit_validated_outcome: None,
-            commit_xml_archived: false,
-            continuation: crate::reducer::state::ContinuationState {
-                invalid_output_attempts: 0,
-                // Clear fix error when transitioning to commit phase
-                last_fix_xsd_error: None,
-                ..state.continuation
-            },
-            ..state
-        },
+        ReviewEvent::FixAttemptCompleted { pass, .. } => {
+            // Fix completed successfully - increment completed passes counter
+            let mut metrics = state.metrics.clone();
+            metrics.review_passes_completed += 1;
+
+            PipelineState {
+                phase: crate::reducer::event::PipelinePhase::CommitMessage,
+                previous_phase: Some(crate::reducer::event::PipelinePhase::Review),
+                reviewer_pass: pass,
+                review_issues_found: false,
+                fix_prompt_prepared_pass: None,
+                fix_result_xml_cleaned_pass: None,
+                fix_agent_invoked_pass: None,
+                fix_result_xml_extracted_pass: None,
+                fix_validated_outcome: None,
+                fix_result_xml_archived_pass: None,
+                commit: crate::reducer::state::CommitState::NotStarted,
+                commit_prompt_prepared: false,
+                commit_diff_prepared: false,
+                commit_diff_empty: false,
+                commit_agent_invoked: false,
+                commit_xml_cleaned: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
+                continuation: crate::reducer::state::ContinuationState {
+                    invalid_output_attempts: 0,
+                    // Clear fix error when transitioning to commit phase
+                    last_fix_xsd_error: None,
+                    ..state.continuation
+                },
+                metrics,
+                ..state
+            }
+        }
         ReviewEvent::PhaseCompleted { .. } => PipelineState {
             phase: crate::reducer::event::PipelinePhase::CommitMessage,
             previous_phase: None,
@@ -352,6 +367,10 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
         ReviewEvent::PassCompletedClean { pass } => {
             // Clean pass means no issues found in this pass.
             // Advance to the next pass when more passes remain.
+            // Increment completed passes counter
+            let mut metrics = state.metrics.clone();
+            metrics.review_passes_completed += 1;
+
             let next_pass = pass + 1;
             let next_phase = if next_pass >= state.total_reviewer_passes {
                 crate::reducer::event::PipelinePhase::CommitMessage
@@ -391,6 +410,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         ..state.continuation
                     },
                     fix_result_xml_cleaned_pass: None,
+                    metrics,
                     ..state
                 }
             } else {
@@ -415,6 +435,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         ..state.continuation
                     },
                     fix_result_xml_cleaned_pass: None,
+                    metrics,
                     ..state
                 }
             }

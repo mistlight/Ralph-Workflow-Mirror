@@ -278,6 +278,85 @@ fn test_fix_continuation_triggered_increments_counter() {
 }
 
 #[test]
+fn test_review_pass_completed_clean_increments_counter() {
+    let mut state = PipelineState::initial(0, 3);
+    state = reduce(state, PipelineEvent::review_pass_started(1));
+    assert_eq!(state.metrics.review_passes_completed, 0);
+
+    // Simulate clean pass completion
+    let event = PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 1 });
+    let state = reduce(state, event);
+
+    assert_eq!(state.metrics.review_passes_completed, 1);
+    assert_eq!(state.reviewer_pass, 2); // Advances to next pass
+}
+
+#[test]
+fn test_multiple_review_passes_increment_completed() {
+    let mut state = PipelineState::initial(0, 3);
+
+    // Pass 1
+    state = reduce(state, PipelineEvent::review_pass_started(1));
+    state = reduce(
+        state,
+        PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 1 }),
+    );
+    assert_eq!(state.metrics.review_passes_completed, 1);
+
+    // Pass 2
+    state = reduce(state, PipelineEvent::review_pass_started(2));
+    state = reduce(
+        state,
+        PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 2 }),
+    );
+    assert_eq!(state.metrics.review_passes_completed, 2);
+}
+
+#[test]
+fn test_fix_attempt_completed_increments_review_passes_completed() {
+    let mut state = PipelineState::initial(0, 3);
+    state = reduce(state, PipelineEvent::review_pass_started(1));
+    assert_eq!(state.metrics.review_passes_completed, 0);
+
+    // Simulate fix completing the pass
+    let event = PipelineEvent::Review(ReviewEvent::FixAttemptCompleted {
+        pass: 1,
+        changes_made: true,
+    });
+    let state = reduce(state, event);
+
+    assert_eq!(state.metrics.review_passes_completed, 1);
+}
+
+#[test]
+fn test_continuation_succeeded_increments_dev_completed() {
+    let mut state = PipelineState::initial(3, 0);
+    state = reduce(state, PipelineEvent::development_iteration_started(0));
+    assert_eq!(state.metrics.dev_iterations_completed, 0);
+
+    // Trigger continuation
+    state = reduce(
+        state,
+        PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+            iteration: 0,
+            status: DevelopmentStatus::Partial,
+            summary: "partial work".to_string(),
+            files_changed: None,
+            next_steps: None,
+        }),
+    );
+
+    // Continuation succeeds
+    let event = PipelineEvent::Development(DevelopmentEvent::ContinuationSucceeded {
+        iteration: 0,
+        total_continuation_attempts: 1,
+    });
+    let state = reduce(state, event);
+
+    assert_eq!(state.metrics.dev_iterations_completed, 1);
+}
+
+#[test]
 fn test_same_agent_retry_increments_counter() {
     let state = PipelineState::initial(3, 0);
     let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
@@ -444,4 +523,32 @@ fn test_metrics_default_for_old_checkpoints() {
     // Verify metrics field is present with defaults
     assert_eq!(restored.metrics.dev_iterations_started, 0);
     assert_eq!(restored.metrics.max_dev_iterations, 0); // Not initialized from config in this test
+}
+
+#[test]
+fn test_new_metrics_backward_compatible() {
+    // Simulate checkpoint from before review_passes_completed was added
+    let mut state = PipelineState::initial(5, 3);
+    state.metrics.review_passes_started = 2;
+    state.metrics.review_runs_total = 2;
+    // review_passes_completed field didn't exist in old checkpoint
+
+    let json = serde_json::to_string(&state).unwrap();
+    let mut json_obj: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    // Remove the new field to simulate old checkpoint
+    if let Some(metrics) = json_obj.get_mut("metrics") {
+        if let Some(metrics_obj) = metrics.as_object_mut() {
+            metrics_obj.remove("review_passes_completed");
+        }
+    }
+
+    let restored: PipelineState =
+        serde_json::from_value(json_obj).expect("should deserialize with defaults");
+
+    // New field should default to 0
+    assert_eq!(restored.metrics.review_passes_completed, 0);
+    // Existing fields should be preserved
+    assert_eq!(restored.metrics.review_passes_started, 2);
+    assert_eq!(restored.metrics.review_runs_total, 2);
 }

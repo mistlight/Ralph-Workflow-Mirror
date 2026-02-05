@@ -25,6 +25,10 @@ pub struct PipelineSummary {
     pub dev_runs_completed: usize,
     /// Total configured developer iterations (from reducer metrics)
     pub dev_runs_total: usize,
+    /// Number of review passes completed (from reducer metrics)
+    pub review_passes_completed: usize,
+    /// Total configured review passes (from reducer metrics)
+    pub review_passes_total: usize,
     /// Number of reviewer runs completed (from reducer metrics)
     pub review_runs: usize,
     /// Number of commits created during pipeline (from reducer metrics)
@@ -147,13 +151,25 @@ pub fn print_final_summary<L: Loggable>(colors: Colors, summary: &PipelineSummar
         summary.dev_runs_total
     );
     println!(
-        "  {}🔍{}  Review runs:     {}{}{}",
+        "  {}🔍{}  Review passes:   {}{}{}/{}",
         colors.magenta(),
         colors.reset(),
         colors.bold(),
-        summary.review_runs,
-        colors.reset()
+        summary.review_passes_completed,
+        colors.reset(),
+        summary.review_passes_total
     );
+    if summary.verbose {
+        println!(
+            "  {}  {}  (Total runs:     {}{}{}){}",
+            colors.dim(),
+            colors.magenta(),
+            colors.bold(),
+            summary.review_runs,
+            colors.reset(),
+            colors.reset()
+        );
+    }
     println!(
         "  {}📝{}  Changes detected: {}{}{}",
         colors.green(),

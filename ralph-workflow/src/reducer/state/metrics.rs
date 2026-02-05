@@ -6,8 +6,10 @@
 //
 // Metrics are updated **only** in reducer code paths (`state_reduction/*.rs`):
 //
-// - `development.rs`: dev_iterations_*, dev_attempts_total, analysis_attempts_*, xsd_retry_development
-// - `review.rs`: review_passes_started, review_runs_total, fix_runs_total, fix_continuations_total, xsd_retry_review, xsd_retry_fix
+// - `development.rs`: dev_iterations_started, dev_iterations_completed,
+//                     dev_attempts_total, analysis_attempts_*, xsd_retry_development
+// - `review.rs`: review_passes_started, review_passes_completed, review_runs_total,
+//                fix_runs_total, fix_continuations_total, xsd_retry_review, xsd_retry_fix
 // - `commit.rs`: commits_created_total, xsd_retry_commit
 // - `planning.rs`: xsd_retry_planning
 // - `agent.rs`: same_agent_retry_attempts_total, agent_fallbacks_total, model_fallbacks_total, retry_cycles_started_total
@@ -70,6 +72,9 @@ pub struct RunMetrics {
     /// Number of review passes started.
     #[serde(default)]
     pub review_passes_started: u32,
+    /// Number of review passes completed (advanced past without issues or after fixes).
+    #[serde(default)]
+    pub review_passes_completed: u32,
     /// Total number of reviewer agent invocations.
     #[serde(default)]
     pub review_runs_total: u32,

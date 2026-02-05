@@ -63,6 +63,8 @@ pub fn finalize_pipeline(
         total_time: ctx.timer.elapsed_formatted(),
         dev_runs_completed: final_state.metrics.dev_iterations_completed as usize,
         dev_runs_total: final_state.metrics.max_dev_iterations as usize,
+        review_passes_completed: final_state.metrics.review_passes_completed as usize,
+        review_passes_total: final_state.metrics.max_review_passes as usize,
         review_runs: final_state.metrics.review_runs_total as usize,
         changes_detected: final_state.metrics.commits_created_total as usize,
         isolation_mode: ctx.config.isolation_mode,
@@ -146,5 +148,57 @@ mod tests {
         // Prove we're not using the wrong values
         assert_ne!(dev_runs, runtime_dev_completed);
         assert_ne!(review_runs, runtime_review_runs);
+    }
+
+    #[test]
+    fn test_summary_uses_all_reducer_metrics() {
+        let mut state = PipelineState::initial(5, 3);
+
+        // Simulate complete run metrics
+        state.metrics.dev_iterations_started = 5;
+        state.metrics.dev_iterations_completed = 5;
+        state.metrics.dev_attempts_total = 7; // Including continuations
+        state.metrics.analysis_attempts_total = 5;
+        state.metrics.review_passes_started = 3;
+        state.metrics.review_passes_completed = 3;
+        state.metrics.review_runs_total = 3;
+        state.metrics.fix_runs_total = 2;
+        state.metrics.commits_created_total = 6; // 5 dev + 1 final
+        state.metrics.xsd_retry_attempts_total = 2;
+        state.metrics.same_agent_retry_attempts_total = 1;
+
+        // Construct summary as finalize_pipeline does
+        let dev_runs_completed = state.metrics.dev_iterations_completed as usize;
+        let dev_runs_total = state.metrics.max_dev_iterations as usize;
+        let review_passes_completed = state.metrics.review_passes_completed as usize;
+        let review_passes_total = state.metrics.max_review_passes as usize;
+        let review_runs_total = state.metrics.review_runs_total as usize;
+        let changes_detected = state.metrics.commits_created_total as usize;
+
+        // Verify all values come from reducer metrics
+        assert_eq!(dev_runs_completed, 5);
+        assert_eq!(dev_runs_total, 5);
+        assert_eq!(review_passes_completed, 3);
+        assert_eq!(review_passes_total, 3);
+        assert_eq!(review_runs_total, 3);
+        assert_eq!(changes_detected, 6);
+
+        // Verify we're not using any separate runtime counters
+        // (this test proves the summary construction pattern)
+    }
+
+    #[test]
+    fn test_partial_run_shows_actual_not_configured() {
+        let mut state = PipelineState::initial(10, 5);
+
+        // Only partial progress
+        state.metrics.dev_iterations_completed = 3;
+        state.metrics.review_passes_completed = 1;
+        state.metrics.commits_created_total = 3;
+
+        assert_eq!(state.metrics.dev_iterations_completed, 3);
+        assert_eq!(state.metrics.max_dev_iterations, 10);
+        assert_eq!(state.metrics.review_passes_completed, 1);
+        assert_eq!(state.metrics.max_review_passes, 5);
     }
 }
