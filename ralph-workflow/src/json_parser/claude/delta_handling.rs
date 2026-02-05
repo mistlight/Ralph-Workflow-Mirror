@@ -71,6 +71,18 @@ impl ClaudeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
 
+        // If an assistant event fully rendered this message before streaming started,
+        // suppress ALL subsequent streaming deltas and avoid accumulating them.
+        //
+        // Rationale: if we keep accumulating deltas, the non-TTY flush at `message_stop`
+        // would re-emit already-rendered content.
+        if session
+            .get_current_message_id()
+            .is_some_and(|message_id| session.is_message_pre_rendered(message_id))
+        {
+            return String::new();
+        }
+
         match delta {
             ContentBlockDelta::TextDelta { text: Some(text) } => {
                 let thinking_finalize = self.finalize_thinking_full_mode(session);
@@ -93,15 +105,6 @@ impl ClaudeParser {
                     .get_accumulated(ContentType::Text, &index_str)
                     .unwrap_or("");
 
-                // Check if this message was pre-rendered from an assistant event.
-                // When an assistant event arrives BEFORE streaming deltas, we render it
-                // and mark the message_id as pre-rendered. ALL subsequent streaming deltas
-                // for this message should be suppressed to prevent duplication.
-                if let Some(message_id) = session.get_current_message_id() {
-                    if session.is_message_pre_rendered(message_id) {
-                        return String::new();
-                    }
-                }
 
                 // Sanitize the accumulated text to check if it's empty
                 // This is needed to skip rendering when the accumulated content is just whitespace
@@ -338,87 +341,155 @@ impl ClaudeParser {
             match terminal_mode {
                 TerminalMode::Full => (String::new(), String::new(), String::new()),
                 TerminalMode::Basic | TerminalMode::None => {
-                    // Flush accumulated thinking.
-                    // We format the output directly here because the renderers now suppress
-                    // output in non-TTY modes (to prevent per-delta spam).
-                    let thinking_output =
-                        if let Some(index) = self.thinking_active_index.borrow_mut().take() {
-                            let index_str = index.to_string();
-                            let accumulated = session
-                                .get_accumulated(ContentType::Thinking, &index_str)
-                                .unwrap_or("");
-                            let sanitized =
-                                crate::json_parser::delta_display::sanitize_for_display(accumulated);
-                            if sanitized.is_empty() {
-                                String::new()
+                    // If the final assistant message was already rendered (pre-rendered), do not
+                    // flush accumulated streaming state in non-TTY modes.
+                    //
+                    // Some providers emit a complete assistant event before streaming deltas;
+                    // those deltas can still arrive and would otherwise be accumulated and flushed
+                    // here, duplicating already-rendered content.
+                    if session
+                        .get_current_message_id()
+                        .is_some_and(|message_id| session.is_message_pre_rendered(message_id))
+                    {
+                        // Clear any pending thinking index to avoid cross-message contamination.
+                        self.thinking_active_index.borrow_mut().take();
+                        (String::new(), String::new(), String::new())
+                    } else {
+                        // Flush accumulated thinking.
+                        // We format the output directly here because the renderers now suppress
+                        // output in non-TTY modes (to prevent per-delta spam).
+                        let thinking_output =
+                            if let Some(index) = self.thinking_active_index.borrow_mut().take() {
+                                let index_str = index.to_string();
+                                let accumulated = session
+                                    .get_accumulated(ContentType::Thinking, &index_str)
+                                    .unwrap_or("");
+                                let sanitized = crate::json_parser::delta_display::sanitize_for_display(
+                                    accumulated,
+                                );
+                                if sanitized.is_empty() {
+                                    String::new()
+                                } else {
+                                    let prefix_fmt = match terminal_mode {
+                                        TerminalMode::Basic => format!(
+                                            "{}[{}]{} {}",
+                                            c.dim(),
+                                            &self.display_name,
+                                            c.reset(),
+                                            c.dim()
+                                        ),
+                                        TerminalMode::None => {
+                                            format!("[{}] ", &self.display_name)
+                                        }
+                                        TerminalMode::Full => unreachable!(),
+                                    };
+
+                                    let label_fmt = match terminal_mode {
+                                        TerminalMode::Basic => {
+                                            format!("Thinking: {}", c.cyan())
+                                        }
+                                        TerminalMode::None => "Thinking: ".to_string(),
+                                        TerminalMode::Full => unreachable!(),
+                                    };
+
+                                    let suffix_fmt = match terminal_mode {
+                                        TerminalMode::Basic => c.reset().to_string(),
+                                        TerminalMode::None => String::new(),
+                                        TerminalMode::Full => unreachable!(),
+                                    };
+
+                                    format!("{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n")
+                                }
                             } else {
-                                // Format the line directly (bypass renderer which suppresses in non-TTY)
-                                format!(
-                                    "{}[{}]{} {}Thinking: {}{}{}\n",
-                                    c.dim(),
-                                    &self.display_name,
-                                    c.reset(),
-                                    c.dim(),
-                                    c.cyan(),
-                                    sanitized,
-                                    c.reset()
-                                )
+                                String::new()
+                            };
+
+                        // Flush accumulated tool input.
+                        // Tool input deltas can arrive as partial JSON chunks; in non-TTY modes we
+                        // render the final accumulated value once at message_stop.
+                        let mut tool_output = String::new();
+                        for index_str in session.accumulated_keys(ContentType::ToolInput) {
+                            let accumulated = session
+                                .get_accumulated(ContentType::ToolInput, &index_str)
+                                .unwrap_or("");
+                            let sanitized = crate::json_parser::delta_display::sanitize_for_display(
+                                accumulated,
+                            );
+                            if !sanitized.is_empty() {
+                                let prefix_fmt = match terminal_mode {
+                                    TerminalMode::Basic => format!(
+                                        "{}[{}]{} {}",
+                                        c.dim(),
+                                        &self.display_name,
+                                        c.reset(),
+                                        c.dim()
+                                    ),
+                                    TerminalMode::None => {
+                                        format!("[{}] ", &self.display_name)
+                                    }
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                let label_fmt = match terminal_mode {
+                                    TerminalMode::Basic => {
+                                        format!("Tool input: {}", c.cyan())
+                                    }
+                                    TerminalMode::None => "Tool input: ".to_string(),
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                let suffix_fmt = match terminal_mode {
+                                    TerminalMode::Basic => c.reset().to_string(),
+                                    TerminalMode::None => String::new(),
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                tool_output.push_str(&format!(
+                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
+                                ));
                             }
-                        } else {
-                            String::new()
-                        };
-
-                    // Flush accumulated tool input.
-                    // Tool input deltas can arrive as partial JSON chunks; in non-TTY modes we
-                    // render the final accumulated value once at message_stop.
-                    let mut tool_output = String::new();
-                    for index_str in session.accumulated_keys(ContentType::ToolInput) {
-                        let accumulated = session
-                            .get_accumulated(ContentType::ToolInput, &index_str)
-                            .unwrap_or("");
-                        let sanitized =
-                            crate::json_parser::delta_display::sanitize_for_display(accumulated);
-                        if !sanitized.is_empty() {
-                            let line = format!(
-                                "{}[{}]{} {}Tool input: {}{}{}\n",
-                                c.dim(),
-                                &self.display_name,
-                                c.reset(),
-                                c.dim(),
-                                c.cyan(),
-                                sanitized,
-                                c.reset()
-                            );
-                            tool_output.push_str(&line);
                         }
-                    }
 
-                    // Flush accumulated text content for all content blocks.
-                    // We format the output directly here because the renderers now suppress
-                    // output in non-TTY modes (to prevent per-delta spam).
-                    let mut text_output = String::new();
-                    for index_str in session.accumulated_keys(ContentType::Text) {
-                        let accumulated = session
-                            .get_accumulated(ContentType::Text, &index_str)
-                            .unwrap_or("");
-                        let sanitized =
-                            crate::json_parser::delta_display::sanitize_for_display(accumulated);
-                        if !sanitized.is_empty() {
-                            // Format the line directly (bypass renderer which suppresses in non-TTY)
-                            let line = format!(
-                                "{}[{}]{} {}{}{}\n",
-                                c.dim(),
-                                &self.display_name,
-                                c.reset(),
-                                c.white(),
-                                sanitized,
-                                c.reset()
+                        // Flush accumulated text content for all content blocks.
+                        // We format the output directly here because the renderers now suppress
+                        // output in non-TTY modes (to prevent per-delta spam).
+                        let mut text_output = String::new();
+                        for index_str in session.accumulated_keys(ContentType::Text) {
+                            let accumulated = session
+                                .get_accumulated(ContentType::Text, &index_str)
+                                .unwrap_or("");
+                            let sanitized = crate::json_parser::delta_display::sanitize_for_display(
+                                accumulated,
                             );
-                            text_output.push_str(&line);
-                        }
-                    }
+                            if !sanitized.is_empty() {
+                                let prefix_fmt = match terminal_mode {
+                                    TerminalMode::Basic => format!(
+                                        "{}[{}]{} {}",
+                                        c.dim(),
+                                        &self.display_name,
+                                        c.reset(),
+                                        c.white()
+                                    ),
+                                    TerminalMode::None => {
+                                        format!("[{}] ", &self.display_name)
+                                    }
+                                    TerminalMode::Full => unreachable!(),
+                                };
 
-                    (thinking_output, tool_output, text_output)
+                                let suffix_fmt = match terminal_mode {
+                                    TerminalMode::Basic => c.reset().to_string(),
+                                    TerminalMode::None => String::new(),
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                text_output.push_str(&format!(
+                                    "{prefix_fmt}{sanitized}{suffix_fmt}\n"
+                                ));
+                            }
+                        }
+
+                        (thinking_output, tool_output, text_output)
+                    }
                 }
             };
 

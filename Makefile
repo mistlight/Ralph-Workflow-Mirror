@@ -145,20 +145,9 @@ dylint:
 		\
 		if ! command -v rustup >/dev/null 2>&1; then \
 			echo "error: rustup not found (required for nightly + rustc-dev)." >&2; \
-			echo "Install rustup manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
-			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
-				echo "ALLOW_RUSTUP_INSTALL=1 set; installing rustup..." >&2; \
-				if command -v curl >/dev/null 2>&1; then \
-					curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
-				elif command -v wget >/dev/null 2>&1; then \
-					wget -qO- https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
-				else \
-					echo "error: need curl or wget to install rustup automatically" >&2; \
-					exit 1; \
-				fi; \
-			else \
-				exit 1; \
-			fi; \
+			echo "Install rustup manually (see https://rustup.rs) and re-run make dylint." >&2; \
+			echo "Automated rustup installation is intentionally disabled in this Makefile." >&2; \
+			exit 1; \
 		fi; \
 		\
 		if ! command -v cargo >/dev/null 2>&1; then \
@@ -168,16 +157,8 @@ dylint:
 		\
 		if ! rustup toolchain list | grep -qE "^nightly"; then \
 			echo "error: Rust nightly toolchain is not installed (required for dylint driver builds)." >&2; \
-			echo "Install it manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
-			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
-				echo "ALLOW_RUSTUP_INSTALL=1 set; installing Rust nightly toolchain..." >&2; \
-				if ! rustup toolchain install nightly --profile minimal; then \
-					echo "error: failed to install nightly toolchain." >&2; \
-					exit 1; \
-				fi; \
-			else \
-				exit 1; \
-			fi; \
+			echo "Install it manually: rustup toolchain install nightly --profile minimal" >&2; \
+			exit 1; \
 		fi; \
 		\
 		INSTALLED_COMPONENTS="$$(rustup component list --toolchain nightly --installed 2>/dev/null || true)"; \
@@ -186,16 +167,8 @@ dylint:
 		echo "$$INSTALLED_COMPONENTS" | grep -qE "^llvm-tools(-preview)?" || MISSING="$$MISSING llvm-tools-preview"; \
 		if [ -n "$$MISSING" ]; then \
 			echo "error: missing required nightly components:$$MISSING" >&2; \
-			echo "Install them manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
-			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
-				echo "ALLOW_RUSTUP_INSTALL=1 set; installing required nightly components:$$MISSING" >&2; \
-				if ! rustup component add rustc-dev llvm-tools-preview llvm-tools --toolchain nightly; then \
-					echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
-					exit 1; \
-				fi; \
-			else \
-				exit 1; \
-			fi; \
+			echo "Install them manually: rustup component add rustc-dev llvm-tools-preview llvm-tools --toolchain nightly" >&2; \
+			exit 1; \
 		fi; \
 		\
 		NIGHTLY_CARGO="$$(rustup which cargo --toolchain nightly)"; \

@@ -527,7 +527,7 @@ fn test_completion_with_terminal_mode_basic() {
 // once at `message_stop`.
 #[cfg(test)]
 #[test]
-fn test_multiple_deltas_none_mode_produces_multiple_lines() {
+fn test_multiple_deltas_none_mode_flushed_once() {
     use std::io::Cursor;
 
     let test_printer = Rc::new(RefCell::new(TestPrinter::new()));

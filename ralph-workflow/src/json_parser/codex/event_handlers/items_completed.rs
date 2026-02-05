@@ -15,6 +15,20 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 
     let _was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
 
+    // Duplicate completion events must be suppressed even if we streamed content.
+    // Codex can emit duplicate `item.completed` events for the same message; if we
+    // flush before checking duplication, we can print the final message twice.
+    if is_duplicate {
+        // Still finalize any cursor state (Full) and optionally emit metrics.
+        let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
+        let show_metrics =
+            (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
+        if show_metrics {
+            return format!("{}\n{}", completion, metrics.format(*ctx.colors));
+        }
+        return completion;
+    }
+
     // If we streamed any content, the per-delta renderer may have suppressed output in non-TTY
     // modes. Flush the final accumulated agent message ONCE at completion so logs remain
     // observable, while still preventing per-delta prefix spam.
@@ -38,19 +52,31 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
                     if preview.is_empty() {
                         String::new()
                     } else {
-                        format!(
-                            "{}[{}]{} {}{}{}\n",
-                            ctx.colors.dim(),
-                            ctx.display_name,
-                            ctx.colors.reset(),
-                            ctx.colors.white(),
-                            preview,
-                            ctx.colors.reset()
-                        )
+                        // TerminalMode::None must be plain text even when colors are enabled.
+                        match ctx.terminal_mode {
+                            TerminalMode::Basic => format!(
+                                "{}[{}]{} {}{}{}\n",
+                                ctx.colors.dim(),
+                                ctx.display_name,
+                                ctx.colors.reset(),
+                                ctx.colors.white(),
+                                preview,
+                                ctx.colors.reset()
+                            ),
+                            TerminalMode::None => {
+                                format!("[{}] {}\n", ctx.display_name, preview)
+                            }
+                            TerminalMode::Full => unreachable!(),
+                        }
                     }
                 },
             ),
         };
+
+        // Clear the streaming key after first completion so duplicates have nothing to flush.
+        ctx.streaming_session
+            .borrow_mut()
+            .clear_key(ContentType::Text, "agent_msg");
 
         let mut out = String::new();
         out.push_str(&flush);
@@ -62,28 +88,21 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
         return out;
     }
 
-    if is_duplicate {
-        let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
-        let show_metrics =
-            (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
-        if show_metrics {
-            return format!("{}\n{}", completion, metrics.format(*ctx.colors));
-        }
-        return completion;
-    }
-
     if let Some(text) = text {
         let limit = ctx.verbosity.truncate_limit("agent_msg");
         let preview = truncate_text(text, limit);
-        return format!(
-            "{}[{}]{} {}{}{}\n",
-            ctx.colors.dim(),
-            ctx.display_name,
-            ctx.colors.reset(),
-            ctx.colors.white(),
-            preview,
-            ctx.colors.reset()
-        );
+        return match ctx.terminal_mode {
+            TerminalMode::Full | TerminalMode::Basic => format!(
+                "{}[{}]{} {}{}{}\n",
+                ctx.colors.dim(),
+                ctx.display_name,
+                ctx.colors.reset(),
+                ctx.colors.white(),
+                preview,
+                ctx.colors.reset()
+            ),
+            TerminalMode::None => format!("[{}] {}\n", ctx.display_name, preview),
+        };
     }
 
     String::new()
@@ -181,40 +200,9 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
                 if sanitized.is_empty() {
                     String::new()
                 } else {
-                    // Format the line directly (bypass renderer which suppresses in non-TTY)
-                    format!(
-                        "{}[{}]{} {}Thinking: {}{}{}\n",
-                        ctx.colors.dim(),
-                        ctx.display_name,
-                        ctx.colors.reset(),
-                        ctx.colors.dim(),
-                        ctx.colors.cyan(),
-                        sanitized,
-                        ctx.colors.reset()
-                    )
-                }
-            } else if let Some(text) = completion_text {
-                if ctx.verbosity.is_verbose() {
-                    let limit = ctx.verbosity.truncate_limit("text");
-                    let preview = truncate_text(text, limit);
-                    format!(
-                        "{}[{}]{} {}Thought:{} {}{}{}\n",
-                        ctx.colors.dim(),
-                        ctx.display_name,
-                        ctx.colors.reset(),
-                        ctx.colors.cyan(),
-                        ctx.colors.reset(),
-                        ctx.colors.dim(),
-                        preview,
-                        ctx.colors.reset()
-                    )
-                } else {
-                    let sanitized = sanitize_for_display(text);
-                    if sanitized.is_empty() {
-                        String::new()
-                    } else {
-                        // Format the line directly (bypass renderer which suppresses in non-TTY)
-                        format!(
+                    // TerminalMode::None must be plain text even when colors are enabled.
+                    match ctx.terminal_mode {
+                        TerminalMode::Basic => format!(
                             "{}[{}]{} {}Thinking: {}{}{}\n",
                             ctx.colors.dim(),
                             ctx.display_name,
@@ -223,7 +211,56 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
                             ctx.colors.cyan(),
                             sanitized,
                             ctx.colors.reset()
-                        )
+                        ),
+                        TerminalMode::None => {
+                            format!("[{}] Thinking: {}\n", ctx.display_name, sanitized)
+                        }
+                        TerminalMode::Full => unreachable!(),
+                    }
+                }
+            } else if let Some(text) = completion_text {
+                if ctx.verbosity.is_verbose() {
+                    let limit = ctx.verbosity.truncate_limit("text");
+                    let preview = truncate_text(text, limit);
+                    match ctx.terminal_mode {
+                        TerminalMode::Basic => format!(
+                            "{}[{}]{} {}Thought:{} {}{}{}\n",
+                            ctx.colors.dim(),
+                            ctx.display_name,
+                            ctx.colors.reset(),
+                            ctx.colors.cyan(),
+                            ctx.colors.reset(),
+                            ctx.colors.dim(),
+                            preview,
+                            ctx.colors.reset()
+                        ),
+                        TerminalMode::None => {
+                            format!("[{}] Thought: {}\n", ctx.display_name, preview)
+                        }
+                        TerminalMode::Full => unreachable!(),
+                    }
+                } else {
+                    let sanitized = sanitize_for_display(text);
+                    if sanitized.is_empty() {
+                        String::new()
+                    } else {
+                        // TerminalMode::None must be plain text even when colors are enabled.
+                        match ctx.terminal_mode {
+                            TerminalMode::Basic => format!(
+                                "{}[{}]{} {}Thinking: {}{}{}\n",
+                                ctx.colors.dim(),
+                                ctx.display_name,
+                                ctx.colors.reset(),
+                                ctx.colors.dim(),
+                                ctx.colors.cyan(),
+                                sanitized,
+                                ctx.colors.reset()
+                            ),
+                            TerminalMode::None => {
+                                format!("[{}] Thinking: {}\n", ctx.display_name, sanitized)
+                            }
+                            TerminalMode::Full => unreachable!(),
+                        }
                     }
                 }
             } else {
