@@ -27,6 +27,8 @@
 //! See `tests/system_tests/SYSTEM_TESTS.md` for those guidelines.
 
 mod agent_spawn_errors;
+mod ccs_extreme_streaming_regression;
+mod ccs_real_world_log_regression;
 mod ccs_streaming_spam_all_deltas;
 mod cli;
 mod codex_reasoning_spam_regression;

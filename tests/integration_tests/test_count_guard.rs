@@ -81,6 +81,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("ccs_streaming_spam_all_deltas.rs"),
     },
     SourceFile {
+        path: "ccs_extreme_streaming_regression.rs",
+        contents: include_str!("ccs_extreme_streaming_regression.rs"),
+    },
+    SourceFile {
+        path: "ccs_real_world_log_regression.rs",
+        contents: include_str!("ccs_real_world_log_regression.rs"),
+    },
+    SourceFile {
         path: "codex_reasoning_spam_regression.rs",
         contents: include_str!("codex_reasoning_spam_regression.rs"),
     },

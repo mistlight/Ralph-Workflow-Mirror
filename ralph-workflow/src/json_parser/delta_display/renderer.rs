@@ -159,9 +159,24 @@ pub trait DeltaRenderer {
 /// [ccs-glm] Hello World\n
 /// ```
 ///
+/// # CCS Spam Prevention (Bug Fix)
+///
+/// This implementation prevents repeated prefixed lines for CCS agents (ccs/codex,
+/// ccs/glm) in non-TTY modes. The spam fix is validated with comprehensive regression
+/// tests that simulate real-world streaming scenarios:
+///
+/// - **Extreme delta counts:** Tests verify no spam with 500+ deltas per content block
+/// - **Multi-turn sessions:** Validates 3+ turns with 200 deltas each (600+ total)
+/// - **All delta types:** Covers text deltas, thinking deltas, and tool input deltas
+///
 /// The multi-line pattern (in-place updates) is the industry standard used by
 /// Rich, Ink, Bubble Tea, and other production CLI libraries for clean streaming
 /// output.
+///
+/// See tests:
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs`
+/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs`
+/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs`
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
@@ -238,6 +253,17 @@ impl DeltaRenderer for TextDeltaRenderer {
 ///
 /// This uses the same multi-line in-place update pattern as `TextDeltaRenderer` in `TerminalMode::Full`
 /// so the caller can finalize the line with `DeltaRenderer::render_completion`.
+///
+/// # CCS Spam Prevention (Bug Fix)
+///
+/// Like `TextDeltaRenderer`, this implementation suppresses per-delta output in non-TTY modes
+/// to prevent repeated "[ccs/codex] Thinking:" and "[ccs/glm] Thinking:" lines in logs.
+/// The fix is validated with extreme streaming tests (500+ thinking deltas).
+///
+/// See tests:
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs`
+/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs`
+/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs`
 pub struct ThinkingDeltaRenderer;
 
 impl DeltaRenderer for ThinkingDeltaRenderer {
