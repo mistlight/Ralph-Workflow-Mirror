@@ -150,8 +150,8 @@ fn test_ccs_glm_thinking_deltas_no_spam_in_none_mode() {
         let thinking_prefix_count = output.matches("[ccs/glm]").count();
         let thinking_label_count = output.matches("Thinking:").count();
         assert!(
-            thinking_prefix_count <= 4,
-            "Expected limited '[ccs/glm]' prefixes in None mode, found {}.\n\nOutput:\n{}",
+            thinking_prefix_count <= 1,
+            "Expected <= 1 '[ccs/glm]' prefix in None mode for thinking-only stream, found {}.\n\nOutput:\n{}",
             thinking_prefix_count,
             output
         );

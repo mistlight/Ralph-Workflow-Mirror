@@ -28,9 +28,17 @@ pub struct ClaudeParser {
     ///
     /// - In `TerminalMode::Full`, thinking deltas use the multi-line in-place update pattern
     ///   and must be finalized (cursor down + newline) before emitting other newline-based output.
-    /// - In `TerminalMode::Basic|None`, we suppress per-delta thinking output and flush a single
-    ///   final thinking line at the next output boundary (or at `message_stop`).
+    /// - In `TerminalMode::Basic|None`, we suppress per-delta thinking output and flush accumulated
+    ///   thinking content once at the next output boundary (or at `message_stop`).
     thinking_active_index: RefCell<Option<u64>>,
+
+    /// Tracks which thinking content block indices have streamed thinking content that is eligible
+    /// for non-TTY flushing.
+    ///
+    /// Some providers can emit multiple thinking blocks (multiple indices) within a single message.
+    /// In non-TTY modes we suppress per-delta output, so we must remember all indices that
+    /// accumulated thinking to flush them at `message_stop`.
+    thinking_non_tty_indices: RefCell<std::collections::BTreeSet<u64>>,
 
     /// Once non-thinking output has started for the current message, suppress any
     /// subsequent thinking deltas to avoid corrupting visible output.
@@ -112,6 +120,7 @@ impl ClaudeParser {
             show_streaming_metrics: false,
             printer,
             thinking_active_index: RefCell::new(None),
+            thinking_non_tty_indices: RefCell::new(std::collections::BTreeSet::new()),
             suppress_thinking_for_message: RefCell::new(false),
             text_line_active: RefCell::new(false),
             cursor_up_active: RefCell::new(false),
@@ -371,6 +380,7 @@ impl ClaudeParser {
 
                 // Reset any pending thinking line from a previous message.
                 *self.thinking_active_index.borrow_mut() = None;
+                self.thinking_non_tty_indices.borrow_mut().clear();
                 *self.suppress_thinking_for_message.borrow_mut() = false;
                 *self.text_line_active.borrow_mut() = false;
                 *self.cursor_up_active.borrow_mut() = false;

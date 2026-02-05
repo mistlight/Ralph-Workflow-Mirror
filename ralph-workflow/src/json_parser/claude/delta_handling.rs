@@ -202,7 +202,14 @@ impl ClaudeParser {
                         *self.cursor_up_active.borrow_mut() = true;
                         out
                     }
-                    TerminalMode::Basic | TerminalMode::None => String::new(),
+                    TerminalMode::Basic | TerminalMode::None => {
+                        // Track all thinking indices that accumulated content so we can flush them
+                        // at message_stop. Providers can emit multiple thinking content blocks in a
+                        // single message, so tracking only the "active" index would drop earlier
+                        // thinking blocks from non-TTY output.
+                        self.thinking_non_tty_indices.borrow_mut().insert(index);
+                        String::new()
+                    }
                 }
             }
             ContentBlockDelta::ToolUseDelta {
@@ -351,15 +358,34 @@ impl ClaudeParser {
                         .get_current_message_id()
                         .is_some_and(|message_id| session.is_message_pre_rendered(message_id))
                     {
-                        // Clear any pending thinking index to avoid cross-message contamination.
+                        // Clear any pending thinking indices to avoid cross-message contamination.
                         self.thinking_active_index.borrow_mut().take();
+                        self.thinking_non_tty_indices.borrow_mut().clear();
                         (String::new(), String::new(), String::new())
                     } else {
                         // Flush accumulated thinking.
                         // We format the output directly here because the renderers now suppress
                         // output in non-TTY modes (to prevent per-delta spam).
-                        let thinking_output =
-                            if let Some(index) = self.thinking_active_index.borrow_mut().take() {
+                        let mut thinking_output = String::new();
+                        {
+                            let indices: Vec<u64> = if !self.thinking_non_tty_indices.borrow().is_empty()
+                            {
+                                self.thinking_non_tty_indices.borrow().iter().copied().collect()
+                            } else {
+                                // Backward-compatible fallback: if we never recorded indices (older
+                                // behavior), flush the single active index.
+                                self.thinking_active_index
+                                    .borrow()
+                                    .iter()
+                                    .copied()
+                                    .collect()
+                            };
+
+                            // Reset parser-owned tracking so subsequent messages don't inherit indices.
+                            self.thinking_non_tty_indices.borrow_mut().clear();
+                            self.thinking_active_index.borrow_mut().take();
+
+                            for index in indices {
                                 let index_str = index.to_string();
                                 let accumulated = session
                                     .get_accumulated(ContentType::Thinking, &index_str)
@@ -368,41 +394,38 @@ impl ClaudeParser {
                                     accumulated,
                                 );
                                 if sanitized.is_empty() {
-                                    String::new()
-                                } else {
-                                    let prefix_fmt = match terminal_mode {
-                                        TerminalMode::Basic => format!(
-                                            "{}[{}]{} {}",
-                                            c.dim(),
-                                            &self.display_name,
-                                            c.reset(),
-                                            c.dim()
-                                        ),
-                                        TerminalMode::None => {
-                                            format!("[{}] ", &self.display_name)
-                                        }
-                                        TerminalMode::Full => unreachable!(),
-                                    };
-
-                                    let label_fmt = match terminal_mode {
-                                        TerminalMode::Basic => {
-                                            format!("Thinking: {}", c.cyan())
-                                        }
-                                        TerminalMode::None => "Thinking: ".to_string(),
-                                        TerminalMode::Full => unreachable!(),
-                                    };
-
-                                    let suffix_fmt = match terminal_mode {
-                                        TerminalMode::Basic => c.reset().to_string(),
-                                        TerminalMode::None => String::new(),
-                                        TerminalMode::Full => unreachable!(),
-                                    };
-
-                                    format!("{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n")
+                                    continue;
                                 }
-                            } else {
-                                String::new()
-                            };
+
+                                let prefix_fmt = match terminal_mode {
+                                    TerminalMode::Basic => format!(
+                                        "{}[{}]{} {}",
+                                        c.dim(),
+                                        &self.display_name,
+                                        c.reset(),
+                                        c.dim()
+                                    ),
+                                    TerminalMode::None => format!("[{}] ", &self.display_name),
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                let label_fmt = match terminal_mode {
+                                    TerminalMode::Basic => format!("Thinking: {}", c.cyan()),
+                                    TerminalMode::None => "Thinking: ".to_string(),
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                let suffix_fmt = match terminal_mode {
+                                    TerminalMode::Basic => c.reset().to_string(),
+                                    TerminalMode::None => String::new(),
+                                    TerminalMode::Full => unreachable!(),
+                                };
+
+                                thinking_output.push_str(&format!(
+                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
+                                ));
+                            }
+                        }
 
                         // Flush accumulated tool input.
                         // Tool input deltas can arrive as partial JSON chunks; in non-TTY modes we

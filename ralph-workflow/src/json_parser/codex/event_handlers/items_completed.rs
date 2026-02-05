@@ -283,29 +283,35 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
 
 /// Handle `ItemCompleted` event for `command_execution` type.
 pub fn handle_command_execution_completed(ctx: &EventHandlerContext) -> String {
-    format!(
-        "{}[{}]{} {}{} Command done{}\n",
-        ctx.colors.dim(),
-        ctx.display_name,
-        ctx.colors.reset(),
-        ctx.colors.green(),
-        CHECK,
-        ctx.colors.reset()
-    )
+    match ctx.terminal_mode {
+        TerminalMode::Full | TerminalMode::Basic => format!(
+            "{}[{}]{} {}{} Command done{}\n",
+            ctx.colors.dim(),
+            ctx.display_name,
+            ctx.colors.reset(),
+            ctx.colors.green(),
+            CHECK,
+            ctx.colors.reset()
+        ),
+        TerminalMode::None => format!("[{}] Command done\n", ctx.display_name),
+    }
 }
 
 /// Handle `ItemCompleted` event for `file_change`/`file_write` types.
 pub fn handle_file_write_completed(ctx: &EventHandlerContext, path: Option<String>) -> String {
     let path = path.unwrap_or_else(|| "unknown".to_string());
-    format!(
-        "{}[{}]{} {}File{}: {}\n",
-        ctx.colors.dim(),
-        ctx.display_name,
-        ctx.colors.reset(),
-        ctx.colors.yellow(),
-        ctx.colors.reset(),
-        path
-    )
+    match ctx.terminal_mode {
+        TerminalMode::Full | TerminalMode::Basic => format!(
+            "{}[{}]{} {}File{}: {}\n",
+            ctx.colors.dim(),
+            ctx.display_name,
+            ctx.colors.reset(),
+            ctx.colors.yellow(),
+            ctx.colors.reset(),
+            path
+        ),
+        TerminalMode::None => format!("[{}] File: {}\n", ctx.display_name, path),
+    }
 }
 
 /// Handle `ItemCompleted` event for `file_read` type.
@@ -330,29 +336,35 @@ pub fn handle_file_read_completed(ctx: &EventHandlerContext, path: Option<String
 /// Handle `ItemCompleted` event for `mcp_tool_call`/`mcp` types.
 pub fn handle_mcp_tool_completed(ctx: &EventHandlerContext, tool_name: Option<String>) -> String {
     let tool_name = tool_name.unwrap_or_else(|| "tool".to_string());
-    format!(
-        "{}[{}]{} {}{} MCP:{} {} done\n",
-        ctx.colors.dim(),
-        ctx.display_name,
-        ctx.colors.reset(),
-        ctx.colors.green(),
-        CHECK,
-        ctx.colors.reset(),
-        tool_name
-    )
+    match ctx.terminal_mode {
+        TerminalMode::Full | TerminalMode::Basic => format!(
+            "{}[{}]{} {}{} MCP:{} {} done\n",
+            ctx.colors.dim(),
+            ctx.display_name,
+            ctx.colors.reset(),
+            ctx.colors.green(),
+            CHECK,
+            ctx.colors.reset(),
+            tool_name
+        ),
+        TerminalMode::None => format!("[{}] MCP: {} done\n", ctx.display_name, tool_name),
+    }
 }
 
 /// Handle `ItemCompleted` event for `web_search` type.
 pub fn handle_web_search_completed(ctx: &EventHandlerContext) -> String {
-    format!(
-        "{}[{}]{} {}{} Search completed{}\n",
-        ctx.colors.dim(),
-        ctx.display_name,
-        ctx.colors.reset(),
-        ctx.colors.green(),
-        CHECK,
-        ctx.colors.reset()
-    )
+    match ctx.terminal_mode {
+        TerminalMode::Full | TerminalMode::Basic => format!(
+            "{}[{}]{} {}{} Search completed{}\n",
+            ctx.colors.dim(),
+            ctx.display_name,
+            ctx.colors.reset(),
+            ctx.colors.green(),
+            CHECK,
+            ctx.colors.reset()
+        ),
+        TerminalMode::None => format!("[{}] Search completed\n", ctx.display_name),
+    }
 }
 
 /// Handle `ItemCompleted` event for `plan_update` type.
@@ -360,8 +372,8 @@ pub fn handle_plan_update_completed(ctx: &EventHandlerContext, plan: Option<&Str
     if ctx.verbosity.is_verbose() {
         let limit = ctx.verbosity.truncate_limit("text");
         plan.map_or_else(
-            || {
-                format!(
+            || match ctx.terminal_mode {
+                TerminalMode::Full | TerminalMode::Basic => format!(
                     "{}[{}]{} {}{} Plan updated{}\n",
                     ctx.colors.dim(),
                     ctx.display_name,
@@ -369,19 +381,23 @@ pub fn handle_plan_update_completed(ctx: &EventHandlerContext, plan: Option<&Str
                     ctx.colors.green(),
                     CHECK,
                     ctx.colors.reset()
-                )
+                ),
+                TerminalMode::None => format!("[{}] Plan updated\n", ctx.display_name),
             },
             |plan| {
                 let preview = truncate_text(plan, limit);
-                format!(
-                    "{}[{}]{} {}Plan:{} {}\n",
-                    ctx.colors.dim(),
-                    ctx.display_name,
-                    ctx.colors.reset(),
-                    ctx.colors.blue(),
-                    ctx.colors.reset(),
-                    preview
-                )
+                match ctx.terminal_mode {
+                    TerminalMode::Full | TerminalMode::Basic => format!(
+                        "{}[{}]{} {}Plan:{} {}\n",
+                        ctx.colors.dim(),
+                        ctx.display_name,
+                        ctx.colors.reset(),
+                        ctx.colors.blue(),
+                        ctx.colors.reset(),
+                        preview
+                    ),
+                    TerminalMode::None => format!("[{}] Plan: {}\n", ctx.display_name, preview),
+                }
             },
         )
     } else {
