@@ -235,6 +235,15 @@ impl StreamingSession {
         //   message_stop, then flushed via accumulated_keys() iteration.
         // - No per-delta spam (suppression already implemented in renderers).
         // - Content from ALL blocks appears in final output.
+        //
+        // EVIDENCE from baseline testing (wt-24-ccs-repeat-2 continuation #1):
+        // When accumulated content IS cleared on block transition (baseline behavior):
+        // - test_ccs_glm_architecture_verification_none_mode FAILS: only tool input
+        //   (c0...c99) present, thinking (t0...t99) and text (w0...w99) MISSING
+        // - test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode FAILS: thinking
+        //   block 0 (t0_) MISSING, only later blocks appear
+        // Root cause confirmed: Clearing accumulated content on block transition loses
+        // earlier blocks, violating the suppress-accumulate-flush architecture.
 
         // Initialize the new content block
         self.current_block = ContentBlockState::InBlock {
