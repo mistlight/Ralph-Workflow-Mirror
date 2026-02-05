@@ -11,9 +11,26 @@ mod tests {
     #[test]
     fn test_format_thinking_content() {
         let formatter = DeltaDisplayFormatter::new();
-        let output = formatter.format_thinking("Thinking about this", "Claude", test_colors());
+        let output = formatter.format_thinking(
+            "Thinking about this",
+            "Claude",
+            test_colors(),
+            TerminalMode::Full,
+        );
         assert!(output.contains("Thinking"));
         assert!(output.contains("Thinking about this"));
+    }
+
+    #[test]
+    fn test_format_thinking_none_mode_plain_text() {
+        let formatter = DeltaDisplayFormatter::new();
+        let output = formatter.format_thinking(
+            "Thinking about this",
+            "Claude",
+            Colors { enabled: true },
+            TerminalMode::None,
+        );
+        assert_eq!(output, "[Claude] Thinking: Thinking about this\n");
     }
 
     #[test]
@@ -27,6 +44,34 @@ mod tests {
         );
         assert!(output.contains("command=ls -la"));
         assert!(output.contains("└─"));
+    }
+
+    #[test]
+    fn test_format_tool_input_none_mode_suppressed() {
+        let formatter = DeltaDisplayFormatter::new();
+        let output = formatter.format_tool_input(
+            "command=ls -la",
+            "Claude",
+            test_colors(),
+            TerminalMode::None,
+        );
+        // Per-delta tool input is suppressed in None mode to prevent spam.
+        // Tool input will be flushed once at completion boundaries.
+        assert_eq!(output, "");
+    }
+
+    #[test]
+    fn test_format_tool_input_basic_mode_suppressed() {
+        let formatter = DeltaDisplayFormatter::new();
+        let output = formatter.format_tool_input(
+            "command=ls -la",
+            "Claude",
+            test_colors(),
+            TerminalMode::Basic,
+        );
+        // Per-delta tool input is suppressed in Basic mode to prevent spam.
+        // Tool input will be flushed once at completion boundaries.
+        assert_eq!(output, "");
     }
 
     // Tests for DeltaRenderer trait
@@ -224,6 +269,48 @@ mod tests {
         let colors = test_colors();
         let out = ThinkingDeltaRenderer::render_first_delta(
             "git status",
+            "ccs/codex",
+            colors,
+            TerminalMode::Basic,
+        );
+        // Per-delta thinking output is suppressed in Basic mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn test_thinking_delta_renderer_first_delta_none_mode() {
+        let colors = test_colors();
+        let out = ThinkingDeltaRenderer::render_first_delta(
+            "git status",
+            "ccs/codex",
+            colors,
+            TerminalMode::None,
+        );
+        // Per-delta thinking output is suppressed in None mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn test_thinking_delta_renderer_subsequent_delta_none_mode() {
+        let colors = test_colors();
+        let out = ThinkingDeltaRenderer::render_subsequent_delta(
+            "git status --porcelain",
+            "ccs/codex",
+            colors,
+            TerminalMode::None,
+        );
+        // Per-delta thinking output is suppressed in None mode to prevent spam.
+        // Content will be flushed once at completion boundaries.
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn test_thinking_delta_renderer_subsequent_delta_basic_mode() {
+        let colors = test_colors();
+        let out = ThinkingDeltaRenderer::render_subsequent_delta(
+            "git status --porcelain",
             "ccs/codex",
             colors,
             TerminalMode::Basic,

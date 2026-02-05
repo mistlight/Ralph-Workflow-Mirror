@@ -1,6 +1,44 @@
 // Delta renderer trait and implementations.
 //
 // Contains the DeltaRenderer trait and TextDeltaRenderer implementation.
+//
+// # CCS Spam Prevention Architecture
+//
+// This module implements a three-layer approach to prevent repeated prefixed lines
+// for streaming deltas in non-TTY modes (logs, CI output):
+//
+// ## Layer 1: Suppression at Renderer Level
+//
+// Delta renderers (`TextDeltaRenderer`, `ThinkingDeltaRenderer`) return empty strings
+// in `TerminalMode::Basic` and `TerminalMode::None` for both `render_first_delta` and
+// `render_subsequent_delta`. This prevents per-delta spam at the source.
+//
+// ## Layer 2: Accumulation in StreamingSession
+//
+// `StreamingSession` (in `streaming_state/session`) accumulates all content by
+// (ContentType, index) across deltas. This state is preserved across all delta
+// events for a single message.
+//
+// ## Layer 3: Flush at Completion Boundaries
+//
+// Parser layer (ClaudeParser, CodexParser) flushes accumulated content ONCE at
+// completion boundaries:
+// - ClaudeParser: `handle_message_stop` (in `claude/delta_handling.rs`)
+// - CodexParser: `item.completed` handlers (in `codex/event_handlers/*.rs`)
+//
+// This ensures:
+// - **Full mode (TTY)**: In-place updates work normally with cursor positioning
+// - **Basic/None modes**: One prefixed line per content block, regardless of delta count
+//
+// ## Validation
+//
+// Comprehensive regression tests validate this architecture:
+// - `ccs_delta_spam_systematic_reproduction.rs`: NEW systematic reproduction test (all delta types, both parsers, both modes)
+// - `ccs_all_delta_types_spam_reproduction.rs`: 1000+ deltas per block
+// - `ccs_streaming_spam_all_deltas.rs`: All delta types (text/thinking/tool)
+// - `ccs_nuclear_full_log_regression.rs`: Real production logs (12,000+ deltas)
+// - `ccs_streaming_edge_cases.rs`: Edge cases (empty deltas, rapid transitions)
+// - `codex_reasoning_spam_regression.rs`: Original Codex reasoning fix
 
 /// Renderer for streaming delta content.
 ///
@@ -78,6 +116,7 @@ pub trait DeltaRenderer {
     ///
     /// # Returns
     /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
+    /// In Basic/None modes, returns empty string (per-delta output suppressed).
     fn render_first_delta(
         accumulated: &str,
         prefix: &str,
@@ -98,7 +137,8 @@ pub trait DeltaRenderer {
     /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A formatted string with prefix and content.
+    /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
+    /// In Basic/None modes, returns empty string (per-delta output suppressed).
     fn render_subsequent_delta(
         accumulated: &str,
         prefix: &str,
@@ -159,9 +199,28 @@ pub trait DeltaRenderer {
 /// [ccs-glm] Hello World\n
 /// ```
 ///
+/// # CCS Spam Prevention (Bug Fix)
+///
+/// This implementation prevents repeated prefixed lines for CCS agents (ccs/codex,
+/// ccs/glm) in non-TTY modes. The spam fix is validated with comprehensive regression
+/// tests that simulate real-world streaming scenarios:
+///
+/// - **Ultra-extreme delta counts:** Tests verify no spam with 1000+ deltas per content block
+/// - **Multi-turn sessions:** Validates 3+ turns with 200+ deltas each (600+ total)
+/// - **All delta types:** Covers text deltas, thinking deltas, and tool input deltas
+/// - **Real-world logs:** Tests with production logs containing 12,596 total deltas
+///
 /// The multi-line pattern (in-place updates) is the industry standard used by
 /// Rich, Ink, Bubble Tea, and other production CLI libraries for clean streaming
 /// output.
+///
+/// See comprehensive regression tests:
+/// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction & verification)
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (ultra-comprehensive edge case coverage)
+/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
+/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
+/// - `tests/integration_tests/ccs_real_world_log_regression.rs` (production log with 12,596 deltas)
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
@@ -238,6 +297,19 @@ impl DeltaRenderer for TextDeltaRenderer {
 ///
 /// This uses the same multi-line in-place update pattern as `TextDeltaRenderer` in `TerminalMode::Full`
 /// so the caller can finalize the line with `DeltaRenderer::render_completion`.
+///
+/// # CCS Spam Prevention (Bug Fix)
+///
+/// Like `TextDeltaRenderer`, this implementation suppresses per-delta output in non-TTY modes
+/// to prevent repeated "[ccs/codex] Thinking:" and "[ccs/glm] Thinking:" lines in logs.
+/// The fix is validated with ultra-extreme streaming tests (1000+ thinking deltas).
+///
+/// See comprehensive regression tests:
+/// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction test)
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (1000+ deltas, rapid succession, interleaved blocks)
+/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
+/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)
 pub struct ThinkingDeltaRenderer;
 
 impl DeltaRenderer for ThinkingDeltaRenderer {

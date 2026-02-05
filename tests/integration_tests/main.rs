@@ -27,6 +27,15 @@
 //! See `tests/system_tests/SYSTEM_TESTS.md` for those guidelines.
 
 mod agent_spawn_errors;
+mod ccs_all_delta_types_spam_reproduction;
+mod ccs_basic_mode_nuclear_test;
+mod ccs_comprehensive_spam_verification;
+mod ccs_delta_spam_systematic_reproduction;
+mod ccs_extreme_streaming_regression;
+mod ccs_nuclear_full_log_regression;
+mod ccs_nuclear_spam_test;
+mod ccs_real_world_log_regression;
+mod ccs_streaming_edge_cases;
 mod ccs_streaming_spam_all_deltas;
 mod cli;
 mod codex_reasoning_spam_regression;

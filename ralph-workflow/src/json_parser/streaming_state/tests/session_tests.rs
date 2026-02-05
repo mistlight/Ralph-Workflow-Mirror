@@ -666,31 +666,32 @@ fn test_rapid_index_switch_with_clear() {
     assert!(show_prefix, "First delta for index 0 should show prefix");
     assert_eq!(session.get_accumulated(ContentType::Text, "0"), Some("X"));
 
-    // Switch to block 1 - this should clear accumulated content for index 0
+    // Switch to block 1 - accumulated content for index 0 should be PRESERVED
+    // (no longer cleared on index switch as of wt-24-ccs-repeat-2 fix)
     session.on_content_block_start(1);
 
-    // Verify accumulated for index 0 was cleared
+    // Verify accumulated for index 0 was PRESERVED
     assert_eq!(
         session.get_accumulated(ContentType::Text, "0"),
-        None,
-        "Accumulated content for index 0 should be cleared when switching to index 1"
+        Some("X"),
+        "Accumulated content for index 0 should be PRESERVED when switching to index 1"
     );
 
     // Switch back to index 0
     session.on_content_block_start(0);
 
-    // Since output_started_for_key was also cleared, prefix should show again
+    // Since output_started_for_key was preserved, prefix should NOT show again
     let show_prefix = session.on_text_delta(0, "Y");
     assert!(
-        show_prefix,
-        "Prefix should show when switching back to a previously cleared index"
+        !show_prefix,
+        "Prefix should NOT show when switching back to an index that already started output"
     );
 
-    // Verify new content is accumulated fresh
+    // Verify content is APPENDED to existing accumulated content
     assert_eq!(
         session.get_accumulated(ContentType::Text, "0"),
-        Some("Y"),
-        "New content should be accumulated fresh after clear"
+        Some("XY"),
+        "New content should be APPENDED to preserved accumulated content"
     );
 }
 
@@ -711,12 +712,18 @@ fn test_delta_sizes_cleared_on_index_switch() {
     let sizes_before = session.delta_sizes.get(&content_key).unwrap();
     assert_eq!(sizes_before.len(), 2, "Should have 2 delta sizes tracked");
 
-    // Switch to index 1 - this should clear delta_sizes for index 0
+    // Switch to index 1 - delta_sizes for index 0 should be PRESERVED
+    // (needed for non-TTY flush at message_stop)
     session.on_content_block_start(1);
 
     assert!(
-        !session.delta_sizes.contains_key(&content_key),
-        "Delta sizes for index 0 should be cleared when switching to index 1"
+        session.delta_sizes.contains_key(&content_key),
+        "Delta sizes for index 0 should be PRESERVED when switching to index 1"
+    );
+    assert_eq!(
+        session.delta_sizes.get(&content_key).unwrap().len(),
+        2,
+        "Index 0 should still have 2 delta sizes tracked"
     );
 
     // Add deltas for index 1
@@ -745,14 +752,15 @@ fn test_rapid_index_switch_with_thinking_content() {
         Some("Thinking...")
     );
 
-    // Switch to text content in index 1 - this should clear index 0's accumulated
+    // Switch to text content in index 1 - index 0's accumulated should be PRESERVED
+    // (no longer cleared on index switch as of wt-24-ccs-repeat-2 fix)
     session.on_content_block_start(1);
 
-    // Verify index 0's accumulated thinking was cleared
+    // Verify index 0's accumulated thinking was PRESERVED
     assert_eq!(
         session.get_accumulated(ContentType::Thinking, "0"),
-        None,
-        "Thinking content for index 0 should be cleared when switching to index 1"
+        Some("Thinking..."),
+        "Thinking content for index 0 should be PRESERVED when switching to index 1"
     );
 
     let show_prefix = session.on_text_delta(1, "Text");
@@ -764,19 +772,19 @@ fn test_rapid_index_switch_with_thinking_content() {
     // Switch back to index 0 for thinking
     session.on_content_block_start(0);
 
-    // Since output_started_for_key for (Thinking, "0") was cleared when switching to index 1,
-    // the prefix should show again
+    // Since output_started_for_key for (Thinking, "0") was PRESERVED,
+    // the prefix should NOT show again
     let show_prefix = session.on_thinking_delta(0, " more");
     assert!(
-        show_prefix,
-        "Thinking prefix should show when switching back to cleared index 0"
+        !show_prefix,
+        "Thinking prefix should NOT show when switching back to an index that already started output"
     );
 
-    // Verify thinking content was accumulated fresh (only the new content)
+    // Verify thinking content was APPENDED to existing accumulated content
     assert_eq!(
         session.get_accumulated(ContentType::Thinking, "0"),
-        Some(" more"),
-        "Thinking content should be accumulated fresh after clear"
+        Some("Thinking... more"),
+        "Thinking content should be APPENDED to preserved accumulated content"
     );
 }
 
@@ -798,15 +806,16 @@ fn test_output_started_for_key_cleared_across_all_content_types() {
     assert!(session.output_started_for_key.contains(&text_key));
     assert!(session.output_started_for_key.contains(&thinking_key));
 
-    // Switch to index 1 - should clear output_started_for_key for all content types
+    // Switch to index 1 - output_started_for_key should be PRESERVED
+    // (no longer cleared on index switch as of wt-24-ccs-repeat-2 fix)
     session.on_content_block_start(1);
 
     assert!(
-        !session.output_started_for_key.contains(&text_key),
-        "Text output_started should be cleared for index 0"
+        session.output_started_for_key.contains(&text_key),
+        "Text output_started should be PRESERVED for index 0"
     );
     assert!(
-        !session.output_started_for_key.contains(&thinking_key),
-        "Thinking output_started should be cleared for index 0"
+        session.output_started_for_key.contains(&thinking_key),
+        "Thinking output_started should be PRESERVED for index 0"
     );
 }

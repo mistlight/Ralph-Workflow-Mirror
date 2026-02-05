@@ -36,7 +36,7 @@ impl StreamingSession {
                     "Warning: Received MessageStart while state is Streaming. \
                     This indicates a non-standard agent protocol (e.g., GLM sending \
                     repeated MessageStart events). Preserving output_started_for_key \
-                    to prevent prefix spam. File: streaming_state.rs, Line: {}",
+                    to prevent prefix spam. File: state_management.rs, Line: {}",
                     line!()
                 );
             }
@@ -209,43 +209,41 @@ impl StreamingSession {
     pub fn on_content_block_start(&mut self, index: u64) {
         let index_str = index.to_string();
 
-        // Check if we're transitioning to a different index BEFORE finalizing.
-        // This is important because some agents (e.g., GLM) may send ContentBlockStart
-        // repeatedly for the same index, and we should NOT clear accumulated content
-        // in that case (which would cause the next delta to show prefix again).
-        let (is_same_index, old_index) = match &self.current_block {
-            ContentBlockState::NotInBlock => (false, None),
-            ContentBlockState::InBlock {
-                index: current_index,
-                ..
-            } => (current_index == &index_str, Some(current_index.clone())),
-        };
+        // Note: Previous versions tracked whether we were transitioning to a different
+        // index to selectively clear accumulated content. This is no longer needed since
+        // we preserve all accumulated content until message_stop (see rationale below).
 
         // Finalize previous block if we're in one
         self.ensure_content_block_finalized();
 
-        // Only clear accumulated content if transitioning to a DIFFERENT index.
-        // We clear the OLD index's content, not the new one.
-        if !is_same_index {
-            if let Some(old) = old_index {
-                for content_type in [
-                    ContentType::Text,
-                    ContentType::Thinking,
-                    ContentType::ToolInput,
-                ] {
-                    let key = (content_type, old.clone());
-                    self.accumulated.remove(&key);
-                    self.key_order.retain(|k| k != &key);
-                    // Also clear output_started tracking to ensure prefix shows when switching back
-                    self.output_started_for_key.remove(&key);
-                    // Clear delta sizes for the old index to prevent incorrect pattern detection
-                    self.delta_sizes.remove(&key);
-                    self.last_rendered.remove(&key);
-                    // Clear consecutive duplicates for the old index
-                    self.consecutive_duplicates.remove(&key);
-                }
-            }
-        }
+        // DO NOT clear accumulated content when transitioning blocks.
+        //
+        // RATIONALE:
+        // In non-TTY modes (Basic/None), per-delta output is suppressed and accumulated
+        // content is flushed ONCE at message_stop for ALL blocks. Clearing accumulated
+        // content when transitioning to a new block would lose earlier blocks' content,
+        // causing only the LAST block to be output (Bug: CCS renderer repeats streamed
+        // lines across deltas - wt-24-ccs-repeat-2).
+        //
+        // In Full TTY mode, accumulated content is unused (deltas rendered in-place), so
+        // letting it persist until message_stop has negligible memory impact.
+        //
+        // Accumulated content is properly cleared at message_start for the next message.
+        //
+        // This fix ensures multi-block messages are correctly flushed in non-TTY modes:
+        // - Message with blocks [0, 1, 2]: ALL blocks' content is preserved until
+        //   message_stop, then flushed via accumulated_keys() iteration.
+        // - No per-delta spam (suppression already implemented in renderers).
+        // - Content from ALL blocks appears in final output.
+        //
+        // EVIDENCE from baseline testing (wt-24-ccs-repeat-2 continuation #1):
+        // When accumulated content IS cleared on block transition (baseline behavior):
+        // - test_ccs_glm_architecture_verification_none_mode FAILS: only tool input
+        //   (c0...c99) present, thinking (t0...t99) and text (w0...w99) MISSING
+        // - test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode FAILS: thinking
+        //   block 0 (t0_) MISSING, only later blocks appear
+        // Root cause confirmed: Clearing accumulated content on block transition loses
+        // earlier blocks, violating the suppress-accumulate-flush architecture.
 
         // Initialize the new content block
         self.current_block = ContentBlockState::InBlock {

@@ -1,6 +1,39 @@
 // Claude delta handling methods.
 //
 // Contains methods for handling streaming delta events.
+//
+// # CCS Spam Prevention (Critical Fix)
+//
+// This module implements non-TTY flush logic to prevent repeated prefixed lines
+// for CCS agents (ccs/codex, ccs/glm) in logs and CI output. The spam bug occurred
+// because delta renderers emitted one line per delta in non-TTY modes, resulting
+// in hundreds of repeated "[ccs/glm]" lines for a single streamed message.
+//
+// ## Fix Architecture
+//
+// 1. **Suppression:** Delta renderers (TextDeltaRenderer, ThinkingDeltaRenderer)
+//    return empty strings in non-TTY modes (Basic/None) to suppress per-delta output.
+//
+// 2. **Accumulation:** StreamingSession accumulates content by (ContentType, index)
+//    across all deltas for text, thinking, and tool input.
+//
+// 3. **Flush:** ClaudeParser::handle_message_stop flushes accumulated content ONCE
+//    at completion boundaries, emitting a single prefixed line per content block.
+//
+// ## Validation
+//
+// The fix is validated with comprehensive regression tests covering ultra-extreme
+// scenarios (1000+ deltas per block, multi-turn sessions, all delta types).
+//
+// See comprehensive regression tests:
+// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction & verification)
+// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (1000+ deltas per block)
+// - `tests/integration_tests/ccs_nuclear_full_log_regression.rs` (NUCLEAR: real production logs, 12,000+ deltas)
+// - `tests/integration_tests/ccs_streaming_edge_cases.rs` (edge cases: empty deltas, rapid transitions)
+// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
+// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
+// - `tests/integration_tests/ccs_real_world_log_regression.rs` (production log with 12,596 deltas)
+// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)
 
 impl ClaudeParser {
     fn finalize_in_place_full_mode(
@@ -108,7 +141,6 @@ impl ClaudeParser {
                 let accumulated_text = session
                     .get_accumulated(ContentType::Text, &index_str)
                     .unwrap_or("");
-
 
                 // Sanitize the accumulated text to check if it's empty
                 // This is needed to skip rendering when the accumulated content is just whitespace
@@ -372,18 +404,22 @@ impl ClaudeParser {
                         // output in non-TTY modes (to prevent per-delta spam).
                         let mut thinking_output = String::new();
                         {
-                            let indices: Vec<u64> = if !self.thinking_non_tty_indices.borrow().is_empty()
-                            {
-                                self.thinking_non_tty_indices.borrow().iter().copied().collect()
-                            } else {
-                                // Backward-compatible fallback: if we never recorded indices (older
-                                // behavior), flush the single active index.
-                                self.thinking_active_index
-                                    .borrow()
-                                    .iter()
-                                    .copied()
-                                    .collect()
-                            };
+                            let indices: Vec<u64> =
+                                if !self.thinking_non_tty_indices.borrow().is_empty() {
+                                    self.thinking_non_tty_indices
+                                        .borrow()
+                                        .iter()
+                                        .copied()
+                                        .collect()
+                                } else {
+                                    // Backward-compatible fallback: if we never recorded indices (older
+                                    // behavior), flush the single active index.
+                                    self.thinking_active_index
+                                        .borrow()
+                                        .iter()
+                                        .copied()
+                                        .collect()
+                                };
 
                             // Reset parser-owned tracking so subsequent messages don't inherit indices.
                             self.thinking_non_tty_indices.borrow_mut().clear();
@@ -394,9 +430,10 @@ impl ClaudeParser {
                                 let accumulated = session
                                     .get_accumulated(ContentType::Thinking, &index_str)
                                     .unwrap_or("");
-                                let sanitized = crate::json_parser::delta_display::sanitize_for_display(
-                                    accumulated,
-                                );
+                                let sanitized =
+                                    crate::json_parser::delta_display::sanitize_for_display(
+                                        accumulated,
+                                    );
                                 if sanitized.is_empty() {
                                     continue;
                                 }
@@ -443,9 +480,10 @@ impl ClaudeParser {
                                 let accumulated = session
                                     .get_accumulated(ContentType::ToolInput, &index_str)
                                     .unwrap_or("");
-                                let sanitized = crate::json_parser::delta_display::sanitize_for_display(
-                                    accumulated,
-                                );
+                                let sanitized =
+                                    crate::json_parser::delta_display::sanitize_for_display(
+                                        accumulated,
+                                    );
                                 if !sanitized.is_empty() {
                                     let prefix_fmt = match terminal_mode {
                                         TerminalMode::Basic => format!(
@@ -514,9 +552,8 @@ impl ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                text_output.push_str(&format!(
-                                    "{prefix_fmt}{sanitized}{suffix_fmt}\n"
-                                ));
+                                text_output
+                                    .push_str(&format!("{prefix_fmt}{sanitized}{suffix_fmt}\n"));
                             }
                         }
 

@@ -1,4 +1,64 @@
+// Codex `item.completed` event handlers.
+//
+// This file implements completion handlers for Codex streaming items.
+//
+// # CCS Spam Prevention Architecture (Layer 3: Flush at Completion)
+//
+// These handlers implement the final layer of the three-layer spam prevention
+// architecture for Codex agents (ccs/codex):
+//
+// ## Architecture Overview
+//
+// 1. **Layer 1 (Suppression):** Delta renderers return empty strings in non-TTY modes
+//    - Implemented in `ralph-workflow/src/json_parser/delta_display/renderer.rs`
+//
+// 2. **Layer 2 (Accumulation):** StreamingSession accumulates content across deltas
+//    - Implemented in `ralph-workflow/src/json_parser/streaming_state/session.rs`
+//
+// 3. **Layer 3 (Flush):** Completion handlers flush accumulated content ONCE
+//    - Implemented HERE in `handle_agent_message_completed` and `handle_reasoning_completed`
+//
+// ## Completion Strategy
+//
+// ### Full Mode (TTY)
+// - Content was already rendered in-place during deltas with cursor positioning
+// - Emit cursor finalization sequence (`\x1b[1B\n`) to move cursor down
+// - No content flush needed (already visible)
+//
+// ### Basic/None Modes (non-TTY)
+// - Per-delta output was suppressed during streaming (Layer 1)
+// - Content was accumulated in StreamingSession (Layer 2)
+// - Now flush the final accumulated content ONCE with proper prefix
+// - This ensures logs contain observable output without per-delta spam
+//
+// ## Validation
+//
+// Comprehensive regression tests validate this architecture:
+// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` - NEW: systematic reproduction & verification
+// - `tests/integration_tests/ccs_comprehensive_spam_verification.rs` - Architecture verification
+// - `tests/integration_tests/ccs_nuclear_spam_test.rs` - 500+ deltas with hard assertions
+// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` - 1000+ deltas
+// - `tests/integration_tests/codex_reasoning_spam_regression.rs` - Original Codex fix
+//
+// ## Cross-References
+//
+// - Renderer suppression: `ralph-workflow/src/json_parser/delta_display/renderer.rs`
+// - Claude flush logic: `ralph-workflow/src/json_parser/claude/delta_handling.rs::handle_message_stop`
+// - Codex delta handling: `ralph-workflow/src/json_parser/codex/event_handlers/items_started.rs`
+
 /// Handle `ItemCompleted` event for `agent_message` type.
+///
+/// This handler implements Layer 3 (Flush) of the spam prevention architecture
+/// for Codex `agent_message` items. In non-TTY modes, it flushes the accumulated
+/// content that was suppressed during per-delta rendering.
+///
+/// # CCS Spam Prevention Architecture
+///
+/// 1. **Layer 1 (Suppression):** Renderer returned empty strings during deltas (non-TTY)
+/// 2. **Layer 2 (Accumulation):** StreamingSession preserved content across deltas
+/// 3. **Layer 3 (Flush):** This handler emits accumulated content ONCE at completion
+///
+/// See file-level documentation for details.
 pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     let (is_duplicate, was_streaming, metrics, streamed_agent_msg) = {
         let session = ctx.streaming_session.borrow();
@@ -48,9 +108,8 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 
         let flush = match ctx.terminal_mode {
             TerminalMode::Full => String::new(),
-            TerminalMode::Basic | TerminalMode::None => streamed_agent_msg.map_or_else(
-                String::new,
-                |msg| {
+            TerminalMode::Basic | TerminalMode::None => {
+                streamed_agent_msg.map_or_else(String::new, |msg| {
                     let limit = ctx.verbosity.truncate_limit("agent_msg");
                     let preview = truncate_text(&msg, limit);
                     if preview.is_empty() {
@@ -73,8 +132,8 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
                             TerminalMode::Full => unreachable!(),
                         }
                     }
-                },
-            ),
+                })
+            }
         };
 
         // Clear the streaming key after first completion so duplicates have nothing to flush.

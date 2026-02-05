@@ -140,18 +140,18 @@ fn test_content_block_state_tracking() {
     assert!(session.has_any_streamed_content());
 
     // Transition to block 1 via on_content_block_start
-    // This should finalize block 0 and clear its accumulated content
+    // Block 0's accumulated content should be PRESERVED (no longer cleared as of wt-24-ccs-repeat-2 fix)
     session.on_content_block_start(1);
 
     // Stream content in block 1
     let show_prefix = session.on_text_delta(1, "Second");
     assert!(show_prefix, "First delta in new block should show prefix");
 
-    // Verify block 0 content was cleared and block 1 content is present
+    // Verify block 0 content was PRESERVED and block 1 content is present
     assert_eq!(
         session.get_accumulated(crate::json_parser::types::ContentType::Text, "0"),
-        None,
-        "Block 0 content should be cleared after transitioning to block 1"
+        Some("First"),
+        "Block 0 content should be PRESERVED after transitioning to block 1"
     );
     assert_eq!(
         session.get_accumulated(crate::json_parser::types::ContentType::Text, "1"),
