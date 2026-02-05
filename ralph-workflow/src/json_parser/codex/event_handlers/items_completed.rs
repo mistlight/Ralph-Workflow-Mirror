@@ -76,7 +76,11 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
             drop(session);
 
             if has_thinking {
-                ThinkingDeltaRenderer::render_completion(ctx.terminal_mode)
+                let completion = ThinkingDeltaRenderer::render_completion(ctx.terminal_mode);
+                ctx.streaming_session
+                    .borrow_mut()
+                    .clear_key(ContentType::Thinking, "reasoning");
+                completion
             } else {
                 String::new()
             }
@@ -86,22 +90,27 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
             // Now flush the final accumulated thinking content once.
             //
             // Check if we have accumulated thinking from streaming deltas
-            let session = ctx.streaming_session.borrow();
-            let streamed_thinking = session
-                .get_accumulated(ContentType::Thinking, "reasoning")
-                .map(std::string::ToString::to_string);
-            drop(session);
+            let streamed_thinking = {
+                let session = ctx.streaming_session.borrow();
+                session
+                    .get_accumulated(ContentType::Thinking, "reasoning")
+                    .map(std::string::ToString::to_string)
+            };
 
             // If we have streamed thinking, flush it with "Thinking:" label
             if let Some(thinking) = streamed_thinking {
                 let sanitized = sanitize_for_display(&thinking);
                 if !sanitized.is_empty() {
-                    return ThinkingDeltaRenderer::render_first_delta(
+                    let rendered = ThinkingDeltaRenderer::render_first_delta(
                         &sanitized,
                         ctx.display_name,
                         *ctx.colors,
                         ctx.terminal_mode,
                     );
+                    ctx.streaming_session
+                        .borrow_mut()
+                        .clear_key(ContentType::Thinking, "reasoning");
+                    return rendered;
                 }
             }
 
