@@ -19,7 +19,12 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
     // modes. Flush the final accumulated agent message ONCE at completion so logs remain
     // observable, while still preventing per-delta prefix spam.
     if was_streaming {
-        let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
+        // In Basic/None we already flush newline-terminated output below, so avoid appending an
+        // additional completion newline (which would create a blank line in non-TTY logs).
+        let completion = match ctx.terminal_mode {
+            TerminalMode::Full => TextDeltaRenderer::render_completion(ctx.terminal_mode),
+            TerminalMode::Basic | TerminalMode::None => String::new(),
+        };
         let show_metrics =
             (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
 

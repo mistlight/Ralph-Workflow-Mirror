@@ -183,13 +183,13 @@ dylint:
 		INSTALLED_COMPONENTS="$$(rustup component list --toolchain nightly --installed 2>/dev/null || true)"; \
 		MISSING=""; \
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev" || MISSING="$$MISSING rustc-dev"; \
-		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools" || MISSING="$$MISSING llvm-tools"; \
+		echo "$$INSTALLED_COMPONENTS" | grep -qE "^llvm-tools(-preview)?" || MISSING="$$MISSING llvm-tools-preview"; \
 		if [ -n "$$MISSING" ]; then \
 			echo "error: missing required nightly components:$$MISSING" >&2; \
 			echo "Install them manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
 			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
 				echo "ALLOW_RUSTUP_INSTALL=1 set; installing required nightly components:$$MISSING" >&2; \
-				if ! rustup component add rustc-dev llvm-tools --toolchain nightly; then \
+				if ! rustup component add rustc-dev llvm-tools-preview llvm-tools --toolchain nightly; then \
 					echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
 					exit 1; \
 				fi; \

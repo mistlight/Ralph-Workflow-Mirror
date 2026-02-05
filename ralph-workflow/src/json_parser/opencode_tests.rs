@@ -29,7 +29,7 @@ fn test_opencode_streaming_with_tool_use_events() {
 
     // Simulate streaming tool_use events
     let input = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"/test.rs"}}}}
-{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool","read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
+{"type":"tool_use","timestamp":1768191346713,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"/test.rs"}}}}"#;
 
     let reader = Cursor::new(input);
 

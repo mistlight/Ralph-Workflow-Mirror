@@ -449,19 +449,27 @@ impl ClaudeParser {
                     TextDeltaRenderer::render_completion(terminal_mode)
                 )
             } else {
-                // In non-TTY modes, flush output paths already include newline terminators.
-                // Avoid appending an additional completion newline which would create
-                // extra blank lines in logs.
-                c.reset().to_string()
+                // In non-TTY modes, flush output paths already include newline terminators and
+                // individual lines already end with a reset. Emitting an additional standalone
+                // reset here can leave a trailing ANSI sequence after the final newline.
+                String::new()
             };
+
             // Show streaming quality metrics in debug mode or when flag is set
             let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
                 && metrics.total_deltas > 0;
             let completion_with_metrics = if show_metrics {
-                format!("{}\n{}", completion, metrics.format(*c))
+                if terminal_mode == TerminalMode::Full {
+                    format!("{}\n{}", completion, metrics.format(*c))
+                } else {
+                    // In non-TTY, the flush output already ended with a newline, so metrics can be
+                    // appended directly without inserting an extra blank line.
+                    metrics.format(*c)
+                }
             } else {
                 completion
             };
+
             format!("{thinking_finalize}{thinking_flush_non_tty}{tool_input_flush_non_tty}{text_flush_non_tty}{completion_with_metrics}")
         } else {
             format!("{thinking_finalize}{thinking_flush_non_tty}{tool_input_flush_non_tty}{text_flush_non_tty}")
