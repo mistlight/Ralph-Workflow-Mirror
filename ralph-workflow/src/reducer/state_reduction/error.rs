@@ -127,6 +127,7 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::AwaitingDevFix;
+            new_state.dev_fix_triggered = false; // Reset flag for new AwaitingDevFix phase
             new_state
         }
     }

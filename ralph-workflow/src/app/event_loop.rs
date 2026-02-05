@@ -172,7 +172,7 @@ fn extract_error_event(err: &anyhow::Error) -> Option<crate::reducer::event::Err
 }
 
 enum GuardedEffectResult {
-    Ok(EffectResult),
+    Ok(Box<EffectResult>),
     Unrecoverable(anyhow::Error),
     Panic,
 }
@@ -189,17 +189,17 @@ where
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         handler.execute(effect, ctx)
     })) {
-        Ok(Ok(result)) => GuardedEffectResult::Ok(result),
+        Ok(Ok(result)) => GuardedEffectResult::Ok(Box::new(result)),
         Ok(Err(err)) => {
             if let Some(error_event) = extract_error_event(&err) {
-                GuardedEffectResult::Ok(crate::reducer::effect::EffectResult::event(
+                GuardedEffectResult::Ok(Box::new(crate::reducer::effect::EffectResult::event(
                     crate::reducer::event::PipelineEvent::PromptInput(
                         crate::reducer::event::PromptInputEvent::HandlerError {
                             phase: state.phase,
                             error: error_event,
                         },
                     ),
-                ))
+                )))
             } else {
                 GuardedEffectResult::Unrecoverable(err)
             }
@@ -316,11 +316,22 @@ where
         //
         // Special case: If we just transitioned to Interrupted from AwaitingDevFix
         // without a checkpoint, allow one more iteration to execute SaveCheckpoint.
+        //
+        // CRITICAL: If we're in AwaitingDevFix and haven't executed TriggerDevFixFlow yet,
+        // allow at least one iteration to execute it, even if approaching max iterations.
+        // This ensures completion marker is ALWAYS written and dev-fix agent is ALWAYS
+        // dispatched before the event loop can exit.
         let should_allow_checkpoint_save = matches!(state.phase, PipelinePhase::Interrupted)
             && matches!(state.previous_phase, Some(PipelinePhase::AwaitingDevFix))
             && state.checkpoint_saved_count == 0;
 
-        if state.is_complete() && !should_allow_checkpoint_save {
+        let is_awaiting_dev_fix_not_triggered =
+            matches!(state.phase, PipelinePhase::AwaitingDevFix) && !state.dev_fix_triggered;
+
+        if state.is_complete()
+            && !should_allow_checkpoint_save
+            && !is_awaiting_dev_fix_not_triggered
+        {
             ctx.logger.info(&format!(
                 "Event loop: state already complete (phase: {:?}, checkpoint_saved_count: {})",
                 state.phase, state.checkpoint_saved_count
@@ -334,7 +345,7 @@ where
         // Execute returns EffectResult with both PipelineEvent and UIEvents.
         // Catch panics here so we can still dump a best-effort trace.
         let result = match execute_effect_guarded(handler, effect, ctx, &state) {
-            GuardedEffectResult::Ok(result) => result,
+            GuardedEffectResult::Ok(result) => *result,
             GuardedEffectResult::Unrecoverable(err) => {
                 let dumped =
                     dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
@@ -427,11 +438,20 @@ where
         // This is needed because TriggerDevFixFlow already wrote the completion marker,
         // making is_complete() return true, but we still want to save the checkpoint
         // for proper state persistence.
+        //
+        // CRITICAL: If we're in AwaitingDevFix and haven't executed TriggerDevFixFlow yet,
+        // allow at least one iteration to execute it, even if approaching max iterations.
         let should_allow_checkpoint_save = matches!(state.phase, PipelinePhase::Interrupted)
             && matches!(state.previous_phase, Some(PipelinePhase::AwaitingDevFix))
             && state.checkpoint_saved_count == 0;
 
-        if state.is_complete() && !should_allow_checkpoint_save {
+        let is_awaiting_dev_fix_not_triggered =
+            matches!(state.phase, PipelinePhase::AwaitingDevFix) && !state.dev_fix_triggered;
+
+        if state.is_complete()
+            && !should_allow_checkpoint_save
+            && !is_awaiting_dev_fix_not_triggered
+        {
             ctx.logger.info(&format!(
                 "Event loop: state became complete (phase: {:?}, checkpoint_saved_count: {})",
                 state.phase, state.checkpoint_saved_count
@@ -472,6 +492,7 @@ where
         let save_effect_str = format!("{save_effect:?}");
         match execute_effect_guarded(handler, save_effect, ctx, &state) {
             GuardedEffectResult::Ok(result) => {
+                let result = *result;
                 let event_str = format!("{:?}", result.event);
                 state = reduce(state, result.event.clone());
                 trace.push(build_trace_entry(
@@ -548,6 +569,11 @@ where
         // CRITICAL: If we hit max iterations in AwaitingDevFix, we need to write completion marker
         // and transition to Interrupted to ensure proper termination
         if matches!(state.phase, PipelinePhase::AwaitingDevFix) {
+            ctx.logger.error(
+                "BUG: Hit max iterations in AwaitingDevFix phase. \
+                 TriggerDevFixFlow should have executed before reaching this point. \
+                 Applying defensive recovery logic.",
+            );
             ctx.logger
                 .warn("Max iterations reached in AwaitingDevFix - forcing completion marker");
 
@@ -595,6 +621,7 @@ where
             let save_effect_str = format!("{save_effect:?}");
             match execute_effect_guarded(handler, save_effect, ctx, &state) {
                 GuardedEffectResult::Ok(result) => {
+                    let result = *result;
                     let event_str = format!("{:?}", result.event);
                     state = reduce(state, result.event.clone());
                     trace.push(build_trace_entry(

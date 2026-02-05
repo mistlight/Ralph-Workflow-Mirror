@@ -890,3 +890,69 @@ fn test_interrupted_from_dev_fix_is_complete_before_checkpoint() {
         );
     });
 }
+
+#[test]
+fn test_awaiting_dev_fix_executes_trigger_before_max_iterations() {
+    with_default_timeout(|| {
+        // This test verifies the fix for the bug where the event loop could exit
+        // from AwaitingDevFix without executing TriggerDevFixFlow when approaching
+        // max iterations.
+
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        // Create a state that transitions to AwaitingDevFix after several iterations
+        let mut state = PipelineState::initial(1, 1);
+
+        // Simulate AgentChainExhausted error
+        let error_event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+            phase: PipelinePhase::Planning,
+            error: ErrorEvent::AgentChainExhausted {
+                role: AgentRole::Developer,
+                phase: PipelinePhase::Planning,
+                cycle: 3,
+            },
+        });
+
+        state = reduce(state, error_event);
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
+        assert!(
+            !state.dev_fix_triggered,
+            "dev_fix_triggered should start false"
+        );
+
+        // Set a low max_iterations to simulate approaching the limit
+        // With the bug, the loop would exit here without executing TriggerDevFixFlow
+        // With the fix, TriggerDevFixFlow should execute before completion check
+        let mut handler = MockEffectHandler::new(state.clone());
+        let config = EventLoopConfig { max_iterations: 10 };
+
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+            .expect("Event loop should complete successfully");
+
+        // Verify TriggerDevFixFlow executed
+        assert!(
+            result.completed,
+            "Event loop should complete after executing TriggerDevFixFlow"
+        );
+        assert_eq!(
+            result.final_phase,
+            PipelinePhase::Interrupted,
+            "Should transition to Interrupted after dev-fix flow"
+        );
+
+        // Verify completion marker was written
+        assert!(
+            fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "Completion marker should be written even when approaching max iterations"
+        );
+
+        // Verify dev_fix_triggered flag was set
+        assert!(
+            handler.state.dev_fix_triggered,
+            "dev_fix_triggered flag should be set after TriggerDevFixFlow executes"
+        );
+    });
+}

@@ -16,7 +16,10 @@ pub(super) fn reduce_awaiting_dev_fix_event(
     match event {
         AwaitingDevFixEvent::DevFixTriggered { .. } => {
             // Record that dev-fix was triggered, stay in AwaitingDevFix phase
-            state
+            PipelineState {
+                dev_fix_triggered: true,
+                ..state
+            }
         }
         AwaitingDevFixEvent::DevFixSkipped { .. } => {
             // Dev-fix was skipped, prepare for termination

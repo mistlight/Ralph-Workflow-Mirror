@@ -262,6 +262,15 @@ pub struct PipelineState {
     #[serde(default)]
     pub continuation: ContinuationState,
 
+    /// Whether TriggerDevFixFlow has been executed in the current AwaitingDevFix phase.
+    ///
+    /// This flag is set to true when DevFixTriggered event is reduced.
+    /// It ensures the event loop allows at least one iteration to execute
+    /// TriggerDevFixFlow before checking completion, preventing premature
+    /// exit when max iterations is imminent.
+    #[serde(default)]
+    pub dev_fix_triggered: bool,
+
     /// Canonical, reducer-visible prompt inputs after oversize materialization.
     ///
     /// This is the single source of truth for any inline-vs-reference and
@@ -363,6 +372,7 @@ impl PipelineState {
             execution_history: Vec::new(),
             checkpoint_saved_count: 0,
             continuation,
+            dev_fix_triggered: false,
             prompt_inputs: PromptInputsState::default(),
         }
     }
@@ -469,6 +479,7 @@ impl From<PipelineCheckpoint> for PipelineState {
                 .unwrap_or_default(),
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
+            dev_fix_triggered: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
         }
     }
