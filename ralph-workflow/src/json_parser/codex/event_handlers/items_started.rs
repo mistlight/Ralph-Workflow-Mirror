@@ -168,17 +168,22 @@ pub fn handle_mcp_tool_started(
 ) -> String {
     let default = String::from("unknown");
     let tool_name = tool_name.unwrap_or(&default);
-    let mut out = format!(
-        "{}[{}]{} {}MCP Tool{}: {}{}{}\n",
-        ctx.colors.dim(),
-        ctx.display_name,
-        ctx.colors.reset(),
-        ctx.colors.magenta(),
-        ctx.colors.reset(),
-        ctx.colors.bold(),
-        tool_name,
-        ctx.colors.reset()
-    );
+
+    let mut out = match ctx.terminal_mode {
+        TerminalMode::Full | TerminalMode::Basic => format!(
+            "{}[{}]{} {}MCP Tool{}: {}{}{}\n",
+            ctx.colors.dim(),
+            ctx.display_name,
+            ctx.colors.reset(),
+            ctx.colors.magenta(),
+            ctx.colors.reset(),
+            ctx.colors.bold(),
+            tool_name,
+            ctx.colors.reset()
+        ),
+        TerminalMode::None => format!("[{}] MCP Tool: {}\n", ctx.display_name, tool_name),
+    };
+
     if ctx.verbosity.show_tool_input() {
         if let Some(args) = arguments {
             let args_str = format_tool_input(args);
@@ -188,20 +193,24 @@ pub fn handle_mcp_tool_started(
                 // This is a one-shot preview at item start, not streaming per-delta output.
                 // Always render it, including in Basic/None modes, so non-TTY logs remain
                 // observable.
-                let tool_input_line = format!(
-                    "{}[{}]{} {}  └─ {}{}{}\n",
-                    ctx.colors.dim(),
-                    ctx.display_name,
-                    ctx.colors.reset(),
-                    ctx.colors.dim(),
-                    ctx.colors.reset(),
-                    preview,
-                    ctx.colors.reset()
-                );
+                let tool_input_line = match ctx.terminal_mode {
+                    TerminalMode::Full | TerminalMode::Basic => format!(
+                        "{}[{}]{} {}  └─ {}{}{}\n",
+                        ctx.colors.dim(),
+                        ctx.display_name,
+                        ctx.colors.reset(),
+                        ctx.colors.dim(),
+                        ctx.colors.reset(),
+                        preview,
+                        ctx.colors.reset()
+                    ),
+                    TerminalMode::None => format!("[{}]   └─ {}\n", ctx.display_name, preview),
+                };
                 out.push_str(&tool_input_line);
             }
         }
     }
+
     out
 }
 

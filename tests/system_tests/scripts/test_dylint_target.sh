@@ -28,15 +28,19 @@ echo "Repository root: $REPO_ROOT"
 echo
 
 # Test 1: Verify nightly toolchain is available
+#
+# NOTE: This test is allowed to validate behavior in an environment where nightly is
+# already installed. It must not attempt network-dependent installation in hermetic
+# or offline environments.
 echo "Test 1: Check nightly toolchain availability"
 if ! command -v rustup >/dev/null 2>&1; then
-	echo -e "${RED}FAIL: rustup not found (required for test)${NC}"
-	exit 1
+	echo -e "${YELLOW}SKIP: rustup not found (required to run make dylint)${NC}"
+	exit 0
 fi
 
-if ! rustup toolchain list | grep -q nightly; then
-	echo -e "${YELLOW}Nightly toolchain not installed, installing...${NC}"
-	rustup toolchain install nightly --profile minimal
+if ! rustup toolchain list | grep -qE "^nightly"; then
+	echo -e "${YELLOW}SKIP: Rust nightly toolchain not installed; install it manually to run this test${NC}"
+	exit 0
 fi
 echo -e "${GREEN}PASS: Nightly toolchain available${NC}"
 echo
@@ -66,6 +70,33 @@ echo
 echo "Test 3: Run make dylint and check for E0554 regression"
 cd "$REPO_ROOT"
 
+# This system test should validate the make target behavior, not provision the
+# environment. Ensure required env vars are set so the Makefile doesn't rely on HOME.
+: "${CARGO_HOME:=${HOME:-}}"
+: "${RUSTUP_HOME:=${HOME:-}}"
+if [ -n "${CARGO_HOME}" ] && [ "${CARGO_HOME}" = "${HOME:-}" ]; then
+	CARGO_HOME="${HOME}/.cargo"
+fi
+if [ -n "${RUSTUP_HOME}" ] && [ "${RUSTUP_HOME}" = "${HOME:-}" ]; then
+	RUSTUP_HOME="${HOME}/.rustup"
+fi
+if [ -z "${DYLINT_DRIVER_PATH:-}" ]; then
+	if [ -n "${HOME:-}" ]; then
+		DYLINT_DRIVER_PATH="${HOME}/.dylint_drivers"
+	else
+		echo -e "${YELLOW}SKIP: HOME is not set; set DYLINT_DRIVER_PATH to run this test${NC}"
+		exit 0
+	fi
+fi
+export CARGO_HOME RUSTUP_HOME DYLINT_DRIVER_PATH
+
+# If cargo-dylint isn't installed, skip: Makefile intentionally refuses to
+# auto-install unless ALLOW_CARGO_INSTALL=1 is set.
+if ! cargo dylint --version >/dev/null 2>&1; then
+	echo -e "${YELLOW}SKIP: cargo-dylint not installed; install it or run with ALLOW_CARGO_INSTALL=1${NC}"
+	exit 0
+fi
+
 # Capture make dylint output for regression testing
 MAKE_OUTPUT=$(mktemp)
 if make dylint 2>&1 | tee "$MAKE_OUTPUT"; then
@@ -76,14 +107,14 @@ if make dylint 2>&1 | tee "$MAKE_OUTPUT"; then
 		rm -f "$MAKE_OUTPUT"
 		exit 1
 	fi
-	
+
 	# Check for the specific error about proc_macro_hygiene
 	if grep -q "feature(proc_macro_hygiene)" "$MAKE_OUTPUT"; then
 		echo -e "${RED}FAIL: proc_macro_hygiene feature error detected${NC}"
 		rm -f "$MAKE_OUTPUT"
 		exit 1
 	fi
-	
+
 	echo -e "${GREEN}PASS: make dylint succeeded with no E0554 errors${NC}"
 	rm -f "$MAKE_OUTPUT"
 else
@@ -97,7 +128,8 @@ echo
 echo "Test 4: Verify dylint driver uses nightly"
 # The driver should exist and work - if it was built with stable, it would have failed
 PLATFORM=$(rustup show active-toolchain | cut -d' ' -f1 | cut -d- -f2-)
-DRIVER_PATH="$HOME/.dylint_drivers/nightly-$PLATFORM/dylint-driver"
+DRIVER_BASE_DIR="${DYLINT_DRIVER_PATH}"
+DRIVER_PATH="$DRIVER_BASE_DIR/nightly-$PLATFORM/dylint-driver"
 
 if [ -f "$DRIVER_PATH" ]; then
 	echo "Driver found: $DRIVER_PATH"
@@ -109,7 +141,7 @@ if [ -f "$DRIVER_PATH" ]; then
 	fi
 else
 	echo -e "${YELLOW}WARNING: Driver not found at expected path${NC}"
-	echo "This may be expected if using a different platform"
+	echo "Searched: $DRIVER_PATH"
 fi
 echo
 

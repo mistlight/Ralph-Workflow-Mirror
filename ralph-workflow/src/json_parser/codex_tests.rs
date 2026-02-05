@@ -69,6 +69,27 @@ fn test_codex_mcp_tool_call() {
 }
 
 #[test]
+fn test_codex_mcp_tool_call_none_mode_is_plain_text() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = CodexParser::new(Colors { enabled: true }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None)
+        .with_display_name("ccs/codex");
+
+    let json = r#"{"type":"item.started","item":{"type":"mcp_tool_call","tool":"search_files","arguments":{"query":"main"}}}"#;
+    let output = parser.parse_event(json).unwrap_or_default();
+
+    assert!(output.contains("[ccs/codex] MCP Tool: search_files"));
+    assert!(output.contains("[ccs/codex]   └─"));
+
+    // TerminalMode::None must not contain ANSI escapes even if colors are enabled.
+    assert!(
+        !output.contains("\x1b["),
+        "Unexpected ANSI escapes: {output}"
+    );
+}
+
+#[test]
 fn test_codex_web_search() {
     let parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal);
     let json =
