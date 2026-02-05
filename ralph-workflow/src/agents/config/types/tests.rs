@@ -87,6 +87,50 @@ fn build_cmd_includes_streaming_flag_with_print_and_stream_json() {
 }
 
 #[test]
+fn build_cmd_includes_streaming_flag_with_space_separated_stream_json() {
+    let agent = AgentConfig {
+        cmd: "claude".to_string(),
+        output_flag: "--output-format stream-json".to_string(),
+        yolo_flag: String::new(),
+        verbose_flag: "--verbose".to_string(),
+        can_commit: true,
+        json_parser: JsonParserType::Claude,
+        model_flag: None,
+        print_flag: "--print".to_string(),
+        streaming_flag: "--include-partial-messages".to_string(),
+        session_flag: String::new(),
+        env_vars: HashMap::new(),
+        display_name: None,
+    };
+
+    let cmd = agent.build_cmd(true, false, false);
+    assert!(cmd.contains("claude --print"));
+    assert!(cmd.contains("--output-format stream-json"));
+    assert!(cmd.contains("--include-partial-messages"));
+}
+
+#[test]
+fn requires_verbose_for_json_handles_space_separated_stream_json() {
+    let agent = AgentConfig {
+        cmd: "claude".to_string(),
+        output_flag: "--output-format stream-json".to_string(),
+        yolo_flag: String::new(),
+        verbose_flag: "--verbose".to_string(),
+        can_commit: true,
+        json_parser: JsonParserType::Claude,
+        model_flag: None,
+        print_flag: "--print".to_string(),
+        streaming_flag: "--include-partial-messages".to_string(),
+        session_flag: String::new(),
+        env_vars: HashMap::new(),
+        display_name: None,
+    };
+
+    let cmd = agent.build_cmd(true, false, false);
+    assert!(cmd.contains("--verbose"));
+}
+
+#[test]
 fn default_agents_toml_is_valid() {
     let config: AgentsConfigFile = toml::from_str(DEFAULT_AGENTS_TOML).unwrap();
     assert!(config.agents.contains_key("claude"));

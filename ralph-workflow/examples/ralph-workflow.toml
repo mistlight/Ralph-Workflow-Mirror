@@ -97,6 +97,10 @@ verbose_flag = "--verbose"
 # Use Claude's long-form `--print` flag when invoking via the `ccs` wrapper.
 print_flag = "--print"
 #
+# Session continuation flag: used for XSD retry loops to continue an existing conversation.
+# The `{}` placeholder is replaced with the session ID.
+session_flag = "--resume {}"
+#
 # YOLO (autonomous) mode: Skip permission/confirmation prompts for unattended operation.
 # Ralph is designed for unattended automation, so this is enabled by default.
 # Set to "" to disable and require confirmation for each action.
@@ -157,7 +161,10 @@ can_commit = true
 
 # Example: Custom agent with specific model configuration
 # [agents.my-claude-opus]
-# cmd = "claude -p"
+# cmd = "claude"
+# # When running Claude directly (not via the `ccs` wrapper), `-p` and `--print` are both Claude CLI flags.
+# # Prefer "--print" for consistency with unattended mode.
+# print_flag = "--print"
 # output_flag = "--output-format=stream-json"
 # yolo_flag = "--dangerously-skip-permissions"
 # verbose_flag = "--verbose"

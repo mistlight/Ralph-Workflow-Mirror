@@ -147,9 +147,15 @@ can_commit = true
 glm = "ccs glm"
 ```
 
-**Note**: As of Ralph v0.2.7+, if `print_flag` is missing from your config, Ralph will
-automatically use `--print` as a fallback. However, it's still recommended to explicitly
-configure it to avoid warnings.
+**Note**: As of Ralph v0.2.7+, when using **CCS alias resolution** (agents referenced as
+`ccs/<alias>` or plain `ccs` via the unified config), Ralph will ensure there is a
+non-empty print flag. If the unified-config CCS default `ccs.print_flag` is empty,
+Ralph falls back to `--print` as a safety net.
+
+This fallback is **not** a universal fix for arbitrary custom agents: if you define a
+non-CCS agent (or a custom CCS-like agent) without a `print_flag`, Ralph will not
+invent one for that agent. The built-in example `examples/agents.toml` already sets
+`[agents.ccs].print_flag = "--print"`.
 
 **Manual Workaround Configuration**:
 ```toml

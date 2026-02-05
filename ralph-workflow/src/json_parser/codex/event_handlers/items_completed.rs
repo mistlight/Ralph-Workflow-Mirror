@@ -1,10 +1,9 @@
 /// Handle `ItemCompleted` event for `agent_message` type.
 pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     let session = ctx.streaming_session.borrow();
-    let is_duplicate = session.get_current_message_id().map_or_else(
-        || session.has_any_streamed_content(),
-        |message_id| session.is_duplicate_final_message(message_id),
-    );
+    let is_duplicate = session
+        .get_current_message_id()
+        .is_some_and(|message_id| session.is_duplicate_final_message(message_id));
     let was_streaming = session.has_any_streamed_content();
     let metrics = session.get_streaming_quality_metrics();
     drop(session);
