@@ -272,10 +272,10 @@ The `make dylint` target implements a multi-layered approach intended to ensure 
 
 1. **Environment validation:** Checks that CARGO_HOME, RUSTUP_HOME, and DYLINT_DRIVER_PATH are writable
 2. **Toolchain bootstrapping:** Installs rustup (if missing) and nightly toolchain with required components (rustc-dev, llvm-tools-preview)
-3. **Cargo wrapper script:** Creates a temporary wrapper script that exports RUSTUP_TOOLCHAIN=nightly and CARGO variable before exec'ing the real nightly cargo
-4. **PATH manipulation:** Prepends the wrapper directory and nightly bin directory to PATH, ensuring the wrapper is found first
-5. **Environment export:** Exports RUSTUP_TOOLCHAIN, RUSTC, CARGO, and all cache location variables
-6. **Validation:** Verifies that `cargo` resolves to the wrapper script, warning if PATH resolution fails
+3. **Toolchain discovery:** Dynamically discovers the installed nightly toolchain name (e.g., `nightly-aarch64-apple-darwin`) to support specific nightly versions
+4. **Cargo wrapper script:** Creates a temporary wrapper script that exports the discovered nightly toolchain before exec'ing the real nightly cargo
+5. **PATH manipulation:** Prepends the wrapper directory and nightly bin directory to PATH, ensuring the wrapper is found first
+6. **Environment export:** Exports RUSTUP_TOOLCHAIN, RUSTC, and all cache location variables
 
 **How the wrapper works:**
 
@@ -283,11 +283,10 @@ When cargo-dylint runs `env -u RUSTUP_TOOLCHAIN cargo build` to rebuild the driv
 1. Unsets RUSTUP_TOOLCHAIN in the subprocess environment
 2. Searches PATH for the `cargo` binary
 3. Finds and executes the wrapper script (first in PATH)
-4. Wrapper exports RUSTUP_TOOLCHAIN=nightly
-5. Wrapper exports CARGO variable pointing to nightly cargo (additional safety mechanism)
-6. Wrapper execs the real nightly cargo with RUSTUP_TOOLCHAIN set
+4. Wrapper exports RUSTUP_TOOLCHAIN with the dynamically discovered nightly toolchain name
+5. Wrapper execs the real nightly cargo with RUSTUP_TOOLCHAIN set
 
-This approach works around cargo-dylint's explicit unsetting of RUSTUP_TOOLCHAIN, addressing the E0554 failure mode where cargo-dylint rebuilds its driver using a stable toolchain. The CARGO environment variable export provides an additional fallback if PATH resolution somehow fails.
+This approach works around cargo-dylint's explicit unsetting of RUSTUP_TOOLCHAIN, addressing the E0554 failure mode where cargo-dylint rebuilds its driver using a stable toolchain.
 
 **Limitations:**
 
