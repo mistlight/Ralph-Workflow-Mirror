@@ -16,32 +16,53 @@ impl DeltaDisplayFormatter {
         Self { mark_partial: true }
     }
 
-    /// Format thinking content specifically
+    /// Format thinking content specifically.
     ///
     /// Thinking content has special formatting to distinguish it from regular text.
-    pub fn format_thinking(&self, content: &str, prefix: &str, colors: Colors) -> String {
-        if self.mark_partial {
-            format!(
-                "{}[{}]{} {}Thinking: {}{}{}\n",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.dim(),
-                colors.cyan(),
-                content,
-                colors.reset()
-            )
-        } else {
-            format!(
-                "{}[{}]{} {}Thinking: {}{}{}\n",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.cyan(),
-                colors.reset(),
-                content,
-                colors.reset()
-            )
+    ///
+    /// # Terminal Mode Behavior
+    ///
+    /// - `TerminalMode::Full` / `TerminalMode::Basic`: May include ANSI colors.
+    /// - `TerminalMode::None`: MUST be plain text (no ANSI sequences).
+    pub fn format_thinking(
+        &self,
+        content: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: crate::json_parser::terminal::TerminalMode,
+    ) -> String {
+        use crate::json_parser::terminal::TerminalMode;
+
+        match terminal_mode {
+            TerminalMode::None => {
+                // Plain-text guarantee: never emit ANSI in None mode, even if colors are enabled.
+                format!("[{prefix}] Thinking: {content}\n")
+            }
+            TerminalMode::Full | TerminalMode::Basic => {
+                if self.mark_partial {
+                    format!(
+                        "{}[{}]{} {}Thinking: {}{}{}\n",
+                        colors.dim(),
+                        prefix,
+                        colors.reset(),
+                        colors.dim(),
+                        colors.cyan(),
+                        content,
+                        colors.reset()
+                    )
+                } else {
+                    format!(
+                        "{}[{}]{} {}Thinking: {}{}{}\n",
+                        colors.dim(),
+                        prefix,
+                        colors.reset(),
+                        colors.cyan(),
+                        colors.reset(),
+                        content,
+                        colors.reset()
+                    )
+                }
+            }
         }
     }
 

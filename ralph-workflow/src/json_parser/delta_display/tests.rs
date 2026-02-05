@@ -11,9 +11,26 @@ mod tests {
     #[test]
     fn test_format_thinking_content() {
         let formatter = DeltaDisplayFormatter::new();
-        let output = formatter.format_thinking("Thinking about this", "Claude", test_colors());
+        let output = formatter.format_thinking(
+            "Thinking about this",
+            "Claude",
+            test_colors(),
+            TerminalMode::Full,
+        );
         assert!(output.contains("Thinking"));
         assert!(output.contains("Thinking about this"));
+    }
+
+    #[test]
+    fn test_format_thinking_none_mode_plain_text() {
+        let formatter = DeltaDisplayFormatter::new();
+        let output = formatter.format_thinking(
+            "Thinking about this",
+            "Claude",
+            Colors { enabled: true },
+            TerminalMode::None,
+        );
+        assert_eq!(output, "[Claude] Thinking: Thinking about this\n");
     }
 
     #[test]

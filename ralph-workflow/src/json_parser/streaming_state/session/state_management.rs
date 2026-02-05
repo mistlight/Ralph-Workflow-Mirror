@@ -36,7 +36,7 @@ impl StreamingSession {
                     "Warning: Received MessageStart while state is Streaming. \
                     This indicates a non-standard agent protocol (e.g., GLM sending \
                     repeated MessageStart events). Preserving output_started_for_key \
-                    to prevent prefix spam. File: streaming_state.rs, Line: {}",
+                    to prevent prefix spam. File: state_management.rs, Line: {}",
                     line!()
                 );
             }

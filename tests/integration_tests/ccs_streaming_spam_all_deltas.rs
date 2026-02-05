@@ -599,7 +599,6 @@ fn test_ccs_glm_two_text_blocks_both_flushed() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
-        eprintln!("DEBUG OUTPUT:\n{}", output);
 
         // Should have both blocks
         assert!(
