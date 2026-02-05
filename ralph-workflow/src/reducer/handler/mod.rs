@@ -77,6 +77,32 @@ impl MainEffectHandler {
         }
     }
 
+    fn write_completion_marker(ctx: &PhaseContext<'_>, content: &str, is_failure: bool) -> bool {
+        let marker_dir = std::path::Path::new(".agent/tmp");
+        if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
+            ctx.logger.warn(&format!(
+                "Failed to create completion marker directory: {}",
+                err
+            ));
+        }
+
+        let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+        match ctx.workspace.write(marker_path, content) {
+            Ok(()) => {
+                ctx.logger.info(&format!(
+                    "Completion marker written: {}",
+                    if is_failure { "failure" } else { "success" }
+                ));
+                true
+            }
+            Err(err) => {
+                ctx.logger
+                    .warn(&format!("Failed to write completion marker: {}", err));
+                false
+            }
+        }
+    }
+
     fn execute_effect(
         &mut self,
         effect: Effect,
@@ -377,13 +403,11 @@ impl MainEffectHandler {
                 ));
 
                 // Write completion marker BEFORE emitting CompletionMarkerEmitted
-                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
                 let content = format!(
                     "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
                     failed_phase, failed_role, retry_cycle
                 );
-                ctx.workspace.write(marker_path, &content)?;
-                ctx.logger.info("Completion marker written: failure");
+                Self::write_completion_marker(ctx, &content, true);
                 result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure: true,
@@ -395,7 +419,6 @@ impl MainEffectHandler {
 
             Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
                 // Write completion marker to .agent/tmp/completion_marker
-                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
                 let content = if is_failure {
                     format!(
                         "failure\n{}",
@@ -405,11 +428,7 @@ impl MainEffectHandler {
                     "success\n".to_string()
                 };
 
-                ctx.workspace.write(marker_path, &content)?;
-                ctx.logger.info(&format!(
-                    "Completion marker written: {}",
-                    if is_failure { "failure" } else { "success" }
-                ));
+                Self::write_completion_marker(ctx, &content, is_failure);
 
                 // Emit event to transition to Interrupted
                 Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(

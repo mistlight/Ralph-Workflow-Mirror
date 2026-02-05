@@ -646,12 +646,22 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                 retry_cycle,
             } => {
                 // Write completion marker BEFORE emitting events, matching real handler behavior
+                let marker_dir = std::path::Path::new(".agent/tmp");
+                if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
+                    ctx.logger.warn(&format!(
+                        "Failed to create completion marker directory: {}",
+                        err
+                    ));
+                }
                 let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
                 let content = format!(
                     "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
                     failed_phase, failed_role, retry_cycle
                 );
-                ctx.workspace.write(marker_path, &content)?;
+                if let Err(err) = ctx.workspace.write(marker_path, &content) {
+                    ctx.logger
+                        .warn(&format!("Failed to write completion marker: {}", err));
+                }
 
                 // Capture the effect for test verification
                 self.captured_effects
