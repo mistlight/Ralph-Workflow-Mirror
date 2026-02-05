@@ -333,6 +333,11 @@ impl StreamingSession {
         self.last_rendered.remove(&content_key);
         self.last_delta.remove(&content_key);
         self.consecutive_duplicates.remove(&content_key);
+
+        // Clear any per-key rendered-hash entries so subsequent sub-streams reusing the
+        // same key (e.g., Codex `reasoning`) won't be incorrectly suppressed as duplicates.
+        self.rendered_content_hashes
+            .retain(|(ct, k, _hash)| !(*ct == content_type && k == key));
     }
 
     /// Check if ANY content has been streamed for this message.

@@ -193,7 +193,9 @@ Older Ralph versions could run `ccs glm -p ...` directly, which can cause CCS to
 Additionally, CCS treats `-p` / `--prompt` as its own headless delegation mode, so `ccs <profile> -p ...` is not a safe way to pass Claude's print flag through CCS.
 
 **Current behavior**:
-Ralph now bypasses the CCS wrapper for `ccs/<alias>` by loading the profile’s env vars from CCS config/settings and invoking `claude` directly. This preserves Claude CLI flag passthrough and stream-json output for `ccs/glm`.
+Ralph can bypass the CCS wrapper only for the **GLM** alias (`ccs/glm`) **when env vars were successfully loaded** from CCS settings. In that case, Ralph invokes the `claude` binary directly (with the loaded env), which preserves Claude CLI flag passthrough and stream-json output.
+
+For other CCS aliases (e.g., `ccs/gemini`, `ccs/codex`), Ralph does **not** bypass the wrapper and will run through `ccs`.
 
 **Optional - `glm-direct` Agent**:
 If you prefer an explicit non-CCS agent (or want `glm` without `ccs/`), you can still configure `glm-direct` to call `claude` directly with `ccs_profile = "glm"`.
