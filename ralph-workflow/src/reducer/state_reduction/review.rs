@@ -40,17 +40,23 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             ..state
         },
 
-        ReviewEvent::AgentInvoked { pass } => PipelineState {
-            review_agent_invoked_pass: Some(pass),
-            continuation: crate::reducer::state::ContinuationState {
-                xsd_retry_pending: false,
-                xsd_retry_session_reuse_pending: false,
-                same_agent_retry_pending: false,
-                same_agent_retry_reason: None,
-                ..state.continuation
-            },
-            ..state
-        },
+        ReviewEvent::AgentInvoked { pass } => {
+            let mut metrics = state.metrics.clone();
+            metrics.review_runs_total += 1;
+
+            PipelineState {
+                review_agent_invoked_pass: Some(pass),
+                continuation: crate::reducer::state::ContinuationState {
+                    xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
+                    same_agent_retry_pending: false,
+                    same_agent_retry_reason: None,
+                    ..state.continuation
+                },
+                metrics,
+                ..state
+            }
+        }
 
         ReviewEvent::IssuesXmlExtracted { pass } => PipelineState {
             review_issues_xml_extracted_pass: Some(pass),
@@ -219,17 +225,23 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             ..state
         },
 
-        ReviewEvent::FixAgentInvoked { pass } => PipelineState {
-            fix_agent_invoked_pass: Some(pass),
-            continuation: crate::reducer::state::ContinuationState {
-                xsd_retry_pending: false,
-                xsd_retry_session_reuse_pending: false,
-                same_agent_retry_pending: false,
-                same_agent_retry_reason: None,
-                ..state.continuation
-            },
-            ..state
-        },
+        ReviewEvent::FixAgentInvoked { pass } => {
+            let mut metrics = state.metrics.clone();
+            metrics.fix_runs_total += 1;
+
+            PipelineState {
+                fix_agent_invoked_pass: Some(pass),
+                continuation: crate::reducer::state::ContinuationState {
+                    xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
+                    same_agent_retry_pending: false,
+                    same_agent_retry_reason: None,
+                    ..state.continuation
+                },
+                metrics,
+                ..state
+            }
+        }
 
         ReviewEvent::FixResultXmlExtracted { pass } => PipelineState {
             fix_result_xml_extracted_pass: Some(pass),
@@ -420,6 +432,14 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             // Policy: The reducer maintains retry state for determinism.
             // Handlers should emit `attempt` from state (checkpoint-resume safe).
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
+            let mut metrics = state.metrics.clone();
+
+            // Only increment metrics if we're actually retrying (not exhausted)
+            let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
+            if will_retry {
+                metrics.xsd_retry_review += 1;
+                metrics.xsd_retry_attempts_total += 1;
+            }
 
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
@@ -441,6 +461,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         ..state.continuation
                     },
                     review_issues_xml_cleaned_pass: None,
+                    metrics,
                     ..state
                 }
             } else {
@@ -458,6 +479,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         ..state.continuation
                     },
                     review_issues_xml_cleaned_pass: None,
+                    metrics,
                     ..state
                 }
             }
@@ -470,6 +492,9 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             summary,
         } => {
             // Fix output is valid but indicates work is incomplete (issues_remain)
+            let mut metrics = state.metrics.clone();
+            metrics.fix_continuations_total += 1;
+
             PipelineState {
                 reviewer_pass: pass,
                 fix_prompt_prepared_pass: None,
@@ -479,6 +504,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 fix_validated_outcome: None,
                 fix_result_xml_archived_pass: None,
                 continuation: state.continuation.trigger_fix_continuation(status, summary),
+                metrics,
                 ..state
             }
         }

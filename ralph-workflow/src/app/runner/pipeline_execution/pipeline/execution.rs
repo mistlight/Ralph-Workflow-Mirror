@@ -225,10 +225,9 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Marker cleanup/creation are filesystem concerns; use Workspace so tests can run
     // with MemoryWorkspace, and production stays consistent.
-    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker_with_workspace(
-        &*ctx.workspace,
-        &ctx.logger,
-    ) {
+    if let Err(err) =
+        crate::git_helpers::cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)
+    {
         ctx.logger
             .warn(&format!("Failed to cleanup orphaned marker: {err}"));
     }
@@ -239,8 +238,9 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Hook install / wrapper require a real repo; treat as best-effort.
     if let Err(err) = crate::git_helpers::cleanup_orphaned_marker(&ctx.logger) {
-        ctx.logger
-            .warn(&format!("Failed to cleanup orphaned marker via git helpers: {err}"));
+        ctx.logger.warn(&format!(
+            "Failed to cleanup orphaned marker via git helpers: {err}"
+        ));
     }
     if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
         ctx.logger
@@ -457,15 +457,15 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
-        &ctx.logger,
-        ctx.colors,
-        &config,
-        finalization::RuntimeStats {
+        crate::app::finalization::FinalizeContext {
+            logger: &ctx.logger,
+            colors: ctx.colors,
+            config: &config,
             timer: &timer,
-            stats: &stats,
+            workspace: &*ctx.workspace,
         },
+        &loop_result.final_state,
         prompt_monitor,
-        &*ctx.workspace,
     );
     Ok(())
 }

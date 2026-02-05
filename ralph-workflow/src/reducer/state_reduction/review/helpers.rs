@@ -29,6 +29,12 @@ fn reduce_phase_started(state: PipelineState) -> PipelineState {
 }
 
 fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
+    let mut metrics = state.metrics.clone();
+    // Only increment if this is truly a new pass (not a retry within same pass)
+    if state.reviewer_pass != pass {
+        metrics.review_passes_started += 1;
+    }
+
     PipelineState {
         reviewer_pass: pass,
         review_issues_found: false,
@@ -74,6 +80,7 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
                 ..state.continuation
             }
         },
+        metrics,
         ..state
     }
 }
@@ -107,6 +114,14 @@ fn reduce_fix_output_validation_failure(
 ) -> PipelineState {
     // Same policy as review output validation failure
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
+    let mut metrics = state.metrics.clone();
+
+    // Only increment metrics if we're actually retrying (not exhausted)
+    let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
+    if will_retry {
+        metrics.xsd_retry_fix += 1;
+        metrics.xsd_retry_attempts_total += 1;
+    }
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent
@@ -125,6 +140,7 @@ fn reduce_fix_output_validation_failure(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
+            metrics,
             ..state
         }
     } else {
@@ -142,6 +158,7 @@ fn reduce_fix_output_validation_failure(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
+            metrics,
             ..state
         }
     }

@@ -154,3 +154,74 @@ fn test_agent_chain_initialized_across_resume() {
         assert_eq!(state.agent_chain.retry_cycle, 0);
     });
 }
+
+// ============================================================================
+// Metrics Preservation Tests
+// ============================================================================
+
+#[test]
+fn test_metrics_preserved_in_checkpoint_serialization() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent};
+        use ralph_workflow::reducer::state_reduction::reduce;
+
+        // Build state with non-zero metrics
+        let mut state = PipelineState::initial(5, 2);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+        state = reduce(state, PipelineEvent::development_agent_invoked(0));
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 }),
+        );
+
+        // Serialize
+        let json = serde_json::to_string(&state).unwrap();
+
+        // Deserialize
+        let restored: PipelineState = serde_json::from_str(&json).unwrap();
+
+        // Verify metrics preserved
+        assert_eq!(restored.metrics.dev_iterations_started, 1);
+        assert_eq!(restored.metrics.dev_attempts_total, 1);
+        assert_eq!(restored.metrics.analysis_attempts_total, 1);
+        assert_eq!(restored.metrics.analysis_attempts_in_current_iteration, 1);
+    });
+}
+
+#[test]
+fn test_metrics_default_on_old_checkpoint_without_metrics() {
+    with_default_timeout(|| {
+        // Create a state, serialize it, remove the metrics field, and deserialize
+        let state = PipelineState::initial(5, 2);
+        let mut json: serde_json::Value = serde_json::to_value(&state).unwrap();
+
+        // Remove the metrics field to simulate an old checkpoint
+        json.as_object_mut().unwrap().remove("metrics");
+
+        // Should deserialize with default metrics
+        let restored: PipelineState = serde_json::from_value(json).unwrap();
+
+        // Metrics should be defaulted (all zeros)
+        assert_eq!(restored.metrics.dev_iterations_started, 0);
+        assert_eq!(restored.metrics.dev_attempts_total, 0);
+        assert_eq!(restored.metrics.max_dev_iterations, 0);
+        assert_eq!(restored.metrics.max_review_passes, 0);
+    });
+}
+
+#[test]
+fn test_metrics_config_fields_preserved() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(10, 3);
+
+        assert_eq!(state.metrics.max_dev_iterations, 10);
+        assert_eq!(state.metrics.max_review_passes, 3);
+
+        // Serialize and restore
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: PipelineState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.metrics.max_dev_iterations, 10);
+        assert_eq!(restored.metrics.max_review_passes, 3);
+    });
+}

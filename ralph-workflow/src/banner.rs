@@ -8,17 +8,26 @@ use crate::logger::Loggable;
 
 /// Summary data for pipeline completion display.
 ///
+/// All metrics MUST derive from the final `PipelineState.metrics` to ensure
+/// consistency and prevent drift between runtime counters and actual progress.
+///
+/// # Single Source of Truth
+///
+/// The reducer is the authoritative source for all execution statistics.
+/// This struct is purely a presentation layer that receives reducer-derived
+/// metrics and formats them for display.
+///
 /// Decouples the banner presentation logic from the actual pipeline types.
 pub struct PipelineSummary {
     /// Total elapsed time formatted as "Xm YYs"
     pub total_time: String,
-    /// Number of developer runs completed
+    /// Number of developer iterations completed (from reducer metrics)
     pub dev_runs_completed: usize,
-    /// Total configured developer iterations
+    /// Total configured developer iterations (from reducer metrics)
     pub dev_runs_total: usize,
-    /// Number of reviewer runs completed
+    /// Number of reviewer runs completed (from reducer metrics)
     pub review_runs: usize,
-    /// Number of changes detected during pipeline
+    /// Number of commits created during pipeline (from reducer metrics)
     pub changes_detected: usize,
     /// Whether isolation mode is enabled
     pub isolation_mode: bool,

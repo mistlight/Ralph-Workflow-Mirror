@@ -269,6 +269,13 @@ pub struct PipelineState {
     #[serde(default)]
     pub continuation: ContinuationState,
 
+    /// Run-level execution metrics.
+    ///
+    /// This is the single source of truth for all iteration/attempt/retry/fallback
+    /// statistics. Updated deterministically by the reducer based on events.
+    #[serde(default)]
+    pub metrics: RunMetrics,
+
     /// Whether TriggerDevFixFlow has been executed in the current AwaitingDevFix phase.
     ///
     /// This flag is set to true when DevFixTriggered event is reduced.
@@ -382,6 +389,7 @@ impl PipelineState {
             continuation,
             dev_fix_triggered: false,
             prompt_inputs: PromptInputsState::default(),
+            metrics: RunMetrics::new(developer_iters, reviewer_reviews),
         }
     }
 
@@ -506,6 +514,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
+            metrics: RunMetrics::default(),
         }
     }
 }

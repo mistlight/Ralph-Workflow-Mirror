@@ -128,6 +128,9 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             ..state
         },
         CommitEvent::Created { hash, .. } => {
+            let mut metrics = state.metrics.clone();
+            metrics.commits_created_total += 1;
+
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
             // When transitioning to Review phase, reset the agent chain for Reviewer role
@@ -166,6 +169,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 commit_xml_cleaned: false,
                 agent_chain,
                 continuation,
+                metrics,
                 ..state
             }
         }
@@ -299,6 +303,15 @@ fn reduce_commit_validation_failed(
 ) -> PipelineState {
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
     let max_attempts = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
+    let mut metrics = state.metrics.clone();
+
+    // Only increment metrics if we're actually retrying (not exhausted)
+    let will_retry =
+        new_xsd_count < state.continuation.max_xsd_retry_count && new_xsd_count < max_attempts;
+    if will_retry {
+        metrics.xsd_retry_commit += 1;
+        metrics.xsd_retry_attempts_total += 1;
+    }
 
     // Check if XSD retries are exhausted (configured limit) or global safety limit hit.
     //
@@ -336,6 +349,7 @@ fn reduce_commit_validation_failed(
                     last_xsd_error: None,
                     ..state.continuation
                 },
+                metrics,
                 ..state
             }
         } else {
@@ -359,6 +373,7 @@ fn reduce_commit_validation_failed(
                     last_xsd_error: None,
                     ..state.continuation
                 },
+                metrics,
                 ..state
             }
         }
@@ -384,6 +399,7 @@ fn reduce_commit_validation_failed(
                 same_agent_retry_reason: None,
                 ..state.continuation
             },
+            metrics,
             ..state
         }
     }

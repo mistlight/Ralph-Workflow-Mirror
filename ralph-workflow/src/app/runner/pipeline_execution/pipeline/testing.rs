@@ -252,15 +252,15 @@ where
     // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
-        &ctx.logger,
-        ctx.colors,
-        &config,
-        finalization::RuntimeStats {
+        crate::app::finalization::FinalizeContext {
+            logger: &ctx.logger,
+            colors: ctx.colors,
+            config: &config,
             timer: &timer,
-            stats: &stats,
+            workspace: &*ctx.workspace,
         },
+        &loop_result.final_state,
         prompt_monitor,
-        &*ctx.workspace,
     );
     Ok(())
 }

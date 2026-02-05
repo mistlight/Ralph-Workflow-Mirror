@@ -1,19 +1,30 @@
-//! Core pipeline types (stats and cleanup guards).
+//! Core pipeline types (cleanup guards and command results).
 
 use crate::files::cleanup_generated_files_with_workspace;
 use crate::git_helpers::{disable_git_wrapper, end_agent_phase, uninstall_hooks, GitHelpers};
 use crate::logger::Logger;
 use crate::workspace::Workspace;
 
-/// Statistics tracking for pipeline execution.
+/// Legacy statistics tracking (DEPRECATED - use PipelineState.metrics instead).
+///
+/// This struct is deprecated and kept only for backward compatibility with legacy code.
+/// New code should use `PipelineState.metrics` (RunMetrics) instead, which is the
+/// authoritative source for all execution statistics.
+///
+/// # Migration Path
+///
+/// - DO NOT add new fields to this struct
+/// - DO NOT increment these counters in new code
+/// - Use `PipelineState.metrics` for all new metric tracking
+/// - This struct will be removed once all legacy code is migrated
 pub struct Stats {
-    /// Number of times repository changes were detected
+    /// Number of times repository changes were detected (unused - see metrics.commits_created_total)
     pub changes_detected: u32,
-    /// Number of developer agent runs completed
+    /// Number of developer agent runs completed (unused - see metrics.dev_iterations_completed)
     pub developer_runs_completed: u32,
-    /// Number of reviewer agent runs completed
+    /// Number of reviewer agent runs completed (unused - see metrics.review_runs_total)
     pub reviewer_runs_completed: u32,
-    /// Number of commits created by the orchestrator
+    /// Number of commits created by the orchestrator (unused - see metrics.commits_created_total)
     pub commits_created: u32,
 }
 

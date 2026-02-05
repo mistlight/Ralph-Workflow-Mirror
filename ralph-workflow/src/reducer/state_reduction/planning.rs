@@ -131,6 +131,15 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
         PlanningEvent::OutputValidationFailed { iteration, attempt }
         | PlanningEvent::PlanXmlMissing { iteration, attempt } => {
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
+            let mut metrics = state.metrics.clone();
+
+            // Only increment metrics if we're actually retrying (not exhausted)
+            let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
+            if will_retry {
+                metrics.xsd_retry_planning += 1;
+                metrics.xsd_retry_attempts_total += 1;
+            }
+
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
                 let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
@@ -155,6 +164,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                         same_agent_retry_reason: None,
                         ..state.continuation
                     },
+                    metrics,
                     ..state
                 }
             } else {
@@ -176,6 +186,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                         xsd_retry_session_reuse_pending: false,
                         ..state.continuation
                     },
+                    metrics,
                     ..state
                 }
             }

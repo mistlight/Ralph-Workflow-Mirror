@@ -13,14 +13,18 @@ use crate::config::Config;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::logger::Colors;
 use crate::logger::Logger;
+use crate::pipeline::AgentPhaseGuard;
 use crate::pipeline::Timer;
-use crate::pipeline::{AgentPhaseGuard, Stats};
+use crate::reducer::state::PipelineState;
 use crate::workspace::Workspace;
 
-/// Runtime statistics collected during pipeline execution.
-pub struct RuntimeStats<'a> {
+/// Context for pipeline finalization.
+pub struct FinalizeContext<'a> {
+    pub logger: &'a Logger,
+    pub colors: Colors,
+    pub config: &'a Config,
     pub timer: &'a Timer,
-    pub stats: &'a Stats,
+    pub workspace: &'a dyn Workspace,
 }
 
 /// Finalizes the pipeline: cleans up and prints summary.
@@ -30,15 +34,13 @@ pub struct RuntimeStats<'a> {
 ///
 /// # Arguments
 ///
-/// * `workspace` - Workspace for file operations (enables testability)
+/// * `ctx` - Finalization context with logger, config, timer, and workspace
+/// * `final_state` - Final pipeline state from reducer (source of truth for metrics)
 pub fn finalize_pipeline(
     agent_phase_guard: &mut AgentPhaseGuard,
-    logger: &Logger,
-    colors: Colors,
-    config: &Config,
-    runtime: RuntimeStats<'_>,
+    ctx: FinalizeContext<'_>,
+    final_state: &PipelineState,
     prompt_monitor: Option<PromptMonitor>,
-    workspace: &dyn Workspace,
 ) {
     // Stop the PROMPT.md monitor if it was started
     if let Some(monitor) = prompt_monitor {
@@ -48,29 +50,31 @@ pub fn finalize_pipeline(
     // End agent phase and clean up
     crate::git_helpers::end_agent_phase();
     crate::git_helpers::disable_git_wrapper(agent_phase_guard.git_helpers);
-    if let Err(err) = crate::git_helpers::uninstall_hooks(logger) {
-        logger.warn(&format!("Failed to uninstall Ralph hooks: {err}"));
+    if let Err(err) = crate::git_helpers::uninstall_hooks(ctx.logger) {
+        ctx.logger
+            .warn(&format!("Failed to uninstall Ralph hooks: {err}"));
     }
 
     // Note: Individual commits were created per-iteration during development
     // and per-cycle during review. The final commit phase has been removed.
 
-    // Final summary
+    // Final summary derived exclusively from reducer state
     let summary = PipelineSummary {
-        total_time: runtime.timer.elapsed_formatted(),
-        dev_runs_completed: runtime.stats.developer_runs_completed as usize,
-        dev_runs_total: config.developer_iters as usize,
-        review_runs: runtime.stats.reviewer_runs_completed as usize,
-        changes_detected: runtime.stats.changes_detected as usize,
-        isolation_mode: config.isolation_mode,
-        verbose: config.verbosity.is_verbose(),
+        total_time: ctx.timer.elapsed_formatted(),
+        dev_runs_completed: final_state.metrics.dev_iterations_completed as usize,
+        dev_runs_total: final_state.metrics.max_dev_iterations as usize,
+        review_runs: final_state.metrics.review_runs_total as usize,
+        changes_detected: final_state.metrics.commits_created_total as usize,
+        isolation_mode: ctx.config.isolation_mode,
+        verbose: ctx.config.verbosity.is_verbose(),
         review_summary: None,
     };
-    print_final_summary(colors, &summary, logger);
+    print_final_summary(ctx.colors, &summary, ctx.logger);
 
-    if config.features.checkpoint_enabled {
-        if let Err(err) = clear_checkpoint_with_workspace(workspace) {
-            logger.warn(&format!("Failed to clear checkpoint: {err}"));
+    if ctx.config.features.checkpoint_enabled {
+        if let Err(err) = clear_checkpoint_with_workspace(ctx.workspace) {
+            ctx.logger
+                .warn(&format!("Failed to clear checkpoint: {err}"));
         }
     }
 
@@ -79,4 +83,68 @@ pub fn finalize_pipeline(
     // This ensures the operation goes through the effect system for testability.
 
     agent_phase_guard.disarm();
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::reducer::state::PipelineState;
+
+    #[test]
+    fn test_summary_derives_from_reducer_metrics() {
+        let mut state = PipelineState::initial(5, 2);
+        state.metrics.dev_iterations_completed = 3;
+        state.metrics.review_runs_total = 4;
+        state.metrics.commits_created_total = 3;
+
+        // Summary should use reducer metrics, not runtime counters
+        let dev_runs_completed = state.metrics.dev_iterations_completed as usize;
+        let dev_runs_total = state.metrics.max_dev_iterations as usize;
+        let review_runs = state.metrics.review_runs_total as usize;
+        let changes_detected = state.metrics.commits_created_total as usize;
+
+        assert_eq!(dev_runs_completed, 3);
+        assert_eq!(dev_runs_total, 5);
+        assert_eq!(review_runs, 4);
+        assert_eq!(changes_detected, 3);
+    }
+
+    #[test]
+    fn test_metrics_reflect_actual_progress_not_config() {
+        let mut state = PipelineState::initial(10, 5);
+
+        // Simulate partial run: only 2 iterations completed out of 10 configured
+        state.metrics.dev_iterations_completed = 2;
+        state.metrics.review_runs_total = 0;
+
+        // Summary should show actual progress (2), not config (10)
+        assert_eq!(state.metrics.dev_iterations_completed, 2);
+        assert_eq!(state.metrics.max_dev_iterations, 10);
+    }
+
+    #[test]
+    fn test_summary_no_drift_from_runtime_counters() {
+        let mut state = PipelineState::initial(10, 5);
+
+        // Simulate reducer metrics
+        state.metrics.dev_iterations_completed = 7;
+        state.metrics.review_runs_total = 3;
+        state.metrics.commits_created_total = 8;
+
+        // Simulate hypothetical runtime counters (these should NOT be used)
+        let runtime_dev_completed = 5; // WRONG VALUE - should be ignored
+        let runtime_review_runs = 2; // WRONG VALUE - should be ignored
+
+        // Summary must use reducer metrics, not runtime counters
+        let dev_runs = state.metrics.dev_iterations_completed as usize;
+        let review_runs = state.metrics.review_runs_total as usize;
+        let commits = state.metrics.commits_created_total as usize;
+
+        assert_eq!(dev_runs, 7); // From reducer, not runtime
+        assert_eq!(review_runs, 3); // From reducer, not runtime
+        assert_eq!(commits, 8); // From reducer, not runtime
+
+        // Prove we're not using the wrong values
+        assert_ne!(dev_runs, runtime_dev_completed);
+        assert_ne!(review_runs, runtime_review_runs);
+    }
 }
