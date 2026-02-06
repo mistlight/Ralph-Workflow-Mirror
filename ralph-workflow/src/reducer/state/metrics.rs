@@ -186,14 +186,34 @@ pub struct RunMetrics {
     /// Maximum review passes (from config, for X/Y display).
     #[serde(default)]
     pub max_review_passes: u32,
+    /// Maximum XSD retry count (from config, for X/max display).
+    #[serde(default)]
+    pub max_xsd_retry_count: u32,
+    /// Maximum development continuation count (from config, for X/max display).
+    #[serde(default)]
+    pub max_dev_continuation_count: u32,
+    /// Maximum fix continuation count (from config, for X/max display).
+    #[serde(default)]
+    pub max_fix_continuation_count: u32,
+    /// Maximum same-agent retry count (from config, for X/max display).
+    #[serde(default)]
+    pub max_same_agent_retry_count: u32,
 }
 
 impl RunMetrics {
     /// Create metrics with config-derived display fields.
-    pub fn new(max_dev_iterations: u32, max_review_passes: u32) -> Self {
+    pub fn new(
+        max_dev_iterations: u32,
+        max_review_passes: u32,
+        continuation: &ContinuationState,
+    ) -> Self {
         Self {
             max_dev_iterations,
             max_review_passes,
+            max_xsd_retry_count: continuation.max_xsd_retry_count,
+            max_dev_continuation_count: continuation.max_continue_count,
+            max_fix_continuation_count: continuation.max_fix_continue_count,
+            max_same_agent_retry_count: continuation.max_same_agent_retry_count,
             ..Self::default()
         }
     }

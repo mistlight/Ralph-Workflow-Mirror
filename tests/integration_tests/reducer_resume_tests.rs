@@ -225,3 +225,95 @@ fn test_metrics_config_fields_preserved() {
         assert_eq!(restored.metrics.max_review_passes, 3);
     });
 }
+
+// ============================================================================
+// Step 16: Checkpoint resume test for metrics consistency
+// ============================================================================
+
+/// Test that metrics survive checkpoint serialization and resume with correct values.
+///
+/// CRITICAL: All metrics must be preserved across checkpoint/resume to ensure
+/// the final summary is accurate even after interruption.
+#[test]
+fn test_metrics_survive_checkpoint_resume() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::RunMetrics;
+        
+        // Given: Create PipelineState with metrics partially populated
+        let mut state = PipelineState::initial(5, 3);
+        
+        // Manually populate some metrics to simulate mid-run state
+        state.metrics = RunMetrics {
+            dev_iterations_started: 2,
+            dev_iterations_completed: 1,
+            dev_attempts_total: 3,
+            dev_continuation_attempt: 1,
+            analysis_attempts_total: 5,
+            analysis_attempts_in_current_iteration: 2,
+            review_passes_started: 1,
+            review_passes_completed: 0,
+            review_runs_total: 2,
+            fix_runs_total: 1,
+            fix_continuations_total: 0,
+            fix_continuation_attempt: 0,
+            current_review_pass: 1,
+            xsd_retry_attempts_total: 3,
+            xsd_retry_planning: 1,
+            xsd_retry_development: 1,
+            xsd_retry_review: 1,
+            xsd_retry_fix: 0,
+            xsd_retry_commit: 0,
+            same_agent_retry_attempts_total: 1,
+            agent_fallbacks_total: 2,
+            model_fallbacks_total: 1,
+            retry_cycles_started_total: 0,
+            commits_created_total: 1,
+            max_dev_iterations: state.metrics.max_dev_iterations,
+            max_review_passes: state.metrics.max_review_passes,
+            max_xsd_retry_count: state.metrics.max_xsd_retry_count,
+            max_dev_continuation_count: state.metrics.max_dev_continuation_count,
+            max_fix_continuation_count: state.metrics.max_fix_continuation_count,
+            max_same_agent_retry_count: state.metrics.max_same_agent_retry_count,
+        };
+        
+        // When: Serialize to JSON (simulating checkpoint write)
+        let json = serde_json::to_string(&state).expect("Failed to serialize state");
+        
+        // When: Deserialize from JSON (simulating checkpoint resume)
+        let restored: PipelineState = serde_json::from_str(&json).expect("Failed to deserialize state");
+        
+        // Then: All metrics should match original values (no drift, no reset to 0)
+        assert_eq!(restored.metrics.dev_iterations_started, 2);
+        assert_eq!(restored.metrics.dev_iterations_completed, 1);
+        assert_eq!(restored.metrics.dev_attempts_total, 3);
+        assert_eq!(restored.metrics.dev_continuation_attempt, 1);
+        assert_eq!(restored.metrics.analysis_attempts_total, 5);
+        assert_eq!(restored.metrics.analysis_attempts_in_current_iteration, 2);
+        assert_eq!(restored.metrics.review_passes_started, 1);
+        assert_eq!(restored.metrics.review_passes_completed, 0);
+        assert_eq!(restored.metrics.review_runs_total, 2);
+        assert_eq!(restored.metrics.fix_runs_total, 1);
+        assert_eq!(restored.metrics.fix_continuations_total, 0);
+        assert_eq!(restored.metrics.fix_continuation_attempt, 0);
+        assert_eq!(restored.metrics.current_review_pass, 1);
+        assert_eq!(restored.metrics.xsd_retry_attempts_total, 3);
+        assert_eq!(restored.metrics.xsd_retry_planning, 1);
+        assert_eq!(restored.metrics.xsd_retry_development, 1);
+        assert_eq!(restored.metrics.xsd_retry_review, 1);
+        assert_eq!(restored.metrics.xsd_retry_fix, 0);
+        assert_eq!(restored.metrics.xsd_retry_commit, 0);
+        assert_eq!(restored.metrics.same_agent_retry_attempts_total, 1);
+        assert_eq!(restored.metrics.agent_fallbacks_total, 2);
+        assert_eq!(restored.metrics.model_fallbacks_total, 1);
+        assert_eq!(restored.metrics.retry_cycles_started_total, 0);
+        assert_eq!(restored.metrics.commits_created_total, 1);
+        
+        // Verify config-derived display fields also survived
+        assert_eq!(restored.metrics.max_dev_iterations, state.metrics.max_dev_iterations);
+        assert_eq!(restored.metrics.max_review_passes, state.metrics.max_review_passes);
+        assert_eq!(restored.metrics.max_xsd_retry_count, state.metrics.max_xsd_retry_count);
+        assert_eq!(restored.metrics.max_dev_continuation_count, state.metrics.max_dev_continuation_count);
+        assert_eq!(restored.metrics.max_fix_continuation_count, state.metrics.max_fix_continuation_count);
+        assert_eq!(restored.metrics.max_same_agent_retry_count, state.metrics.max_same_agent_retry_count);
+    });
+}

@@ -257,3 +257,169 @@ fn test_analysis_does_not_affect_continuation_budget() {
         );
     });
 }
+
+// ============================================================================
+// Step 14: Edge-case nesting rules (dev iterations vs continuations)
+// ============================================================================
+
+/// Test that continuations do NOT increment dev_iterations_started counter.
+///
+/// CRITICAL: Continuations are attempts within the same iteration, not new iterations.
+#[test]
+fn test_continuation_does_not_increment_iterations_started() {
+    with_default_timeout(|| {
+        // Given: State at iteration 0 with metrics tracking
+        let mut state = PipelineState::initial(3, 0);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+        
+        // Verify initial state
+        assert_eq!(state.metrics.dev_iterations_started, 1);
+        assert_eq!(state.metrics.dev_continuation_attempt, 0);
+        
+        // When: Trigger first continuation
+        let event = PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+            iteration: 0,
+            status: DevelopmentStatus::Partial,
+            summary: "partial work".to_string(),
+            files_changed: None,
+            next_steps: None,
+        });
+        let state = reduce(state, event);
+        
+        // When: Trigger second continuation
+        let event = PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+            iteration: 0,
+            status: DevelopmentStatus::Partial,
+            summary: "more partial work".to_string(),
+            files_changed: None,
+            next_steps: None,
+        });
+        let state = reduce(state, event);
+        
+        // Then: dev_iterations_started should still be 1 (not 3)
+        assert_eq!(
+            state.metrics.dev_iterations_started, 1,
+            "Continuations must NOT increment dev_iterations_started"
+        );
+        
+        // And: dev_continuation_attempt should track continuation count
+        assert_eq!(
+            state.metrics.dev_continuation_attempt, 2,
+            "Continuations should increment dev_continuation_attempt"
+        );
+    });
+}
+
+/// Test that dev iteration completed semantics work correctly.
+///
+/// A dev iteration is "completed" when the reducer advances to commit phase,
+/// regardless of whether an actual git commit is created.
+#[test]
+fn test_dev_iteration_completed_semantics() {
+    with_default_timeout(|| {
+        // Given: State at iteration 0
+        let mut state = PipelineState::initial(1, 0);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+        
+        assert_eq!(state.metrics.dev_iterations_completed, 0);
+        
+        // When: Iteration completes with valid output (advances to commit phase)
+        let event = PipelineEvent::development_iteration_completed(0, true);
+        let state = reduce(state, event);
+        
+        // Then: dev_iterations_completed should increment
+        assert_eq!(
+            state.metrics.dev_iterations_completed, 1,
+            "Dev iteration completion should increment completed counter"
+        );
+        
+        // And: Phase should advance to CommitMessage
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Completed dev iteration should advance to commit phase"
+        );
+    });
+}
+
+/// Test that analysis attempts reset per iteration and count correctly within each iteration.
+#[test]
+fn test_analysis_attempts_reset_per_iteration() {
+    with_default_timeout(|| {
+        // Given: State starting iteration 0
+        let mut state = PipelineState::initial(2, 0);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+        
+        // When: Run 2 analysis attempts in iteration 0
+        let event = PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 });
+        let state = reduce(state, event);
+        
+        let event = PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 });
+        let state = reduce(state, event);
+        
+        // Then: Should have 2 total and 2 in current iteration
+        assert_eq!(state.metrics.analysis_attempts_total, 2);
+        assert_eq!(state.metrics.analysis_attempts_in_current_iteration, 2);
+        
+        // When: Start iteration 1
+        let state = reduce(state, PipelineEvent::development_iteration_started(1));
+        
+        // Then: Per-iteration counter should reset, total should not
+        assert_eq!(
+            state.metrics.analysis_attempts_total, 2,
+            "Total analysis attempts should NOT reset"
+        );
+        assert_eq!(
+            state.metrics.analysis_attempts_in_current_iteration, 0,
+            "Per-iteration analysis attempts should reset at iteration start"
+        );
+        
+        // When: Run 1 analysis in iteration 1
+        let event = PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 1 });
+        let state = reduce(state, event);
+        
+        // Then: Total should be 3, current iteration should be 1
+        assert_eq!(state.metrics.analysis_attempts_total, 3);
+        assert_eq!(state.metrics.analysis_attempts_in_current_iteration, 1);
+    });
+}
+
+/// Test that pipeline completes exactly at total_iterations, not before.
+#[test]
+fn test_exactly_completes_at_total_iterations() {
+    with_default_timeout(|| {
+        // Given: Configure 3 iterations
+        let mut state = PipelineState::initial(3, 0);
+        
+        // Run iterations 0, 1, 2
+        for i in 0..3 {
+            state = reduce(state, PipelineEvent::development_iteration_started(i));
+            
+            // Verify iteration counter
+            assert_eq!(state.iteration, i);
+            
+            // Complete the iteration
+            state = reduce(state, PipelineEvent::development_iteration_completed(i, true));
+            
+            // After completing iteration 2 (the 3rd iteration), should advance to next phase
+            if i == 2 {
+                assert_eq!(
+                    state.phase,
+                    PipelinePhase::CommitMessage,
+                    "After completing all iterations, should advance to commit phase"
+                );
+                assert_eq!(
+                    state.metrics.dev_iterations_completed, 3,
+                    "Should have completed all 3 iterations"
+                );
+            } else {
+                // For iterations 0 and 1, should loop back to Planning
+                assert_eq!(
+                    state.phase,
+                    PipelinePhase::Planning,
+                    "After completing non-final iteration, should return to Planning"
+                );
+            }
+        }
+    });
+}
