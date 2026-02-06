@@ -243,7 +243,7 @@ impl ClaudeParser {
             ContentBlockDelta::ThinkingDelta {
                 thinking: Some(text),
             } => {
-                let show_prefix = session.on_thinking_delta(index, &text);
+                let _show_prefix = session.on_thinking_delta(index, &text);
 
                 if *self.suppress_thinking_for_message.borrow() {
                     // Accumulate for state/deduplication, but don't render late thinking.
@@ -261,23 +261,51 @@ impl ClaudeParser {
                         let accumulated = session
                             .get_accumulated(ContentType::Thinking, &index_str)
                             .unwrap_or("");
-                        let out = if show_prefix {
-                            crate::json_parser::delta_display::ThinkingDeltaRenderer::render_first_delta(
+                        let sanitized =
+                            crate::json_parser::delta_display::sanitize_for_display(accumulated);
+
+                        // Append-only pattern: track last rendered and emit only new content
+                        let key = format!("thinking:{}", index);
+                        let last_rendered = self
+                            .last_rendered_content
+                            .borrow()
+                            .get(&key)
+                            .cloned()
+                            .unwrap_or_default();
+
+                        let out = if last_rendered.is_empty() {
+                            // First delta for this thinking block: emit prefix + content
+                            let rendered = crate::json_parser::delta_display::ThinkingDeltaRenderer::render_first_delta(
                                 accumulated,
                                 prefix,
                                 *c,
                                 terminal_mode,
-                            )
+                            );
+                            // Track what we rendered (the sanitized content)
+                            self.last_rendered_content
+                                .borrow_mut()
+                                .insert(key, sanitized.clone());
+                            rendered
                         } else {
-                            crate::json_parser::delta_display::ThinkingDeltaRenderer::render_subsequent_delta(
-                                accumulated,
-                                prefix,
-                                *c,
-                                terminal_mode,
-                            )
+                            // Subsequent delta: emit only NEW suffix
+                            let new_suffix = if sanitized.starts_with(&last_rendered) {
+                                // Current content extends last rendered - emit only the new part
+                                &sanitized[last_rendered.len()..]
+                            } else {
+                                // Content doesn't extend (snapshot delta or discontinuity) - emit all
+                                &sanitized
+                            };
+
+                            // Track new rendered content
+                            self.last_rendered_content
+                                .borrow_mut()
+                                .insert(key, sanitized.clone());
+
+                            // Emit only the new suffix (no prefix, no \r)
+                            // Use the same color scheme as ThinkingDeltaRenderer for consistency
+                            format!("{}{}{}", c.cyan(), new_suffix, c.reset())
                         };
 
-                        *self.cursor_up_active.borrow_mut() = true;
                         out
                     }
                     TerminalMode::Basic | TerminalMode::None => {

@@ -57,20 +57,18 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // Verify the fix:
-    // 1. Full mode should use in-place streaming updates.
-    // We don't assert an exact prefix count here because it depends on sanitization
-    // (e.g., whether whitespace-only updates are suppressed).
+    // Verify append-only pattern:
+    // 1. Prefix should appear exactly ONCE (not repeated for each delta)
     let prefix_count = output.matches("[Claude]").count();
-    assert!(
-        prefix_count >= 1,
-        "Expected at least one '[Claude]' prefix from streaming output. Output: {output:?}"
+    assert_eq!(
+        prefix_count, 1,
+        "Prefix should appear exactly once with append-only pattern. Output: {output:?}"
     );
 
-    // 2. Should contain carriage returns for in-place updates
+    // 2. Should NOT contain carriage returns (append-only pattern avoids cursor movement)
     assert!(
-        output.contains('\r'),
-        "Should use carriage returns for in-place updates. Output: {output:?}"
+        !output.contains('\r'),
+        "Append-only pattern should not use carriage returns. Output: {output:?}"
     );
 
     // 3. Final message "Hello World!" should be present

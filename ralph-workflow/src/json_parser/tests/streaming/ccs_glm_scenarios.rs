@@ -42,34 +42,36 @@ fn test_ccs_glm_duplicate_output_bug_fix() {
     let output = printer_ref.get_output();
 
     // All 4 deltas should be processed because they're not consecutive duplicates
-    // The output contains all intermediate renders due to in-place updates
+    // With append-only pattern, we emit each unique text segment exactly once:
     //
-    // Render 1: "First" - 1 "First", 0 "Second"
-    // Render 2: "FirstSecond" - 1 "First", 1 "Second"
-    // Render 3: "FirstSecondFirst" - 2 "First", 1 "Second"
-    // Render 4: "FirstSecondFirstSecond" - 2 "First", 2 "Second"
+    // Render 1: "[Claude] First delta" (first delta)
+    // Render 2: "Second delta" (only new suffix)
+    // Render 3: "First delta" (new suffix, happens to be same text as first)
+    // Render 4: "Second delta" (only new suffix)
+    // Completion: "\n"
     //
-    // Total in output string:
-    // - "First" appears: 1 + 1 + 2 + 2 = 6 times
-    // - "Second" appears: 0 + 1 + 1 + 2 = 4 times
+    // Total in output:
+    // - "First delta" appears: 2 times (delta 1 and delta 3)
+    // - "Second delta" appears: 2 times (delta 2 and delta 4)
     let first_count = output.matches("First delta").count();
     let second_count = output.matches("Second delta").count();
 
     assert_eq!(
-        first_count, 6,
-        "First delta should appear 6 times in output (accumulated across renders). Found {first_count} occurrences. Output: {output:?}"
+        first_count, 2,
+        "First delta should appear 2 times in append-only output. Found {first_count} occurrences. Output: {output:?}"
     );
 
     assert_eq!(
-        second_count, 4,
-        "Second delta should appear 4 times in output (accumulated across renders). Found {second_count} occurrences. Output: {output:?}"
+        second_count, 2,
+        "Second delta should appear 2 times in append-only output. Found {second_count} occurrences. Output: {output:?}"
     );
 
-    // Should have 4 renders (one for each delta)
+    // With append-only pattern, prefix appears only ONCE (first delta)
+    // Subsequent deltas are suffixes without prefix
     let render_count = output.matches("[Claude]").count();
     assert_eq!(
-        render_count, 4,
-        "Should have 4 renders (all deltas processed). Found {render_count} renders. Output: {output:?}"
+        render_count, 1,
+        "Prefix should appear once with append-only pattern. Found {render_count} prefixes. Output: {output:?}"
     );
 }
 

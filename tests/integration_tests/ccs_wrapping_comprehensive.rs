@@ -60,12 +60,22 @@ fn test_claude_wrapping_exactly_at_boundary() {
             visible_lines
         );
 
-        // Verify content is present
-        let screen_content = term.get_visible_output();
+        // Enhanced assertions per screen model upgrade
+        let visible = term.get_visible_output();
+        assert_eq!(
+            visible.matches(&content).count(),
+            1,
+            "Content should appear exactly once in visible output"
+        );
+        assert_eq!(
+            term.count_visible_pattern("[ccs/glm]"),
+            1,
+            "Prefix should appear exactly once (no waterfall)"
+        );
+        let (row, _col) = term.cursor_position();
         assert!(
-            screen_content.contains(&content),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            row >= 1,
+            "Cursor should have moved to new line after completion"
         );
     });
 }
@@ -99,20 +109,24 @@ fn test_claude_wrapping_one_char_over() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
-        // Should still show only 1 visible line (wrapping handled internally)
+        // When content wraps, it occupies multiple physical rows in the terminal.
+        // This is expected and correct behavior. What matters is:
+        // 1. Prefix appears exactly ONCE (no waterfall)
+        // 2. Content is complete and correct (may be split across rows)
+        let visible = term.get_visible_output();
         assert_eq!(
-            visible_lines, 1,
-            "One char over boundary should still be 1 visible line. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/glm]"),
+            1,
+            "Prefix should appear exactly once (append-only pattern prevents waterfall). \
+             Content wrapping to multiple rows is expected."
         );
-
-        let screen_content = term.get_visible_output();
+        // When content wraps, newlines are inserted between rows. Remove them to verify content.
+        let visible_no_newlines = visible.replace('\n', "");
         assert!(
-            screen_content.contains(&content),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            visible_no_newlines.contains(&content),
+            "Content should be complete (may be split across wrapped rows). Screen:\n{}",
+            visible
         );
     });
 }
@@ -147,20 +161,19 @@ fn test_claude_wrapping_multi_line() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
-        // Should still be 1 visible line (append-only pattern)
+        // Multi-line wrapping creates multiple physical terminal rows.
+        // Verify append-only pattern works: prefix appears ONCE, content is complete
+        let visible = term.get_visible_output();
         assert_eq!(
-            visible_lines, 1,
-            "Multi-line wrapping should still be 1 visible line. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/glm]"),
+            1,
+            "Prefix should appear exactly once despite wrapping to multiple rows"
         );
-
-        let screen_content = term.get_visible_output();
         assert!(
-            screen_content.contains("This is a long message"),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            visible.contains("This is a long message"),
+            "Content should be complete. Screen:\n{}",
+            visible
         );
     });
 }
@@ -194,20 +207,19 @@ fn test_claude_wrapping_with_unicode() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
-        // Should be 1 visible line regardless of unicode
+        // Unicode content may wrap differently due to character width, but
+        // the prefix should still appear exactly once (no waterfall)
+        let visible = term.get_visible_output();
         assert_eq!(
-            visible_lines, 1,
-            "Unicode content should still be 1 visible line. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/glm]"),
+            1,
+            "Prefix should appear exactly once even with unicode characters"
         );
-
-        let screen_content = term.get_visible_output();
         assert!(
-            screen_content.contains("Hello") && screen_content.contains("World"),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            visible.contains("Hello") && visible.contains("World"),
+            "Unicode content should be complete. Screen:\n{}",
+            visible
         );
     });
 }
@@ -241,22 +253,23 @@ fn test_claude_wrapping_multiple_deltas() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
-        // Each delta should update in-place, resulting in 1 visible line
+        // Multiple deltas with wrapping: content may span multiple physical rows.
+        // Verify append-only pattern: prefix appears ONCE, content is complete.
+        let visible = term.get_visible_output();
         assert_eq!(
-            visible_lines, 1,
-            "Multiple deltas with wrapping should be 1 visible line. Found {} lines.\n\
-             This indicates the append-only pattern is working correctly.",
-            visible_lines
+            term.count_visible_pattern("[ccs/glm]"),
+            1,
+            "Prefix should appear exactly once despite multiple deltas and wrapping. \
+             This indicates the append-only pattern is working correctly."
         );
-
-        let screen_content = term.get_visible_output();
         assert!(
-            screen_content.contains("Hello World"),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            visible.contains("Hello World"),
+            "Content should be complete. Screen:\n{}",
+            visible
         );
+        let (row, _col) = term.cursor_position();
+        assert!(row >= 1, "Cursor should be on new line after completion");
     });
 }
 
@@ -289,20 +302,21 @@ fn test_claude_wrapping_very_narrow_terminal() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
-        // Even in very narrow terminal, should be 1 visible line
+        // Narrow terminal causes extreme wrapping (many physical rows).
+        // Verify append-only pattern: prefix appears ONCE despite wrapping
+        let visible = term.get_visible_output();
         assert_eq!(
-            visible_lines, 1,
-            "Very narrow terminal should still be 1 visible line. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/glm]"),
+            1,
+            "Prefix should appear exactly once even in very narrow terminal with extreme wrapping"
         );
-
-        let screen_content = term.get_visible_output();
+        // Content wraps aggressively in narrow terminal, remove newlines to verify
+        let visible_no_newlines = visible.replace('\n', "");
         assert!(
-            screen_content.contains("This message"),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            visible_no_newlines.contains(content),
+            "Content should be complete (split across many wrapped rows). Screen:\n{}",
+            visible
         );
     });
 }
@@ -344,12 +358,13 @@ fn test_codex_wrapping_exactly_at_boundary() {
         parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
+        // Codex parser may not have append-only yet, but verify no waterfall
+        // Note: This test may fail until CodexParser is updated with append-only pattern
         assert_eq!(
-            visible_lines, 1,
-            "Codex content at boundary should not wrap. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/codex]"),
+            1,
+            "Prefix should appear exactly once"
         );
     });
 }
@@ -385,12 +400,12 @@ fn test_codex_wrapping_multi_line() {
         parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
+        // Codex multi-line content: verify prefix appears once
         assert_eq!(
-            visible_lines, 1,
-            "Codex multi-line wrapping should be 1 visible line. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/codex]"),
+            1,
+            "Prefix should appear exactly once despite wrapping"
         );
     });
 }
@@ -425,12 +440,12 @@ fn test_codex_wrapping_multiple_deltas() {
         parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
 
+        // Multiple Codex reasoning deltas: verify prefix appears once
         assert_eq!(
-            visible_lines, 1,
-            "Codex multiple deltas with wrapping should be 1 visible line. Found {} lines",
-            visible_lines
+            term.count_visible_pattern("[ccs/codex]"),
+            1,
+            "Prefix should appear exactly once across multiple deltas"
         );
     });
 }

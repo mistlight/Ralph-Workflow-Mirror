@@ -33,16 +33,16 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
     // \x1b[2K\r[Claude] warning: unused vari\r (third chunk clears line, rewrites with accumulated)
     // \x1b[2K\r[Claude] warning: unused variable\n (final chunk + message_stop adds newline)
 
-    // The output should contain carriage returns for overwriting
+    // With append-only pattern, no carriage returns or line clearing
     assert!(
-        output.contains('\r'),
-        "Should contain carriage returns for overwriting"
+        !output.contains('\r'),
+        "Append-only pattern should not use carriage returns"
     );
 
-    // Should contain the line clear escape sequence
+    // No line clear sequences with append-only pattern
     assert!(
-        output.contains("\x1b[2K"),
-        "Should contain line clear escape sequence for in-place updates"
+        !output.contains("\x1b[2K"),
+        "Append-only pattern should not clear lines"
     );
 
     // With the single-line pattern, each delta rewrites the entire line including prefix
@@ -113,16 +113,18 @@ fn test_streaming_accumulation_behavior() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // Should contain carriage returns for overwriting previous content
+    // Append-only pattern: no carriage returns
     assert!(
-        output.contains('\r'),
-        "Should contain carriage returns for streaming overwrite"
+        !output.contains('\r'),
+        "Append-only pattern should not use carriage returns"
     );
 
-    // With the single-line pattern, each delta rewrites the entire line including prefix
-    // The output string will contain multiple prefixes, but visually only one is shown
+    // With append-only pattern, prefix appears exactly once
     let prefix_count = output.matches("[Claude]").count();
-    assert!(prefix_count >= 1, "Should have at least 1 prefix");
+    assert_eq!(
+        prefix_count, 1,
+        "Prefix should appear exactly once with append-only pattern"
+    );
 
     // The final accumulated text should be present
     assert!(

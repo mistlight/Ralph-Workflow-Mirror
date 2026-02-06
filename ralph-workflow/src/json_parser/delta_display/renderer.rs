@@ -47,18 +47,40 @@
 ///
 /// # Append-Only Pattern (Full Mode)
 ///
+/// The renderer supports true append-only streaming that works correctly under
+/// terminal line wrapping and in ANSI-stripping environments:
+///
 /// 1. **First delta**: Shows prefix with accumulated content, NO newline
 ///    - Example: `[ccs/glm] Hello`
+///    - No cursor movement, content stays on current line
 ///
-/// 2. **Subsequent deltas**: Carriage return + rewrite full line
-///    - Example: `\r[ccs/glm] Hello World`
+/// 2. **Subsequent deltas**: Parser computes and emits ONLY new suffix
+///    - Parser responsibility: track last rendered content and emit only delta
+///    - Example: parser emits ` World` (just the new text with color codes)
+///    - NO prefix rewrite, NO `\r` (carriage return), NO cursor movement
+///    - Renderers provide `render_subsequent_delta` for backward compatibility
+///      but parsers implementing append-only should bypass it
 ///
 /// 3. **Completion**: Single newline to finalize the line
 ///    - Example: `\n`
+///    - Moves cursor to next line after streaming completes
 ///
-/// This pattern works correctly even when content wraps to multiple terminal rows,
-/// because `\r` (carriage return) returns to column 0 of the current row without
-/// assuming anything about the number of rows occupied.
+/// This pattern works correctly even when content wraps to multiple terminal rows
+/// because there is NO cursor movement. The terminal naturally handles wrapping,
+/// and content appears to grow incrementally on the same logical line.
+///
+/// # Why Append-Only?
+///
+/// Previous patterns using `\r` (carriage return) or `\n\x1b[1A` (newline + cursor up)
+/// fail in two scenarios:
+///
+/// 1. **Line wrapping**: When content exceeds terminal width and wraps to multiple rows,
+///    `\r` only returns to column 0 of current row (not start of logical line), and
+///    `\x1b[1A` (cursor up 1 row) + `\x1b[2K` (clear 1 row) cannot erase all wrapped rows
+/// 2. **ANSI-stripping consoles**: Many CI/log environments strip or ignore ANSI sequences,
+///    so `\n` becomes a literal newline causing waterfall spam
+///
+/// Append-only streaming eliminates both issues by never using cursor movement.
 ///
 /// # Non-TTY Modes (Basic/None)
 ///
@@ -69,18 +91,18 @@
 ///
 /// - `render_first_delta()`: Called for the first delta of a content block
 ///   - Must include prefix
-///   - Must end with newline + cursor up (`\n\x1b[1A`) for in-place updates (in Full mode)
+///   - Must NOT include newline (stays on current line for append-only)
 ///   - Shows the accumulated content so far
 ///
 /// - `render_subsequent_delta()`: Called for subsequent deltas
-///   - Must include prefix (rewrite entire line)
-///   - Must use `\x1b[2K\r` to clear entire line and return to start (in Full mode)
-///   - Shows the full accumulated content (not just the new delta)
-///   - Must end with newline + cursor up (`\n\x1b[1A`) (in Full mode)
+///   - **Parsers implementing append-only should compute suffix and bypass this method**
+///   - This method is kept for backward compatibility with parsers not yet using append-only
+///   - In Full mode: uses `\r` to rewrite line (legacy pattern, has wrapping issues)
+///   - In Basic/None mode: suppresses output (parser flushes at completion)
 ///
 /// - `render_completion()`: Called when streaming completes
-///   - Returns cursor down + newline (`\x1b[1B\n`) in Full mode
-///   - Returns simple newline in Basic/None mode
+///   - Returns single newline (`\n`) in Full mode to finalize the line
+///   - Returns empty string in Basic/None mode (parser already flushed with newline)
 ///
 /// # Terminal Mode Awareness
 ///
@@ -188,22 +210,40 @@ pub trait DeltaRenderer {
 
 /// Default implementation of `DeltaRenderer` for text content.
 ///
-/// This implementation follows the multi-line rendering pattern used by production CLIs:
-/// - Prefix and content on same line ending with newline + cursor up
-/// - Content updates in-place using clear, rewrite, and newline + cursor up
+/// Supports true append-only streaming pattern that works correctly under
+/// line wrapping and in ANSI-stripping environments.
+///
+/// - First delta: prefix + content (no newline, stays on current line)
+/// - Subsequent deltas: **Parser computes and emits only new suffix**
+/// - Completion: single newline to finalize the line
 /// - Sanitizes newlines to spaces (to prevent artificial line breaks)
-/// - Uses ANSI escape codes for in-place updates with full line clear
 /// - Applies consistent color formatting
 ///
 /// # Output Pattern
 ///
-/// ## Full Mode (TTY with capable terminal)
+/// ## Full Mode (TTY with capable terminal) - Append-Only Pattern
 ///
 /// ```text
-/// [ccs-glm] Hello\n\x1b[1A             <- First chunk: prefix + content + newline + cursor up
-/// \x1b[2K\r[ccs-glm] Hello World\n\x1b[1A  <- Second chunk: clear, rewrite, newline, cursor up
-/// [ccs-glm] Hello World\n\x1b[1B\n       <- Final: move cursor down + newline
+/// [ccs-glm] Hello                    <- First delta: prefix + content, NO newline
+///  World                             <- Parser emits suffix: " World" (no prefix, no \r)
+/// \n                                  <- Completion: single newline
 /// ```
+///
+/// Result: Single logical line that may wrap to multiple terminal rows.
+/// Terminal handles wrapping naturally. No cursor movement means wrapping is not an issue.
+///
+/// ## Full Mode (Legacy Pattern - Deprecated)
+///
+/// Some parsers not yet implementing append-only may still use `render_subsequent_delta`
+/// which rewrites the line with `\r`. This pattern has known issues with wrapping:
+///
+/// ```text
+/// [ccs-glm] Hello                    <- First delta
+/// \r[ccs-glm] Hello World            <- Subsequent: carriage return + full rewrite
+/// ```
+///
+/// Issue: When content wraps, `\r` only returns to column 0 of current row, not
+/// start of logical line. This causes display corruption.
 ///
 /// ## Basic/None Mode (non-TTY logs)
 ///
@@ -312,8 +352,19 @@ impl DeltaRenderer for TextDeltaRenderer {
 
 /// Renderer for streaming thinking deltas.
 ///
-/// This uses the same multi-line in-place update pattern as `TextDeltaRenderer` in `TerminalMode::Full`
-/// so the caller can finalize the line with `DeltaRenderer::render_completion`.
+/// Supports the same append-only pattern as `TextDeltaRenderer`:
+/// - First delta: prefix + "Thinking: " + content (no newline)
+/// - Subsequent deltas: **Parser computes and emits only new suffix**
+/// - Completion: single newline via `DeltaRenderer::render_completion`
+///
+/// # Append-Only Pattern
+///
+/// For true append-only streaming in Full mode, parsers should:
+/// 1. Call `render_first_delta` for the first thinking delta (shows prefix + content)
+/// 2. Track last rendered content and emit only new suffixes directly (bypass `render_subsequent_delta`)
+/// 3. Call `render_completion` when thinking completes (adds final newline)
+///
+/// This avoids cursor movement and works correctly under terminal wrapping.
 ///
 /// # CCS Spam Prevention (Bug Fix)
 ///
@@ -367,16 +418,21 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
         let sanitized = sanitize_for_display(accumulated);
 
         match terminal_mode {
-            TerminalMode::Full => format!(
-                "\r{}[{}]{} {}Thinking: {}{}{}",
-                colors.dim(),
-                prefix,
-                colors.reset(),
-                colors.dim(),
-                colors.cyan(),
-                sanitized,
-                colors.reset()
-            ),
+            TerminalMode::Full => {
+                // Legacy pattern for parsers not yet implementing append-only.
+                // This uses `\r` to rewrite the line, which has known issues with wrapping.
+                // Parsers should instead track last rendered content and emit only new suffixes.
+                format!(
+                    "\r{}[{}]{} {}Thinking: {}{}{}",
+                    colors.dim(),
+                    prefix,
+                    colors.reset(),
+                    colors.dim(),
+                    colors.cyan(),
+                    sanitized,
+                    colors.reset()
+                )
+            }
             TerminalMode::Basic | TerminalMode::None => {
                 // SUPPRESS per-delta thinking output in non-TTY modes.
                 // Thinking content will be flushed ONCE at completion boundaries

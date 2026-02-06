@@ -164,6 +164,14 @@ impl VirtualTerminal {
         self.screen.borrow().clone()
     }
 
+    /// Get all screen lines (alias for get_screen_content for clarity).
+    ///
+    /// Returns the full screen buffer including empty lines.
+    /// This allows tests to assert on exact screen state.
+    pub fn get_screen_lines(&self) -> Vec<String> {
+        self.get_screen_content()
+    }
+
     /// Get the raw write history for debugging.
     pub fn get_write_history(&self) -> Vec<String> {
         self.write_history.borrow().clone()

@@ -228,18 +228,18 @@ fn test_streaming_rapid_chunks() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // With the single-line pattern, each delta rewrites the entire line including prefix
-    // 10 deltas = 10 prefixes in output string, but visually only one is shown
+    // With append-only pattern, prefix appears exactly once (first delta)
+    // Subsequent deltas are suffixes without prefix
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 10,
-        "Rapid chunks should have 10 prefixes (one per delta)"
+        prefix_count, 1,
+        "Append-only pattern: prefix should appear exactly once"
     );
 
-    // Should contain carriage returns for overwriting
+    // No carriage returns with append-only pattern
     assert!(
-        output.contains('\r'),
-        "Rapid chunks should use carriage returns"
+        !output.contains('\r'),
+        "Append-only pattern should not use carriage returns"
     );
 
     // Verify content from multiple chunks is present
