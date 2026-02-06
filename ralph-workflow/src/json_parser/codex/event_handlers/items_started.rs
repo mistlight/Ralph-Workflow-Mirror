@@ -49,44 +49,88 @@
 
 /// Handle `ItemStarted` event for `agent_message` type.
 ///
-/// This handler implements Layers 1 & 2 (Suppress & Accumulate) of the spam
-/// prevention architecture for Codex `agent_message` items. In non-TTY modes,
-/// the renderer returns empty strings while StreamingSession accumulates content.
+/// This handler implements the append-only streaming pattern for Codex `agent_message`
+/// items, avoiding cursor movement to support wrapping and ANSI-stripping environments.
 ///
-/// # CCS Spam Prevention Architecture
+/// # Append-Only Pattern (Full Mode)
 ///
-/// 1. **Layer 1 (Suppression):** Renderer returns empty strings in non-TTY modes
-/// 2. **Layer 2 (Accumulation):** StreamingSession preserves content across deltas
-/// 3. **Layer 3 (Flush):** Completion handler emits accumulated content once
+/// 1. **First delta**: Shows prefix with accumulated content, NO newline
+/// 2. **Subsequent deltas**: Emits ONLY new suffix (no prefix, no cursor movement)
+/// 3. **Completion**: Single newline to finalize the line
+///
+/// This pattern works correctly under terminal wrapping because there is NO cursor
+/// movement. The terminal naturally handles wrapping, and content appears to grow
+/// incrementally on the same logical line.
+///
+/// # Non-TTY Modes (Basic/None)
+///
+/// Per-delta output is suppressed. Content is flushed ONCE at completion boundaries
+/// by the parser layer to prevent spam in logs and CI output.
 ///
 /// See file-level documentation for details.
 pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     if let Some(text) = text {
-        let (show_prefix, accumulated_text) = {
-            let mut session = ctx.streaming_session.borrow_mut();
-            let show_prefix = session.on_text_delta_key("agent_msg", text);
-            let accumulated_text = session
-                .get_accumulated(ContentType::Text, "agent_msg")
-                .unwrap_or("")
-                .to_string();
-            (show_prefix, accumulated_text)
-        };
-        if show_prefix {
-            return TextDeltaRenderer::render_first_delta(
-                &accumulated_text,
-                ctx.display_name,
-                *ctx.colors,
-                ctx.terminal_mode,
-            );
+        let mut session = ctx.streaming_session.borrow_mut();
+        session.on_text_delta_key("agent_msg", text);
+        let accumulated_text = session
+            .get_accumulated(ContentType::Text, "agent_msg")
+            .unwrap_or("");
+
+        // Sanitize for display
+        let sanitized = crate::json_parser::delta_display::sanitize_for_display(accumulated_text);
+
+        // Skip rendering if empty
+        if sanitized.is_empty() {
+            return String::new();
         }
-        return TextDeltaRenderer::render_subsequent_delta(
-            &accumulated_text,
-            ctx.display_name,
-            *ctx.colors,
-            ctx.terminal_mode,
-        );
-    }
-    if ctx.verbosity.is_verbose() {
+
+        // Append-only pattern in Full mode
+        if ctx.terminal_mode == TerminalMode::Full {
+            let key = "text:agent_msg".to_string();
+            let last_rendered = ctx
+                .last_rendered_content
+                .borrow()
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+
+            if last_rendered.is_empty() {
+                // First delta: emit prefix + content (no newline)
+                let rendered = TextDeltaRenderer::render_first_delta(
+                    accumulated_text,
+                    ctx.display_name,
+                    *ctx.colors,
+                    ctx.terminal_mode,
+                );
+                ctx.last_rendered_content
+                    .borrow_mut()
+                    .insert(key, sanitized.clone());
+                rendered
+            } else {
+                // Subsequent delta: emit ONLY new suffix
+                let new_suffix = if sanitized.starts_with(&last_rendered) {
+                    &sanitized[last_rendered.len()..]
+                } else {
+                    // Snapshot delta or discontinuity - emit all
+                    &sanitized
+                };
+
+                ctx.last_rendered_content
+                    .borrow_mut()
+                    .insert(key, sanitized.clone());
+
+                if new_suffix.is_empty() {
+                    String::new()
+                } else {
+                    // Emit only the new suffix (no prefix, no cursor movement)
+                    format!("{}{}{}", ctx.colors.white(), new_suffix, ctx.colors.reset())
+                }
+            }
+        } else {
+            // Basic/None mode: suppress per-delta output
+            String::new()
+        }
+    } else if ctx.verbosity.is_verbose() {
         String::new()
     } else {
         format!(
@@ -104,68 +148,115 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
 ///
 /// # Reasoning Output Strategy (Bug Fix: Codex Thinking Spam)
 ///
-/// This handler prevents reasoning spam in logs by aligning with Claude's approach:
+/// This handler implements the append-only streaming pattern for Codex `reasoning`
+/// items, avoiding cursor movement to support wrapping and ANSI-stripping environments.
+///
+/// ## Append-Only Pattern (Full Mode)
+///
+/// 1. **First delta**: Shows prefix + "Thinking: " + content (no newline)
+/// 2. **Subsequent deltas**: Emits ONLY new suffix (no prefix, no cursor movement)
+/// 3. **Completion**: Single newline to finalize the line
+///
+/// This pattern works correctly under terminal wrapping because there is NO cursor
+/// movement. The terminal naturally handles wrapping, and content appears to grow
+/// incrementally on the same logical line.
 ///
 /// ## Non-TTY Modes (Basic/None)
-/// - Per-delta reasoning output is **suppressed** (returns `String::new()`)
-/// - Accumulated reasoning is flushed **once** at `item.completed` boundary
-/// - This prevents dozens of repeated "[ccs/codex] Thinking:" lines in logs
 ///
-/// ## Full TTY Mode
-/// - Uses `ThinkingDeltaRenderer` for in-place updates with cursor positioning
-/// - First delta: shows prefix + content + cursor up (`\n\x1b[1A`)
-/// - Subsequent deltas: clear line + rewrite + cursor up (`\x1b[2K\r...\n\x1b[1A`)
-/// - Completion: cursor down + newline (`\x1b[1B\n`)
+/// Per-delta output is suppressed. Content is flushed ONCE at completion boundaries
+/// to prevent spam in logs and CI output.
 ///
 /// ## State Tracking
-/// - Uses `StreamingSession::on_thinking_delta_key("reasoning", ...)` to detect first vs subsequent chunks
+/// - Uses `StreamingSession::on_thinking_delta_key("reasoning", ...)` to track deltas
 /// - Accumulates in `reasoning_accumulator` for backward compatibility with completion handler
 ///
 /// ## Regression Test
 /// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
 pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     if let Some(text) = text {
-        // Use StreamingSession to track first vs subsequent chunks
-        let show_prefix = {
+        // Codex sends FULL accumulated content in each item.started event (snapshot-style),
+        // not incremental deltas like Claude. We need to compute the incremental delta here.
+        let (incremental_delta, accumulated) = {
             let mut session = ctx.streaming_session.borrow_mut();
-            session.on_thinking_delta_key("reasoning", text)
+            let previous_content = session
+                .get_accumulated(ContentType::Thinking, "reasoning")
+                .unwrap_or("")
+                .to_string();
+
+            // Compute incremental delta: if new content extends previous, extract the suffix
+            let delta = if text.starts_with(&previous_content) {
+                &text[previous_content.len()..]
+            } else {
+                // New content doesn't extend previous (replace or first delta)
+                text.as_str()
+            };
+
+            // Only send the incremental delta to the session
+            session.on_thinking_delta_key("reasoning", delta);
+            (
+                delta.to_string(),
+                session
+                    .get_accumulated(ContentType::Thinking, "reasoning")
+                    .unwrap_or("")
+                    .to_string(),
+            )
         };
 
         // Accumulate for backward compatibility with reasoning_completed
+        // For backward compat, use the full text not just delta
         let mut acc = ctx.reasoning_accumulator.borrow_mut();
-        acc.add_delta(ContentType::Thinking, "reasoning", text);
+        acc.add_delta(ContentType::Thinking, "reasoning", &incremental_delta);
         drop(acc);
 
-        // In non-TTY modes, suppress per-delta reasoning output and flush once
-        // at the next output boundary (item.completed or message boundary).
-        match ctx.terminal_mode {
-            TerminalMode::Full => {
-                let session = ctx.streaming_session.borrow();
-                let accumulated = session
-                    .get_accumulated(ContentType::Thinking, "reasoning")
-                    .unwrap_or("");
+        // Sanitize for display
+        let sanitized = crate::json_parser::delta_display::sanitize_for_display(&accumulated);
 
-                if show_prefix {
-                    ThinkingDeltaRenderer::render_first_delta(
-                        accumulated,
-                        ctx.display_name,
-                        *ctx.colors,
-                        ctx.terminal_mode,
-                    )
+        // Append-only pattern in Full mode
+        if ctx.terminal_mode == TerminalMode::Full {
+            let key = "thinking:reasoning".to_string();
+            let last_rendered = ctx
+                .last_rendered_content
+                .borrow()
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+
+            if last_rendered.is_empty() {
+                // First delta: emit prefix + "Thinking: " + content (no newline)
+                let rendered = ThinkingDeltaRenderer::render_first_delta(
+                    &accumulated,
+                    ctx.display_name,
+                    *ctx.colors,
+                    ctx.terminal_mode,
+                );
+                ctx.last_rendered_content
+                    .borrow_mut()
+                    .insert(key, sanitized.clone());
+                rendered
+            } else {
+                // Subsequent delta: emit ONLY new suffix
+                let new_suffix = if sanitized.starts_with(&last_rendered) {
+                    &sanitized[last_rendered.len()..]
                 } else {
-                    ThinkingDeltaRenderer::render_subsequent_delta(
-                        accumulated,
-                        ctx.display_name,
-                        *ctx.colors,
-                        ctx.terminal_mode,
-                    )
+                    // Snapshot delta or discontinuity - emit all
+                    &sanitized
+                };
+
+                ctx.last_rendered_content
+                    .borrow_mut()
+                    .insert(key, sanitized.clone());
+
+                if new_suffix.is_empty() {
+                    String::new()
+                } else {
+                    // Emit only the new suffix (no prefix, no cursor movement)
+                    // Use cyan color like ThinkingDeltaRenderer
+                    format!("{}{}{}", ctx.colors.cyan(), new_suffix, ctx.colors.reset())
                 }
             }
-            TerminalMode::Basic | TerminalMode::None => {
-                // Suppress per-delta output in non-TTY modes
-                // Will be flushed at reasoning completion boundary
-                String::new()
-            }
+        } else {
+            // Basic/None mode: suppress per-delta output
+            String::new()
         }
     } else if ctx.verbosity.is_verbose() {
         format!(

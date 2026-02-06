@@ -7,4 +7,6 @@ pub struct EventHandlerContext<'a> {
     pub reasoning_accumulator: &'a Rc<RefCell<DeltaAccumulator>>,
     pub terminal_mode: TerminalMode,
     pub show_streaming_metrics: bool,
+    /// Track last rendered content for append-only streaming pattern
+    pub last_rendered_content: &'a RefCell<std::collections::HashMap<String, String>>,
 }

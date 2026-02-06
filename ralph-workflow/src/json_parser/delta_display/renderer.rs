@@ -315,29 +315,42 @@ impl DeltaRenderer for TextDeltaRenderer {
     }
 
     fn render_subsequent_delta(
-        accumulated: &str,
-        prefix: &str,
-        colors: Colors,
+        _accumulated: &str,
+        _prefix: &str,
+        _colors: Colors,
         terminal_mode: TerminalMode,
     ) -> String {
-        // Sanitize content: replace newlines with spaces and collapse multiple whitespace
-        // NOTE: No truncation here - allow full content to accumulate during streaming
-        let sanitized = sanitize_for_display(accumulated);
+        // DEPRECATED: This method implements a carriage return (\r) pattern that FAILS
+        // under terminal line wrapping. Parsers implementing the append-only pattern
+        // MUST NOT call this method in Full mode.
+        //
+        // WHY DEPRECATED:
+        // - The \r (carriage return) pattern rewrites the full line for each delta
+        // - When content exceeds terminal width and wraps to multiple rows, \r only
+        //   returns to column 0 of the CURRENT row, not the start of the logical line
+        // - This causes orphaned content on wrapped rows, creating a waterfall effect
+        //
+        // CORRECT PATTERN (used by ClaudeParser, CodexParser):
+        // - Parser tracks last rendered content
+        // - Parser computes suffix: new_suffix = current[last_rendered.len()..]
+        // - Parser emits ONLY the suffix directly (bypassing this method)
+        // - No prefix rewrite, no \r, no cursor movement
+        //
+        // This method returns empty string in Full mode to make tests fail explicitly
+        // if parsers incorrectly call it. Use render_first_delta + suffix emission instead.
 
         match terminal_mode {
             TerminalMode::Full => {
-                // Append-only: compute diff and emit only NEW content
-                // Use carriage return to go back to start, rewrite full line
-                // This is the classic "progressive line update" pattern
-                format!(
-                    "\r{}[{}]{} {}{}{}",
-                    colors.dim(),
-                    prefix,
-                    colors.reset(),
-                    colors.white(),
-                    sanitized,
-                    colors.reset()
-                )
+                // CRITICAL: Parsers MUST NOT call this method in Full mode.
+                // Return empty string to make incorrect usage visible in tests.
+                //
+                // If you're seeing this in a test failure, the parser needs to:
+                // 1. Track last rendered content in parser state
+                // 2. Compute suffix directly: &sanitized[last_rendered.len()..]
+                // 3. Emit suffix with format!("{}{}{}",colors.white(), suffix, colors.reset())
+                //
+                // See ClaudeParser::handle_content_block_delta (lines 173-215) for correct pattern.
+                String::new()
             }
             TerminalMode::Basic | TerminalMode::None => {
                 // SUPPRESS per-delta output in non-TTY modes to prevent spam.
@@ -410,28 +423,42 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
     }
 
     fn render_subsequent_delta(
-        accumulated: &str,
-        prefix: &str,
-        colors: Colors,
+        _accumulated: &str,
+        _prefix: &str,
+        _colors: Colors,
         terminal_mode: TerminalMode,
     ) -> String {
-        let sanitized = sanitize_for_display(accumulated);
+        // DEPRECATED: This method implements a carriage return (\r) pattern that FAILS
+        // under terminal line wrapping. Parsers implementing the append-only pattern
+        // MUST NOT call this method in Full mode.
+        //
+        // WHY DEPRECATED:
+        // - The \r (carriage return) pattern rewrites the full line for each delta
+        // - When content exceeds terminal width and wraps to multiple rows, \r only
+        //   returns to column 0 of the CURRENT row, not the start of the logical line
+        // - This causes orphaned content on wrapped rows, creating a waterfall effect
+        //
+        // CORRECT PATTERN (used by ClaudeParser, CodexParser):
+        // - Parser tracks last rendered content for thinking deltas
+        // - Parser computes suffix: new_suffix = current[last_rendered.len()..]
+        // - Parser emits ONLY the suffix directly (bypassing this method)
+        // - No prefix rewrite, no \r, no cursor movement
+        //
+        // This method returns empty string in Full mode to make tests fail explicitly
+        // if parsers incorrectly call it. Use render_first_delta + suffix emission instead.
 
         match terminal_mode {
             TerminalMode::Full => {
-                // Legacy pattern for parsers not yet implementing append-only.
-                // This uses `\r` to rewrite the line, which has known issues with wrapping.
-                // Parsers should instead track last rendered content and emit only new suffixes.
-                format!(
-                    "\r{}[{}]{} {}Thinking: {}{}{}",
-                    colors.dim(),
-                    prefix,
-                    colors.reset(),
-                    colors.dim(),
-                    colors.cyan(),
-                    sanitized,
-                    colors.reset()
-                )
+                // CRITICAL: Parsers MUST NOT call this method in Full mode.
+                // Return empty string to make incorrect usage visible in tests.
+                //
+                // If you're seeing this in a test failure, the parser needs to:
+                // 1. Track last rendered content in parser state (for thinking deltas)
+                // 2. Compute suffix directly: &sanitized[last_rendered.len()..]
+                // 3. Emit suffix with format!("{}{}{}",colors.cyan(), suffix, colors.reset())
+                //
+                // See ClaudeParser::handle_content_block_delta (thinking branch) for correct pattern.
+                String::new()
             }
             TerminalMode::Basic | TerminalMode::None => {
                 // SUPPRESS per-delta thinking output in non-TTY modes.

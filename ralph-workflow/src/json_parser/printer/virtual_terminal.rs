@@ -418,6 +418,109 @@ impl VirtualTerminal {
     pub fn count_visible_pattern(&self, pattern: &str) -> usize {
         self.get_visible_output().matches(pattern).count()
     }
+
+    /// Get visible output with ANSI sequences stripped (simulates non-ANSI console).
+    ///
+    /// This simulates what the user would see in a CI/log console that strips
+    /// or ignores ANSI escape sequences. Useful for testing that append-only
+    /// pattern works correctly when ANSI cursor movement is stripped.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let term = VirtualTerminal::new();
+    /// write!(term, "Hello\x1b[31mWorld\x1b[0m").unwrap();
+    /// assert_eq!(term.get_visible_output_ansi_stripped(), "HelloWorld");
+    /// ```
+    pub fn get_visible_output_ansi_stripped(&self) -> String {
+        // Process write history and strip ANSI sequences
+        let mut output = String::new();
+        for write in self.write_history.borrow().iter() {
+            output.push_str(&strip_ansi_sequences(write));
+        }
+        output
+    }
+
+    /// Count physical rows occupied by content (accounting for wrapping).
+    ///
+    /// When content exceeds terminal width, it wraps to multiple physical rows.
+    /// This method counts how many rows are actually occupied on screen.
+    ///
+    /// In unbounded mode (no cols/rows set), returns the number of visible lines.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let term = VirtualTerminal::new_with_geometry(40, 24);
+    /// write!(term, "[prefix] {}", "A".repeat(100)).unwrap();
+    /// assert!(term.count_physical_rows() > 1); // Content wrapped
+    /// ```
+    pub fn count_physical_rows(&self) -> usize {
+        self.get_screen_lines().len()
+    }
+
+    /// Verify if cursor-up pattern would leave orphaned content under wrapping.
+    ///
+    /// This simulates the failure mode: when content wraps to N rows,
+    /// "\x1b[1A\x1b[2K" (cursor up 1, clear line) only clears the last row,
+    /// leaving N-1 rows visible (orphaned wrapped content).
+    ///
+    /// Returns true if the given content would wrap and leave orphans.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The content to check for wrapping
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let term = VirtualTerminal::new_with_geometry(40, 24);
+    /// let long_content = "A".repeat(100);
+    /// assert!(term.would_cursor_up_leave_orphans(&long_content));
+    /// ```
+    pub fn would_cursor_up_leave_orphans(&self, content: &str) -> bool {
+        if let Some(cols) = self.cols {
+            let content_len = content.chars().count();
+            let rows_needed = content_len.div_ceil(cols);
+            rows_needed > 1 // If content needs >1 row, cursor-up-1 leaves orphans
+        } else {
+            false // Unbounded terminal, no wrapping
+        }
+    }
+}
+
+/// Strip ANSI escape sequences from a string.
+///
+/// This is a simplified implementation that removes common ANSI sequences
+/// used in terminal output (SGR codes for colors/styles, cursor movement).
+///
+/// # Arguments
+///
+/// * `s` - The string to strip ANSI sequences from
+///
+/// # Returns
+///
+/// The string with ANSI sequences removed
+fn strip_ansi_sequences(s: &str) -> String {
+    // Simple regex-free implementation: skip \x1b[...m and \x1b[...A/B/K sequences
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+                          // Skip until we find a letter (command char)
+            while let Some(&next_char) = chars.peek() {
+                chars.next();
+                if next_char.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 #[cfg(any(test, feature = "test-utils"))]

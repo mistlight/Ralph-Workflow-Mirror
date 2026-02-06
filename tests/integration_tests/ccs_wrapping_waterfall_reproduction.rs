@@ -98,18 +98,15 @@ fn test_wrapping_no_waterfall_codex() {
             .with_display_name_for_test("ccs/codex")
             .with_terminal_mode(TerminalMode::Full);
 
-        // Stream text with reasoning that will wrap
+        // Stream reasoning text with multiple deltas that will wrap
+        // Uses Codex item.started format with incremental text updates
         let stream = r#"
-{"id":"init","event":"session.created"}
-{"id":"msg1","event":"conversation.item.created","item":{"id":"item1","type":"message","role":"assistant","content":[]}}
-{"id":"msg1","event":"response.created","response":{"id":"resp1","status":"in_progress"}}
-{"id":"msg1","event":"response.output_item.added","item":{"id":"item1","type":"message","role":"assistant","content":[]}}
-{"id":"msg1","event":"conversation.item.input_audio_transcription.completed","item_id":"item1","transcript":"User request"}
-{"id":"msg1","event":"response.content_part.added","part":{"type":"reasoning","text":""},"content_index":0,"item_id":"item1"}
-{"id":"msg1","event":"response.reasoning.delta","delta":"This is extensive reasoning text that will definitely exceed the terminal width and cause wrapping across multiple lines in the narrow terminal window"}
-{"id":"msg1","event":"response.reasoning.delta","delta":" even more reasoning to ensure wrapping"}
-{"id":"msg1","event":"response.reasoning.done"}
-{"id":"msg1","event":"response.done","response":{"status":"completed"}}
+{"type":"turn.started"}
+{"type":"item.started","item":{"type":"reasoning","text":"This is extensive reasoning text that will"}}
+{"type":"item.started","item":{"type":"reasoning","text":"This is extensive reasoning text that will definitely exceed the terminal width and cause wrapping across multiple lines in the narrow terminal window"}}
+{"type":"item.started","item":{"type":"reasoning","text":"This is extensive reasoning text that will definitely exceed the terminal width and cause wrapping across multiple lines in the narrow terminal window even more reasoning to ensure wrapping"}}
+{"type":"item.completed","item":{"type":"reasoning","text":"This is extensive reasoning text that will definitely exceed the terminal width and cause wrapping across multiple lines in the narrow terminal window even more reasoning to ensure wrapping"}}
+{"type":"turn.completed"}
 "#;
 
         let reader = BufReader::new(stream.as_bytes());
@@ -117,12 +114,37 @@ fn test_wrapping_no_waterfall_codex() {
         parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let term = terminal.borrow();
-        let visible_lines = term.count_visible_lines();
+        let visible_output = term.get_visible_output();
 
+        // In ChatGPT-style append-only streaming, we expect:
+        // 1. The "Thinking:" prefix appears exactly ONCE (not repeated for each delta)
+        // 2. The full content is present
+        // 3. Content may wrap to multiple rows (this is expected with narrow terminal)
+
+        let thinking_prefix_count = visible_output.matches("Thinking:").count();
         assert_eq!(
-            visible_lines, 1,
-            "Expected 1 visible line for Codex streaming with wrapping, found {}",
-            visible_lines
+            thinking_prefix_count, 1,
+            "Expected 'Thinking:' prefix to appear exactly once, found {} times. \
+             This indicates waterfall bug where each delta repeats the prefix.\n\
+             Screen content:\n{}",
+            thinking_prefix_count, visible_output
+        );
+
+        // Verify the full content is present (check for key phrases that won't be split by wrapping)
+        assert!(
+            visible_output.contains("This is extensive"),
+            "Content should be visible. Screen:\n{}",
+            visible_output
+        );
+        assert!(
+            visible_output.contains("reasoning text"),
+            "Content should be visible. Screen:\n{}",
+            visible_output
+        );
+        assert!(
+            visible_output.contains("even more"),
+            "Final delta content should be visible. Screen:\n{}",
+            visible_output
         );
     });
 }

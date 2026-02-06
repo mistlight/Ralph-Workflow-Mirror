@@ -126,15 +126,10 @@ mod tests {
             test_colors(),
             TerminalMode::Full,
         );
-        // Append-only pattern: carriage return + full line rewrite
-        assert!(output.starts_with('\r'));
-        assert!(output.contains('\r'));
-        assert!(output.contains("Hello World"));
-        assert!(output.contains("[ccs-glm]"));
-        // NO newline, NO cursor positioning
-        assert!(!output.contains('\n'));
-        assert!(!output.contains("\x1b[1A"));
-        assert!(!output.contains("\x1b[1B"));
+        // DEPRECATED: render_subsequent_delta returns empty string in Full mode
+        // Parsers MUST compute suffix themselves and emit directly (append-only pattern)
+        // This test verifies the deprecated method doesn't produce output
+        assert_eq!(output, "");
     }
 
     #[test]
@@ -151,16 +146,18 @@ mod tests {
     }
 
     #[test]
-    fn test_text_delta_renderer_uses_carriage_return() {
+    fn test_text_delta_renderer_deprecated_subsequent_delta() {
         let output = TextDeltaRenderer::render_subsequent_delta(
             "Hello World",
             "ccs-glm",
             test_colors(),
             TerminalMode::Full,
         );
-        // Append-only pattern uses \r (carriage return), not line clear
-        assert!(output.starts_with('\r'));
-        // Should NOT contain line clear sequences (not needed with \r pattern)
+        // DEPRECATED: This method is no longer used by parsers in Full mode
+        // Returns empty string to make incorrect usage visible
+        assert_eq!(output, "");
+        // No control sequences should be present
+        assert!(!output.contains('\r'));
         assert!(!output.contains("\x1b[2K"));
         assert!(!output.contains("\x1b[0K"));
     }
@@ -212,7 +209,7 @@ mod tests {
     fn test_text_delta_renderer_in_place_update_sequence() {
         let colors = test_colors();
 
-        // First chunk - append-only pattern: no newline, no cursor positioning
+        // First delta - append-only pattern: prefix + content, no newline
         let out1 =
             TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", colors, TerminalMode::Full);
         assert!(out1.contains("[ccs-glm]"));
@@ -220,19 +217,15 @@ mod tests {
         assert!(!out1.contains('\n'));
         assert!(!out1.contains("\x1b[1A"));
 
-        // Second chunk - carriage return + full line rewrite
+        // Subsequent delta - DEPRECATED: render_subsequent_delta returns empty in Full mode
+        // Parsers compute suffix themselves: "Hello" -> "Hello World" emits " World" only
         let out2 = TextDeltaRenderer::render_subsequent_delta(
             "Hello World",
             "ccs-glm",
             colors,
             TerminalMode::Full,
         );
-        assert!(out2.starts_with('\r'));
-        assert!(out2.contains("[ccs-glm]")); // Prefix is rewritten
-        assert!(out2.contains("Hello World"));
-        assert!(!out2.contains('\n'));
-        assert!(!out2.contains("\x1b[1A"));
-        assert!(!out2.contains("\x1b[2K")); // No line clear with \r pattern
+        assert_eq!(out2, "");
 
         // Completion - just newline
         let out3 = TextDeltaRenderer::render_completion(TerminalMode::Full);
@@ -265,13 +258,9 @@ mod tests {
             colors,
             TerminalMode::Full,
         );
-        // Append-only pattern: carriage return + full line rewrite
-        assert!(out.starts_with('\r'));
-        assert!(out.contains("Thinking:"));
-        assert!(out.contains("git status --porcelain"));
-        assert!(!out.contains('\n'));
-        assert!(!out.contains("\x1b[1A"));
-        assert!(!out.contains(CLEAR_LINE)); // No line clear with \r pattern
+        // DEPRECATED: render_subsequent_delta returns empty string in Full mode
+        // Parsers MUST compute suffix themselves and emit directly (append-only pattern)
+        assert_eq!(out, "");
     }
 
     #[test]
@@ -349,9 +338,9 @@ mod tests {
         assert!(!first.contains('\n'));
         assert_eq!(first.matches('\n').count(), 0);
 
-        // Subsequent delta: starts with \r, no newline
-        assert!(second.starts_with('\r'));
-        assert!(!second.contains('\n'));
+        // Subsequent delta: DEPRECATED - returns empty string in Full mode
+        // Parsers compute and emit suffix directly
+        assert_eq!(second, "");
         assert_eq!(second.matches('\n').count(), 0);
 
         // Completion: exactly one newline, no cursor positioning
@@ -391,10 +380,11 @@ mod tests {
         let first = TextDeltaRenderer::render_first_delta("A", prefix, colors, TerminalMode::Full);
         assert!(first.contains(&format!("[{prefix}]")));
 
-        // Subsequent delta also shows prefix (design decision: prefix on every delta)
+        // Subsequent delta: DEPRECATED - render_subsequent_delta returns empty in Full mode
+        // With append-only pattern, parsers compute suffix and emit directly (no prefix on subsequent)
         let subsequent =
             TextDeltaRenderer::render_subsequent_delta("AB", prefix, colors, TerminalMode::Full);
-        assert!(subsequent.contains(&format!("[{prefix}]")));
+        assert_eq!(subsequent, "");
     }
 
     // Tests for sanitize_for_display helper function

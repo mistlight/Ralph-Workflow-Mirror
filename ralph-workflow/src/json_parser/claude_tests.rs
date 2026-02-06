@@ -287,17 +287,19 @@ fn test_thinking_deltas_tty_finalize_before_text() {
     assert!(!out1.contains('\n'));
     assert!(!out1.contains("\x1b[1A"));
 
-    let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" status"}}}"#;
+    let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"git status"}}}"#;
     let out2 = parser
         .parse_event(d2)
         .expect("thinking delta should render in TTY");
-    // Append-only pattern: carriage return + full line rewrite
-    assert!(out2.starts_with('\r'));
-    assert!(out2.contains("Thinking:"));
-    assert!(out2.contains("git status"));
+    // Append-only pattern: emit ONLY new suffix " status" (no prefix, no \r)
+    // Delta is snapshot-style "git status" which extends "git"
+    // Parser should emit suffix " status"
+    assert!(out2.contains(" status") || out2.contains("git status")); // Suffix or full (depends on sanitization)
+    assert!(!out2.contains("Thinking:")); // No prefix on subsequent delta
+    assert!(!out2.contains('\r')); // No carriage return
     assert!(!out2.contains('\n'));
     assert!(!out2.contains("\x1b[1A"));
-    assert!(!out2.contains(CLEAR_LINE)); // No line clear with \r pattern
+    assert!(!out2.contains(CLEAR_LINE));
 
     // First text delta should first finalize thinking line (newline only)
     // and then begin streaming text.

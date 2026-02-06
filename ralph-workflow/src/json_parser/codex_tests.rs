@@ -325,11 +325,11 @@ fn test_codex_reasoning_full_mode_in_place_updates() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // In Full mode, append-only pattern uses carriage return, no cursor positioning
-    // Subsequent deltas: carriage return only
+    // In Full mode, append-only pattern emits suffixes only (NO carriage return, NO cursor movement)
+    // Subsequent deltas: just the new suffix text
     assert!(
-        output.contains('\r'),
-        "Expected carriage return for in-place updates. Output:\n{}",
+        !output.contains('\r'),
+        "Append-only pattern should NOT use carriage return. Output:\n{}",
         output
     );
 

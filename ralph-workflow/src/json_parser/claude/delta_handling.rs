@@ -419,16 +419,63 @@ impl ClaudeParser {
         }
 
         // Use prefix trie to detect if new content extends previously rendered content
-        // If yes, we do an in-place update (carriage return + new content)
         let has_prefix = session.has_rendered_prefix(ContentType::Text, default_index_str);
 
-        let output = if show_prefix && !has_prefix {
-            // First delta with no prefix match - use the renderer with prefix
-            TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c, terminal_mode)
+        let output = if terminal_mode == TerminalMode::Full {
+            // Append-only pattern in Full mode: track last rendered and emit only new content
+            let key = format!("text:{}", default_index);
+            let last_rendered = self
+                .last_rendered_content
+                .borrow()
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+
+            if last_rendered.is_empty() {
+                // First delta for this index: emit prefix + content
+                let rendered = TextDeltaRenderer::render_first_delta(
+                    accumulated_text,
+                    prefix,
+                    *c,
+                    terminal_mode,
+                );
+                // Track what we rendered (the sanitized content, not the ANSI codes)
+                self.last_rendered_content
+                    .borrow_mut()
+                    .insert(key, sanitized_text.clone());
+                rendered
+            } else {
+                // Subsequent delta: emit only NEW suffix
+                // Compute longest common prefix between last rendered and current
+                let new_suffix = if sanitized_text.starts_with(&last_rendered) {
+                    // Current content extends last rendered - emit only the new part
+                    &sanitized_text[last_rendered.len()..]
+                } else {
+                    // Content doesn't extend (snapshot delta or discontinuity) - emit all
+                    &sanitized_text
+                };
+
+                // Track new rendered content
+                self.last_rendered_content
+                    .borrow_mut()
+                    .insert(key, sanitized_text.clone());
+
+                // Emit only the new suffix (no prefix, no control codes)
+                format!("{}{}{}", c.white(), new_suffix, c.reset())
+            }
         } else {
-            // Either continuation OR prefix match - use renderer for in-place update
-            // This handles the case where "Hello" becomes "Hello World" - we REPLACE
-            TextDeltaRenderer::render_subsequent_delta(accumulated_text, prefix, *c, terminal_mode)
+            // Basic/None mode: use original logic
+            if show_prefix && !has_prefix {
+                TextDeltaRenderer::render_first_delta(accumulated_text, prefix, *c, terminal_mode)
+            } else {
+                // In Basic/None modes, render_subsequent_delta returns empty string anyway
+                TextDeltaRenderer::render_subsequent_delta(
+                    accumulated_text,
+                    prefix,
+                    *c,
+                    terminal_mode,
+                )
+            }
         };
 
         // Mark this sanitized content as rendered for future duplicate detection

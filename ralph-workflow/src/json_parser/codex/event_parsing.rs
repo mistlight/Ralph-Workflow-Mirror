@@ -25,6 +25,7 @@ impl CodexParser {
             reasoning_accumulator: &self.reasoning_accumulator,
             terminal_mode: *self.terminal_mode.borrow(),
             show_streaming_metrics: self.show_streaming_metrics,
+            last_rendered_content: &self.last_rendered_content,
         };
 
         match event {
@@ -44,7 +45,9 @@ impl CodexParser {
             CodexEvent::TurnCompleted { usage } => {
                 Self::optional_output(handle_turn_completed(&ctx, usage))
             }
-            CodexEvent::TurnFailed { error } => Self::optional_output(handle_turn_failed(&ctx, error)),
+            CodexEvent::TurnFailed { error } => {
+                Self::optional_output(handle_turn_failed(&ctx, error))
+            }
             CodexEvent::ItemStarted { item } => handle_item_started(&ctx, item.as_ref()),
             CodexEvent::ItemCompleted { item } => handle_item_completed(&ctx, item.as_ref()),
             CodexEvent::Error { message, error } => {

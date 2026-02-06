@@ -18,6 +18,13 @@ pub struct CodexParser {
     show_streaming_metrics: bool,
     /// Output printer for capturing or displaying output
     printer: SharedPrinter,
+    /// Track last rendered content for append-only streaming pattern.
+    ///
+    /// Maps content key (e.g., "text:agent_msg", "thinking:reasoning") to the
+    /// last rendered sanitized content. Used to compute the new suffix for each
+    /// delta and emit only the incremental change, avoiding cursor movement and
+    /// wrapping issues.
+    last_rendered_content: RefCell<std::collections::HashMap<String, String>>,
 }
 
 impl CodexParser {
@@ -48,6 +55,7 @@ impl CodexParser {
             terminal_mode: RefCell::new(TerminalMode::detect()),
             show_streaming_metrics: false,
             printer,
+            last_rendered_content: RefCell::new(std::collections::HashMap::new()),
         }
     }
 

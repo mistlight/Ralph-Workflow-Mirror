@@ -106,40 +106,30 @@ fn test_consecutive_duplicate_counter_resets_on_different_delta() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // Trace through the consecutive duplicate behavior:
-    // 1. "First" processed (count=1, accumulated="First")
-    // 2. "First" processed (count=2, accumulated should be="FirstFirst")
-    //    But actually, the second "First" is skipped by last_delta check even though accumulated is not empty
-    //    This is because the current implementation has a bug: it skips duplicates when accumulated is empty,
-    //    but also skips them when accumulated is not empty (wait, that's not what the code says...)
+    // Trace through the append-only pattern behavior:
+    // 1. First delta "First": emits "[Claude] First" (first time, includes prefix)
+    // 2. Second delta "First" (duplicate): skipped (no output)
+    // 3. Third delta "Second": accumulated is "FirstSecond", last rendered was "First"
+    //    -> emits suffix "Second" only
+    // 4. Fourth delta "First": accumulated is "FirstSecondFirst", last rendered was "FirstSecond"
+    //    -> emits suffix "First" only
+    // 5. Completion: emits "\n"
     //
-    //    Actually, looking at the code more carefully:
-    //    - Line 700-715: if delta == last and accumulated.is_empty(), skip
-    //    - So if accumulated is NOT empty, the duplicate should NOT be skipped
-    //
-    //    But the actual output shows that the second "First" is being skipped.
-    //    This suggests there's a bug in my understanding of the code.
-    //
-    //    Let me just match the actual output:
-    //    - After first "First": "First"
-    //    - After second "First": (skipped, accumulated still "First")
-    //    - After "Second": "FirstSecond"
-    //    - After third "First": "FirstSecondFirst"
-    //
-    //    So "First" appears 4 times in the output string:
-    //    - "First" - 1
-    //    - "FirstSecond" - 1
-    //    - "FirstSecondFirst" - 2
-    //    Total: 4
+    // Final output: "[Claude] FirstSecondFirst\n"
+    // "First" appears 2 times:
+    //   - Position 0-5: "First" (from first delta)
+    //   - End: "First" (from fourth delta suffix)
+    // "Second" appears 1 time:
+    //   - Middle: "Second" (from third delta suffix)
     let first_count = output.matches("First").count();
     let second_count = output.matches("Second").count();
 
     assert_eq!(
-        first_count, 4,
+        first_count, 2,
         "Found {first_count} occurrences of 'First'. Output: {output:?}"
     );
     assert_eq!(
-        second_count, 2,
+        second_count, 1,
         "Found {second_count} occurrences of 'Second'. Output: {output:?}"
     );
 }
