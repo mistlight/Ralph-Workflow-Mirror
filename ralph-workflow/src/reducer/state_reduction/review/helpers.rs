@@ -20,7 +20,8 @@ fn reduce_phase_started(state: PipelineState) -> PipelineState {
         },
         // Entering Review must reset continuation state to avoid leaking
         // development continuation context into review/fix/rebase logic.
-        continuation: ContinuationState::new(),
+        // Preserve configured limits to keep budgets stable across phases.
+        continuation: state.continuation.reset(),
         review_issues_xml_cleaned_pass: None,
         review_issue_snippets_extracted_pass: None,
         fix_result_xml_cleaned_pass: None,

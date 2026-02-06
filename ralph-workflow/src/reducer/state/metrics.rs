@@ -129,7 +129,9 @@ pub struct RunMetrics {
     #[serde(default)]
     pub fix_continuations_total: u32,
     /// Current fix continuation attempt within the current review pass (0 = initial).
-    /// Reset when starting a new review pass or fix attempt.
+    ///
+    /// Reset when starting a new review pass.
+    /// Note: fix-attempt boundaries do not reset this counter; it is scoped to the review pass.
     #[serde(default)]
     pub fix_continuation_attempt: u32,
     /// Current review pass number (for X/Y display).

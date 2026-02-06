@@ -514,7 +514,11 @@ impl From<PipelineCheckpoint> for PipelineState {
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
-            metrics: RunMetrics::default(),
+            metrics: RunMetrics {
+                dev_iterations_completed: checkpoint.actual_developer_runs,
+                review_passes_completed: checkpoint.actual_reviewer_runs,
+                ..RunMetrics::new(checkpoint.total_iterations, checkpoint.total_reviewer_passes)
+            },
         }
     }
 }

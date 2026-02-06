@@ -309,6 +309,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("workflows/continuation.rs"),
     },
     SourceFile {
+        path: "workflows/continuation_budget.rs",
+        contents: include_str!("workflows/continuation_budget.rs"),
+    },
+    SourceFile {
         path: "workflows/development_xml.rs",
         contents: include_str!("workflows/development_xml.rs"),
     },
@@ -321,6 +325,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("workflows/iteration_counter.rs"),
     },
     SourceFile {
+        path: "workflows/no_premature_exit.rs",
+        contents: include_str!("workflows/no_premature_exit.rs"),
+    },
+    SourceFile {
         path: "workflows/oversize_prompt.rs",
         contents: include_str!("workflows/oversize_prompt.rs"),
     },
@@ -331,6 +339,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "workflows/review.rs",
         contents: include_str!("workflows/review.rs"),
+    },
+    SourceFile {
+        path: "workflows/summary_consistency.rs",
+        contents: include_str!("workflows/summary_consistency.rs"),
     },
     SourceFile {
         path: "workflows/resume/mod.rs",

@@ -46,7 +46,7 @@ use std::path::Path;
 /// This function creates a `PipelineState` with XSD retry and continuation limits
 /// loaded from the config, ensuring these values are available for the reducer
 /// to make deterministic retry decisions.
-fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
+pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
     // Config semantics: max_dev_continuations counts continuation attempts *beyond*
     // the initial attempt. ContinuationState::max_continue_count semantics are
     // "maximum total attempts including initial".

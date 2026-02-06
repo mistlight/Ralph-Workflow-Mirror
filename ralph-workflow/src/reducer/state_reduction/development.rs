@@ -286,8 +286,8 @@ pub(super) fn reduce_development_event(
         }
         DevelopmentEvent::PhaseCompleted => PipelineState {
             phase: crate::reducer::event::PipelinePhase::Review,
-            // Reset continuation state when phase completes
-            continuation: ContinuationState::new(),
+            // Reset continuation state when phase completes, but preserve configured limits.
+            continuation: state.continuation.reset(),
             development_context_prepared_iteration: None,
             development_prompt_prepared_iteration: None,
             development_xml_cleaned_iteration: None,
@@ -356,7 +356,7 @@ pub(super) fn reduce_development_event(
                 context_cleaned: false,
                 continuation: ContinuationState {
                     context_cleanup_pending: true,
-                    ..ContinuationState::new()
+                    ..state.continuation.reset()
                 },
                 development_context_prepared_iteration: None,
                 development_prompt_prepared_iteration: None,

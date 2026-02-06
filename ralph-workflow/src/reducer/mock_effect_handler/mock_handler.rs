@@ -11,9 +11,10 @@ impl MockEffectHandler {
     pub fn execute_mock(&mut self, effect: Effect) -> EffectResult {
         // Capture the effect
         self.captured_effects.borrow_mut().push(effect.clone());
+        let effect_for_additional = effect.clone();
 
         // Generate appropriate mock events based on effect type
-        let additional_events = Vec::new();
+        let mut additional_events = Vec::new();
         let (event, ui_events) = match effect {
             Effect::AgentInvocation {
                 role,
@@ -621,6 +622,26 @@ src/lib.rs</ralph-files-changed>
                 vec![],
             ),
         };
+
+        if let Effect::SaveCheckpoint { trigger } = effect_for_additional {
+            if trigger == crate::reducer::event::CheckpointTrigger::PhaseTransition {
+                match self.state.phase {
+                    PipelinePhase::Development
+                        if self.state.iteration >= self.state.total_iterations =>
+                    {
+                        additional_events.push(PipelineEvent::development_phase_completed());
+                    }
+                    PipelinePhase::Review
+                        if self.state.reviewer_pass >= self.state.total_reviewer_passes =>
+                    {
+                        additional_events.push(PipelineEvent::review_phase_completed(
+                            /* early_exit */ false,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         // Capture UI events
         self.captured_ui_events

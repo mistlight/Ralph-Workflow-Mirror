@@ -70,7 +70,7 @@ fn test_fix_continuation_budget_enforced() {
                 }),
             );
             assert_eq!(state.continuation.fix_continuation_attempt, i);
-            assert_eq!(state.metrics.fix_continuations_total, i as u32);
+            assert_eq!(state.metrics.fix_continuations_total, i);
         }
 
         // After fix_continuation_attempt = 2, which >= max_fix_continue_count (2), exhausted
