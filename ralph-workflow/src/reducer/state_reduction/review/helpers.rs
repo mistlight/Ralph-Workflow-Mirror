@@ -37,8 +37,12 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
     }
     // Update current pass tracker
     metrics.current_review_pass = pass;
-    // Reset per-pass fix continuation attempt counter
-    metrics.fix_continuation_attempt = 0;
+    // Reset per-pass fix continuation attempt counter when starting a new pass.
+    // If orchestration re-emits PassStarted for the same pass (retry), preserve the
+    // current per-pass attempt counter so retries don't erase history.
+    if state.reviewer_pass != pass {
+        metrics.fix_continuation_attempt = 0;
+    }
 
     PipelineState {
         reviewer_pass: pass,
@@ -100,6 +104,9 @@ fn reduce_fix_continuation_budget_exhausted(state: PipelineState, pass: u32) -> 
         reviewer_pass: pass,
         commit: crate::reducer::state::CommitState::NotStarted,
         commit_prompt_prepared: false,
+        commit_diff_prepared: false,
+        commit_diff_empty: false,
+        commit_diff_content_id_sha256: None,
         commit_agent_invoked: false,
         commit_xml_cleaned: false,
         commit_xml_extracted: false,

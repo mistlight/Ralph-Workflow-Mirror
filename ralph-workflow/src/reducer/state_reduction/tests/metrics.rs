@@ -689,6 +689,29 @@ fn test_review_pass_increments_current_pass_on_pass_started() {
 }
 
 #[test]
+fn test_pass_started_retry_does_not_reset_fix_continuation_attempt_metric() {
+    use crate::reducer::state::FixStatus;
+
+    let mut state = PipelineState::initial(0, 1);
+    state = reduce(state, PipelineEvent::review_pass_started(1));
+
+    // Drive fix continuation attempt within pass.
+    state = reduce(
+        state,
+        PipelineEvent::Review(ReviewEvent::FixContinuationTriggered {
+            pass: 1,
+            status: FixStatus::IssuesRemain,
+            summary: None,
+        }),
+    );
+    assert_eq!(state.metrics.fix_continuation_attempt, 1);
+
+    // Orchestration may re-emit PassStarted for the same pass on retry.
+    state = reduce(state, PipelineEvent::review_pass_started(1));
+    assert_eq!(state.metrics.fix_continuation_attempt, 1);
+}
+
+#[test]
 fn test_fix_continuation_attempt_increments_on_continuation_triggered() {
     use crate::reducer::state::FixStatus;
 
