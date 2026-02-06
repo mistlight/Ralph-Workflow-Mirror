@@ -540,6 +540,49 @@ fn test_non_special_errors_maintain_retry_semantics() {
 // Rate Limit Pattern Tests - Provider-Specific Coverage
 // ========================================================================
 
+/// Rate Limit Pattern Tests - Provider-Specific Coverage
+///
+/// This module contains comprehensive tests for rate limit error pattern detection
+/// across all major AI providers used by Ralph. Each test includes:
+/// - Provider name and official documentation link
+/// - Exact error message pattern being tested
+/// - Last verification date
+/// - Step-by-step verification instructions
+///
+/// # Test Organization
+///
+/// Tests are organized by provider in submodules:
+/// - `opencode`: OpenCode multi-provider gateway patterns
+/// - `openai`: OpenAI API rate limit patterns
+/// - `anthropic`: Anthropic Claude API patterns
+/// - `google`: Google Gemini API patterns
+/// - `azure`: Azure OpenAI patterns
+/// - `generic_http`: Standard HTTP 429 patterns
+/// - `negative_cases`: Patterns that should NOT match
+///
+/// # Maintenance Schedule
+///
+/// - **Monthly**: Review provider documentation for changes
+/// - **On test failure**: Immediately check if provider changed error format
+/// - **Before major releases**: Verify all documentation links are still valid
+/// - **When adding new provider**: Add full test coverage with documentation links
+///
+/// # Documentation Verification Process
+///
+/// For each provider, follow the verification steps in the test comments:
+/// 1. Visit the documentation link
+/// 2. Search for the error code (e.g., "429", "rate_limit_error")
+/// 3. Verify the exact error message text
+/// 4. Update the test if the message has changed
+/// 5. Update the "Last Verified" date
+///
+/// # Provider Documentation Links
+///
+/// - **OpenAI**: https://platform.openai.com/docs/guides/error-codes
+/// - **Anthropic**: https://docs.anthropic.com/en/api/errors
+/// - **Google Gemini**: https://ai.google.dev/gemini-api/docs/troubleshooting
+/// - **Azure OpenAI**: https://learn.microsoft.com/en-us/azure/ai-services/openai/quotas-limits
+/// - **OpenCode**: No official docs - patterns observed in production
 mod rate_limit_patterns {
     use super::*;
 
@@ -774,12 +817,20 @@ mod rate_limit_patterns {
     }
 
     /// Negative test cases - patterns that should NOT match rate limit
+    ///
+    /// These tests prevent false positives by ensuring the pattern matching
+    /// is precise and only triggers for actual API rate limit errors.
     mod negative_cases {
         use super::*;
 
         #[test]
         fn test_auth_error_with_quota_in_message_not_rate_limit() {
-            // Auth errors should take precedence even if "quota" appears
+            // Authentication errors take precedence even if "quota" keyword appears
+            // in the error message. This prevents false positives when error messages
+            // mention quota information but the root cause is authentication failure.
+            //
+            // Classification Priority: Authentication > RateLimit
+            // Expected: AgentErrorKind::Authentication
             let stderr = "HTTP 401 Unauthorized: API key quota information unavailable";
             let error_kind = classify_agent_error(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::Authentication);
@@ -788,7 +839,13 @@ mod rate_limit_patterns {
 
         #[test]
         fn test_filename_with_rate_limit_not_rate_limit() {
-            // Filenames or paths should not trigger rate limit detection
+            // File paths and source code locations should not trigger rate limit detection,
+            // even if they contain keywords like "rate_limit.rs".
+            //
+            // Context: Compiler errors, linter messages, and stack traces often include
+            // file paths that may contain rate_limit keywords but are not API errors.
+            //
+            // Expected: ParsingError or InternalError, NOT RateLimit
             let stderr = "rate_limit.rs:123:1: syntax error: unexpected token";
             let error_kind = classify_agent_error(1, stderr);
             // Should classify as ParsingError, not RateLimit
@@ -798,7 +855,14 @@ mod rate_limit_patterns {
 
         #[test]
         fn test_connection_limit_not_rate_limit() {
-            // Network connection pool limits are not API rate limits
+            // Network connection pool limits are distinct from API rate limits.
+            // Connection pool exhaustion is a client-side resource issue, not a
+            // provider-enforced rate limit.
+            //
+            // Context: Database connection pools, HTTP client connection pools, etc.
+            // may emit "limit reached" messages that should NOT trigger agent fallback.
+            //
+            // Expected: Network or InternalError, NOT RateLimit
             let stderr = "Connection pool limit reached: max 100 connections";
             let error_kind = classify_agent_error(1, stderr);
             // Should classify as Network or InternalError, not RateLimit
@@ -808,7 +872,13 @@ mod rate_limit_patterns {
 
         #[test]
         fn test_file_size_limit_not_rate_limit() {
-            // File system limits are not API rate limits
+            // File system limits (file size, disk quota, etc.) are not API rate limits.
+            // These errors indicate local storage issues, not provider throttling.
+            //
+            // Context: File uploads, disk writes, temporary file creation may fail
+            // with "limit exceeded" messages that are unrelated to API rate limiting.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "File size limit exceeded: maximum 10MB";
             let error_kind = classify_agent_error(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
@@ -817,7 +887,13 @@ mod rate_limit_patterns {
 
         #[test]
         fn test_system_overload_not_rate_limit() {
-            // System resource overload should not trigger API rate limit detection
+            // System resource overload (CPU, memory, etc.) should not trigger API rate
+            // limit detection. These are local system issues, not provider constraints.
+            //
+            // Context: High CPU usage, memory pressure, disk I/O saturation may produce
+            // "overload" or "throttled" messages that are distinct from API overload (HTTP 529).
+            //
+            // Expected: InternalError, NOT RateLimit
             let stderr = "Error: System CPU overload detected, process throttled";
             let error_kind = classify_agent_error(1, stderr);
             // Should classify as InternalError or other, NOT RateLimit
@@ -829,14 +905,25 @@ mod rate_limit_patterns {
 
 #[test]
 fn test_usage_limit_triggers_rate_limited_event_not_timeout() {
-    // This integration test verifies that "usage limit has been reached"
-    // errors trigger immediate agent fallback via AgentEvent::RateLimited
-    // instead of timing out and then falling back.
+    // Integration test: Usage limit errors trigger immediate agent fallback
     //
-    // Background: OpenCode emits "usage limit has been reached [retryin]"
-    // when any underlying provider hits quota limits. The "[retryin]" suffix
-    // is misleading - the agent is actually unavailable and should trigger
-    // immediate fallback, not retry with timeout.
+    // This test verifies the fix for the bug where "usage limit has been reached"
+    // errors from OpenCode/Claude API caused the pipeline to timeout instead of
+    // immediately falling back to the next agent.
+    //
+    // **Bug Report Context:**
+    // OpenCode emits "usage limit has been reached [retryin]" when any underlying
+    // provider (OpenAI, Anthropic, etc.) hits quota limits. The "[retryin]" suffix
+    // is misleading - the agent is actually unavailable due to quota exhaustion.
+    //
+    // **Expected Behavior:**
+    // The error should be classified as AgentErrorKind::RateLimit, which triggers
+    // immediate agent fallback via AgentEvent::RateLimited (not timeout).
+    //
+    // **Verification:**
+    // - Mock executor returns "usage limit has been reached [retryin]" error
+    // - Executor result is AgentEvent::RateLimited (not TimedOut)
+    // - No session_id is returned (provider is unavailable)
 
     use crate::executor::AgentCommandResult;
 

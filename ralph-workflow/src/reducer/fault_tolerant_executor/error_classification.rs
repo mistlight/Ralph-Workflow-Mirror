@@ -137,8 +137,19 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     }
 
     // Usage limit patterns (observed from OpenCode/multi-provider gateways)
-    // OpenCode emits "usage limit has been reached [retryin]" when underlying provider
-    // hits quota/usage limits. This should trigger immediate agent fallback, not retry.
+    //
+    // Bug Fix Context: OpenCode and similar multi-provider gateways emit
+    // "usage limit has been reached [retryin]" when underlying providers
+    // (OpenAI, Anthropic, etc.) hit quota/usage limits.
+    //
+    // The "[retryin]" suffix is misleading - the agent is actually unavailable
+    // due to quota exhaustion and should trigger immediate agent fallback, not retry.
+    //
+    // Detection: Match "usage limit has been reached" or "usage limit reached"
+    // to trigger AgentEvent::RateLimited for immediate fallback.
+    //
+    // Providers affected: OpenCode (multi-provider), Claude API wrappers
+    // Related patterns: "quota exceeded", "rate limit exceeded"
     if stderr_lower.contains("usage limit has been reached")
         || stderr_lower.contains("usage limit reached")
     {
