@@ -34,7 +34,7 @@ fn test_ccs_codex_full_example_log_no_spam_none_mode() {
 
         // Skip test if log is not in Codex format (this log is Claude format)
         if !log.contains("item.started") {
-            println!("Skipping Codex test - example_log.log is Claude format, not Codex format");
+            // Skip silently when fixtures are in Claude format.
             return;
         }
 
@@ -171,7 +171,7 @@ fn test_ccs_codex_full_example_log_no_spam_basic_mode() {
 
         // Skip test if log is not in Codex format (this log is Claude format)
         if !log.contains("item.started") {
-            println!("Skipping Codex test - example_log.log is Claude format, not Codex format");
+            // Skip silently when fixtures are in Claude format.
             return;
         }
 

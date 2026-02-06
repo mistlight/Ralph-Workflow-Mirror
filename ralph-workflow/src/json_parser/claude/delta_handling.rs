@@ -197,14 +197,10 @@ impl ClaudeParser {
                     } else {
                         // Subsequent delta: emit only NEW suffix
                         // Compute longest common prefix between last rendered and current
-                        let new_suffix = if sanitized_text.starts_with(&last_rendered) {
-                            // Current content extends last rendered - emit only the new part
-                            &sanitized_text[last_rendered.len()..]
-                        } else {
-                            // Content doesn't extend (snapshot delta or discontinuity) - emit all
-                            // This shouldn't happen in normal streaming but handle it gracefully
-                            &sanitized_text
-                        };
+                        let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                            &last_rendered,
+                            &sanitized_text,
+                        );
 
                         // Track new rendered content
                         self.last_rendered_content
@@ -289,13 +285,10 @@ impl ClaudeParser {
                             rendered
                         } else {
                             // Subsequent delta: emit only NEW suffix
-                            let new_suffix = if sanitized.starts_with(&last_rendered) {
-                                // Current content extends last rendered - emit only the new part
-                                &sanitized[last_rendered.len()..]
-                            } else {
-                                // Content doesn't extend (snapshot delta or discontinuity) - emit all
-                                &sanitized
-                            };
+                            let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                                &last_rendered,
+                                &sanitized,
+                            );
 
                             // Track new rendered content
                             self.last_rendered_content
@@ -450,13 +443,10 @@ impl ClaudeParser {
             } else {
                 // Subsequent delta: emit only NEW suffix
                 // Compute longest common prefix between last rendered and current
-                let new_suffix = if sanitized_text.starts_with(&last_rendered) {
-                    // Current content extends last rendered - emit only the new part
-                    &sanitized_text[last_rendered.len()..]
-                } else {
-                    // Content doesn't extend (snapshot delta or discontinuity) - emit all
-                    &sanitized_text
-                };
+                let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                    &last_rendered,
+                    &sanitized_text,
+                );
 
                 // Track new rendered content
                 self.last_rendered_content

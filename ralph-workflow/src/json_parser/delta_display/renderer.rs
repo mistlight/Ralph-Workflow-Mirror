@@ -32,13 +32,15 @@
 //
 // ## Validation
 //
-// Comprehensive regression tests validate this architecture:
-// - `ccs_delta_spam_systematic_reproduction.rs`: NEW systematic reproduction test (all delta types, both parsers, both modes)
+// Regression tests validate this architecture:
+// - `ccs_delta_spam_systematic_reproduction.rs`: systematic reproduction (all delta types, both parsers, both modes)
 // - `ccs_all_delta_types_spam_reproduction.rs`: 1000+ deltas per block
-// - `ccs_streaming_spam_all_deltas.rs`: All delta types (text/thinking/tool)
-// - `ccs_nuclear_full_log_regression.rs`: Real production logs (12,000+ deltas)
-// - `ccs_streaming_edge_cases.rs`: Edge cases (empty deltas, rapid transitions)
-// - `codex_reasoning_spam_regression.rs`: Original Codex reasoning fix
+// - `ccs_streaming_spam_all_deltas.rs`: all delta types (text/thinking/tool)
+// - `ccs_nuclear_full_log_regression.rs`: large captured logs (thousands of deltas)
+// - `ccs_streaming_edge_cases.rs`: edge cases (empty deltas, rapid transitions)
+// - `ccs_wrapping_waterfall_reproduction.rs`: wrapping/cursor-up failure reproduction
+// - `ccs_ansi_stripping_console.rs`: ANSI-stripping console behavior
+// - `codex_reasoning_spam_regression.rs`: Codex reasoning regression
 
 /// Renderer for streaming delta content.
 ///
@@ -270,13 +272,40 @@ pub trait DeltaRenderer {
 /// Rich, Ink, Bubble Tea, and other production CLI libraries for clean streaming
 /// output.
 ///
-/// See comprehensive regression tests:
-/// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (NEW: systematic reproduction & verification)
-/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (ultra-comprehensive edge case coverage)
+/// See regression tests:
+/// - `tests/integration_tests/ccs_delta_spam_systematic_reproduction.rs` (systematic reproduction & verification)
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (1000+ deltas, edge case coverage)
 /// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
 /// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
-/// - `tests/integration_tests/ccs_real_world_log_regression.rs` (production log with 12,596 deltas)
-/// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)
+/// - `tests/integration_tests/ccs_real_world_log_regression.rs` (production log regression)
+/// - `tests/integration_tests/ccs_nuclear_full_log_regression.rs` (large captured logs)
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (Codex reasoning regression)
+/// - `tests/integration_tests/ccs_wrapping_waterfall_reproduction.rs` (wrapping waterfall reproduction)
+/// - `tests/integration_tests/ccs_wrapping_comprehensive.rs` (wrapping + append-only behavior)
+/// - `tests/integration_tests/ccs_ansi_stripping_console.rs` (ANSI-stripping console behavior)
+///
+/// Compute the append-only suffix to emit for a snapshot-style accumulated string.
+///
+/// Providers differ in what they send as a "delta": some stream true incremental suffixes,
+/// others send the full accumulated content repeatedly (snapshot-style). Our append-only
+/// rendering contract treats the parser's sanitized accumulated content as the source of truth.
+///
+/// Given the last rendered sanitized content and the current sanitized content, return
+/// the string that should be appended to the terminal to advance the visible output.
+///
+/// Rules:
+/// - If `last_rendered` is empty, emit `current` (first delta).
+/// - If `current` starts with `last_rendered`, emit the new suffix only.
+/// - Otherwise, treat as a discontinuity/snapshot reset and emit `current`.
+pub fn compute_append_only_suffix<'a>(last_rendered: &str, current: &'a str) -> &'a str {
+    if last_rendered.is_empty() {
+        return current;
+    }
+    current
+        .strip_prefix(last_rendered)
+        .unwrap_or(current)
+}
+
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {

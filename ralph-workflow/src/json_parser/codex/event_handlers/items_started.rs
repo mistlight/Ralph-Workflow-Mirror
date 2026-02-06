@@ -108,12 +108,10 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
                 rendered
             } else {
                 // Subsequent delta: emit ONLY new suffix
-                let new_suffix = if sanitized.starts_with(&last_rendered) {
-                    &sanitized[last_rendered.len()..]
-                } else {
-                    // Snapshot delta or discontinuity - emit all
-                    &sanitized
-                };
+                let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                    &last_rendered,
+                    &sanitized,
+                );
 
                 ctx.last_rendered_content
                     .borrow_mut()
@@ -235,12 +233,10 @@ pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>
                 rendered
             } else {
                 // Subsequent delta: emit ONLY new suffix
-                let new_suffix = if sanitized.starts_with(&last_rendered) {
-                    &sanitized[last_rendered.len()..]
-                } else {
-                    // Snapshot delta or discontinuity - emit all
-                    &sanitized
-                };
+                let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                    &last_rendered,
+                    &sanitized,
+                );
 
                 ctx.last_rendered_content
                     .borrow_mut()

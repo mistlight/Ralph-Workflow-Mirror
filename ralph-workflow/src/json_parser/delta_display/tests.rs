@@ -387,6 +387,32 @@ mod tests {
         assert_eq!(subsequent, "");
     }
 
+    // Tests for append-only suffix helper
+
+    #[test]
+    fn test_compute_append_only_suffix_extends_last_rendered() {
+        let last = "Hello";
+        let current = "Hello World";
+        let suffix = compute_append_only_suffix(last, current);
+        assert_eq!(suffix, " World");
+    }
+
+    #[test]
+    fn test_compute_append_only_suffix_snapshot_delta() {
+        let last = "Hello World";
+        let current = "Goodbye";
+        let suffix = compute_append_only_suffix(last, current);
+        assert_eq!(suffix, "Goodbye");
+    }
+
+    #[test]
+    fn test_compute_append_only_suffix_first_delta_returns_all() {
+        let last = "";
+        let current = "Hello";
+        let suffix = compute_append_only_suffix(last, current);
+        assert_eq!(suffix, "Hello");
+    }
+
     // Tests for sanitize_for_display helper function
 
     #[test]

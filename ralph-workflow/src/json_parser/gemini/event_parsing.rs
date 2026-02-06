@@ -148,14 +148,10 @@ impl GeminiParser {
                     .cloned()
                     .unwrap_or_default();
 
-                let suffix = if last_rendered.is_empty() {
-                    sanitized.as_str()
-                } else if sanitized.starts_with(&last_rendered) {
-                    &sanitized[last_rendered.len()..]
-                } else {
-                    // Snapshot-style delta or discontinuity; emit full sanitized content.
-                    sanitized.as_str()
-                };
+                let suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                    &last_rendered,
+                    sanitized.as_str(),
+                );
 
                 self.last_rendered_content
                     .borrow_mut()

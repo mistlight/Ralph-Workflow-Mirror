@@ -189,7 +189,8 @@ fn test_cursor_up_pattern_fails_with_wrapping() {
             rows_after
         );
 
-        // Assert: VirtualTerminal can detect this failure mode
+        // Assert: VirtualTerminal can detect this failure mode.
+        // NOTE: would_cursor_up_leave_orphans approximates display width; keep this test ASCII-only.
         assert!(
             term.would_cursor_up_leave_orphans(&format!("{}{}", prefix, content)),
             "VirtualTerminal should detect cursor-up would leave orphans"

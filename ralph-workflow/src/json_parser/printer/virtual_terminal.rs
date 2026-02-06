@@ -467,6 +467,10 @@ impl VirtualTerminal {
     ///
     /// Returns true if the given content would wrap and leave orphans.
     ///
+    /// NOTE: This helper approximates display width by stripping ANSI escape sequences
+    /// and counting Unicode scalar values. It does not model wide Unicode characters
+    /// (emoji/CJK) accurately.
+    ///
     /// # Arguments
     ///
     /// * `content` - The content to check for wrapping
@@ -480,7 +484,21 @@ impl VirtualTerminal {
     /// ```
     pub fn would_cursor_up_leave_orphans(&self, content: &str) -> bool {
         if let Some(cols) = self.cols {
-            let content_len = content.chars().count();
+            // This helper is used by tests to model the cursor-up/clear-line failure mode
+            // under wrapping. We intentionally approximate terminal width here:
+            // - strip ANSI escape sequences (colors, cursor movement) since they do not
+            //   consume terminal columns
+            // - count Unicode scalar values as width 1 (this is imperfect for wide CJK/emoji)
+            //
+            // Tests that rely on this helper should use plain ASCII content.
+            let stripped = strip_ansi_sequences(content);
+
+            debug_assert!(
+                stripped.is_ascii(),
+                "would_cursor_up_leave_orphans is width-approximate; tests should be ASCII-only"
+            );
+
+            let content_len = stripped.chars().count();
             let rows_needed = content_len.div_ceil(cols);
             rows_needed > 1 // If content needs >1 row, cursor-up-1 leaves orphans
         } else {
