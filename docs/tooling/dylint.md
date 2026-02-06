@@ -1,0 +1,220 @@
+# Custom Lints (dylint)
+
+This repository uses [dylint](https://github.com/trailofbits/dylint) for custom Rust lints.
+
+## Available Lints
+
+| Lint | Description |
+|------|-------------|
+| `file_too_long` | Warns when a source file exceeds 500 lines (consider refactoring) or 1000 lines (MUST refactor) |
+
+## Running Lints
+
+```bash
+# Run all custom lints
+cargo dylint --all
+
+# Run a specific lint (recommended: library target only)
+make dylint
+# or:
+cargo dylint -p ralph-workflow --lib file_too_long -- --lib
+```
+
+## Developing Lints
+
+Custom lints are in the `lints/` directory. Each lint is a separate crate that compiles to a dynamic library.
+
+To build and test a lint:
+
+```bash
+cd lints/file_too_long
+cargo +nightly test
+```
+
+**Note:** Dylint lints require nightly Rust due to use of rustc internals.
+
+## Environment Variables for Sandboxed Environments
+
+The `make dylint` target respects standard Rust environment variables:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `CARGO_HOME` | Override cargo cache/bin location | `/tmp/cargo-cache` |
+| `RUSTUP_HOME` | Override rustup installation location | `/tmp/rustup-home` |
+| `DYLINT_DRIVER_PATH` | Override dylint driver cache location | `/tmp/dylint-drivers` |
+
+For hermetic builds or CI environments with restricted HOME:
+
+```bash
+# Example: Run dylint in a sandboxed environment
+export CARGO_HOME=/writable/path/cargo
+export RUSTUP_HOME=/writable/path/rustup
+export DYLINT_DRIVER_PATH=/writable/path/drivers
+make dylint
+```
+
+## Known Issues
+
+### dylint_driver build failure (v3.5.1 and later)
+
+If you encounter an error like:
+
+```
+error: environment variable `RUSTUP_TOOLCHAIN` not defined at compile time
+```
+
+This is a known upstream bug in dylint_driver (v3.5.1, v5.0.0, and potentially other versions) that occurs when cargo-dylint rebuilds the driver. The driver build script requires the `RUSTUP_TOOLCHAIN` environment variable to be set at compile time using `env!()`, but cargo-dylint explicitly unsets it when spawning the driver build subprocess (`env -u RUSTUP_TOOLCHAIN cargo build`).
+
+### Solution implemented in `make dylint`
+
+The `make dylint` target implements a multi-layered approach intended to ensure the dylint driver is built with the nightly toolchain:
+
+1. **Environment validation:** Checks that CARGO_HOME, RUSTUP_HOME, and DYLINT_DRIVER_PATH are writable
+2. **Toolchain bootstrapping:** Installs rustup (if missing) and nightly toolchain with required components (rustc-dev, llvm-tools-preview)
+3. **Toolchain discovery:** Dynamically discovers the installed nightly toolchain name (e.g., `nightly-aarch64-apple-darwin`) to support specific nightly versions
+4. **Cargo wrapper script:** Creates a temporary wrapper script that exports the discovered nightly toolchain before exec'ing the real nightly cargo
+5. **PATH manipulation:** Prepends the wrapper directory and nightly bin directory to PATH, ensuring the wrapper is found first
+6. **Environment export:** Exports RUSTUP_TOOLCHAIN, RUSTC, and all cache location variables
+
+### How the wrapper works
+
+When cargo-dylint runs `env -u RUSTUP_TOOLCHAIN cargo build` to rebuild the driver, it:
+
+1. Unsets RUSTUP_TOOLCHAIN in the subprocess environment
+2. Searches PATH for the `cargo` binary
+3. Finds and executes the wrapper script (first in PATH)
+4. Wrapper exports RUSTUP_TOOLCHAIN with the dynamically discovered nightly toolchain name
+5. Wrapper execs the real nightly cargo with RUSTUP_TOOLCHAIN set
+
+This approach works around cargo-dylint's explicit unsetting of RUSTUP_TOOLCHAIN, addressing the E0554 failure mode where cargo-dylint rebuilds its driver using a stable toolchain.
+
+### Limitations
+
+This Makefile fix cannot fully eliminate upstream failures where cargo-dylint (or the driver build) requires additional environment variables or pre-provisioned components in strictly offline/sandboxed environments.
+
+## Troubleshooting `make dylint`
+
+### Symptom: E0554 error during dylint driver build
+
+```
+error[E0554]: `#![feature]` may not be used on the stable release channel
+```
+
+**Cause:** Driver build used stable cargo instead of nightly
+
+**Solution:** Verify nightly toolchain is installed with required components:
+
+```bash
+rustup toolchain install nightly --profile minimal
+rustup component add rustc-dev llvm-tools-preview --toolchain nightly
+```
+
+If the issue persists, use the verbose mode to debug PATH resolution:
+
+```bash
+make dylint-verbose
+```
+
+---
+
+### Symptom: "cannot create required directory" error
+
+```
+error: cannot create required directory: /path/to/dir
+```
+
+**Cause:** HOME or cache directories are not writable
+
+**Solution:** Set writable locations explicitly:
+
+```bash
+export CARGO_HOME=/tmp/cargo
+export RUSTUP_HOME=/tmp/rustup
+export DYLINT_DRIVER_PATH=/tmp/drivers
+make dylint
+```
+
+---
+
+### Symptom: Network errors during toolchain/component installation
+
+```
+error: failed to install nightly toolchain
+```
+
+**Cause:** Offline environment cannot fetch toolchains
+
+**Solution:** Pre-install nightly with components before running make dylint:
+
+```bash
+# In an online environment, install required toolchain and components
+rustup toolchain install nightly --profile minimal
+rustup component add rustc-dev llvm-tools-preview --toolchain nightly
+
+# Install cargo-dylint globally
+cargo install cargo-dylint dylint-link
+
+# Now `make dylint` will work offline
+```
+
+---
+
+### Symptom: "dylint-driver" not found or not functional
+
+```
+Warning: command failed: "~/.dylint_drivers/nightly-*/dylint-driver" "-V"
+```
+
+**Cause:** Corrupted or mismatched dylint driver cache
+
+**Solution:** Clean the driver cache and rebuild:
+
+```bash
+rm -rf ~/.dylint_drivers
+make dylint
+```
+
+---
+
+### Symptom: Warning about cargo not resolving to wrapper
+
+```
+warning: cargo resolves to /usr/local/bin/cargo instead of /tmp/xyz/cargo
+Continuing anyway, but this may cause issues...
+```
+
+**Cause:** System PATH configuration or shell aliases override the wrapper
+
+**Solution:** Check for shell aliases or functions that override cargo:
+
+```bash
+# Check for cargo alias or function
+type cargo
+
+# If an alias exists, unalias it temporarily
+unalias cargo
+
+# Run make dylint again
+make dylint
+```
+
+---
+
+### Debugging with dylint-verbose
+
+To see detailed information about PATH, cargo resolution, and toolchain selection:
+
+```bash
+make dylint-verbose
+```
+
+This will display:
+
+- CARGO_HOME, RUSTUP_HOME, DYLINT_DRIVER_PATH locations
+- PATH resolution (first 3 entries)
+- Wrapper script path and contents
+- Which cargo binary is being used (via `command -v` and `which`)
+- RUSTUP_TOOLCHAIN, RUSTC, and CARGO environment variables
+- Nightly toolchain bin directory location
+
+Use this output to diagnose PATH resolution issues or verify the nightly toolchain is correctly configured.
