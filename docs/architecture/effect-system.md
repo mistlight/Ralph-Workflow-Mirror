@@ -2,6 +2,7 @@
 
 This document defines the effect system layers used in Ralph for managing side effects and filesystem access rules. This architecture is **non-negotiable** and must be followed by all code changes.
 
+For the end-to-end pipeline lifecycle (Plan -> Development -> Verify -> Commit -> Review/Fix loops), see `pipeline-lifecycle.md`.
 For the broader pipeline event loop and reducer best practices (events as facts, decisions in pure reducers, migration from decision-shaped actions), see `event-loop-and-reducers.md`.
 
 ## Design Philosophy

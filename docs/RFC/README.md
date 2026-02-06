@@ -6,6 +6,7 @@ RFCs are primarily kept for historical context. Even when an RFC is marked "Impl
 
 For the most up-to-date architecture documentation, prefer:
 
+- `../architecture/pipeline-lifecycle.md`
 - `../architecture/event-loop-and-reducers.md`
 - `../architecture/effect-system.md`
 - `../architecture/streaming-and-parsers.md`

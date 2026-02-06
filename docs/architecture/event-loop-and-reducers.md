@@ -2,6 +2,7 @@
 
 This document describes Ralph's pipeline event loop and reducer architecture: how `PipelineState`, `PipelineEvent`, and `Effect` work together, and the best practices that keep reducers pure and effects isolated.
 
+If you are looking for the end-to-end lifecycle (Planning -> Development -> result verification -> Commit -> Review/Fix loops), see `pipeline-lifecycle.md`.
 If you are looking specifically for effect-handler layering and filesystem rules (`AppEffect` vs pipeline `Effect`, `Workspace` requirements, `std::fs` exceptions), see `effect-system.md`.
 
 ## Core Contract
