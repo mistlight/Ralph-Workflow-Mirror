@@ -118,10 +118,35 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
         return true;
     }
 
+    // Anthropic Claude API patterns - HTTP 529 overloaded_error (server overload)
+    // Distinct from HTTP 429 rate limiting: 529 indicates temporary server capacity issues
+    // that should trigger immediate agent fallback rather than retry with the same agent.
+    if stderr_lower.contains("http 529")
+        || stderr_lower.contains("status 529")
+        || (stderr_lower.contains("overloaded")
+            && (stderr_lower.contains("api") || stderr_lower.contains("server")))
+    {
+        return true;
+    }
+
     // Quota exhaustion patterns - align with agents/error.rs
     if stderr_lower.contains("exceeded your current quota")
         || stderr_lower.contains("quota exceeded")
     {
+        return true;
+    }
+
+    // Usage limit patterns (observed from OpenCode/multi-provider gateways)
+    // OpenCode emits "usage limit has been reached [retryin]" when underlying provider
+    // hits quota/usage limits. This should trigger immediate agent fallback, not retry.
+    if stderr_lower.contains("usage limit has been reached")
+        || stderr_lower.contains("usage limit reached")
+    {
+        return true;
+    }
+
+    // Google Gemini API patterns - RESOURCE_EXHAUSTED status (HTTP 429)
+    if stderr_lower.contains("resource_exhausted") {
         return true;
     }
 

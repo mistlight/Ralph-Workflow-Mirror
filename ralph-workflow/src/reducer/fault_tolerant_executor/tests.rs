@@ -535,3 +535,370 @@ fn test_non_special_errors_maintain_retry_semantics() {
     assert_eq!(fs_error, AgentErrorKind::FileSystem);
     assert!(!is_retriable_agent_error(&fs_error));
 }
+
+// ========================================================================
+// Rate Limit Pattern Tests - Provider-Specific Coverage
+// ========================================================================
+
+mod rate_limit_patterns {
+    use super::*;
+
+    /// OpenCode gateway tests for usage/quota limit patterns
+    mod opencode {
+        use super::*;
+
+        #[test]
+        fn test_rate_limit_usage_limit_has_been_reached() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: "The usage limit has been reached [retryin]"
+            // Documentation: No official docs - observed in production
+            // Last Verified: 2026-02-06
+            // How to verify:
+            //   This error is emitted by OpenCode when any underlying provider
+            //   (OpenAI, Anthropic, etc.) hits usage/quota limits.
+            // Context:
+            //   The "[retryin]" suffix is misleading - the agent is actually
+            //   unavailable due to quota exhaustion and should trigger immediate
+            //   agent fallback, not retry with the same agent.
+
+            let stderr = "Error: The usage limit has been reached [retryin]";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_usage_limit_reached_short() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: "usage limit reached" (shorter variant)
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+
+            let stderr = "Error: usage limit reached";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_case_insensitive() {
+            // Verify case-insensitive matching works for usage limit patterns
+            let stderr = "ERROR: THE USAGE LIMIT HAS BEEN REACHED [RETRYIN]";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+        }
+    }
+
+    /// OpenAI API rate limit patterns
+    mod openai {
+        use super::*;
+
+        #[test]
+        fn test_rate_limit_openai_rate_limit_reached() {
+            // Provider: OpenAI API
+            // Error Pattern: "Rate limit reached for requests"
+            // Documentation: https://platform.openai.com/docs/guides/error-codes
+            //   Section: "ERROR 429 - Rate limit reached for requests"
+            // Last Verified: 2026-02-06
+            // How to verify:
+            //   1. Visit https://platform.openai.com/docs/guides/error-codes
+            //   2. Search for "429" or "rate limit"
+            //   3. Verify exact error message text in documentation
+            //   4. Update this test if message has changed
+
+            let stderr = "Error: Rate limit reached for requests";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_openai_quota_exceeded() {
+            // Provider: OpenAI API
+            // Error Pattern: "You exceeded your current quota"
+            // Documentation: https://platform.openai.com/docs/guides/error-codes
+            //   Section: "ERROR 429 - You exceeded your current quota"
+            // Last Verified: 2026-02-06
+
+            let stderr = "Error: You exceeded your current quota, please check your plan and billing details";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+    }
+
+    /// Anthropic Claude API rate limit patterns
+    mod anthropic {
+        use super::*;
+
+        #[test]
+        fn test_rate_limit_anthropic_429() {
+            // Provider: Anthropic Claude API
+            // Error Pattern: HTTP 429 with rate_limit_error
+            // Documentation: https://docs.anthropic.com/en/api/errors
+            //   HTTP Code: 429 - rate_limit_error (too many requests)
+            // Last Verified: 2026-02-06
+            // How to verify:
+            //   1. Visit https://docs.anthropic.com/en/api/errors
+            //   2. Search for "429" or "rate_limit_error"
+            //   3. Verify HTTP codes and error types
+
+            let stderr = "HTTP 429: rate_limit_error - Too many requests";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_anthropic_529_overloaded() {
+            // Provider: Anthropic Claude API
+            // Error Pattern: HTTP 529 with overloaded_error
+            // Documentation: https://docs.anthropic.com/en/api/errors
+            //   HTTP Code: 529 - overloaded_error (server capacity exceeded)
+            // Last Verified: 2026-02-06
+            // How to verify:
+            //   1. Visit https://docs.anthropic.com/en/api/errors
+            //   2. Search for "529" or "overloaded_error"
+            //   3. Verify HTTP codes and error types
+            //   4. Confirm this is distinct from 429 rate limiting
+
+            let stderr = "HTTP 529: overloaded_error - The API is temporarily overloaded";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_anthropic_overloaded_no_status() {
+            // Provider: Anthropic Claude API
+            // Error Pattern: "overloaded" without explicit HTTP status
+            // Documentation: https://docs.anthropic.com/en/api/errors
+            //   Message variant: "The API is temporarily overloaded"
+            // Last Verified: 2026-02-06
+            // Context: Some error messages may not include explicit HTTP status code
+            //   but still indicate server overload via "overloaded" keyword
+
+            let stderr = "Error: The API is temporarily overloaded, please retry after some time";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_anthropic_structured_json() {
+            // Provider: Anthropic Claude API
+            // Error Pattern: Structured JSON with code "rate_limit_exceeded"
+            // Documentation: https://docs.anthropic.com/en/api/errors
+            //   JSON structure: {"error": {"code": "rate_limit_exceeded"}}
+            // Last Verified: 2026-02-06
+
+            let stderr = r#"{"error": {"type": "rate_limit_error", "code": "rate_limit_exceeded", "message": "Rate limit exceeded"}}"#;
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+    }
+
+    /// Google Gemini API rate limit patterns
+    mod google {
+        use super::*;
+
+        #[test]
+        fn test_rate_limit_gemini_resource_exhausted() {
+            // Provider: Google Gemini API
+            // Error Pattern: HTTP 429 with RESOURCE_EXHAUSTED
+            // Documentation: https://ai.google.dev/gemini-api/docs/troubleshooting
+            //   Status: RESOURCE_EXHAUSTED (HTTP 429)
+            // Last Verified: 2026-02-06
+            // How to verify:
+            //   1. Visit https://ai.google.dev/gemini-api/docs/troubleshooting
+            //   2. Search for "RESOURCE_EXHAUSTED" or "429"
+            //   3. Verify status codes in error table
+
+            let stderr = "Error: RESOURCE_EXHAUSTED: You've exceeded the rate limit";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+    }
+
+    /// Azure OpenAI rate limit patterns
+    mod azure {
+        use super::*;
+
+        #[test]
+        fn test_rate_limit_azure_openai() {
+            // Provider: Azure OpenAI
+            // Error Pattern: Inherits from OpenAI - "Rate limit reached"
+            // Documentation: https://learn.microsoft.com/en-us/azure/ai-services/openai/quotas-limits
+            //   HTTP Code: 429 - Rate limit patterns similar to OpenAI
+            // Last Verified: 2026-02-06
+            // Note: Azure OpenAI uses similar error messages to OpenAI API
+
+            let stderr = "Error: Rate limit reached for requests. Please retry after some time.";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+    }
+
+    /// Generic HTTP 429 patterns (standard)
+    mod generic_http {
+        use super::*;
+
+        #[test]
+        fn test_rate_limit_generic_429_too_many_requests() {
+            // Provider: Generic HTTP standard
+            // Error Pattern: "too many requests" (standard HTTP 429 message)
+            // Documentation: RFC 6585 - HTTP Status Code 429
+            // Last Verified: 2026-02-06
+
+            let stderr = "Error: too many requests, please slow down";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_http_429_status() {
+            // Provider: Generic HTTP standard
+            // Error Pattern: "HTTP 429" or "status 429"
+            // Documentation: RFC 6585 - HTTP Status Code 429
+            // Last Verified: 2026-02-06
+
+            let stderr = "HTTP 429 - Too Many Requests";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+    }
+
+    /// Negative test cases - patterns that should NOT match rate limit
+    mod negative_cases {
+        use super::*;
+
+        #[test]
+        fn test_auth_error_with_quota_in_message_not_rate_limit() {
+            // Auth errors should take precedence even if "quota" appears
+            let stderr = "HTTP 401 Unauthorized: API key quota information unavailable";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::Authentication);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_filename_with_rate_limit_not_rate_limit() {
+            // Filenames or paths should not trigger rate limit detection
+            let stderr = "rate_limit.rs:123:1: syntax error: unexpected token";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as ParsingError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_connection_limit_not_rate_limit() {
+            // Network connection pool limits are not API rate limits
+            let stderr = "Connection pool limit reached: max 100 connections";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as Network or InternalError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_file_size_limit_not_rate_limit() {
+            // File system limits are not API rate limits
+            let stderr = "File size limit exceeded: maximum 10MB";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_system_overload_not_rate_limit() {
+            // System resource overload should not trigger API rate limit detection
+            let stderr = "Error: System CPU overload detected, process throttled";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as InternalError or other, NOT RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+    }
+}
+
+#[test]
+fn test_usage_limit_triggers_rate_limited_event_not_timeout() {
+    // This integration test verifies that "usage limit has been reached"
+    // errors trigger immediate agent fallback via AgentEvent::RateLimited
+    // instead of timing out and then falling back.
+    //
+    // Background: OpenCode emits "usage limit has been reached [retryin]"
+    // when any underlying provider hits quota limits. The "[retryin]" suffix
+    // is misleading - the agent is actually unavailable and should trigger
+    // immediate fallback, not retry with timeout.
+
+    use crate::executor::AgentCommandResult;
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+    let workspace = MemoryWorkspace::new_test();
+
+    // Mock executor that simulates usage limit error
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "opencode",
+            Ok(AgentCommandResult::failure(
+                1,
+                "Error: The usage limit has been reached [retryin]",
+            )),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: &workspace,
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "opencode",
+        cmd_str: "opencode -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "Test prompt",
+        display_name: "opencode",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    // Verify that RateLimited event is emitted (not TimedOut or InvocationFailed)
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::RateLimited { role, agent, .. }) => {
+            assert_eq!(role, AgentRole::Developer);
+            assert_eq!(agent, "opencode");
+        }
+        other => panic!(
+            "Expected AgentEvent::RateLimited, got {:?}. \
+             This indicates usage limit errors are not triggering immediate agent fallback.",
+            other
+        ),
+    }
+
+    // Verify no session_id is returned (rate limit = provider unavailable)
+    assert!(result.session_id.is_none());
+}
