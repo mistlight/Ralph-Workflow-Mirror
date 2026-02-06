@@ -23,24 +23,52 @@ impl OpenCodeParser {
                 let limit = self.verbosity.truncate_limit("text");
                 let preview = truncate_text(&accumulated_text, limit);
 
-                // Use TextDeltaRenderer for consistent rendering across all parsers
+                use crate::json_parser::terminal::TerminalMode;
                 let terminal_mode = *self.terminal_mode.borrow();
+
+                // Append-only streaming: emit prefix once, then only the new suffix.
+                let key = "text:main";
+
                 if show_prefix {
-                    // First delta: use renderer with prefix
-                    return TextDeltaRenderer::render_first_delta(
+                    let rendered = TextDeltaRenderer::render_first_delta(
                         &preview,
                         prefix,
                         *c,
                         terminal_mode,
                     );
+                    self.last_rendered_content
+                        .borrow_mut()
+                        .insert(
+                            key.to_string(),
+                            crate::json_parser::delta_display::sanitize_for_display(&preview),
+                        );
+                    return rendered;
                 }
-                // Subsequent deltas: use renderer for in-place update
-                return TextDeltaRenderer::render_subsequent_delta(
-                    &preview,
-                    prefix,
-                    *c,
-                    terminal_mode,
-                );
+
+                let sanitized = crate::json_parser::delta_display::sanitize_for_display(&preview);
+                let last_rendered = self
+                    .last_rendered_content
+                    .borrow()
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_default();
+
+                let suffix = if last_rendered.is_empty() {
+                    sanitized.as_str()
+                } else if sanitized.starts_with(&last_rendered) {
+                    &sanitized[last_rendered.len()..]
+                } else {
+                    sanitized.as_str()
+                };
+
+                self.last_rendered_content
+                    .borrow_mut()
+                    .insert(key.to_string(), sanitized.clone());
+
+                return match terminal_mode {
+                    TerminalMode::Full => format!("{}{}{}", c.white(), suffix, c.reset()),
+                    TerminalMode::Basic | TerminalMode::None => String::new(),
+                };
             }
         }
         String::new()

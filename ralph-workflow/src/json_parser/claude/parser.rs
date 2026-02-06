@@ -48,21 +48,20 @@ pub struct ClaudeParser {
     /// previously-rendered text.
     suppress_thinking_for_message: RefCell<bool>,
 
-    /// Tracks whether a text delta line is currently being streamed using the
-    /// in-place cursor-up update pattern (`TerminalMode::Full`).
+    /// Tracks whether a text delta line is currently being streamed (Full mode).
     ///
-    /// When true, any non-stream output (system/user/assistant/result or raw text)
-    /// must first finalize the cursor state (cursor down + newline) to avoid
-    /// overwriting the streamed text line (e.g., "statusead ..." corruption).
+    /// In the append-only streaming pattern, deltas do not move the cursor; they simply
+    /// append new suffixes on the current line. When true, any newline-based non-stream
+    /// output should ensure the streamed line is finalized (emit the completion newline)
+    /// before printing unrelated lines, to avoid "glued" output.
     text_line_active: RefCell<bool>,
 
-    /// Tracks whether the last emitted output left the cursor positioned on the
-    /// previous line via the in-place streaming pattern ("\n\x1b[1A").
+    /// Defensive cursor state for legacy/inconsistent streams.
     ///
-    /// This is a defensive fallback for real-world streams where lifecycle events
-    /// can reset higher-level flags. When true, any newline-based output must
-    /// first emit a completion sequence ("\x1b[1B\n") to avoid overwriting the
-    /// visible streamed line.
+    /// The append-only streaming implementation should not emit cursor-up sequences,
+    /// but real-world logs can include raw passthrough output with escape codes.
+    /// When this flag is true, newline-based output should first emit a completion
+    /// sequence ("\x1b[1B\n") to avoid overwriting visible content.
     cursor_up_active: RefCell<bool>,
 
     /// Tracks the last rendered content for append-only streaming in Full mode.
@@ -284,12 +283,11 @@ impl ClaudeParser {
             return None;
         };
 
-        // When a thinking line is being streamed in full TTY mode, the renderer leaves the cursor
-        // on the thinking line (via a trailing "\n\x1b[1A") so subsequent thinking deltas can
-        // update it in place.
+        // When a thinking/text line is being streamed in full TTY mode, the streaming
+        // implementation is append-only and keeps the cursor on the current line.
         //
-        // Any non-stream event (system/user/assistant/result) must first finalize the thinking
-        // line, otherwise it will overwrite/corrupt the visible output.
+        // Any non-stream event (system/user/assistant/result) must first finalize the
+        // active streaming line so the next output does not glue onto it.
         let finalize = if matches!(&event, ClaudeEvent::StreamEvent { .. }) {
             String::new()
         } else {
@@ -334,8 +332,15 @@ impl ClaudeParser {
             }
         };
 
+        // IMPORTANT: We must preserve any completion output from `finalize_in_place_full_mode`
+        // even if the current event itself produces no visible output.
+        //
+        // Example: the final "assistant" event can be deduplicated (empty output) after
+        // streaming deltas have already been shown. If we drop `finalize` in that case,
+        // the streamed line never receives its completion newline and subsequent output
+        // (e.g., system `status`) can clear/overwrite it.
         let output = if output.is_empty() {
-            output
+            finalize
         } else {
             format!("{finalize}{output}")
         };
@@ -345,14 +350,16 @@ impl ClaudeParser {
         } else {
             if *self.terminal_mode.borrow() == TerminalMode::Full {
                 // Keep a simple, output-driven model of cursor state.
-                // Any streaming delta rendered in Full mode ends with "\n\x1b[1A".
-                // This is more robust than relying solely on protocol lifecycle events.
+                //
+                // The streaming implementation is append-only and SHOULD NOT emit cursor-up
+                // sequences ("\x1b[1A") for deltas. We only treat explicit cursor completion
+                // sequences ("\x1b[1B\n") as authoritative for clearing the defensive flag.
+                //
+                // Note: raw passthrough output may include escape sequences; we avoid inferring
+                // "cursor is up" from output content to keep this logic robust.
                 let mut cursor_up_active = self.cursor_up_active.borrow_mut();
                 if output.contains("\x1b[1B\n") {
                     *cursor_up_active = false;
-                }
-                if output.contains("\x1b[1A") {
-                    *cursor_up_active = true;
                 }
             }
             Some(output)
@@ -379,11 +386,9 @@ impl ClaudeParser {
                 message_id,
             } => {
                 // Protocol violations happen in real streams: a new MessageStart can arrive
-                // while a previous in-place streamed line (text/thinking) still has the cursor
-                // positioned on it (via a trailing "\n\x1b[1A").
-                //
-                // Finalize any in-place cursor state before resetting message/session state,
-                // otherwise subsequent output can overwrite the visible streamed line.
+                // while a previous streamed line is still "active" (we haven't yet emitted the
+                // completion newline). Finalize any active streaming line before resetting state
+                // so subsequent output doesn't glue onto the in-progress line.
                 let in_place_finalize = self.finalize_in_place_full_mode(&mut session);
 
                 // Reset any pending thinking line from a previous message.

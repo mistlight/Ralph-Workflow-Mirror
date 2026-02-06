@@ -592,7 +592,9 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
     assert!(
-        calls[0].prompt.contains("independent code analysis agent"),
+        calls[0]
+            .prompt
+            .contains("independent, objective code analysis agent"),
         "analysis invocation should use analysis prompt, not a stale continuation prompt"
     );
     assert_ne!(

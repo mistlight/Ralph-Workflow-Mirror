@@ -13,7 +13,7 @@ impl MockEffectHandler {
         self.captured_effects.borrow_mut().push(effect.clone());
 
         // Generate appropriate mock events based on effect type
-        let additional_events = Vec::new();
+        let mut additional_events = Vec::new();
         let (event, ui_events) = match effect {
             Effect::AgentInvocation {
                 role,
@@ -580,7 +580,37 @@ src/lib.rs</ralph-files-changed>
             }
 
             Effect::SaveCheckpoint { trigger } => {
-                (PipelineEvent::checkpoint_saved(trigger), vec![])
+                let checkpoint_saved = PipelineEvent::checkpoint_saved(trigger);
+
+                if trigger == crate::reducer::event::CheckpointTrigger::PhaseTransition {
+                    match self.state.phase {
+                        PipelinePhase::Planning => {
+                            additional_events.push(PipelineEvent::planning_phase_completed());
+                        }
+                        PipelinePhase::Development => {
+                            additional_events.push(PipelineEvent::development_phase_completed());
+                        }
+                        PipelinePhase::Review
+                            if self.state.reviewer_pass >= self.state.total_reviewer_passes =>
+                        {
+                            additional_events.push(PipelineEvent::review_phase_completed(
+                                /* early_exit */ false,
+                            ));
+                        }
+                        PipelinePhase::CommitMessage => {
+                            // Commit phase completion is modeled as "commit happened".
+                            // The orchestrator uses SaveCheckpoint(PhaseTransition) after commit
+                            // reaches a terminal state. Emit a synthetic commit completion that
+                            // advances the pipeline to FinalValidation.
+                            additional_events.push(PipelineEvent::commit_skipped(
+                                "Mock: commit phase transition".to_string(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+
+                (checkpoint_saved, vec![])
             }
 
             Effect::CleanupContext => (PipelineEvent::context_cleaned(), vec![]),

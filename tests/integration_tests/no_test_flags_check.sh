@@ -46,6 +46,16 @@ readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[0;33m'
 readonly NC='\033[0m' # No Color
 
+# By default, this script is silent on success so it can be used in "no-output"
+# verification pipelines. Set NO_TEST_FLAGS_CHECK_QUIET=0 to enable informational output.
+readonly NO_TEST_FLAGS_CHECK_QUIET="${NO_TEST_FLAGS_CHECK_QUIET:-1}"
+
+log() {
+    if [ "$NO_TEST_FLAGS_CHECK_QUIET" = "0" ]; then
+        echo "$@"
+    fi
+}
+
 # Get the repository root (two levels up from script location)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -61,9 +71,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Running test flag compliance checks..."
-echo "Repository root: $REPO_ROOT"
-echo
+log "Running test flag compliance checks..."
+log "Repository root: $REPO_ROOT"
+log
 
 # Verify production directory exists
 if [ ! -d "$PROD_DIR" ]; then
@@ -102,7 +112,7 @@ search_pattern() {
 # Pattern 1: cfg!(test) - Runtime test detection
 # This pattern creates different behavior at runtime based on test mode
 ##############################################################################
-echo "Checking for cfg!(test) runtime detection..."
+log "Checking for cfg!(test) runtime detection..."
 search_pattern 'cfg!\s*\(\s*test\s*\)' "runtime test detection via cfg!(test)" "cfg_test"
 
 ##############################################################################
@@ -111,7 +121,7 @@ search_pattern 'cfg!\s*\(\s*test\s*\)' "runtime test detection via cfg!(test)" "
 # Catches: test_mode, is_test, is_testing, skip_validation, mock_mode, 
 #          fake_mode, dry_run (when used for testing), stub_mode, etc.
 ##############################################################################
-echo "Checking for test/mock/skip boolean parameters..."
+log "Checking for test/mock/skip boolean parameters..."
 
 # Direct test mode flags
 search_pattern '(test_mode|is_test|is_testing|testing_mode)\s*:\s*bool' \
@@ -141,7 +151,7 @@ search_pattern '(disable_[a-z_]+|no_[a-z_]+_check)\s*:\s*bool' \
 #   - HOME, USER, PATH, PWD, etc. - Standard system vars
 #   - CARGO_*, RUSTFLAGS, etc. - Build configuration
 ##############################################################################
-echo "Checking for test/mock/skip environment variables..."
+log "Checking for test/mock/skip environment variables..."
 
 # Test-related env vars (TEST, TESTING, etc.)
 # Excludes: CARGO_TEST_*, which is legitimate cargo config
@@ -170,7 +180,7 @@ search_pattern 'env::var\s*\(\s*"(CI_SKIP_|CI_NO_|CI_DISABLE_)[A-Z_]+"' \
 # This is a violation because it creates two different code paths
 # test-utils is allowed because it only exports test utilities
 ##############################################################################
-echo "Checking for testing feature flag dual implementations..."
+log "Checking for testing feature flag dual implementations..."
 search_pattern '#\[cfg\(feature\s*=\s*"testing"\)\]' \
     "testing feature flag (use test-utils instead)" "testing_feature"
 
@@ -178,14 +188,14 @@ search_pattern '#\[cfg\(feature\s*=\s*"testing"\)\]' \
 # Pattern 5: Conditional compilation that changes behavior for tests
 # Catches patterns like #[cfg(not(test))] in production logic
 ##############################################################################
-echo "Checking for conditional test compilation in logic..."
+log "Checking for conditional test compilation in logic..."
 search_pattern '#\[cfg\(not\(test\)\)\]' \
     "conditional compilation excluding tests (creates untested code path)" "cfg_not_test"
 
 ##############################################################################
 # Results
 ##############################################################################
-echo
+log
 if [ -s "$TEMP_VIOLATIONS" ]; then
     violation_count=$(wc -l < "$TEMP_VIOLATIONS" | tr -d ' ')
     echo -e "${RED}Found $violation_count violation(s) in production code${NC}"
@@ -207,11 +217,11 @@ if [ -s "$TEMP_VIOLATIONS" ]; then
     echo "  - Use the test-utils feature to expose test helpers, not to change behavior"
     exit 1
 else
-    echo -e "${GREEN}All production code complies with test flag rules${NC}"
-    echo
-    echo "Summary:"
+    log -e "${GREEN}All production code complies with test flag rules${NC}"
+    log
+    log "Summary:"
     file_count=$(find "$PROD_DIR" -name "*.rs" -type f 2>/dev/null | wc -l | tr -d ' ')
-    echo "  - Scanned $file_count Rust file(s) in production directories"
-    echo "  - No forbidden test flags found"
+    log "  - Scanned $file_count Rust file(s) in production directories"
+    log "  - No forbidden test flags found"
     exit 0
 fi

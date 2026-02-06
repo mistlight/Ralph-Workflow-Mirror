@@ -54,6 +54,7 @@ impl GeminiParser {
 
         // Reset streaming state on new session
         self.streaming_session.borrow_mut().on_message_start();
+        self.last_rendered_content.borrow_mut().clear();
         let sid = session_id.unwrap_or_else(|| "unknown".to_string());
         // Set the current message ID for duplicate detection
         self.streaming_session
@@ -115,22 +116,55 @@ impl GeminiParser {
                     (show_prefix, accumulated_text, has_prefix)
                 };
 
+                use crate::json_parser::terminal::TerminalMode;
+
                 let terminal_mode = *self.terminal_mode.borrow();
+                let key = "text:0";
+
                 if show_prefix && !has_prefix {
-                    return TextDeltaRenderer::render_first_delta(
+                    let rendered = TextDeltaRenderer::render_first_delta(
                         &accumulated_text,
                         prefix,
                         *c,
                         terminal_mode,
                     );
+
+                    let sanitized = delta_display::sanitize_for_display(&accumulated_text);
+                    self.last_rendered_content
+                        .borrow_mut()
+                        .insert(key.to_string(), sanitized);
+
+                    // First delta already emitted the full accumulated content, so we can stop here.
+                    // Subsequent deltas will compute and emit only the new suffix.
+
+                    return rendered;
                 }
 
-                return TextDeltaRenderer::render_subsequent_delta(
-                    &accumulated_text,
-                    prefix,
-                    *c,
-                    terminal_mode,
-                );
+                let sanitized = delta_display::sanitize_for_display(&accumulated_text);
+                let last_rendered = self
+                    .last_rendered_content
+                    .borrow()
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_default();
+
+                let suffix = if last_rendered.is_empty() {
+                    sanitized.as_str()
+                } else if sanitized.starts_with(&last_rendered) {
+                    &sanitized[last_rendered.len()..]
+                } else {
+                    // Snapshot-style delta or discontinuity; emit full sanitized content.
+                    sanitized.as_str()
+                };
+
+                self.last_rendered_content
+                    .borrow_mut()
+                    .insert(key.to_string(), sanitized.clone());
+
+                return match terminal_mode {
+                    TerminalMode::Full => format!("{}{}{}", c.white(), suffix, c.reset()),
+                    TerminalMode::Basic | TerminalMode::None => String::new(),
+                };
             } else if !is_delta && role_str == "assistant" {
                 let session = self.streaming_session.borrow();
                 let is_duplicate = session.get_current_message_id().map_or_else(

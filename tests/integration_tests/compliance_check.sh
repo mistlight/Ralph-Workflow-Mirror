@@ -15,6 +15,16 @@ readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[0;33m'
 readonly NC='\033[0m' # No Color
 
+# By default, this script is silent on success so it can be used in "no-output"
+# verification pipelines. Set COMPLIANCE_CHECK_QUIET=0 to enable informational output.
+readonly COMPLIANCE_CHECK_QUIET="${COMPLIANCE_CHECK_QUIET:-1}"
+
+log() {
+    if [ "$COMPLIANCE_CHECK_QUIET" = "0" ]; then
+        echo "$@"
+    fi
+}
+
 # Get the script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_DIR="$SCRIPT_DIR"
@@ -26,9 +36,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Running integration test compliance checks..."
-echo "Test directory: $TEST_DIR"
-echo
+log "Running integration test compliance checks..."
+log "Test directory: $TEST_DIR"
+log
 
 # Find all Rust files in integration tests (excluding _TEMPLATE.rs and compliance_check.rs)
 find "$TEST_DIR" -name "*.rs" -type f \
@@ -38,7 +48,7 @@ find "$TEST_DIR" -name "*.rs" -type f \
     ! -path "*/target/*" | sort > "$TEMP_OUTPUT"
 
 if [ ! -s "$TEMP_OUTPUT" ]; then
-    echo -e "${YELLOW}No test files found to check${NC}"
+    log -e "${YELLOW}No test files found to check${NC}"
     exit 0
 fi
 
@@ -119,15 +129,15 @@ if [ -s "$TEMP_VIOLATIONS" ]; then
     echo "  }"
     exit 1
 else
-    echo -e "${GREEN}✓ All integration tests comply with timeout wrapper requirement${NC}"
-    echo
+    log -e "${GREEN}✓ All integration tests comply with timeout wrapper requirement${NC}"
+    log
 fi
 
 # ============================================================================
 # Check for process spawning violations
 # ============================================================================
 
-echo "Checking for external process spawning in tests..."
+log "Checking for external process spawning in tests..."
 
 # Pattern: std::process::Command::new or assert_cmd::Command::new with git/ls/cargo/ralph commands
 # Skip test_timeout.rs as it only documents the rules
@@ -156,15 +166,15 @@ if [ -n "$PROCESS_SPAWN_VIOLATIONS" ]; then
     echo "See tests/INTEGRATION_TESTS.md 'Rule 1.5: NO Process Spawning'"
     exit 1
 else
-    echo -e "${GREEN}No process spawning violations found${NC}"
-    echo
+    log -e "${GREEN}No process spawning violations found${NC}"
+    log
 fi
 
 # ============================================================================
 # Check minimum integration test count
 # ============================================================================
 
-echo "Checking integration test count..."
+log "Checking integration test count..."
 
 MIN_TEST_FILE="$TEST_DIR/test_count_guard.rs"
 EXPECTED_MIN_TESTS=$(rg -n "MINIMUM_EXPECTED_TESTS: usize = [0-9]+" "$MIN_TEST_FILE" \
@@ -197,18 +207,18 @@ if [ "$ACTUAL_TEST_COUNT" -lt "$EXPECTED_MIN_TESTS" ]; then
     echo "Verify you're running: cargo test -p ralph-workflow-tests"
     exit 1
 else
-    echo -e "${GREEN}✓ Integration test count: $ACTUAL_TEST_COUNT (>= $EXPECTED_MIN_TESTS)${NC}"
-    echo
+    log -e "${GREEN}✓ Integration test count: $ACTUAL_TEST_COUNT (>= $EXPECTED_MIN_TESTS)${NC}"
+    log
 fi
 
 # ============================================================================
 # Summary
 # ============================================================================
 
-echo "Summary:"
+log "Summary:"
 file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
-echo "  - Checked $file_count test file(s)"
-echo "  - All tests properly wrapped with timeout wrapper (with_default_timeout or with_timeout)"
-echo "  - No process spawning violations detected"
-echo "  - Integration test count: $ACTUAL_TEST_COUNT (>= $EXPECTED_MIN_TESTS)"
+log "  - Checked $file_count test file(s)"
+log "  - All tests properly wrapped with timeout wrapper (with_default_timeout or with_timeout)"
+log "  - No process spawning violations detected"
+log "  - Integration test count: $ACTUAL_TEST_COUNT (>= $EXPECTED_MIN_TESTS)"
 exit 0

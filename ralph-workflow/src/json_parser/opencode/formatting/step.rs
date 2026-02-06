@@ -49,6 +49,7 @@ impl OpenCodeParser {
 
         // Reset streaming state on new step
         self.streaming_session.borrow_mut().on_message_start();
+        self.last_rendered_content.borrow_mut().clear();
         self.streaming_session
             .borrow_mut()
             .set_current_message_id(Some(step_id));

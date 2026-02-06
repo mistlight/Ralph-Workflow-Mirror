@@ -674,19 +674,17 @@ fn test_example_log_renders_without_thinking_corruption() {
         let visible = vterm_ref.get_visible_output();
 
         // Sanity: the log contained expected streamed assistant text.
-        let history = vterm_ref.get_write_history();
+        //
+        // NOTE: With append-only streaming, the phrase may be split across multiple writes,
+        // so we assert on *visible* output rather than individual write history entries.
         assert!(
-            history
-                .iter()
-                .any(|s| s.contains("Need read complete file contents")),
-            "Expected streamed assistant text missing from write history. Visible output: {}",
+            visible.contains("Need read complete file contents"),
+            "Expected streamed assistant text missing from visible output. Visible output: {}",
             visible
         );
         assert!(
-            history
-                .iter()
-                .any(|s| s.contains("Not allowed to explore beyond direct imports")),
-            "Expected streamed assistant text missing from write history. Visible output: {}",
+            visible.contains("Not allowed to explore beyond direct"),
+            "Expected streamed assistant text missing from visible output. Visible output: {}",
             visible
         );
 

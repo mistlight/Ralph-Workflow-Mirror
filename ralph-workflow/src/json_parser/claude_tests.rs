@@ -496,7 +496,7 @@ fn test_text_finalize_before_system_event_prevents_corruption_in_full_mode() {
     let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_sys_text_1","type":"message","role":"assistant"}}}"#;
     assert!(parser.parse_event(start).is_none());
 
-    // Stream a longer text line; in full mode this uses the in-place cursor-up update pattern.
+    // Stream a longer text line; in full mode this uses the append-only streaming pattern.
     // If we emit a shorter non-stream line next (like "status"), it can overwrite only the first
     // few characters and leave the old tail visible (e.g., "statusead...").
     let text1 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Need read complete file contents"}}}"#;

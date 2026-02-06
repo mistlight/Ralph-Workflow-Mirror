@@ -23,10 +23,10 @@
 // ## Delta Rendering Strategy
 //
 // ### Full Mode (TTY)
-// - Each delta calls renderer which returns a line with cursor positioning
-// - Visual effect: one line updating in-place
-// - `render_first_delta`: prefix + content + `\n\x1b[1A` (cursor up)
-// - `render_subsequent_delta`: `\x1b[2K\r` (clear line) + prefix + content + `\n\x1b[1A`
+// - True append-only streaming (NO cursor movement)
+// - First delta emits prefix + accumulated content (no newline)
+// - Subsequent deltas emit ONLY the new suffix (no prefix rewrite)
+// - Completion emits a single newline to finalize the line
 //
 // ### Basic/None Modes (non-TTY)
 // - Each delta calls renderer which returns empty string (suppression at Layer 1)

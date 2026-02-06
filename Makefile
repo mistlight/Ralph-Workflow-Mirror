@@ -92,6 +92,7 @@ lint:
 # Run custom dylint lints (safe default: lib only)
 dylint:
 	@bash -euo pipefail -c '\
+		DYLINT_QUIET="${DYLINT_QUIET:-1}"; \
 		HOME_DIR="$${HOME:-}"; \
 		CARGO_HOME_DIR="$${CARGO_HOME:-}"; \
 		RUSTUP_HOME_DIR="$${RUSTUP_HOME:-}"; \
@@ -178,7 +179,7 @@ dylint:
 		fi; \
 		\
 		if ! rustup toolchain list | grep -qE "^nightly"; then \
-			echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; \
+			if [ "$$DYLINT_QUIET" = "0" ]; then echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; fi; \
 			if ! "$$RUSTUP_BIN" toolchain install nightly --profile minimal; then \
 				echo "error: failed to install nightly toolchain." >&2; \
 				echo "If you are offline, pre-provision nightly:" >&2; \
@@ -195,8 +196,8 @@ dylint:
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
 		if [ -n "$$MISSING" ]; then \
-			echo "Installing required nightly components:$$MISSING" >&2; \
-			if ! rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN"; then \
+			if [ "$$DYLINT_QUIET" = "0" ]; then echo "Installing required nightly components:$$MISSING" >&2; fi; \
+			if ! RUSTUP_TERM_QUIET=true rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN" >/dev/null 2>&1; then \
 				echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
 				echo "Provision them ahead of time (offline/sandboxed):" >&2; \
 				echo "  rustup component add rustc-dev llvm-tools-preview --toolchain $$NIGHTLY_TOOLCHAIN" >&2; \
@@ -229,7 +230,7 @@ dylint:
 			fi; \
 		fi; \
 		\
-		cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
+		RUSTFLAGS="--cap-lints=allow" CARGO_TERM_QUIET=true cargo dylint -q -p ralph-workflow --lib file_too_long -- --lib --quiet >/dev/null 2>&1; \
 '
 
 # Run custom dylint lints with verbose debugging output
@@ -321,7 +322,7 @@ dylint-verbose:
 		fi; \
 		\
 		if ! rustup toolchain list | grep -qE "^nightly"; then \
-			echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; \
+			if [ "$$DYLINT_QUIET" = "0" ]; then echo "Installing Rust nightly toolchain (required for dylint driver builds)..." >&2; fi; \
 			if ! "$$RUSTUP_BIN" toolchain install nightly --profile minimal; then \
 				echo "error: failed to install nightly toolchain." >&2; \
 				echo "If you are offline, pre-provision nightly:" >&2; \
@@ -335,8 +336,8 @@ dylint-verbose:
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
 		if [ -n "$$MISSING" ]; then \
-			echo "Installing required nightly components:$$MISSING" >&2; \
-			if ! rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN"; then \
+			if [ "$$DYLINT_QUIET" = "0" ]; then echo "Installing required nightly components:$$MISSING" >&2; fi; \
+			if ! RUSTUP_TERM_QUIET=true rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN" >/dev/null 2>&1; then \
 				echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
 				echo "Provision them ahead of time (offline/sandboxed):" >&2; \
 				echo "  rustup component add rustc-dev llvm-tools-preview --toolchain $$NIGHTLY_TOOLCHAIN" >&2; \
@@ -383,7 +384,7 @@ dylint-verbose:
 			fi; \
 		fi; \
 		\
-		cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
+		RUSTFLAGS="--cap-lints=allow" CARGO_TERM_QUIET=true cargo dylint -q -p ralph-workflow --lib file_too_long -- --lib --quiet >/dev/null 2>&1; \
 '
 
 # Run all checks (format, lint, test)

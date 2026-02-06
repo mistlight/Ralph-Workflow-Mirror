@@ -115,24 +115,23 @@ cargo test -p ralph-workflow test_snapshot_as_delta
 
 ### Visual Pattern
 
-The streaming display uses a **multi-line cursor pattern**, which is the industry standard used by production CLI libraries (Rich, Ink, Bubble Tea):
+The streaming display uses a **true append-only pattern** designed to work in real interactive terminals *and* in common CI/log consoles (including environments that strip/ignore ANSI cursor movement):
 
 ```text
-[ccs-glm] Hello\n\x1b[1A             ← First chunk: prefix + content + newline + cursor up
-\x1b[2K\r[ccs-glm] Hello World\n\x1b[1A  ← Update: clear line, rewrite, newline, cursor up
-[ccs-glm] Hello World!\n\x1b[1B\n       ← Complete: cursor down + newline
+[ccs-glm] Hello              ← First delta: prefix + accumulated content (NO newline)
+ World                       ← Subsequent deltas: ONLY the new suffix (no prefix rewrite)
+!                            ← More suffixes as they arrive
+\n                           ← Completion: single newline finalizes the line
 ```
 
-**Key sequence meanings:**
-- `\n\x1b[1A` - Newline (flushes buffer) then cursor up (for in-place rewrite)
-- `\x1b[2K\r` - Clear entire line then return to start
-- `\x1b[1B\n` - Cursor down then newline (finalize)
+**Key properties:**
+- No cursor movement during streaming deltas (`\x1b[1A` / `\x1b[2K` / `\r` are avoided)
+- Wrapping is handled naturally by the terminal
+- ANSI-stripping consoles remain readable (no per-delta newline waterfall)
 
 ### Prefix Display Strategy
 
-Currently, the prefix (e.g., `[ccs-glm]`) is displayed on every delta update. This provides clear visual feedback about which agent is streaming.
-
-**Design decision**: Keep prefix on every delta for clarity. The visual feedback outweighs the minor redundancy. Future optimization could reduce prefix display frequency.
+In append-only mode the prefix is emitted once per logical streamed line; subsequent deltas emit only the new suffix.
 
 ### Content Sanitization
 

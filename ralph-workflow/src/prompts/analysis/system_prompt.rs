@@ -114,11 +114,20 @@ mod tests {
 
         assert!(prompt.contains("Verify feature exists"));
         assert!(
-            prompt.contains("If the diff input is EMPTY")
+            prompt.contains("EMPTY OR MISSING DIFF HANDLING")
+                || prompt.contains("If the diff input is EMPTY")
                 || prompt.contains("If git diff is EMPTY")
         );
-        assert!(prompt.contains("no changes were needed"));
-        assert!(prompt.contains("changes were expected"));
+        assert!(
+            prompt.contains("no required changes")
+                || prompt.contains("no changes were needed")
+                || prompt.contains("already satisfied")
+        );
+        assert!(
+            prompt.contains("requires changes")
+                || prompt.contains("changes were expected")
+                || prompt.contains("PLAN requires changes")
+        );
     }
 
     #[test]

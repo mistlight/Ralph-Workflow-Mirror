@@ -57,8 +57,9 @@ impl ClaudeParser {
             return TextDeltaRenderer::render_completion(terminal_mode);
         }
 
-        // Defensive fallback: if the last output used the cursor-up in-place pattern,
-        // finalize even if higher-level flags were reset by protocol violations.
+        // Defensive fallback: if the last output left us in an unexpected cursor state
+        // (e.g., raw passthrough escape sequences), finalize even if higher-level flags
+        // were reset by protocol violations.
         if *self.cursor_up_active.borrow() {
             *self.cursor_up_active.borrow_mut() = false;
             return TextDeltaRenderer::render_completion(terminal_mode);
@@ -414,8 +415,10 @@ impl ClaudeParser {
         let terminal_mode = *self.terminal_mode.borrow();
 
         if terminal_mode == TerminalMode::Full {
+            // Append-only streaming keeps the cursor on the current line; we still track
+            // that a streaming text line is active so newline-based output can ensure the
+            // final completion newline is emitted at message boundaries.
             *self.text_line_active.borrow_mut() = true;
-            *self.cursor_up_active.borrow_mut() = true;
         }
 
         // Use prefix trie to detect if new content extends previously rendered content

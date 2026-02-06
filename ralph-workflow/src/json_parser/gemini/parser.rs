@@ -9,6 +9,8 @@ pub struct GeminiParser {
     streaming_session: Rc<RefCell<StreamingSession>>,
     /// Terminal mode for output formatting
     terminal_mode: RefCell<TerminalMode>,
+    /// Track last rendered content for append-only streaming.
+    last_rendered_content: RefCell<std::collections::HashMap<String, String>>,
     /// Whether to show streaming quality metrics
     show_streaming_metrics: bool,
     /// Output printer for capturing or displaying output
@@ -39,6 +41,7 @@ impl GeminiParser {
             display_name: "Gemini".to_string(),
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
+            last_rendered_content: RefCell::new(std::collections::HashMap::new()),
             show_streaming_metrics: false,
             printer,
         }

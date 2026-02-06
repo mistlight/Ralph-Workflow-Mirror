@@ -21,8 +21,8 @@
 // ## Completion Strategy
 //
 // ### Full Mode (TTY)
-// - Content was already rendered in-place during deltas with cursor positioning
-// - Emit cursor finalization sequence (`\x1b[1B\n`) to move cursor down
+// - Content was rendered using the append-only pattern during deltas
+// - Emit a single completion newline (via renderer completion) to finalize the line
 // - No content flush needed (already visible)
 //
 // ### Basic/None Modes (non-TTY)

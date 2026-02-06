@@ -81,6 +81,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("ccs_all_delta_types_spam_reproduction.rs"),
     },
     SourceFile {
+        path: "ccs_ansi_stripping_console.rs",
+        contents: include_str!("ccs_ansi_stripping_console.rs"),
+    },
+    SourceFile {
+        path: "ccs_ansi_stripping_waterfall.rs",
+        contents: include_str!("ccs_ansi_stripping_waterfall.rs"),
+    },
+    SourceFile {
         path: "ccs_basic_mode_nuclear_test.rs",
         contents: include_str!("ccs_basic_mode_nuclear_test.rs"),
     },
@@ -115,6 +123,18 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "ccs_streaming_edge_cases.rs",
         contents: include_str!("ccs_streaming_edge_cases.rs"),
+    },
+    SourceFile {
+        path: "ccs_wrapping_comprehensive.rs",
+        contents: include_str!("ccs_wrapping_comprehensive.rs"),
+    },
+    SourceFile {
+        path: "ccs_wrapping_waterfall_reproduction.rs",
+        contents: include_str!("ccs_wrapping_waterfall_reproduction.rs"),
+    },
+    SourceFile {
+        path: "codex_duplicate_item_completed.rs",
+        contents: include_str!("codex_duplicate_item_completed.rs"),
     },
     SourceFile {
         path: "codex_reasoning_spam_regression.rs",

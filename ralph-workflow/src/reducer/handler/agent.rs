@@ -48,6 +48,7 @@ impl MainEffectHandler {
         let effective_prompt = match &self.state.agent_chain.rate_limit_continuation_prompt {
             Some(saved)
                 if saved.role == role
+                    && role != AgentRole::Analysis
                     && !self.state.continuation.xsd_retry_session_reuse_pending
                     && !super::retry_guidance::is_same_agent_retry_prompt(&prompt) =>
             {

@@ -27,6 +27,12 @@ if [ -z "$dylint_libs" ] || [ -z "$toolchain" ]; then
   exec "$real" "$@"
 fi
 
+# Dylint driver builds set CARGO=check; silence cargo progress output so
+# `make dylint` can be used in "no output" verification pipelines.
+#
+# We set CARGO_TERM_QUIET for the `rustup run ... rustc` invocations below.
+export CARGO_TERM_QUIET=true
+
 case "$real" in
   *"/dylint-driver"|*"\\dylint-driver.exe")
     # The Dylint driver is already toolchain-specific; just run it.

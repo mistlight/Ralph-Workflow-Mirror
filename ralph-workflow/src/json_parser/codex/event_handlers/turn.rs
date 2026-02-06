@@ -1,6 +1,11 @@
 /// Handle `ThreadStarted` event.
 pub fn handle_thread_started(ctx: &EventHandlerContext, thread_id: Option<String>) -> String {
     let tid = thread_id.unwrap_or_else(|| "unknown".to_string());
+
+    // Thread start indicates a new logical stream in Codex; reset any append-only tracking
+    // so subsequent deltas start fresh.
+    ctx.last_rendered_content.borrow_mut().clear();
+
     ctx.streaming_session
         .borrow_mut()
         .set_current_message_id(Some(tid.clone()));
@@ -21,6 +26,12 @@ pub fn handle_thread_started(ctx: &EventHandlerContext, thread_id: Option<String
 pub fn handle_turn_started(ctx: &EventHandlerContext, turn_id: String) -> String {
     ctx.streaming_session.borrow_mut().on_message_start();
     ctx.reasoning_accumulator.borrow_mut().clear();
+
+    // Each Codex turn is a new logical stream. Clear append-only renderer state so the
+    // first delta of the new turn re-emits the prefix/label instead of computing a suffix
+    // against the previous turn's content.
+    ctx.last_rendered_content.borrow_mut().clear();
+
     ctx.streaming_session
         .borrow_mut()
         .set_current_message_id(Some(turn_id));

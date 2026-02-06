@@ -74,8 +74,8 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
     assert!(
-        prompt.contains("ANALYSIS TASK"),
-        "expected analysis task header in prompt, got: {prompt}"
+        prompt.contains("ANALYSIS RULES") || prompt.contains("CRITICAL CONSTRAINTS"),
+        "expected analysis prompt structure in prompt, got: {prompt}"
     );
     // Validate that the DIFF section contains either a placeholder or an actual diff.
     assert!(
