@@ -180,7 +180,7 @@ const fn default_max_continue_count() -> u32 {
 }
 
 const fn default_max_consecutive_same_effect() -> u32 {
-    5
+    20
 }
 
 impl Default for ContinuationState {

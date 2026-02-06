@@ -303,7 +303,7 @@ The pipeline includes a loop detection mechanism to prevent infinite tight loops
 The orchestrator tracks effect execution patterns in `ContinuationState`:
 - `last_effect_kind`: fingerprint of the last executed effect
 - `consecutive_same_effect_count`: counter for repeated identical effects
-- `max_consecutive_same_effect`: threshold before triggering recovery (default: 5)
+- `max_consecutive_same_effect`: threshold before triggering recovery (default: 20)
 
 The effect fingerprint includes: phase, role, iteration, pass, and XSD retry state.
 
@@ -335,7 +335,7 @@ The event loop tracks consecutive identical effects using a fingerprint based on
 - Iteration/pass number
 - XSD retry status
 
-When the same effect is derived more than `max_consecutive_same_effect` times (default: 5), the orchestrator derives a `TriggerLoopRecovery` effect instead.
+When the same effect is derived more than `max_consecutive_same_effect` times (default: 20), the orchestrator derives a `TriggerLoopRecovery` effect instead.
 
 ### Recovery Behavior
 
