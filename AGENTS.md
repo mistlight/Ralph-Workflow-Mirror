@@ -2,6 +2,14 @@
 
 ALWAYS USE test-driven-development!
 
+## Non-Negotiables
+
+- **TDD is required for all code changes.** No production code without a failing test first.
+- **Verification is required for ANY code change** (prod code or tests): run `docs/agents/verification.md` before PR/completion.
+- **Architecture reading is REQUIRED** before any pipeline/reducer/behavioral change: `CODE_STYLE.md` (Architecture), `docs/architecture/event-loop-and-reducers.md`, `docs/architecture/effect-system.md`.
+- **Integration test guide is REQUIRED reading** before writing/changing tests: `docs/agents/integration-tests.md` and `tests/INTEGRATION_TESTS.md`.
+- **Do not introduce tech debt.** If the alternative is adding/keeping tech debt, **prefer refactor** even when it makes the diff larger; do not leave deprecated/unused code behind.
+
 This repository welcomes automated code assistants ("agents") and human contributors.
 Follow these rules so changes stay safe, consistent, and easy to review.
 
@@ -10,13 +18,13 @@ Follow these rules so changes stay safe, consistent, and easy to review.
 1. **Correctness** - tests pass, behavior matches intent
 2. **Maintainability** - clear code, no magic
 3. **Consistency** - follow existing patterns, rustfmt/clippy clean
-4. **Small diffs** - avoid drive-by refactors
+4. **Small diffs** - keep changes focused *if possible*; if the alternative is adding/keeping tech debt, **prefer refactor** even when it makes the diff larger
 
 If instructions conflict with other files (e.g., `CONTRIBUTING.md`), follow the **stricter** rule.
 
 See **[CODE_STYLE.md](CODE_STYLE.md)** for design principles and testing philosophy.
 
-If you change **pipeline behavior** (phases, retries/fallback, effect sequencing, checkpoint/resume, or any reducer/event/effect shape), the reducer/effect architecture is **mandatory reading**: `CODE_STYLE.md` (Architecture section), `docs/architecture/event-loop-and-reducers.md`, `docs/architecture/effect-system.md`.
+If you change **pipeline behavior** (phases, retries/fallback, effect sequencing, checkpoint/resume, or any reducer/event/effect shape), the reducer/effect architecture reading is **REQUIRED**: `CODE_STYLE.md` (Architecture section), `docs/architecture/event-loop-and-reducers.md`, `docs/architecture/effect-system.md`.
 
 ## Where The Details Live
 
