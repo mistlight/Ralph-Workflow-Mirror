@@ -94,6 +94,22 @@ Handle dead code by:
 
 Run the commands in `docs/agents/verification.md`. All commands must produce **NO OUTPUT**.
 
+**Additional verification for metrics changes:**
+
+When changing iteration/retry/continuation/fallback logic, run the metrics tests to ensure metrics remain accurate and no drift occurs:
+
+```bash
+# Metrics unit tests
+cargo test --lib reducer::state_reduction::tests::metrics
+
+# Metrics integration tests
+cargo test --test '*' iteration_counter
+cargo test --test '*' continuation_budget
+cargo test --test '*' summary_consistency
+```
+
+All tests must pass with NO OUTPUT (warnings or failures).
+
 ---
 
 ## Custom Lints (dylint)

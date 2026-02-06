@@ -47,6 +47,21 @@ State → Orchestrator → Effect → Handler → Event → Reducer → State
 
 Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 
+### Reducer-Driven Control-Flow and Metrics
+
+All pipeline control-flow decisions (iteration advancement, retry/continuation/fallback logic) are derived solely from reducer state. Handlers execute at most one attempt per effect and must not contain hidden loops or decision logic.
+
+**Metrics are a view, not a driver:** The `RunMetrics` struct in `PipelineState.metrics` provides observability into pipeline execution, but metrics do not drive control-flow. Control-flow is driven by the reducer's state machine (phase, iteration, continuation state, agent chain state, etc.), and metrics simply track the transitions.
+
+**Invariants:**
+
+- **Single source of truth:** Any advance/retry/continue decision is derived from reducer state plus the latest event
+- **Determinism:** Given same checkpoint + same events, the reducer produces identical state and control-flow
+- **No hidden loops:** Handlers perform at most one attempt per effect; repeated attempts must be explicit reducer events
+- **No shadow state:** No runtime-only counters may influence control-flow
+
+See `ralph-workflow/src/reducer/state/metrics.rs` for complete event-to-metric mapping.
+
 ---
 
 ## Glossary
