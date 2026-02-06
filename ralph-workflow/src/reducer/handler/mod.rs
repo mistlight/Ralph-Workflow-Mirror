@@ -420,20 +420,10 @@ impl MainEffectHandler {
                 // Dev-fix success cannot be determined at invocation time - it requires
                 // extraction and validation of fix_result.xml. The InvocationSucceeded event
                 // only indicates the agent started successfully, not that the fix completed.
-                // Therefore, we always set success=false here and rely on the reducer to
-                // emit DevFixCompleted with proper success status after validation.
-                let dev_fix_success = false;
+                // DevFixCompleted will be emitted by the reducer after validation.
 
                 // Extract error reason for logging and summary
                 let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
-
-                let dev_fix_summary = if let Some(ref err) = error_reason {
-                    Some(format!("Dev-fix agent invocation failed: {}", err))
-                } else {
-                    // Agent invoked successfully, but success cannot be determined until
-                    // fix_result.xml is extracted and validated
-                    Some("Dev-fix agent invoked; validation pending".to_string())
-                };
 
                 let mut result = match agent_result.as_ref() {
                     Ok(result) => EffectResult::with_ui(
@@ -462,23 +452,25 @@ impl MainEffectHandler {
                 }
 
                 // Emit appropriate event based on agent availability.
-                // Only ONE of these events should be emitted, not both.
+                // CompletionMarkerEmitted is ALWAYS emitted because the marker is
+                // written unconditionally at the start of TriggerDevFixFlow.
                 if is_agent_unavailable {
+                    // Agent unavailable (quota/usage limit)
                     result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                         crate::reducer::event::AwaitingDevFixEvent::DevFixAgentUnavailable {
                             failed_phase,
                             reason: error_reason.unwrap_or_else(|| "unknown".to_string()),
                         },
                     ));
-                } else if agent_result.is_ok() {
-                    // Only emit DevFixCompleted when the agent was available
-                    result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
-                        crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
-                            success: dev_fix_success,
-                            summary: dev_fix_summary,
-                        },
-                    ));
                 }
+                // Note: DevFixCompleted is NOT emitted here. The success of the dev-fix
+                // attempt can only be determined after fix_result.xml is extracted and
+                // validated, which happens in a later phase (during XML output extraction).
+                // The reducer will emit DevFixCompleted with the proper success status
+                // after validation succeeds or fails.
+
+                // Always emit CompletionMarkerEmitted since the marker is written
+                // unconditionally when entering TriggerDevFixFlow.
                 result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure: true,

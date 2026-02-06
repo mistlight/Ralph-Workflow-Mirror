@@ -30,14 +30,14 @@ fn test_loop_detection_counters_computed_after_additional_events() {
         state.phase = PipelinePhase::Planning;
         state.continuation.xsd_retry_pending = true;
         state.continuation.last_effect_kind =
-            Some("Planning:developer:iter=0:pass=0:xsd_retry=true".to_string());
+            Some("Planning:developer:iter=0:pass=0:xsd_retry=true:count=0".to_string());
         state.continuation.consecutive_same_effect_count = 3;
 
         // Record the fingerprint BEFORE any event processing (for comparison)
         let fingerprint_before = compute_effect_fingerprint(&state);
         assert_eq!(
             fingerprint_before,
-            "Planning:developer:iter=0:pass=0:xsd_retry=true"
+            "Planning:developer:iter=0:pass=0:xsd_retry=true:count=0"
         );
 
         // Simulate the event loop behavior:
@@ -102,7 +102,7 @@ fn test_loop_detection_resets_when_additional_events_change_phase() {
         state.phase = PipelinePhase::Planning;
         state.continuation.xsd_retry_pending = true;
         state.continuation.last_effect_kind =
-            Some("Planning:developer:iter=0:pass=0:xsd_retry=true".to_string());
+            Some("Planning:developer:iter=0:pass=0:xsd_retry=true:count=0".to_string());
         state.continuation.consecutive_same_effect_count = 4;
 
         // Verify we're in a "looping" state
@@ -149,7 +149,7 @@ fn test_loop_detection_increments_when_additional_events_preserve_fingerprint() 
         state.phase = PipelinePhase::Planning;
         state.continuation.xsd_retry_pending = true;
         state.continuation.last_effect_kind =
-            Some("Planning:developer:iter=0:pass=0:xsd_retry=true".to_string());
+            Some("Planning:developer:iter=0:pass=0:xsd_retry=true:count=0".to_string());
         state.continuation.consecutive_same_effect_count = 2;
 
         // Simulate: primary event and additional events that both keep us in

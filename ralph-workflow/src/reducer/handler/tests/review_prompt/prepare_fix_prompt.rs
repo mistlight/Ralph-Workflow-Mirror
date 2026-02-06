@@ -379,10 +379,7 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
 
     // Verify that the prompt was prepared in memory even though the write failed
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Review(_)
-        ),
+        matches!(result.event, PipelineEvent::Review(_)),
         "should emit Review event even when write fails, got: {:?}",
         result.event
     );

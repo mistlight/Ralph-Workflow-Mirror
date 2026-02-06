@@ -28,11 +28,12 @@ fn test_planning_xsd_retry_detects_missing_schema() {
             &workspace,
         );
 
-        // Verify: prompt indicates missing file and includes workspace root
+        // Verify: prompt indicates missing file AND includes workspace root
         assert!(
-            prompt.contains("REQUIRED OUTPUT PATH DOES NOT EXIST")
-                || prompt.contains("workspace.root()"),
-            "Should detect missing schema and include workspace root diagnostics"
+            prompt.contains("WARNING: Required XSD retry files are missing")
+                && prompt.contains("workspace.root()"),
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
+            prompt
         );
     });
 }
@@ -49,11 +50,12 @@ fn test_review_xsd_retry_detects_missing_files() {
         let prompt =
             prompt_review_xsd_retry_with_context_files(&template_context, "Test error", &workspace);
 
-        // Verify: prompt indicates missing file
+        // Verify: prompt indicates missing file AND includes workspace root
         assert!(
-            prompt.contains("REQUIRED OUTPUT PATH DOES NOT EXIST")
-                || prompt.contains("workspace.root()"),
-            "Should detect missing schema and include diagnostics"
+            prompt.contains("WARNING: Required XSD retry files are missing")
+                && prompt.contains("workspace.root()"),
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
+            prompt
         );
     });
 }
@@ -73,11 +75,12 @@ fn test_development_xsd_retry_detects_missing_files() {
             &workspace,
         );
 
-        // Verify: prompt indicates missing file
+        // Verify: prompt indicates missing file AND includes workspace root
         assert!(
-            prompt.contains("REQUIRED OUTPUT PATH DOES NOT EXIST")
-                || prompt.contains("workspace.root()"),
-            "Should detect missing schema and include diagnostics"
+            prompt.contains("WARNING: Required XSD retry files are missing")
+                && prompt.contains("workspace.root()"),
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
+            prompt
         );
     });
 }
@@ -94,11 +97,12 @@ fn test_fix_xsd_retry_detects_missing_files() {
         let prompt =
             prompt_fix_xsd_retry_with_context_files(&template_context, "Test error", &workspace);
 
-        // Verify: prompt indicates missing file
+        // Verify: prompt indicates missing file AND includes workspace root
         assert!(
-            prompt.contains("REQUIRED OUTPUT PATH DOES NOT EXIST")
-                || prompt.contains("workspace.root()"),
-            "Should detect missing schema and include diagnostics"
+            prompt.contains("WARNING: Required XSD retry files are missing")
+                && prompt.contains("workspace.root()"),
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
+            prompt
         );
     });
 }
@@ -115,11 +119,12 @@ fn test_commit_xsd_retry_detects_missing_files() {
         let prompt =
             prompt_commit_xsd_retry_with_context(&template_context, "Test error", &workspace);
 
-        // Verify: prompt indicates missing file
+        // Verify: prompt indicates missing file AND includes workspace root
         assert!(
-            prompt.contains("REQUIRED OUTPUT PATH DOES NOT EXIST")
-                || prompt.contains("workspace.root()"),
-            "Should detect missing schema and include diagnostics"
+            prompt.contains("WARNING: Required XSD retry files are missing")
+                && prompt.contains("workspace.root()"),
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
+            prompt
         );
     });
 }

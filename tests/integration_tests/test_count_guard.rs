@@ -73,6 +73,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("agent_spawn_errors.rs"),
     },
     SourceFile {
+        path: "agent_chain_normalization.rs",
+        contents: include_str!("agent_chain_normalization.rs"),
+    },
+    SourceFile {
+        path: "awaiting_dev_fix_recovery.rs",
+        contents: include_str!("awaiting_dev_fix_recovery.rs"),
+    },
+    SourceFile {
         path: "cli/mod.rs",
         contents: include_str!("cli/mod.rs"),
     },
@@ -165,8 +173,20 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("logger/test_logger_tests.rs"),
     },
     SourceFile {
+        path: "loop_detection_after_additional_events.rs",
+        contents: include_str!("loop_detection_after_additional_events.rs"),
+    },
+    SourceFile {
+        path: "loop_detection_recovery.rs",
+        contents: include_str!("loop_detection_recovery.rs"),
+    },
+    SourceFile {
         path: "opencode_parser_tests.rs",
         contents: include_str!("opencode_parser_tests.rs"),
+    },
+    SourceFile {
+        path: "prompt_path_resolution.rs",
+        contents: include_str!("prompt_path_resolution.rs"),
     },
     SourceFile {
         path: "reducer_agent_fallback.rs",
@@ -267,6 +287,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "test_traits.rs",
         contents: include_str!("test_traits.rs"),
+    },
+    SourceFile {
+        path: "template_rendering_errors.rs",
+        contents: include_str!("template_rendering_errors.rs"),
     },
     SourceFile {
         path: "ui_events.rs",
@@ -387,6 +411,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "workflows/resume/v3/smoke.rs",
         contents: include_str!("workflows/resume/v3/smoke.rs"),
+    },
+    SourceFile {
+        path: "xsd_retry_missing_files.rs",
+        contents: include_str!("xsd_retry_missing_files.rs"),
     },
 ];
 

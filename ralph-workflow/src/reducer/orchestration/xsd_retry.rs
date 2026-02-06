@@ -3,14 +3,23 @@
 /// The fingerprint uniquely identifies the "work context" that would produce
 /// an effect. If the same fingerprint appears consecutively many times, we're
 /// likely in a tight loop.
+///
+/// The fingerprint includes:
+/// - Current phase
+/// - Current agent role
+/// - Current iteration
+/// - Current reviewer pass
+/// - XSD retry pending flag
+/// - XSD retry count (to distinguish retry 1 from retry 10 in tight loop detection)
 pub fn compute_effect_fingerprint(state: &PipelineState) -> String {
     format!(
-        "{}:{}:iter={}:pass={}:xsd_retry={}",
+        "{}:{}:iter={}:pass={}:xsd_retry={}:count={}",
         state.phase,
         state.agent_chain.current_role,
         state.iteration,
         state.reviewer_pass,
-        state.continuation.xsd_retry_pending
+        state.continuation.xsd_retry_pending,
+        state.continuation.xsd_retry_count
     )
 }
 

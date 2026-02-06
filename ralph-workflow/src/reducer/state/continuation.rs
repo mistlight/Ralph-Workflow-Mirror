@@ -290,12 +290,12 @@ impl ContinuationState {
     /// resets (e.g., resetting only fix continuation while preserving development
     /// continuation state), use field-level updates instead.
     pub fn reset(&self) -> Self {
-        // Preserve configured limits, reset everything else.
+        // Preserve configured limits, reset everything else including loop detection counters.
         // The struct initialization below explicitly preserves max_* fields,
         // then the spread operator ..Self::default() resets ALL other fields
         // (including loop detection fields: last_effect_kind -> None,
         // consecutive_same_effect_count -> 0). This is intentional during
-        // loop recovery to break the cycle and start fresh.
+        // loop recovery to break the tight loop cycle and start fresh.
         Self {
             max_xsd_retry_count: self.max_xsd_retry_count,
             max_same_agent_retry_count: self.max_same_agent_retry_count,

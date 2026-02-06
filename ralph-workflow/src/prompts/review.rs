@@ -216,9 +216,8 @@ pub fn prompt_review_xsd_retry_with_context_files(
                 workspace.root().display()
             ));
         }
-        diagnostic_prefix.push_str(
-            "This likely indicates CWD != workspace.root() path mismatch.\n\n",
-        );
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
     }
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
@@ -417,9 +416,8 @@ pub fn prompt_fix_xsd_retry_with_context_files(
                 workspace.root().display()
             ));
         }
-        diagnostic_prefix.push_str(
-            "This likely indicates CWD != workspace.root() path mismatch.\n\n",
-        );
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
     }
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
