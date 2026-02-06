@@ -2,7 +2,6 @@
 //!
 //! Prompts for review and fix result generation using XML format with XSD validation.
 
-use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 use crate::prompts::partials::get_shared_partials;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
@@ -61,11 +60,13 @@ fn write_fix_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
 /// * `_prompt_content` - Unused, kept for API compatibility. Reviewer reads PROMPT.md.backup directly.
 /// * `plan_content` - Implementation plan
 /// * `changes_content` - Description of changes made
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_review_xml_with_context(
     context: &TemplateContext,
     _prompt_content: &str,
     plan_content: &str,
     changes_content: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -77,11 +78,11 @@ pub fn prompt_review_xml_with_context(
         ("CHANGES", changes_content.to_string()),
         (
             "ISSUES_XML_PATH",
-            resolve_absolute_path(".agent/tmp/issues.xml"),
+            workspace.absolute_str(".agent/tmp/issues.xml"),
         ),
         (
             "ISSUES_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/issues.xsd"),
+            workspace.absolute_str(".agent/tmp/issues.xsd"),
         ),
     ]);
     Template::new(&template_content)
@@ -109,9 +110,11 @@ pub fn prompt_review_xml_with_context(
 ///
 /// * `context` - Template context containing the template registry
 /// * `refs` - Content references for PLAN and CHANGES (DIFF)
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_review_xml_with_references(
     context: &TemplateContext,
     refs: &crate::prompts::content_builder::PromptContentReferences,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -124,11 +127,11 @@ pub fn prompt_review_xml_with_references(
         ("CHANGES", refs.diff_for_template()),
         (
             "ISSUES_XML_PATH",
-            resolve_absolute_path(".agent/tmp/issues.xml"),
+            workspace.absolute_str(".agent/tmp/issues.xml"),
         ),
         (
             "ISSUES_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/issues.xsd"),
+            workspace.absolute_str(".agent/tmp/issues.xsd"),
         ),
     ]);
 
@@ -178,9 +181,37 @@ pub fn prompt_review_xsd_retry_with_context_files(
     xsd_error: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    use std::path::Path;
+
     let partials = get_shared_partials();
     // Ensure schema file exists; last_output.xml is expected to already be present.
     write_review_xsd_retry_schema_files(workspace);
+
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/issues.xsd");
+    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+
+    if !workspace.exists(schema_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without schema file.",
+            workspace.absolute_str(".agent/tmp/issues.xsd"),
+            workspace.root().display()
+        );
+    }
+
+    if !workspace.exists(last_output_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without last output file.",
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
+            workspace.root().display()
+        );
+    }
 
     let template_content = context
         .registry()
@@ -190,15 +221,15 @@ pub fn prompt_review_xsd_retry_with_context_files(
         ("XSD_ERROR", xsd_error.to_string()),
         (
             "ISSUES_XML_PATH",
-            resolve_absolute_path(".agent/tmp/issues.xml"),
+            workspace.absolute_str(".agent/tmp/issues.xml"),
         ),
         (
             "ISSUES_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/issues.xsd"),
+            workspace.absolute_str(".agent/tmp/issues.xsd"),
         ),
         (
             "LAST_OUTPUT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/last_output.xml"),
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
         ),
     ]);
     Template::new(&template_content)
@@ -248,12 +279,15 @@ fn format_files_section_xml(files: &[String]) -> String {
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
+/// * `files_to_modify` - List of files that may be modified
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_fix_xml_with_context(
     context: &TemplateContext,
     prompt_content: &str,
     plan_content: &str,
     issues_content: &str,
     files_to_modify: &[String],
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -267,11 +301,11 @@ pub fn prompt_fix_xml_with_context(
         ("FILES_TO_MODIFY", format_files_section_xml(files_to_modify)),
         (
             "FIX_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+            workspace.absolute_str(".agent/tmp/fix_result.xml"),
         ),
         (
             "FIX_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
         ),
     ]);
     Template::new(&template_content)
@@ -319,9 +353,37 @@ pub fn prompt_fix_xsd_retry_with_context_files(
     xsd_error: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    use std::path::Path;
+
     let partials = get_shared_partials();
     // Ensure schema file exists; last_output.xml is expected to already be present.
     write_fix_xsd_retry_schema_files(workspace);
+
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/fix_result.xsd");
+    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+
+    if !workspace.exists(schema_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without schema file.",
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
+            workspace.root().display()
+        );
+    }
+
+    if !workspace.exists(last_output_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without last output file.",
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
+            workspace.root().display()
+        );
+    }
 
     let template_content = context
         .registry()
@@ -331,15 +393,15 @@ pub fn prompt_fix_xsd_retry_with_context_files(
         ("XSD_ERROR", xsd_error.to_string()),
         (
             "FIX_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+            workspace.absolute_str(".agent/tmp/fix_result.xml"),
         ),
         (
             "FIX_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
         ),
         (
             "LAST_OUTPUT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/last_output.xml"),
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
         ),
     ]);
     Template::new(&template_content)

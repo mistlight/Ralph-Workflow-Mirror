@@ -828,7 +828,7 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     );
 
     assert_eq!(config.cmd, claude_path.to_string_lossy().to_string());
-    assert!(config.env_vars.get("ANTHROPIC_MODEL").is_some());
+    assert!(config.env_vars.contains_key("ANTHROPIC_MODEL"));
 
     // Sanity-check debug summary classification logic.
     let summary = super::ccs_env_var_debug_summary(&config.env_vars);

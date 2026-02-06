@@ -232,12 +232,16 @@ impl MainEffectHandler {
                     }
                 })?;
             }
-            ctx.workspace
+            // Write prompt file (non-fatal: if write fails, log warning and continue)
+            if let Err(err) = ctx
+                .workspace
                 .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
-                .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                    path: ".agent/tmp/commit_prompt.txt".to_string(),
-                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                })?;
+            {
+                ctx.logger.warn(&format!(
+                    "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                    err
+                ));
+            }
 
             return Ok(
                 EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -450,12 +454,16 @@ impl MainEffectHandler {
             })?;
         }
 
-        ctx.workspace
+        // Write prompt file (non-fatal: if write fails, log warning and continue)
+        if let Err(err) = ctx
+            .workspace
             .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: ".agent/tmp/commit_prompt.txt".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
+        {
+            ctx.logger.warn(&format!(
+                "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                err
+            ));
+        }
 
         Ok(
             EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -468,6 +476,9 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Commit);
+
         let attempt = current_commit_attempt(&self.state.commit);
         let prompt = match ctx
             .workspace

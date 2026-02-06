@@ -267,8 +267,12 @@ fn test_continuation_prompt_includes_previous_context() {
             Some("Add tests for the new functionality".to_string()),
         );
 
-        let prompt =
-            prompt_developer_iteration_continuation_xml(&template_context, &continuation_state);
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
+        let prompt = prompt_developer_iteration_continuation_xml(
+            &template_context,
+            &continuation_state,
+            &workspace,
+        );
 
         // Verify the prompt contains key elements
         assert!(
@@ -313,8 +317,12 @@ fn test_continuation_prompt_references_original_files() {
             None,
         );
 
-        let prompt =
-            prompt_developer_iteration_continuation_xml(&template_context, &continuation_state);
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
+        let prompt = prompt_developer_iteration_continuation_xml(
+            &template_context,
+            &continuation_state,
+            &workspace,
+        );
 
         // Verify references to original files
         assert!(

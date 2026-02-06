@@ -203,4 +203,38 @@ impl MainEffectHandler {
 
         Ok(result)
     }
+
+    /// Normalize agent chain state before agent invocation for determinism.
+    ///
+    /// This function ensures that:
+    /// 1. The agent chain role matches the expected role for this invocation
+    /// 2. Session ID policy is consistent with the current retry mode
+    ///
+    /// This is critical for checkpoint replay safety: the same pre-invocation state
+    /// must produce the same agent/role/session selection.
+    pub(super) fn normalize_agent_chain_for_invocation(
+        &mut self,
+        _ctx: &PhaseContext<'_>,
+        expected_role: AgentRole,
+    ) {
+        // Ensure agent chain role matches expected role
+        // The agent chain should already be initialized with the correct role from
+        // the reducer, but we defensively ensure consistency here.
+        if self.state.agent_chain.current_role != expected_role {
+            self.state.agent_chain.current_role = expected_role;
+        }
+
+        // Normalize session ID policy based on retry mode:
+        // - XSD retry: preserve session (session ID already set if available)
+        // - Same-agent retry: clear session to start fresh
+        // - Normal: session policy already set by reducer
+        //
+        // Note: We don't modify last_session_id for XSD retry because it should already
+        // be set from the previous attempt (via xsd_retry_session_reuse_pending flag).
+        // We only clear it for same-agent retry to force a fresh conversation.
+        if self.state.continuation.same_agent_retry_pending {
+            // Same-agent retry: clear last session id to start fresh conversation
+            self.state.agent_chain.last_session_id = None;
+        }
+    }
 }

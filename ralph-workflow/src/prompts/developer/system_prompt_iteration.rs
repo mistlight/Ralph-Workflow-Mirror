@@ -108,10 +108,12 @@ pub fn prompt_developer_iteration_with_context(
 /// * `context` - Template context containing the template registry
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_developer_iteration_xml_with_context(
     context: &TemplateContext,
     prompt_content: &str,
     plan_content: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -124,11 +126,11 @@ pub fn prompt_developer_iteration_xml_with_context(
         ("PLAN", plan_content.to_string()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xml"),
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
         ),
         (
             "DEVELOPMENT_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
         ),
     ]);
 
@@ -153,9 +155,11 @@ pub fn prompt_developer_iteration_xml_with_context(
 ///
 /// * `context` - Template context containing the template registry
 /// * `refs` - Content references for PROMPT and PLAN
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_developer_iteration_xml_with_references(
     context: &TemplateContext,
     refs: &super::content_builder::PromptContentReferences,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -168,11 +172,11 @@ pub fn prompt_developer_iteration_xml_with_references(
         ("PLAN", refs.plan_for_template()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xml"),
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
         ),
         (
             "DEVELOPMENT_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
         ),
     ]);
 
@@ -224,9 +228,37 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
     xsd_error: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    use std::path::Path;
+
     let partials = get_shared_partials();
     // Ensure schema file exists; last_output.xml is expected to already be present.
     write_dev_iteration_xsd_retry_schema_files(workspace);
+
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/development_result.xsd");
+    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+
+    if !workspace.exists(schema_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without schema file.",
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
+            workspace.root().display()
+        );
+    }
+
+    if !workspace.exists(last_output_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without last output file.",
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
+            workspace.root().display()
+        );
+    }
 
     let template_content = context
         .registry()
@@ -238,15 +270,15 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
         ("XSD_ERROR", xsd_error.to_string()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xml"),
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
         ),
         (
             "DEVELOPMENT_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
         ),
         (
             "LAST_OUTPUT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/last_output.xml"),
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
         ),
     ]);
     Template::new(&template_content)
@@ -268,6 +300,7 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
 pub fn prompt_developer_iteration_continuation_xml(
     context: &TemplateContext,
     continuation_state: &crate::reducer::state::ContinuationState,
+    workspace: &dyn Workspace,
 ) -> String {
     let template_content = context
         .registry()
@@ -306,11 +339,11 @@ pub fn prompt_developer_iteration_continuation_xml(
     );
     variables.insert(
         "DEVELOPMENT_RESULT_XML_PATH",
-        resolve_absolute_path(".agent/tmp/development_result.xml"),
+        workspace.absolute_str(".agent/tmp/development_result.xml"),
     );
     variables.insert(
         "DEVELOPMENT_RESULT_XSD_PATH",
-        resolve_absolute_path(".agent/tmp/development_result.xsd"),
+        workspace.absolute_str(".agent/tmp/development_result.xsd"),
     );
 
     // Optional fields - add if present

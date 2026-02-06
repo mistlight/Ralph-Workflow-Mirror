@@ -81,6 +81,7 @@ impl MainEffectHandler {
             &plan_content,
             &diff_content,
             iteration,
+            ctx.workspace,
         );
 
         // XSD retry context: if the last analysis XML was invalid, instruct the agent to
@@ -97,6 +98,9 @@ Then produce a corrected development_result.xml that conforms to the schema.\n\n
 {prompt}"
             );
         }
+
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Analysis);
 
         // Get current agent from chain
         let agent = self

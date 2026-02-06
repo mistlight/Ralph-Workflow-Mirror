@@ -161,11 +161,13 @@ fn review_prompt_construction_includes_all_required_components() {
         let changes_content = "diff --git a/src/lib.rs b/src/lib.rs\n+fn new_function() {}";
 
         // Build the review prompt
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
         let review_prompt = prompt_review_xml_with_context(
             &template_context,
             prompt_content,
             plan_content,
             changes_content,
+            &workspace,
         );
 
         // Verify the prompt contains all required components
@@ -214,7 +216,9 @@ fn review_prompt_allows_empty_plan_and_changes() {
 
     with_default_timeout(|| {
         let template_context = TemplateContext::default();
-        let review_prompt = prompt_review_xml_with_context(&template_context, "prompt", "", "");
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
+        let review_prompt =
+            prompt_review_xml_with_context(&template_context, "prompt", "", "", &workspace);
 
         assert!(
             !review_prompt.contains("{{PLAN}}"),
@@ -246,9 +250,15 @@ fn review_prompt_includes_output_format_guidance() {
 
     with_default_timeout(|| {
         let template_context = TemplateContext::default();
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
 
-        let review_prompt =
-            prompt_review_xml_with_context(&template_context, "requirements", "plan", "changes");
+        let review_prompt = prompt_review_xml_with_context(
+            &template_context,
+            "requirements",
+            "plan",
+            "changes",
+            &workspace,
+        );
 
         // Verify format guidance
         assert!(
@@ -280,9 +290,11 @@ fn review_prompt_handles_empty_inputs() {
 
     with_default_timeout(|| {
         let template_context = TemplateContext::default();
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
 
         // All empty inputs
-        let review_prompt = prompt_review_xml_with_context(&template_context, "", "", "");
+        let review_prompt =
+            prompt_review_xml_with_context(&template_context, "", "", "", &workspace);
 
         // Should still produce a valid prompt structure
         assert!(

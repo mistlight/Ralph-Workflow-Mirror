@@ -460,7 +460,8 @@ fn developer_iteration_prompt_uses_oversize_references() {
             .with_plan(large_content)
             .build();
 
-        let prompt = prompt_developer_iteration_xml_with_references(&context, &refs);
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
+        let prompt = prompt_developer_iteration_xml_with_references(&context, &refs, &workspace);
 
         // Should contain file reference instructions, not embedded content
         assert!(

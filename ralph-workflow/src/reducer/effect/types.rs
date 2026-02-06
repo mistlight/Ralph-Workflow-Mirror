@@ -485,6 +485,19 @@ pub enum Effect {
         /// Optional reason for termination.
         reason: Option<String>,
     },
+
+    /// Trigger mandatory loop recovery.
+    ///
+    /// This effect is emitted when the orchestrator detects that the same effect
+    /// has been executed too many times consecutively without state progression.
+    /// The handler will reset XSD retry state, clear session IDs, and reset loop
+    /// detection counters to break the loop.
+    TriggerLoopRecovery {
+        /// String representation of the detected loop (for diagnostics).
+        detected_loop: String,
+        /// Number of times the loop was repeated.
+        loop_count: u32,
+    },
 }
 
 /// Result of executing an effect.

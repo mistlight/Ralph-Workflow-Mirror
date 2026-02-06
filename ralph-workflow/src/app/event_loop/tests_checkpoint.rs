@@ -46,7 +46,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -142,7 +142,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -233,7 +233,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -328,7 +328,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -456,7 +456,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -520,13 +520,15 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    let mut config = Config::default();
-    config.max_same_agent_retries = Some(5);
+    let config = Config {
+        max_same_agent_retries: Some(5),
+        ..Default::default()
+    };
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -580,7 +582,7 @@ fn test_run_event_loop_with_mock_handler() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());

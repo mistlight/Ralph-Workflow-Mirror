@@ -11,7 +11,6 @@ use std::collections::HashMap;
 const COMMIT_MESSAGE_XSD_SCHEMA: &str =
     include_str!("../files/llm_output_extraction/commit_message.xsd");
 
-use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 use crate::files::result_extraction::extract_file_paths_from_issues;
 
 /// Generate fix prompt (applies to either role).
@@ -43,6 +42,10 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
 #[cfg(test)]
 pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
+    use crate::workspace::WorkspaceFs;
+    use std::env;
+
+    let workspace = WorkspaceFs::new(env::current_dir().unwrap());
     let partials = get_shared_partials();
     let template_content = include_str!("templates/fix_mode_xml.txt");
 
@@ -57,11 +60,11 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
         ("FILES_TO_MODIFY", files_section),
         (
             "FIX_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+            workspace.absolute_str(".agent/tmp/fix_result.xml"),
         ),
         (
             "FIX_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
         ),
     ]);
     Template::new(template_content)
@@ -85,11 +88,13 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_fix_with_context(
     context: &TemplateContext,
     prompt_content: &str,
     plan_content: &str,
     issues_content: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -108,11 +113,11 @@ pub fn prompt_fix_with_context(
         ("FILES_TO_MODIFY", files_section),
         (
             "FIX_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+            workspace.absolute_str(".agent/tmp/fix_result.xml"),
         ),
         (
             "FIX_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
         ),
     ]);
     Template::new(&template_content)
@@ -206,6 +211,10 @@ END OF FILES SECTION
 /// diffs by returning the hardcoded fallback commit message.
 #[cfg(test)]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
+    use crate::workspace::WorkspaceFs;
+    use std::env;
+
+    let workspace = WorkspaceFs::new(env::current_dir().unwrap());
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
     let has_changes = !diff_content.is_empty();
@@ -226,11 +235,11 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
         ("DIFF", diff_content.to_string()),
         (
             "COMMIT_MESSAGE_XML_PATH",
-            resolve_absolute_path(".agent/tmp/commit_message.xml"),
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
         ),
         (
             "COMMIT_MESSAGE_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/commit_message.xsd"),
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
         ),
     ]);
 
@@ -323,13 +332,41 @@ pub fn prompt_commit_xsd_retry_with_context(
     xsd_error: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    use std::path::Path;
+
     // Ensure the schema file is present.
-    let tmp_dir = std::path::Path::new(".agent/tmp");
+    let tmp_dir = Path::new(".agent/tmp");
     let _ = workspace.create_dir_all(tmp_dir);
     let _ = workspace.write(
         &tmp_dir.join("commit_message.xsd"),
         COMMIT_MESSAGE_XSD_SCHEMA,
     );
+
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/commit_message.xsd");
+    let last_output_path = Path::new(".agent/tmp/commit_message.xml");
+
+    if !workspace.exists(schema_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without schema file.",
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+            workspace.root().display()
+        );
+    }
+
+    if !workspace.exists(last_output_path) {
+        return format!(
+            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
+             workspace.root() = {}\n\
+             This likely indicates CWD != workspace.root() path mismatch.\n\n\
+             Cannot generate XSD retry prompt without last output file.",
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
+            workspace.root().display()
+        );
+    }
 
     let partials = get_shared_partials();
     let template_content = context

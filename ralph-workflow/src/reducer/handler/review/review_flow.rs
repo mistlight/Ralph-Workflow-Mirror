@@ -548,7 +548,7 @@ impl MainEffectHandler {
                                 diff: Some(diff_ref),
                             };
                             (
-                                prompt_review_xml_with_references(ctx.template_context, &refs),
+                                prompt_review_xml_with_references(ctx.template_context, &refs, ctx.workspace),
                                 true,
                             )
                         }
@@ -614,7 +614,11 @@ impl MainEffectHandler {
                                 plan: Some(plan_ref),
                                 diff: Some(diff_ref),
                             };
-                            prompt_review_xml_with_references(ctx.template_context, &refs)
+                            prompt_review_xml_with_references(
+                                ctx.template_context,
+                                &refs,
+                                ctx.workspace,
+                            )
                         });
                     (prompt_key, prompt, was_replayed, "review_xml", true)
                 }
@@ -648,15 +652,16 @@ impl MainEffectHandler {
             ctx.capture_prompt(&prompt_key, &review_prompt_xml);
         }
 
-        ctx.workspace
-            .write(
-                Path::new(".agent/tmp/review_prompt.txt"),
-                &review_prompt_xml,
-            )
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: ".agent/tmp/review_prompt.txt".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
+        // Write prompt file (non-fatal: if write fails, log warning and continue)
+        if let Err(err) = ctx.workspace.write(
+            Path::new(".agent/tmp/review_prompt.txt"),
+            &review_prompt_xml,
+        ) {
+            ctx.logger.warn(&format!(
+                "Failed to write review prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                err
+            ));
+        }
 
         let mut result = EffectResult::event(PipelineEvent::review_prompt_prepared(pass));
         for ev in additional_events {
@@ -672,6 +677,9 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::agents::AgentRole;
         use std::path::Path;
+
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Reviewer);
 
         let prompt = match ctx
             .workspace

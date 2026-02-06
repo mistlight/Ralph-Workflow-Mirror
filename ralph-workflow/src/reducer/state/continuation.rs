@@ -150,6 +150,21 @@ pub struct ContinuationState {
     /// After this many continuations, proceeds to commit even if issues remain.
     #[serde(default = "default_max_continue_count")]
     pub max_fix_continue_count: u32,
+
+    // =========================================================================
+    // Loop detection fields (to prevent infinite tight loops)
+    // =========================================================================
+    /// Loop detection: last effect executed (for detecting repeats).
+    #[serde(default)]
+    pub last_effect_kind: Option<String>,
+
+    /// Loop detection: count of consecutive identical effects.
+    #[serde(default)]
+    pub consecutive_same_effect_count: u32,
+
+    /// Maximum consecutive identical effects before triggering recovery.
+    #[serde(default = "default_max_consecutive_same_effect")]
+    pub max_consecutive_same_effect: u32,
 }
 
 const fn default_max_xsd_retry_count() -> u32 {
@@ -162,6 +177,10 @@ const fn default_max_same_agent_retry_count() -> u32 {
 
 const fn default_max_continue_count() -> u32 {
     3
+}
+
+const fn default_max_consecutive_same_effect() -> u32 {
+    5
 }
 
 impl Default for ContinuationState {
@@ -195,6 +214,10 @@ impl Default for ContinuationState {
             fix_continuation_attempt: 0,
             fix_continue_pending: false,
             max_fix_continue_count: default_max_continue_count(),
+            // Loop detection fields
+            last_effect_kind: None,
+            consecutive_same_effect_count: 0,
+            max_consecutive_same_effect: default_max_consecutive_same_effect(),
         }
     }
 }
@@ -268,11 +291,16 @@ impl ContinuationState {
     /// continuation state), use field-level updates instead.
     pub fn reset(&self) -> Self {
         // Preserve configured limits, reset everything else
+        //
+        // Note: Loop detection fields (last_effect_kind, consecutive_same_effect_count)
+        // are reset to None/0 via ..Self::default(). This is intentional during loop
+        // recovery to break the cycle and start fresh.
         Self {
             max_xsd_retry_count: self.max_xsd_retry_count,
             max_same_agent_retry_count: self.max_same_agent_retry_count,
             max_continue_count: self.max_continue_count,
             max_fix_continue_count: self.max_fix_continue_count,
+            max_consecutive_same_effect: self.max_consecutive_same_effect,
             ..Self::default()
         }
     }
@@ -430,6 +458,10 @@ impl ContinuationState {
             fix_continuation_attempt: self.fix_continuation_attempt,
             fix_continue_pending: self.fix_continue_pending,
             max_fix_continue_count: self.max_fix_continue_count,
+            // Preserve loop detection fields
+            last_effect_kind: self.last_effect_kind.clone(),
+            consecutive_same_effect_count: self.consecutive_same_effect_count,
+            max_consecutive_same_effect: self.max_consecutive_same_effect,
         }
     }
 

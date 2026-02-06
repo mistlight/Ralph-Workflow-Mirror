@@ -621,6 +621,16 @@ src/lib.rs</ralph-files-changed>
                 }),
                 vec![],
             ),
+            Effect::TriggerLoopRecovery {
+                detected_loop,
+                loop_count,
+            } => (
+                PipelineEvent::LoopRecoveryTriggered {
+                    detected_loop: detected_loop.clone(),
+                    loop_count,
+                },
+                vec![],
+            ),
         };
 
         if let Effect::SaveCheckpoint { trigger } = effect_for_additional {

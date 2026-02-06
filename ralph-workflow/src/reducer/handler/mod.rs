@@ -309,6 +309,11 @@ impl MainEffectHandler {
 
             Effect::CleanupContinuationContext => self.cleanup_continuation_context(ctx),
 
+            Effect::TriggerLoopRecovery {
+                detected_loop,
+                loop_count,
+            } => self.trigger_loop_recovery(ctx, detected_loop, loop_count),
+
             Effect::TriggerDevFixFlow {
                 failed_phase,
                 failed_role,
@@ -347,6 +352,7 @@ impl MainEffectHandler {
                     &prompt_content,
                     &plan_content,
                     &issues_content,
+                    ctx.workspace,
                 );
 
                 if let Err(err) = ctx.workspace.write(
@@ -381,11 +387,35 @@ impl MainEffectHandler {
                 ) {
                     Ok(result) => Ok(result),
                     Err(err) => {
-                        ctx.logger
-                            .warn(&format!("Dev-fix agent invocation failed: {}", err));
+                        // Check if error is due to agent unavailability (quota/usage limit)
+                        let err_msg = err.to_string().to_lowercase();
+                        let is_agent_unavailable = err_msg.contains("usage limit")
+                            || err_msg.contains("quota exceeded")
+                            || err_msg.contains("rate limit");
+
+                        if is_agent_unavailable {
+                            ctx.logger.warn(&format!(
+                                "Dev-fix agent unavailable: {}. Pipeline will terminate with failure marker.",
+                                err
+                            ));
+                        } else {
+                            ctx.logger
+                                .warn(&format!("Dev-fix agent invocation failed: {}", err));
+                        }
                         Err(err)
                     }
                 };
+
+                let is_agent_unavailable = agent_result
+                    .as_ref()
+                    .err()
+                    .map(|err| {
+                        let err_msg = err.to_string().to_lowercase();
+                        err_msg.contains("usage limit")
+                            || err_msg.contains("quota exceeded")
+                            || err_msg.contains("rate limit")
+                    })
+                    .unwrap_or(false);
 
                 let dev_fix_success = agent_result
                     .as_ref()
@@ -405,6 +435,9 @@ impl MainEffectHandler {
                     .as_ref()
                     .err()
                     .map(|err| format!("Dev-fix agent invocation failed: {}", err));
+
+                // Extract error reason before consuming agent_result
+                let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
 
                 let mut result = match agent_result.as_ref() {
                     Ok(result) => EffectResult::with_ui(
@@ -431,12 +464,22 @@ impl MainEffectHandler {
                     }
                 }
 
-                result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
-                    crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
-                        success: dev_fix_success,
-                        summary: dev_fix_summary,
-                    },
-                ));
+                // Emit appropriate event based on agent availability
+                if is_agent_unavailable {
+                    result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                        crate::reducer::event::AwaitingDevFixEvent::DevFixAgentUnavailable {
+                            failed_phase,
+                            reason: error_reason.unwrap_or_else(|| "unknown".to_string()),
+                        },
+                    ));
+                } else {
+                    result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                        crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                            success: dev_fix_success,
+                            summary: dev_fix_summary,
+                        },
+                    ));
+                }
                 result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure: true,

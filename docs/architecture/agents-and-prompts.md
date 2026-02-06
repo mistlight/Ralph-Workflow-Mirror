@@ -63,6 +63,41 @@ There are two distinct template systems:
 
 Agent prompts use a small template language (variables, partials) and are rendered with context derived from pipeline state, config, and captured artifacts.
 
+### Workspace-Rooted Path Resolution
+
+All prompt generation functions accept a `&dyn Workspace` parameter and use `workspace.absolute_str()` to generate absolute paths for output files. This ensures prompts embed paths rooted at the workspace directory, not the process's current working directory (`std::env::current_dir()`).
+
+**Why this matters:** In multi-worktree setups or isolation mode, the process CWD may differ from the workspace root. Using CWD-based paths would cause agents to write output XML to the wrong directory, triggering XSD retry loops that cannot converge.
+
+**Implementation:**
+- All `prompt_*_xml_with_*` functions take `workspace: &dyn Workspace`
+- XSD retry functions check for missing schema files and emit diagnostics including workspace root
+- Effect handlers pass `ctx.workspace` to prompt generation functions
+
+### Template Rendering Error Handling
+
+Prompt file writes in effect handlers are non-fatal. If template rendering or file writes fail:
+
+1. A warning is logged with the error details
+2. The pipeline continues advancing to the next effect
+3. Loop recovery mechanisms ensure convergence even if prompts are malformed
+
+This prevents template errors from terminating the pipeline. The loop detection system will trigger recovery if the same effect repeats too many times.
+
+**Key principle:** Pipeline advancement must never be blocked by prompt generation failures. The reducer's loop recovery system handles convergence.
+
+### Agent Chain Normalization
+
+Immediately before each `Invoke*Agent` effect execution, the effect handler normalizes agent chain state to ensure deterministic agent selection:
+
+- Verify current role matches expected role for the phase
+- Apply session ID policy based on retry mode:
+  - XSD retry: preserve session ID (same conversation)
+  - Same-agent retry: clear session ID (fresh conversation)
+  - Normal invocation: use session policy from reducer state
+
+This normalization ensures checkpoint replay produces identical agent selection given the same reducer state, which is critical for deterministic recovery.
+
 ## Where Streaming Output Parsing Hooks In
 
 Agent CLIs typically emit streaming NDJSON. Ralph:

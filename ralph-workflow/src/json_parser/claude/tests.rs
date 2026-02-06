@@ -25,6 +25,6 @@ mod tests {
                 .with_show_streaming_metrics(true);
 
         // This test verifies the builder method is accessible
-        assert_eq!(parser.show_streaming_metrics, true);
+        assert!(parser.show_streaming_metrics);
     }
 }
