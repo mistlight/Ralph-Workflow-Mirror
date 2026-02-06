@@ -335,6 +335,10 @@ pub fn prompt_commit_xsd_retry_with_context(
     use std::path::Path;
 
     // Ensure the schema file is present.
+    // Note: Silent failure (let _) is acceptable here because if the schema file
+    // write fails, the subsequent workspace.exists(schema_path) check will return
+    // false and generate a clear "REQUIRED OUTPUT PATH DOES NOT EXIST" error message.
+    // This approach avoids unnecessary error handling while still providing actionable feedback.
     let tmp_dir = Path::new(".agent/tmp");
     let _ = workspace.create_dir_all(tmp_dir);
     let _ = workspace.write(

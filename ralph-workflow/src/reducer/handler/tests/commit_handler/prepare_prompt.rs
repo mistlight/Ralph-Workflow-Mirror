@@ -83,7 +83,15 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
 
 #[test]
 fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
-    let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+    // The XSD retry prompt now validates that required input files exist.
+    // This test provides those files to verify the retry prompt generation works.
+    let workspace = MemoryWorkspace::new_test()
+        .with_dir(".agent/tmp")
+        .with_file(
+            ".agent/tmp/commit_message.xml",
+            "<ralph-commit><ralph-subject>test: subject</ralph-subject></ralph-commit>",
+        );
+    // Note: commit_message.xsd is automatically written by prompt_commit_xsd_retry_with_context
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
