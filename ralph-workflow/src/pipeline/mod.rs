@@ -5,7 +5,6 @@
 //!
 //! # Key Types
 //!
-//! - [`Stats`] - Pipeline statistics tracking (commits, changes, errors)
 //! - [`AgentPhaseGuard`] - RAII guard for phase cleanup on success/failure
 //! - [`Timer`] - Execution duration tracking with phase support
 //! - [`PipelineRuntime`] - Runtime context for agent execution
@@ -31,7 +30,7 @@ mod prompt;
 mod types;
 
 pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
-pub use types::{AgentPhaseGuard, Stats};
+pub use types::AgentPhaseGuard;
 
 // ===== Timer Utilities =====
 

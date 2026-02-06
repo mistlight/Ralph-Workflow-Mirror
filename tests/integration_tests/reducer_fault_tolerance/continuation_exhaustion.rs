@@ -11,7 +11,7 @@ use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
 use ralph_workflow::config::Config;
 use ralph_workflow::executor::MockProcessExecutor;
 use ralph_workflow::logger::{Colors, Logger};
-use ralph_workflow::pipeline::{Stats, Timer};
+use ralph_workflow::pipeline::Timer;
 use ralph_workflow::prompts::template_context::TemplateContext;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
@@ -284,7 +284,7 @@ fn test_completion_marker_file_written_on_failure() {
         let colors = Colors::new();
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+
         let template_context = TemplateContext::default();
         let executor = Arc::new(MockProcessExecutor::new());
 
@@ -294,7 +294,6 @@ fn test_completion_marker_file_written_on_failure() {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,
@@ -471,7 +470,7 @@ fn test_budget_exhausted_continues_to_completion_via_event_loop() {
         let colors = Colors::new();
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+
         let template_context = TemplateContext::default();
         let executor = Arc::new(MockProcessExecutor::new());
 
@@ -481,7 +480,6 @@ fn test_budget_exhausted_continues_to_completion_via_event_loop() {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,

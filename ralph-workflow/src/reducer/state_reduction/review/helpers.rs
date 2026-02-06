@@ -20,7 +20,8 @@ fn reduce_phase_started(state: PipelineState) -> PipelineState {
         },
         // Entering Review must reset continuation state to avoid leaking
         // development continuation context into review/fix/rebase logic.
-        continuation: ContinuationState::new(),
+        // Preserve configured limits to keep budgets stable across phases.
+        continuation: state.continuation.reset(),
         review_issues_xml_cleaned_pass: None,
         review_issue_snippets_extracted_pass: None,
         fix_result_xml_cleaned_pass: None,
@@ -29,6 +30,21 @@ fn reduce_phase_started(state: PipelineState) -> PipelineState {
 }
 
 fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
+    let mut metrics = state.metrics.clone();
+    // Increment for the first PassStarted (pass 0) and for any truly new pass.
+    // A PassStarted re-emitted for the same pass (retry) must not increment.
+    if state.metrics.review_passes_started == 0 || state.reviewer_pass != pass {
+        metrics.review_passes_started += 1;
+    }
+    // Update current pass tracker
+    metrics.current_review_pass = pass;
+    // Reset per-pass fix continuation attempt counter when starting a new pass.
+    // If orchestration re-emits PassStarted for the same pass (retry), preserve the
+    // current per-pass attempt counter so retries don't erase history.
+    if state.reviewer_pass != pass {
+        metrics.fix_continuation_attempt = 0;
+    }
+
     PipelineState {
         reviewer_pass: pass,
         review_issues_found: false,
@@ -74,6 +90,7 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
                 ..state.continuation
             }
         },
+        metrics,
         ..state
     }
 }
@@ -88,6 +105,9 @@ fn reduce_fix_continuation_budget_exhausted(state: PipelineState, pass: u32) -> 
         reviewer_pass: pass,
         commit: crate::reducer::state::CommitState::NotStarted,
         commit_prompt_prepared: false,
+        commit_diff_prepared: false,
+        commit_diff_empty: false,
+        commit_diff_content_id_sha256: None,
         commit_agent_invoked: false,
         commit_xml_cleaned: false,
         commit_xml_extracted: false,
@@ -107,6 +127,14 @@ fn reduce_fix_output_validation_failure(
 ) -> PipelineState {
     // Same policy as review output validation failure
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
+    let mut metrics = state.metrics.clone();
+
+    // Only increment metrics if we're actually retrying (not exhausted)
+    let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
+    if will_retry {
+        metrics.xsd_retry_fix += 1;
+        metrics.xsd_retry_attempts_total += 1;
+    }
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent
@@ -125,6 +153,7 @@ fn reduce_fix_output_validation_failure(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
+            metrics,
             ..state
         }
     } else {
@@ -142,6 +171,7 @@ fn reduce_fix_output_validation_failure(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
+            metrics,
             ..state
         }
     }

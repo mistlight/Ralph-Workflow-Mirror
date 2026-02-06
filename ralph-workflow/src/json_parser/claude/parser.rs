@@ -205,7 +205,7 @@ impl ClaudeParser {
     /// Only available with the `test-utils` feature.
     ///
     /// Note: downstream crates should avoid relying on this API in production builds.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -241,7 +241,7 @@ impl ClaudeParser {
     /// let metrics = parser.streaming_metrics();
     /// assert!(metrics.snapshot_repairs_count > 0, "Snapshot repairs should occur");
     /// ```
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()

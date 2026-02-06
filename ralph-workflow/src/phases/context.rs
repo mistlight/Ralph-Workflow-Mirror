@@ -11,7 +11,6 @@ use crate::config::Config;
 use crate::executor::ProcessExecutor;
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::Stats;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::workspace::Workspace;
@@ -35,8 +34,6 @@ pub struct PhaseContext<'a> {
     pub colors: &'a Colors,
     /// Timer for tracking elapsed time.
     pub timer: &'a mut Timer,
-    /// Statistics for tracking pipeline progress.
-    pub stats: &'a mut Stats,
     /// Name of the developer agent.
     pub developer_agent: &'a str,
     /// Name of the reviewer agent.
@@ -137,7 +134,7 @@ mod tests {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use std::path::PathBuf;
 
@@ -150,7 +147,6 @@ mod tests {
         colors: Colors,
         logger: Logger,
         timer: Timer,
-        stats: Stats,
         template_context: TemplateContext,
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: PathBuf,
@@ -170,7 +166,6 @@ mod tests {
                 colors,
                 logger: Logger::new(colors),
                 timer: Timer::new(),
-                stats: Stats::default(),
                 template_context: TemplateContext::default(),
                 executor_arc,
                 repo_root,
@@ -200,7 +195,6 @@ mod tests {
             logger: &fixture.logger,
             colors: &fixture.colors,
             timer: &mut fixture.timer,
-            stats: &mut fixture.stats,
             developer_agent: "developer-agent",
             reviewer_agent: "reviewer-agent",
             review_guidelines: None,
@@ -242,7 +236,6 @@ mod tests {
             logger: &fixture.logger,
             colors: &fixture.colors,
             timer: &mut fixture.timer,
-            stats: &mut fixture.stats,
             developer_agent: "developer-agent",
             reviewer_agent: "reviewer-agent-1",
             review_guidelines: None,
@@ -276,7 +269,6 @@ mod tests {
             logger: &fixture.logger,
             colors: &fixture.colors,
             timer: &mut fixture.timer,
-            stats: &mut fixture.stats,
             developer_agent: "fallback-developer",
             reviewer_agent: "fallback-reviewer",
             review_guidelines: None,

@@ -1,39 +1,9 @@
-//! Core pipeline types (stats and cleanup guards).
+//! Core pipeline types (cleanup guards and command results).
 
 use crate::files::cleanup_generated_files_with_workspace;
 use crate::git_helpers::{disable_git_wrapper, end_agent_phase, uninstall_hooks, GitHelpers};
 use crate::logger::Logger;
 use crate::workspace::Workspace;
-
-/// Statistics tracking for pipeline execution.
-pub struct Stats {
-    /// Number of times repository changes were detected
-    pub changes_detected: u32,
-    /// Number of developer agent runs completed
-    pub developer_runs_completed: u32,
-    /// Number of reviewer agent runs completed
-    pub reviewer_runs_completed: u32,
-    /// Number of commits created by the orchestrator
-    pub commits_created: u32,
-}
-
-impl Stats {
-    /// Create a new Stats instance with all counters at zero.
-    pub const fn new() -> Self {
-        Self {
-            changes_detected: 0,
-            developer_runs_completed: 0,
-            reviewer_runs_completed: 0,
-            commits_created: 0,
-        }
-    }
-}
-
-impl Default for Stats {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Result of running a command, including stderr for error classification.
 pub struct CommandResult {

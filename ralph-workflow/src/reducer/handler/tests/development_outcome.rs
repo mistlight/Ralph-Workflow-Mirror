@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{
@@ -42,7 +42,6 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -50,7 +49,6 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

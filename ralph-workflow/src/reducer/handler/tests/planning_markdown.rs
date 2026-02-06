@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
@@ -22,7 +22,6 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -37,7 +36,6 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -83,7 +81,6 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -98,7 +95,6 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

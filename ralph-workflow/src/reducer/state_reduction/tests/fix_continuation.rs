@@ -76,6 +76,19 @@ fn test_fix_continuation_succeeded_transitions_to_commit() {
         !new_state.continuation.fix_continue_pending,
         "Fix continue pending should be cleared"
     );
+
+    assert!(
+        !new_state.commit_diff_prepared,
+        "Entering commit phase should reset commit diff tracking"
+    );
+    assert!(
+        !new_state.commit_diff_empty,
+        "Entering commit phase should reset commit diff tracking"
+    );
+    assert!(
+        new_state.commit_diff_content_id_sha256.is_none(),
+        "Entering commit phase should reset commit diff tracking"
+    );
 }
 
 #[test]
@@ -105,6 +118,19 @@ fn test_fix_continuation_budget_exhausted_transitions_to_commit() {
         new_state.phase,
         PipelinePhase::CommitMessage,
         "Should transition to CommitMessage even when budget exhausted"
+    );
+
+    assert!(
+        !new_state.commit_diff_prepared,
+        "Entering commit phase should reset commit diff tracking"
+    );
+    assert!(
+        !new_state.commit_diff_empty,
+        "Entering commit phase should reset commit diff tracking"
+    );
+    assert!(
+        new_state.commit_diff_content_id_sha256.is_none(),
+        "Entering commit phase should reset commit diff tracking"
     );
 }
 

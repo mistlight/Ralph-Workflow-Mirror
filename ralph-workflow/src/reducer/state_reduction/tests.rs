@@ -69,3 +69,7 @@ mod xsd_retry;
 // Fix continuation tests
 #[path = "tests/fix_continuation.rs"]
 mod fix_continuation;
+
+// Metrics tracking tests
+#[path = "tests/metrics.rs"]
+mod metrics;

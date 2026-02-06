@@ -5,7 +5,7 @@ use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 use crate::common::{
     create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler,
 };
-use crate::test_timeout::with_default_timeout;
+use crate::test_timeout::{with_default_timeout, with_timeout_ctx};
 
 use super::super::{
     make_checkpoint_with_file_system_state, MOCK_REPO_PATH, STANDARD_PROMPT,
@@ -126,19 +126,20 @@ fn ralph_v3_file_system_state_detects_changes() {
 
 #[test]
 fn ralph_v3_file_system_state_auto_recovery() {
-    with_default_timeout(|| {
-        // Small PLAN.md content
-        let plan_content = "Small plan content";
+    with_timeout_ctx(
+        |_ctx| {
+            // Small PLAN.md content
+            let plan_content = "Small plan content";
 
-        // Calculate checksum
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(plan_content.as_bytes());
-        let checksum = format!("{:x}", hasher.finalize());
+            // Calculate checksum
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(plan_content.as_bytes());
+            let checksum = format!("{:x}", hasher.finalize());
 
-        // Create file system state JSON with content for recovery
-        let file_system_state_json = format!(
-            r#"{{
+            // Create file system state JSON with content for recovery
+            let file_system_state_json = format!(
+                r#"{{
             "files": {{
                 ".agent/PLAN.md": {{
                     "path": ".agent/PLAN.md",
@@ -151,43 +152,46 @@ fn ralph_v3_file_system_state_auto_recovery() {
             "git_head_oid": null,
             "git_branch": null
         }}"#,
-            checksum,
-            plan_content.len(),
-            plan_content
-        );
+                checksum,
+                plan_content.len(),
+                plan_content
+            );
 
-        let checkpoint_json = make_checkpoint_with_file_system_state(
-            MOCK_REPO_PATH,
-            "Development",
-            &file_system_state_json,
-        );
+            let checkpoint_json = make_checkpoint_with_file_system_state(
+                MOCK_REPO_PATH,
+                "Development",
+                &file_system_state_json,
+            );
 
-        // Create handler with MODIFIED PLAN.md
-        let mut handler = MockAppEffectHandler::new()
-            .with_head_oid("a".repeat(40))
-            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", STANDARD_PROMPT)
-            .with_file(".agent/PLAN.md", "Modified plan content")
-            .with_file(".agent/checkpoint.json", &checkpoint_json);
+            // Create handler with MODIFIED PLAN.md
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Modified plan content")
+                .with_file(".agent/checkpoint.json", &checkpoint_json);
 
-        let config = create_test_config_struct();
-        let executor = mock_executor_with_success();
+            let config = create_test_config_struct();
+            let executor = mock_executor_with_success();
 
-        // Resume with --recovery-strategy=auto should restore the file from checkpoint state.
-        run_ralph_cli_with_handler(
-            &["--resume", "--recovery-strategy", "auto"],
-            executor,
-            config,
-            &mut handler,
-        )
-        .unwrap();
+            // Resume with --recovery-strategy=auto should restore the file from checkpoint state.
+            run_ralph_cli_with_handler(
+                &["--resume", "--recovery-strategy", "auto"],
+                executor,
+                config,
+                &mut handler,
+            )
+            .unwrap();
 
-        // Verify the pipeline completed and PLAN.md was restored from checkpoint content.
-        let restored = handler
-            .get_file(&PathBuf::from(".agent/PLAN.md"))
-            .expect("PLAN.md should exist after resume");
-        assert_eq!(restored, plan_content);
-    });
+            // Verify the pipeline completed and PLAN.md was restored from checkpoint content.
+            let restored = handler
+                .get_file(&PathBuf::from(".agent/PLAN.md"))
+                .expect("PLAN.md should exist after resume");
+            assert_eq!(restored, plan_content);
+        },
+        // Pipeline runner + event loop can be slower under CI load
+        std::time::Duration::from_secs(10),
+    );
 }
 
 // ============================================================================

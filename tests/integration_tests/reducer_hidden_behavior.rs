@@ -177,7 +177,7 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
         use ralph_workflow::config::Config;
         use ralph_workflow::executor::MockProcessExecutor;
         use ralph_workflow::logger::{Colors, Logger};
-        use ralph_workflow::pipeline::{Stats, Timer};
+        use ralph_workflow::pipeline::Timer;
         use ralph_workflow::prompts::template_context::TemplateContext;
         use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
         use ralph_workflow::workspace::MemoryWorkspace;
@@ -188,7 +188,7 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
         let colors = Colors::new();
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
@@ -202,7 +202,6 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,

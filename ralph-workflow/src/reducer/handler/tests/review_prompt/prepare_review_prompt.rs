@@ -5,7 +5,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
@@ -139,7 +139,6 @@ fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -154,7 +153,6 @@ fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -190,7 +188,6 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -205,7 +202,6 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -258,7 +254,6 @@ fn test_prepare_review_prompt_maps_workspace_write_failure_to_error_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -273,7 +268,6 @@ fn test_prepare_review_prompt_maps_workspace_write_failure_to_error_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -326,7 +320,6 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -341,7 +334,6 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -408,7 +400,6 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_error
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -423,7 +414,6 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_error
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -500,7 +490,6 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_baseline_read_err
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -515,7 +504,6 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_baseline_read_err
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -588,7 +576,6 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -603,7 +590,6 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -656,7 +642,6 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -671,7 +656,6 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -724,7 +708,6 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -739,7 +722,6 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -804,7 +786,6 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -819,7 +800,6 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -859,7 +839,6 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -877,7 +856,6 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -929,7 +907,6 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -944,7 +921,6 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -1005,7 +981,6 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -1020,7 +995,6 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,

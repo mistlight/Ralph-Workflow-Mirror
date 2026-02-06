@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
@@ -125,7 +125,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -140,7 +140,6 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -177,7 +176,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -192,7 +191,6 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -233,7 +231,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -251,7 +249,6 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -308,7 +305,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -326,7 +323,6 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -376,7 +372,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -394,7 +390,6 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -465,7 +460,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -483,7 +478,6 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -539,7 +533,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -556,7 +550,6 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -612,7 +605,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -630,7 +623,6 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -657,6 +649,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
         )
         .with_session_id(Some(session_id.clone()));
     state.continuation.xsd_retry_pending = true;
+    state.continuation.xsd_retry_session_reuse_pending = true;
 
     state = reduce(state, PipelineEvent::planning_prompt_prepared(0));
     assert!(
@@ -689,7 +682,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -707,7 +700,6 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -771,7 +763,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -789,7 +781,6 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -842,7 +833,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -857,7 +848,6 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -888,7 +878,7 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -903,7 +893,6 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -940,7 +929,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -955,7 +944,6 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -995,7 +983,7 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1010,7 +998,6 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -1047,7 +1034,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1062,7 +1049,6 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -1102,7 +1088,7 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1117,7 +1103,6 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -1164,7 +1149,7 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1179,7 +1164,6 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -1232,7 +1216,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1247,7 +1231,6 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -1309,7 +1292,7 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1327,7 +1310,6 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -1386,7 +1368,7 @@ fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -1404,7 +1386,6 @@ fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

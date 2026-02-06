@@ -5,7 +5,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::workspace::MemoryWorkspace;
@@ -46,7 +46,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -59,7 +59,6 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -114,7 +113,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::reducer::event::PipelinePhase;
@@ -143,7 +142,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -156,7 +155,6 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -206,7 +204,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::workspace::MemoryWorkspace;
@@ -235,7 +233,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -248,7 +246,6 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -283,7 +280,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
@@ -331,7 +328,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -344,7 +341,6 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -392,7 +388,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
@@ -460,7 +456,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -473,7 +469,6 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -519,7 +514,7 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
@@ -531,7 +526,7 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -544,7 +539,6 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -573,7 +567,7 @@ fn test_run_event_loop_with_mock_handler() {
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::mock_effect_handler::MockEffectHandler;
     use crate::reducer::PipelineState;
@@ -586,7 +580,7 @@ fn test_run_event_loop_with_mock_handler() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -600,7 +594,6 @@ fn test_run_event_loop_with_mock_handler() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,

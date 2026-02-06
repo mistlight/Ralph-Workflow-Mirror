@@ -22,6 +22,9 @@ include!("state/continuation.rs");
 // Agent fallback chain state and backoff computation
 include!("state/agent_chain.rs");
 
+// Run-level execution metrics
+include!("state/metrics.rs");
+
 // Pipeline state, validated outcomes, and checkpoint conversion
 include!("state/pipeline.rs");
 

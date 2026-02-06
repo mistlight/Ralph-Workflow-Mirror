@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
@@ -19,7 +19,7 @@ fn test_extract_planning_xml_emits_missing_event() {
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -35,7 +35,6 @@ fn test_extract_planning_xml_emits_missing_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -65,7 +64,7 @@ fn test_extract_development_xml_emits_missing_event() {
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -81,7 +80,6 @@ fn test_extract_development_xml_emits_missing_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -111,7 +109,7 @@ fn test_extract_review_issues_xml_emits_missing_event() {
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -127,7 +125,6 @@ fn test_extract_review_issues_xml_emits_missing_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -157,7 +154,7 @@ fn test_extract_fix_result_xml_emits_missing_event() {
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -173,7 +170,6 @@ fn test_extract_fix_result_xml_emits_missing_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

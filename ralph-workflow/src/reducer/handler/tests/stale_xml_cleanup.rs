@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::AgentChainState;
@@ -24,7 +24,6 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
         .with_file(xml_paths::PLAN_XML, "<ralph-plan>old</ralph-plan>");
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -41,7 +40,6 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -69,7 +67,6 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         MemoryWorkspace::new_test().with_file(xml_paths::PLAN_XML, "<ralph-plan>old</ralph-plan>");
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -86,7 +83,6 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -118,7 +114,6 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
         );
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -135,7 +130,6 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -165,7 +159,6 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
     );
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -182,7 +175,6 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -211,7 +203,6 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
         .with_file(xml_paths::ISSUES_XML, "<ralph-issues>old</ralph-issues>");
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -228,7 +219,6 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -256,7 +246,6 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         .with_file(xml_paths::ISSUES_XML, "<ralph-issues>old</ralph-issues>");
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -273,7 +262,6 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -305,7 +293,6 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
         );
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -322,7 +309,6 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -352,7 +338,6 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
     );
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -369,7 +354,6 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -401,7 +385,6 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
         );
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -418,7 +401,6 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -455,7 +437,6 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
     );
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -472,7 +453,6 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

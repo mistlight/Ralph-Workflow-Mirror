@@ -22,6 +22,10 @@ fn test_development_output_validation_failed_sets_xsd_retry_pending() {
         new_state.continuation.xsd_retry_pending,
         "XSD retry should be pending after validation failure"
     );
+    assert!(
+        new_state.continuation.xsd_retry_session_reuse_pending,
+        "XSD retry should reuse the prior session when available"
+    );
     assert_eq!(
         new_state.continuation.xsd_retry_count, 1,
         "XSD retry count should be incremented"
@@ -330,10 +334,11 @@ fn test_commit_xsd_retry_exhausted_switches_agent() {
 }
 
 #[test]
-fn test_planning_prompt_prepared_clears_xsd_retry_pending() {
+fn test_planning_prompt_prepared_clears_xsd_retry_pending_but_preserves_session_reuse_signal() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
+            xsd_retry_session_reuse_pending: true,
             ..ContinuationState::new()
         },
         ..create_test_state()
@@ -344,6 +349,10 @@ fn test_planning_prompt_prepared_clears_xsd_retry_pending() {
     assert!(
         !new_state.continuation.xsd_retry_pending,
         "Prompt preparation should clear xsd retry pending"
+    );
+    assert!(
+        new_state.continuation.xsd_retry_session_reuse_pending,
+        "Prompt preparation must preserve the session reuse signal for the upcoming retry"
     );
 }
 
@@ -366,10 +375,11 @@ fn test_planning_agent_invoked_clears_xsd_retry_pending() {
 }
 
 #[test]
-fn test_review_prompt_prepared_clears_xsd_retry_pending() {
+fn test_review_prompt_prepared_clears_xsd_retry_pending_but_preserves_session_reuse_signal() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
+            xsd_retry_session_reuse_pending: true,
             ..ContinuationState::new()
         },
         ..create_test_state()
@@ -380,6 +390,10 @@ fn test_review_prompt_prepared_clears_xsd_retry_pending() {
     assert!(
         !new_state.continuation.xsd_retry_pending,
         "Prompt preparation should clear xsd retry pending"
+    );
+    assert!(
+        new_state.continuation.xsd_retry_session_reuse_pending,
+        "Prompt preparation must preserve the session reuse signal for the upcoming retry"
     );
 }
 
@@ -402,10 +416,11 @@ fn test_review_agent_invoked_clears_xsd_retry_pending() {
 }
 
 #[test]
-fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
+fn test_commit_prompt_prepared_clears_xsd_retry_pending_but_preserves_session_reuse_signal() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
+            xsd_retry_session_reuse_pending: true,
             ..ContinuationState::new()
         },
         ..create_test_state()
@@ -416,6 +431,10 @@ fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
     assert!(
         !new_state.continuation.xsd_retry_pending,
         "Prompt preparation should clear xsd retry pending"
+    );
+    assert!(
+        new_state.continuation.xsd_retry_session_reuse_pending,
+        "Prompt preparation must preserve the session reuse signal for the upcoming retry"
     );
 }
 

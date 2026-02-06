@@ -28,6 +28,12 @@ impl MainEffectHandler {
         // always advances past the boundary.
         if trigger == CheckpointTrigger::PhaseTransition {
             match self.state.phase {
+                PipelinePhase::Development
+                    if self.state.iteration >= self.state.total_iterations =>
+                {
+                    result =
+                        result.with_additional_event(PipelineEvent::development_phase_completed());
+                }
                 PipelinePhase::Review
                     if self.state.reviewer_pass >= self.state.total_reviewer_passes =>
                 {

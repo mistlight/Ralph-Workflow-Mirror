@@ -6,7 +6,7 @@ mod tests {
     use crate::config::Config;
     use crate::executor::{MockProcessExecutor, ProcessExecutor};
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::workspace::MemoryWorkspace;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -122,7 +122,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+        
         let config = Config::default();
         let registry = AgentRegistry::new().unwrap();
         let template_context = TemplateContext::default();
@@ -140,7 +140,6 @@ mod tests {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "claude",
             reviewer_agent: "claude",
             review_guidelines: None,
@@ -174,7 +173,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+        
         let config = Config::default();
         let registry = AgentRegistry::new().unwrap();
         let template_context = TemplateContext::default();
@@ -192,7 +191,6 @@ mod tests {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "claude",
             reviewer_agent: "claude",
             review_guidelines: None,

@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
@@ -23,7 +23,6 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -40,7 +39,6 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -74,8 +72,8 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
     assert!(
-        prompt.contains("ANALYSIS RULES") || prompt.contains("CRITICAL CONSTRAINTS"),
-        "expected analysis prompt structure in prompt, got: {prompt}"
+        prompt.contains("Your task is to determine whether the ACTUAL CHANGES satisfy the PLAN"),
+        "expected analysis prompt header in prompt, got: {prompt}"
     );
     // Validate that the DIFF section contains either a placeholder or an actual diff.
     assert!(
@@ -96,7 +94,6 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -113,7 +110,6 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

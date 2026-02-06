@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
@@ -19,7 +19,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -42,7 +42,6 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -71,7 +70,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -94,7 +93,6 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -123,7 +121,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -146,7 +144,6 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -175,7 +172,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -200,7 +197,6 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -229,7 +225,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -247,7 +243,6 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,

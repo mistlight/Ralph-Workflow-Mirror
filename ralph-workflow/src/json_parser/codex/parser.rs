@@ -91,7 +91,7 @@ impl CodexParser {
     /// allowing integration tests (in this repository) to create parsers with custom printers.
     ///
     /// Note: downstream crates should avoid relying on this API in production builds.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_printer_for_test(
         colors: Colors,
         verbosity: Verbosity,
@@ -104,7 +104,7 @@ impl CodexParser {
     ///
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to configure log file path.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(PathBuf::from(path));
         self
@@ -114,7 +114,7 @@ impl CodexParser {
     ///
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to configure display name.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_display_name_for_test(mut self, display_name: &str) -> Self {
         self.display_name = display_name.to_string();
         self
@@ -124,7 +124,7 @@ impl CodexParser {
     ///
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to invoke parsing.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn parse_stream_for_test<R: std::io::BufRead>(
         &self,
         reader: R,
@@ -138,7 +138,7 @@ impl CodexParser {
     /// This allows tests, monitoring, and other code to access the printer after parsing
     /// to verify output content, check for duplicates, or capture output for analysis.
     /// Only available with the `test-utils` feature.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn printer(&self) -> SharedPrinter {
         Rc::clone(&self.printer)
     }
@@ -147,7 +147,7 @@ impl CodexParser {
     ///
     /// This provides insight into the deduplication and streaming quality of the
     /// parsing session. Only available with the `test-utils` feature.
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn streaming_metrics(&self) -> StreamingQualityMetrics {
         self.streaming_session
             .borrow()

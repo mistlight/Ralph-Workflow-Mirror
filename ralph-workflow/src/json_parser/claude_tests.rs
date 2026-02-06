@@ -115,6 +115,7 @@ fn test_content_block_stop_no_index() {
 /// doesn't produce blank lines from control events and properly
 /// renders streaming deltas in Full mode.
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_ccs_glm_event_sequence() {
     use crate::json_parser::terminal::TerminalMode;
 
@@ -171,6 +172,7 @@ fn test_ccs_glm_event_sequence() {
 
 /// Test that `with_terminal_mode` method works correctly
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_with_terminal_mode() {
     use crate::json_parser::terminal::TerminalMode;
 
@@ -184,6 +186,7 @@ fn test_with_terminal_mode() {
 }
 
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_thinking_deltas_non_tty_flushed_once_on_message_stop() {
     use crate::json_parser::terminal::TerminalMode;
 
@@ -225,6 +228,7 @@ fn test_thinking_deltas_non_tty_flushed_once_on_message_stop() {
 }
 
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_thinking_flushes_before_text_in_non_tty_mode() {
     use crate::json_parser::terminal::TerminalMode;
 
@@ -266,6 +270,7 @@ fn test_thinking_flushes_before_text_in_non_tty_mode() {
 }
 
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_thinking_deltas_tty_finalize_before_text() {
     use crate::json_parser::delta_display::CLEAR_LINE;
     use crate::json_parser::terminal::TerminalMode;
@@ -311,6 +316,7 @@ fn test_thinking_deltas_tty_finalize_before_text() {
 }
 
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_thinking_deltas_full_mode_do_not_create_extra_terminal_lines() {
     use crate::json_parser::printer::{SharedPrinter, VirtualTerminal};
     use crate::json_parser::terminal::TerminalMode;

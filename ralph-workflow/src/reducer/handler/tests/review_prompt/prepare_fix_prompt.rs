@@ -5,7 +5,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
@@ -137,7 +137,6 @@ fn test_prepare_fix_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -152,7 +151,6 @@ fn test_prepare_fix_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -205,7 +203,6 @@ fn test_prepare_fix_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -220,7 +217,6 @@ fn test_prepare_fix_prompt_same_agent_retry_does_not_stack_retry_notes() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -285,7 +281,6 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -300,7 +295,6 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -339,7 +333,6 @@ fn test_prepare_fix_prompt_maps_workspace_write_failure_to_error_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -354,7 +347,6 @@ fn test_prepare_fix_prompt_maps_workspace_write_failure_to_error_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -409,7 +401,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -424,7 +415,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -473,7 +463,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -488,7 +477,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -537,7 +525,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -552,7 +539,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -604,7 +590,6 @@ fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_rea
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -619,7 +604,6 @@ fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_rea
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -667,7 +651,6 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -682,7 +665,6 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -719,7 +701,6 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -734,7 +715,6 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,

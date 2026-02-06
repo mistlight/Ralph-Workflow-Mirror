@@ -225,10 +225,9 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Marker cleanup/creation are filesystem concerns; use Workspace so tests can run
     // with MemoryWorkspace, and production stays consistent.
-    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker_with_workspace(
-        &*ctx.workspace,
-        &ctx.logger,
-    ) {
+    if let Err(err) =
+        crate::git_helpers::cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)
+    {
         ctx.logger
             .warn(&format!("Failed to cleanup orphaned marker: {err}"));
     }
@@ -239,8 +238,9 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Hook install / wrapper require a real repo; treat as best-effort.
     if let Err(err) = crate::git_helpers::cleanup_orphaned_marker(&ctx.logger) {
-        ctx.logger
-            .warn(&format!("Failed to cleanup orphaned marker via git helpers: {err}"));
+        ctx.logger.warn(&format!(
+            "Failed to cleanup orphaned marker via git helpers: {err}"
+        ));
     }
     if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
         ctx.logger
@@ -266,12 +266,11 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     println!();
 
     // Create phase context and save starting commit
-    let (mut timer, mut stats) = (Timer::new(), Stats::new());
+    let mut timer = Timer::new();
     let mut phase_ctx = create_phase_context_with_config(
         ctx,
         &config,
         &mut timer,
-        &mut stats,
         review_guidelines.as_ref(),
         &run_context,
         resume_checkpoint.as_ref(),
@@ -317,11 +316,25 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Initialize pipeline state
     let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
-        // Migrate from old checkpoint format to new reducer state
-        PipelineState::from(checkpoint.clone())
+        // Restore progress from checkpoint, but keep budgets/limits config-driven.
+        // Initialize a config-aware base state first, then overlay checkpoint progress.
+        let mut base_state = crate::app::event_loop::create_initial_state_with_config(&phase_ctx);
+        let migrated: PipelineState = checkpoint.clone().into();
+
+        base_state.phase = migrated.phase;
+        base_state.iteration = migrated.iteration;
+        base_state.total_iterations = migrated.total_iterations;
+        base_state.reviewer_pass = migrated.reviewer_pass;
+        base_state.total_reviewer_passes = migrated.total_reviewer_passes;
+        base_state.rebase = migrated.rebase;
+        base_state.execution_history = migrated.execution_history;
+        base_state.prompt_inputs = migrated.prompt_inputs;
+        base_state.metrics = migrated.metrics;
+
+        base_state
     } else {
-        // Create new initial state
-        PipelineState::initial(config.developer_iters, config.reviewer_reviews)
+        // Create new initial state with config-derived continuation limits.
+        crate::app::event_loop::create_initial_state_with_config(&phase_ctx)
     };
 
     if should_run_rebase {
@@ -457,15 +470,15 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
-        &ctx.logger,
-        ctx.colors,
-        &config,
-        finalization::RuntimeStats {
+        crate::app::finalization::FinalizeContext {
+            logger: &ctx.logger,
+            colors: ctx.colors,
+            config: &config,
             timer: &timer,
-            stats: &stats,
+            workspace: &*ctx.workspace,
         },
+        &loop_result.final_state,
         prompt_monitor,
-        &*ctx.workspace,
     );
     Ok(())
 }

@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::handler::MainEffectHandler;
@@ -43,7 +43,6 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -63,7 +62,6 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -109,7 +107,6 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -134,7 +131,6 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -202,7 +198,6 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -219,7 +214,6 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -257,7 +251,6 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -274,7 +267,6 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -313,7 +305,6 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -330,7 +321,6 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -383,7 +373,6 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -400,7 +389,6 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -462,7 +450,6 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -479,7 +466,6 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -519,7 +505,6 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -536,7 +521,6 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -578,7 +562,6 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -595,7 +578,6 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -639,7 +621,6 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -656,7 +637,6 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -698,7 +678,6 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -715,7 +694,6 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,

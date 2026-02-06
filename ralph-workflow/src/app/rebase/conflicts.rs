@@ -259,11 +259,11 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 ) -> anyhow::Result<bool> {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::execution_history::ExecutionHistory;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
 
     let registry = AgentRegistry::new()?;
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+
     let workspace = crate::workspace::WorkspaceFs::new(repo_root.to_path_buf());
 
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
@@ -277,7 +277,6 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent,
         reviewer_agent,
         review_guidelines: None,

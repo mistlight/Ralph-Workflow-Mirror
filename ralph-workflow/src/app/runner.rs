@@ -34,7 +34,7 @@
 //! - [`detection`]: Project stack detection
 //! - [`finalization`]: Pipeline cleanup and finalization
 
-use super::{config_init, effect, effect_handler, effectful, event_loop, finalization, plumbing};
+use super::{config_init, effect, effect_handler, effectful, event_loop, plumbing};
 
 use crate::agents::AgentRegistry;
 use crate::app::finalization::finalize_pipeline;
@@ -60,7 +60,7 @@ use crate::git_helpers::{
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::PhaseContext;
-use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
+use crate::pipeline::{AgentPhaseGuard, Timer};
 use crate::prompts::template_context::TemplateContext;
 
 use super::config_init::initialize_config;

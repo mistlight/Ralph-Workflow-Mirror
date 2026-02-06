@@ -6,7 +6,7 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::Effect;
     use crate::reducer::event::PipelinePhase;
@@ -23,7 +23,7 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -36,7 +36,6 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -78,7 +77,7 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::Effect;
     use crate::reducer::event::PipelinePhase;
@@ -95,7 +94,7 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -108,7 +107,6 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -162,7 +160,7 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::Effect;
     use crate::reducer::event::PipelinePhase;
@@ -179,7 +177,7 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -192,7 +190,6 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -258,7 +255,7 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::Effect;
     use crate::reducer::event::PipelinePhase;
@@ -275,7 +272,7 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -288,7 +285,6 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -350,7 +346,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::Effect;
     use crate::reducer::event::PipelinePhase;
@@ -367,7 +363,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -380,7 +376,6 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,

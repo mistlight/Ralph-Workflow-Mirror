@@ -269,6 +269,13 @@ pub struct PipelineState {
     #[serde(default)]
     pub continuation: ContinuationState,
 
+    /// Run-level execution metrics.
+    ///
+    /// This is the single source of truth for all iteration/attempt/retry/fallback
+    /// statistics. Updated deterministically by the reducer based on events.
+    #[serde(default)]
+    pub metrics: RunMetrics,
+
     /// Whether TriggerDevFixFlow has been executed in the current AwaitingDevFix phase.
     ///
     /// This flag is set to true when DevFixTriggered event is reduced.
@@ -379,9 +386,10 @@ impl PipelineState {
             commit: CommitState::NotStarted,
             execution_history: Vec::new(),
             checkpoint_saved_count: 0,
-            continuation,
+            continuation: continuation.clone(),
             dev_fix_triggered: false,
             prompt_inputs: PromptInputsState::default(),
+            metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
         }
     }
 
@@ -506,6 +514,20 @@ impl From<PipelineCheckpoint> for PipelineState {
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
+            metrics: {
+                let continuation = ContinuationState::new();
+                RunMetrics {
+                    dev_iterations_completed: checkpoint.actual_developer_runs,
+                    review_passes_completed: checkpoint.actual_reviewer_runs,
+                    max_dev_iterations: checkpoint.total_iterations,
+                    max_review_passes: checkpoint.total_reviewer_passes,
+                    max_xsd_retry_count: continuation.max_xsd_retry_count,
+                    max_dev_continuation_count: continuation.max_continue_count,
+                    max_fix_continuation_count: continuation.max_fix_continue_count,
+                    max_same_agent_retry_count: continuation.max_same_agent_retry_count,
+                    ..RunMetrics::default()
+                }
+            },
         }
     }
 }

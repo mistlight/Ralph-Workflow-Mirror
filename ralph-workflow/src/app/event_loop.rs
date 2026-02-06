@@ -46,7 +46,7 @@ use std::path::Path;
 /// This function creates a `PipelineState` with XSD retry and continuation limits
 /// loaded from the config, ensuring these values are available for the reducer
 /// to make deterministic retry decisions.
-fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
+pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
     // Config semantics: max_dev_continuations counts continuation attempts *beyond*
     // the initial attempt. ContinuationState::max_continue_count semantics are
     // "maximum total attempts including initial".
@@ -92,6 +92,8 @@ pub struct EventLoopResult {
     pub events_processed: usize,
     /// Final reducer phase when the loop stopped.
     pub final_phase: PipelinePhase,
+    /// Final pipeline state (for metrics and summary).
+    pub final_state: PipelineState,
 }
 
 const EVENT_LOOP_TRACE_PATH: &str = ".agent/tmp/event_loop_trace.jsonl";
@@ -628,6 +630,7 @@ where
                     completed: true,
                     events_processed,
                     final_phase: state.phase,
+                    final_state: state.clone(),
                 });
             }
             GuardedEffectResult::Panic => {
@@ -664,6 +667,7 @@ where
                     completed: true,
                     events_processed,
                     final_phase: state.phase,
+                    final_state: state.clone(),
                 });
             }
         }
@@ -786,6 +790,7 @@ where
                         completed: false,
                         events_processed,
                         final_phase: state.phase,
+                        final_state: state.clone(),
                     });
                 }
                 GuardedEffectResult::Panic => {
@@ -823,6 +828,7 @@ where
                         completed: false,
                         events_processed,
                         final_phase: state.phase,
+                        final_state: state.clone(),
                     });
                 }
             }
@@ -870,6 +876,7 @@ where
         completed,
         events_processed,
         final_phase: state.phase,
+        final_state: state.clone(),
     })
 }
 
