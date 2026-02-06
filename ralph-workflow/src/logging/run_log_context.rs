@@ -136,9 +136,12 @@ impl RunLogContext {
 
     /// Create a RunLogContext from an existing checkpoint (for resume).
     ///
-    /// Uses the run_id from the checkpoint to continue logging to the
-    /// same run directory. If the directory doesn't exist (e.g., deleted),
-    /// it is recreated.
+    /// Uses the timestamp-based log run ID from the checkpoint (stored in
+    /// `PipelineCheckpoint.log_run_id`) to continue logging to the same run
+    /// directory. This is distinct from the UUID-based `run_id` field in the
+    /// checkpoint which identifies the execution session.
+    ///
+    /// If the directory doesn't exist (e.g., deleted), it is recreated.
     pub fn from_checkpoint(run_id: &str, workspace: &dyn Workspace) -> Result<Self> {
         let run_id = RunId::from_checkpoint(run_id);
         let run_dir = PathBuf::from(format!(".agent/logs-{}", run_id));
@@ -166,6 +169,11 @@ impl RunLogContext {
     }
 
     /// Get a reference to the run ID.
+    ///
+    /// This is the timestamp-based log run ID (format: `YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]`)
+    /// used for naming the per-run log directory. It is distinct from the UUID-based
+    /// `run_id` field stored in `PipelineCheckpoint`, which uniquely identifies the
+    /// execution session.
     pub fn run_id(&self) -> &RunId {
         &self.run_id
     }
@@ -250,7 +258,13 @@ impl RunLogContext {
 /// like command invocation, timestamps, and environment details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunMetadata {
-    /// Unique run identifier (matches directory name)
+    /// Timestamp-based run identifier (matches directory name)
+    ///
+    /// Format: `YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]` (e.g., `2026-02-06_14-03-27.123Z`)
+    ///
+    /// This is the log run ID used for the per-run log directory and is distinct
+    /// from the UUID-based `run_id` field in `PipelineCheckpoint` which uniquely
+    /// identifies the execution session.
     pub run_id: String,
 
     /// Timestamp when run started (UTC, RFC3339)
