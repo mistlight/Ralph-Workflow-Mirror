@@ -317,7 +317,9 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
 }
 
 #[test]
-fn test_prepare_fix_prompt_maps_workspace_write_failure_to_error_event() {
+fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
+    // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+    // When prompt file write fails, the handler logs a warning and continues successfully.
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -369,20 +371,20 @@ fn test_prepare_fix_prompt_maps_workspace_write_failure_to_error_event() {
         ..PipelineState::initial(0, 1)
     });
 
-    let err = handler
+    // Per AC #5: Write failure should NOT return an error; it should succeed
+    // with a warning logged instead.
+    let result = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
-        .expect_err("prepare_fix_prompt should return a typed error event on write failure");
+        .expect("prepare_fix_prompt should succeed even when write fails (non-fatal)");
 
-    let error_event = err
-        .downcast_ref::<ErrorEvent>()
-        .expect("error should preserve ErrorEvent for event-loop recovery");
+    // Verify that the prompt was prepared in memory even though the write failed
     assert!(
         matches!(
-            error_event,
-            ErrorEvent::WorkspaceWriteFailed { path, kind: WorkspaceIoErrorKind::Other }
-                if path == ".agent/tmp/fix_prompt.txt"
+            result.event,
+            PipelineEvent::Review(_)
         ),
-        "expected WorkspaceWriteFailed for fix prompt write, got: {error_event:?}"
+        "should emit Review event even when write fails, got: {:?}",
+        result.event
     );
 }
 

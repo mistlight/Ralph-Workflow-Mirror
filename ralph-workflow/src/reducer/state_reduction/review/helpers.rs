@@ -165,7 +165,8 @@ fn reduce_fix_output_validation_failure(
                 invalid_output_attempts: attempt + 1,
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
-                xsd_retry_session_reuse_pending: false,
+                // Reuse last session id for fix XSD retry when available.
+                xsd_retry_session_reuse_pending: true,
                 // Preserve error detail for XSD retry prompt
                 last_fix_xsd_error: error_detail,
                 ..state.continuation

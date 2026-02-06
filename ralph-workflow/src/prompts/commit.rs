@@ -327,6 +327,10 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
 /// The agent should read the XSD schema and the previous output from
 /// `.agent/tmp/commit_message.xsd` and `.agent/tmp/commit_message.xml`, then rewrite the XML
 /// to conform to the schema.
+///
+/// Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+/// If required files are missing, a deterministic fallback prompt is produced that includes
+/// diagnostic information but still provides valid instructions to the agent.
 pub fn prompt_commit_xsd_retry_with_context(
     context: &TemplateContext,
     xsd_error: &str,
@@ -337,7 +341,7 @@ pub fn prompt_commit_xsd_retry_with_context(
     // Ensure the schema file is present.
     // Note: Silent failure (let _) is acceptable here because if the schema file
     // write fails, the subsequent workspace.exists(schema_path) check will return
-    // false and generate a clear "REQUIRED OUTPUT PATH DOES NOT EXIST" error message.
+    // false and generate a fallback prompt with diagnostic information.
     // This approach avoids unnecessary error handling while still providing actionable feedback.
     let tmp_dir = Path::new(".agent/tmp");
     let _ = workspace.create_dir_all(tmp_dir);
@@ -350,28 +354,45 @@ pub fn prompt_commit_xsd_retry_with_context(
     let schema_path = Path::new(".agent/tmp/commit_message.xsd");
     let last_output_path = Path::new(".agent/tmp/commit_message.xml");
 
-    if !workspace.exists(schema_path) {
-        return format!(
-            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
-             workspace.root() = {}\n\
-             This likely indicates CWD != workspace.root() path mismatch.\n\n\
-             Cannot generate XSD retry prompt without schema file.",
-            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
-            workspace.root().display()
+    let schema_exists = workspace.exists(schema_path);
+    let last_output_exists = workspace.exists(last_output_path);
+
+    // Build diagnostic prefix for missing files (per acceptance criteria #3)
+    let mut diagnostic_prefix = String::new();
+    if !schema_exists || !last_output_exists {
+        diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
+        if !schema_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Schema file: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+                workspace.root().display()
+            ));
+        }
+        if !last_output_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Last output: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/commit_message.xml"),
+                workspace.root().display()
+            ));
+        }
+        diagnostic_prefix.push_str(
+            "This likely indicates CWD != workspace.root() path mismatch.\n\n",
         );
     }
 
-    if !workspace.exists(last_output_path) {
+    // If both files are missing, return fallback prompt with diagnostics (per AC #5)
+    if !schema_exists && !last_output_exists {
         return format!(
-            "REQUIRED OUTPUT PATH DOES NOT EXIST: {}\n\
-             workspace.root() = {}\n\
-             This likely indicates CWD != workspace.root() path mismatch.\n\n\
-             Cannot generate XSD retry prompt without last output file.",
-            workspace.absolute_str(".agent/tmp/commit_message.xml"),
-            workspace.root().display()
+            "{}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
+             Error: {}\n\n\
+             The schema and previous output files could not be found. \
+             Please generate a conventional commit message for the current changes.\n\n\
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n",
+            diagnostic_prefix, xsd_error
         );
     }
 
+    // Proceed with normal XSD retry prompt generation if at least schema exists
     let partials = get_shared_partials();
     let template_content = context
         .registry()
@@ -388,7 +409,8 @@ pub fn prompt_commit_xsd_retry_with_context(
             workspace.absolute_str(".agent/tmp/commit_message.xsd"),
         ),
     ]);
-    Template::new(&template_content)
+
+    let rendered_prompt = Template::new(&template_content)
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
@@ -396,7 +418,14 @@ pub fn prompt_commit_xsd_retry_with_context(
                  Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
                  Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
             )
-        })
+        });
+
+    // Prepend diagnostic prefix if files were missing but we continued anyway
+    if !diagnostic_prefix.is_empty() {
+        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
+    } else {
+        rendered_prompt
+    }
 }
 
 #[cfg(test)]
