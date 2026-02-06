@@ -29,8 +29,10 @@ Inspired by [Geoffrey Huntley's Ralph Workflow concept](https://ghuntley.com/ral
 Ralph runs a multi-phase workflow:
 
 1. **Developer Phase**: AI agent implements your spec through multiple iterations
-   - Creates `PLAN.md` from your `PROMPT.md`
+   - Creates `PLAN.md` internally from your `PROMPT.md`
    - Executes the plan and makes code changes
+   - Evaluate the code change and see if requires more work
+   - Goes back if necessary and then make more code change, repeat until the plan is met
    - Auto-commits after each iteration
    - Cleans up and repeats for configured iterations
 
@@ -41,20 +43,11 @@ Ralph runs a multi-phase workflow:
 
 3. **Final Commit**: Generates a meaningful commit message via AI
 
+Ralph workflow automatically cleans context of AI agent to ensure that no context pollution exists when AI agents is being ran. The idea
+behind this is to ensure that context pollution makes the code quality worse, so we ensure review agent has no context on what was done except
+for the diff and the current state of the code, same thing as dev agent vs planning agent.
+
 All orchestration files (PLAN.md, ISSUES.md) are controlled by Ralph, not the AI agents. This ensures deterministic, reliable operation.
-
-## Architecture
-
-The canonical (developer-facing) architecture docs live in `../docs/architecture/README.md`.
-
-## Design Philosophy
-
-Ralph makes **deterministic decisions whenever possible**, only calling on AI when needed:
-
-- **Conflict Resolution**: Prompts AI specifically about conflicts, then resolves automatically
-- **File I/O**: The orchestrator controls all file writes, not the agents
-- **Git Operations**: Ralph handles rebasing, committing, and status checks deterministically
-- **Checkpoint/Resume**: Saves state after each phase; interrupted runs can resume with `--resume`
 
 ## Quick Start
 

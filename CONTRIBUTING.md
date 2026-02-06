@@ -1,253 +1,114 @@
-# Contributing to Ralph
+# Contributing to Ralph Workflow
 
-Thank you for your interest in contributing to Ralph! This document provides guidelines for contributing to this project, whether you're a human developer or an AI agent.
+This document is the contributor-focused counterpart to the project style and architecture guides.
+If anything here conflicts with `AGENTS.md`, follow the stricter rule.
 
 ## Getting Started
 
-1. **Fork the repository** on CodeBerg
-2. **Clone your fork** locally
-3. **Set up the development environment**:
-   ```bash
-   cargo build
-   cargo test
-   ```
-
-## Development Guidelines
-
-### Code Style
-
-Ralph follows idiomatic Rust practices. Before submitting a pull request:
-
-- **Format code**: Run `cargo fmt` before committing
-- **Lint code**: Run `cargo clippy -- -D warnings` (treat warnings as errors)
-- **Test code**: Run `cargo test` and ensure all tests pass
-
-# To check you can simply run these:
+1. Fork the repository on Codeberg
+2. Clone your fork locally
+3. Build and run the fast test path:
 
 ```bash
-cargo fmt --all --check
-
-# Lint the main crate (lib only) with all its features
-cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
-
-# Lint the separate integration test package, enabling its own test-utils feature
-cargo clippy -p ralph-workflow-tests --all-targets --features test-utils -- -D warnings
-
-# Run the main crate's unit tests with all features
+cargo build
 cargo test -p ralph-workflow --lib --all-features
-
-# Run the integration tests package
-# (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml)
-cargo test -p ralph-workflow-tests
-
-# Build release artifacts (default-members only)
-cargo build --release
 ```
 
-### Rust Conventions
+## Source of Truth (Read These First)
 
-- **Edition**: Rust 2021 (stable)
-- **Error handling**: Use `Result` + `?` with meaningful error context. Avoid `unwrap()` and `expect()` in production paths.
-- **Safety**: Default to `#![deny(unsafe_code)]`. If unsafe is required, justify and minimize scope.
-- **Memory**: Prefer borrowing, slices, and iterators. Avoid unnecessary clones and allocations.
-- **Types**: Use strong types and exhaustive matching. Document invariants and error cases.
-- **Visibility**: Keep public API minimal (`pub(crate)` by default). Document public items.
+- Code style + testing philosophy: `CODE_STYLE.md`
+- Required verification commands (must produce NO OUTPUT): `docs/agents/verification.md`
+- Reducer/event-loop architecture: `docs/architecture/event-loop-and-reducers.md`
+- Effect system + filesystem rules: `docs/architecture/effect-system.md`
+- Workspace trait rules (`std::fs` is almost always forbidden): `docs/agents/workspace-trait.md`
+- Integration test rules: `docs/agents/integration-tests.md` and `tests/INTEGRATION_TESTS.md`
+- Codebase map / where modules live: `docs/architecture/codebase-tour.md`
 
-### Testing
+## Required Verification (Before PR/Completion)
 
-- Add unit tests for new functionality (cover happy path, failure cases, and edge cases)
-- Add property-based tests when invariants matter
-- Integration tests live in the `tests/` directory
+Run every command in `docs/agents/verification.md`.
 
-#### Integration Tests
+- All commands must produce NO OUTPUT
+- If any command produces output, fix it before continuing
 
-**CRITICAL:** All integration tests MUST follow the integration test style guide.
+This is intentionally stricter than a typical "fmt/clippy/test" checklist because the repository has additional compliance checks.
 
-- **Read first:** Before modifying, adding, or debugging integration tests, read **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**
-- **This is mandatory:** The guide defines non-negotiable rules for behavior-based testing, mocking strategy, and when to update tests
-- **Key principles:**
-  - Test **observable behavior**, not implementation details
-  - Mock only at **architectural boundaries** (filesystem, network, external APIs)
-  - NEVER use `cfg!(test)` branches or test-only flags in production code
-  - When a test fails, fix the implementation unless the expected behavior changed intentionally
+## Code Style
 
-The integration test guide is also referenced from:
-- CLAUDE.md - AI agent instructions
-- AGENTS.md - Agent-specific guidelines
-- tests/integration_tests/main.rs - Main test entry point
-- tests/integration_tests/common/mod.rs - Common test utilities
+Ralph is a Rust workspace with strong architectural constraints.
 
-For help getting started with integration tests, see the template at `tests/integration_tests/_TEMPLATE.rs`.
+- Default to boring, readable Rust; refactor instead of adding tech debt.
+- Keep files/modules/functions small; see limits in `CODE_STYLE.md`.
 
-## Pull Request Process
+### Architecture Constraints (Non-Negotiable)
 
-### Before Submitting
+If you change pipeline behavior (phases, retries/fallback, effect sequencing, checkpoint/resume, reducer/event/effect shapes), treat these docs as mandatory reading:
 
-1. Ensure your code compiles: `cargo check`
-2. Format your code: `cargo fmt`
-3. Pass linting: `cargo clippy -- -D warnings`
-4. Pass tests: `cargo test`
-5. Update documentation if you've changed public APIs or behavior
+- `CODE_STYLE.md`
+- `docs/architecture/event-loop-and-reducers.md`
+- `docs/architecture/effect-system.md`
 
-### PR Guidelines
+The core contract is:
 
-- **Keep PRs focused**: One feature or fix per PR
-- **Write clear commit messages**: Explain the "why", not just the "what"
-- **Update the README** if you've added new features or changed behavior
-- **Add tests** for new functionality
+```
+State -> Orchestrator -> Effect -> Handler -> Event -> Reducer -> State
+```
 
-### PR Title Format
+## Testing
+
+- TDD is required for code changes: write a failing test first.
+- Prefer unit tests for pure logic.
+- Integration tests are a separate crate: `tests/` (package `ralph-workflow-tests`).
+
+### Integration Tests (CRITICAL)
+
+Before adding/changing integration tests, read:
+
+- `docs/agents/integration-tests.md`
+- `tests/INTEGRATION_TESTS.md`
+
+If you need a starting point, use `tests/integration_tests/_TEMPLATE.rs`.
+
+## Pull Requests
+
+### Guidelines
+
+- Keep PRs focused: one feature/fix per PR.
+- Explain the "why" in the PR description and commit messages.
+- Update docs when behavior or public APIs change.
+
+### Title Format
 
 Use conventional commit style:
-- `feat: add new feature`
-- `fix: resolve bug in X`
-- `refactor: improve Y structure`
-- `docs: update contributing guide`
-- `test: add tests for Z`
-- `chore: update dependencies`
 
-## For AI Agents
+- `feat: ...`
+- `fix: ...`
+- `refactor: ...`
+- `docs: ...`
+- `test: ...`
+- `chore: ...`
 
-If you're an AI agent contributing to this project:
+## Notes for AI Agents
 
-### Understanding the Codebase
+If you are an AI agent contributing to this project, read `AGENTS.md` (and provider-specific instructions like `CLAUDE.md`) before making changes.
 
-- Read `PROMPT.md` for current goals and acceptance criteria
-- Check `.agent/STATUS.md` for current progress and blockers
-- Review `.agent/NOTES.md` for context from previous work
-- Review `.agent/ISSUES.md` for known issues to address
+Important reminders:
 
-### Working with Ralph
+- Ralph runs unattended; do not rely on interactive prompts.
+- Agent-generated artifacts live under `.agent/` (for example `.agent/tmp/`).
+- Do not create temporary markdown files in the repo root or `docs/`; use `tmp/` at the repo root instead.
 
-Ralph itself uses a multi-agent workflow:
-1. A developer agent makes progress toward `PROMPT.md` goals
-2. A reviewer agent reviews and applies fixes
-3. Checks run to validate changes
-
-### Agent Best Practices
-
-- **Read before writing**: Always read a file before modifying it
-- **Incremental changes**: Make small, focused changes
-- **Update status**: Keep `.agent/STATUS.md` current
-- **Document notes**: Add context to `.agent/NOTES.md`
-- **Follow the style**: Match existing code patterns
-
-## Project Structure
-
-```
-ralph/
-├── src/
-│   ├── main.rs                  # Entry point
-│   ├── app/                     # Application orchestration
-│   │   ├── mod.rs               # Main run() function and pipeline orchestration
-│   │   ├── config_init.rs       # Configuration loading and initialization
-│   │   ├── plumbing.rs          # Low-level git operations (commit messages)
-│   │   └── validation.rs        # Agent validation and chain validation
-│   ├── config/                  # Configuration parsing
-│   │   ├── mod.rs               # Config types and CLI args
-│   │   └── *.rs                 # Configuration components
-│   ├── cli/                     # CLI argument handling
-│   │   ├── mod.rs               # CLI module exports
-│   │   ├── args.rs              # Argument parsing
-│   │   ├── handlers/            # Command handlers (modular)
-│   │   │   ├── mod.rs           # Handler exports
-│   │   │   └── *.rs             # Per-command handlers
-│   │   ├── presets.rs           # Configuration presets
-│   │   └── providers.rs         # Provider-specific CLI options
-│   ├── agents/                  # Agent management module
-│   │   ├── mod.rs               # Module exports and re-exports
-│   │   ├── config.rs            # Agent configuration (TOML parsing)
-│   │   ├── registry.rs          # Agent registry and lookup
-│   │   ├── parser.rs            # JSON parser type definitions
-│   │   ├── providers/           # AI provider type detection (modular)
-│   │   │   ├── mod.rs           # Provider exports
-│   │   │   ├── types.rs         # OpenCodeProviderType enum
-│   │   │   ├── detection.rs     # Model flag parsing and detection
-│   │   │   ├── metadata.rs      # Provider names, auth commands
-│   │   │   ├── models.rs        # Example models per provider
-│   │   │   └── validation.rs    # Model flag validation
-│   │   ├── fallback.rs          # Agent chain fallback logic
-│   │   └── error.rs             # Agent error types and classification
-│   ├── phases/                  # Pipeline phase execution
-│   │   ├── mod.rs               # Phase orchestration
-│   │   ├── context.rs           # Shared phase context
-│   │   ├── development.rs       # Development cycle execution
-│   │   ├── review.rs            # Review cycle execution
-│   │   └── commit.rs            # Commit phase execution
-│   ├── pipeline/                # Pipeline execution infrastructure
-│   │   ├── mod.rs               # Pipeline exports
-│   │   ├── runner.rs            # Command execution with fallback
-│   │   ├── model_flag.rs        # Model flag resolution
-│   │   └── types.rs             # Stats and RAII guards
-│   ├── prompts/                 # Prompt generation module
-│   │   ├── mod.rs               # Module exports
-│   │   ├── types.rs             # Prompt type definitions
-│   │   ├── developer.rs         # Developer agent prompts
-│   │   ├── reviewer/            # Reviewer prompts (modular)
-│   │   │   ├── mod.rs           # Reviewer prompt exports
-│   │   │   └── *.rs             # Guided/unguided prompts
-│   │   └── commit.rs            # Commit message prompts
-│   ├── json_parser/             # Agent output parsing module
-│   │   ├── mod.rs               # Parser interface and selection
-│   │   ├── types.rs             # Parsed output types
-│   │   ├── claude.rs            # Claude-specific JSON parsing
-│   │   ├── gemini.rs            # Gemini-specific JSON parsing
-│   │   └── codex.rs             # Codex-specific JSON parsing
-│   ├── language_detector/       # Project language detection
-│   │   ├── mod.rs               # Detection logic and exports
-│   │   ├── extensions.rs        # File extension mappings
-│   │   ├── signatures.rs        # Framework signature patterns
-│   │   └── scanner.rs           # Directory scanning logic
-│   ├── guidelines/              # Language-specific coding guidelines
-│   │   ├── mod.rs               # Guidelines module and exports
-│   │   ├── base.rs              # Base guidelines structure
-│   │   ├── stack.rs             # Stack-based guideline generation
-│   │   └── *.rs                 # Per-language guidelines
-│   ├── review_metrics/          # Review metrics tracking (modular)
-│   │   ├── mod.rs               # Module exports
-│   │   ├── severity.rs          # Issue severity levels
-│   │   ├── issue.rs             # Issue structure
-│   │   ├── metrics.rs           # Core metrics parsing
-│   │   └── parser.rs            # Parsing helper functions
-│   ├── git_helpers/             # Git operations module
-│   │   ├── mod.rs               # Git helper exports
-│   │   ├── hooks.rs             # Git hooks management
-│   │   ├── repo.rs              # Repository operations
-│   │   └── wrapper.rs           # Agent phase git wrapper
-│   ├── checkpoint/              # Pipeline state persistence
-│   │   └── mod.rs               # Checkpoint management
-│   ├── files/                   # Agent file management
-│   │   └── mod.rs               # File operations
-│   ├── logger/                  # Logging and progress display
-│   │   └── mod.rs               # Logger interface
-│   ├── colors.rs                # Terminal color formatting
-│   ├── timer.rs                 # Timing and duration utilities
-│   ├── output.rs                # Output formatting utilities
-│   ├── banner.rs                # CLI banner display
-│   ├── platform.rs              # Platform-specific utilities
-│   ├── test_utils.rs            # Test utilities
-│   └── utils.rs                 # Shared utility functions
-├── tests/                       # Integration tests
-│   ├── cli_smoke.rs             # CLI smoke tests
-│   └── workflow_requirements.rs # Workflow requirement tests
-├── examples/                    # Example configurations
-└── .agent/                      # Agent working directory
-```
+Also note: the repository root `README.md` is the workspace README and is not intended to be edited by automated agents; crate/product docs live under `ralph-workflow/`.
 
 ## Reporting Issues
 
-When reporting issues:
+When reporting issues, include:
 
-1. **Search existing issues** first to avoid duplicates
-2. **Provide context**: What were you trying to do?
-3. **Include reproduction steps**: How can we reproduce the issue?
-4. **Share error messages**: Include the full error output
-5. **Environment info**: OS, Rust version, agent versions
+1. What you were trying to do
+2. Repro steps
+3. Full error output
+4. Environment info (OS, Rust version, agent/client versions)
 
 ## License
 
-By contributing to Ralph, you agree that your contributions will be licensed under the project's AGPL-3.0 license.
-
-## Questions?
-
-If you have questions about contributing, feel free to open an issue for discussion.
+By contributing, you agree your contributions are licensed under AGPL-3.0.
