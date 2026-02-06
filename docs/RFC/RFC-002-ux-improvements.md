@@ -9,6 +9,10 @@
 
 > NOTE: RFCs are historical documents. This RFC may not reflect current behavior.
 > For up-to-date architecture docs, see `../architecture/event-loop-and-reducers.md` and `../architecture/effect-system.md`.
+> 
+> **IMPORTANT**: References to `.agent/logs/` in this document are outdated. Current versions use 
+> per-run log directories at `.agent/logs-<run_id>/` containing `pipeline.log`, `event_loop.log`, 
+> and per-agent logs under `agents/`. See `../architecture/README.md` for current log structure.
 
 ---
 

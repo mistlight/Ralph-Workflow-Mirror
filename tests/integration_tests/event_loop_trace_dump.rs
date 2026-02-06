@@ -37,6 +37,7 @@ struct Fixture {
     executor: Arc<MockProcessExecutor>,
     repo_root: PathBuf,
     workspace: Arc<MemoryWorkspace>,
+    run_log_context: ralph_workflow::logging::RunLogContext,
 }
 
 impl Fixture {
@@ -48,6 +49,8 @@ impl Fixture {
         let logger = Logger::new(colors);
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
 
         Self {
             config,
@@ -60,6 +63,7 @@ impl Fixture {
             executor,
             repo_root,
             workspace,
+            run_log_context,
         }
     }
 
@@ -74,6 +78,8 @@ impl Fixture {
         );
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
 
         Self {
             config,
@@ -86,6 +92,7 @@ impl Fixture {
             executor,
             repo_root,
             workspace,
+            run_log_context,
         }
     }
 
@@ -108,6 +115,7 @@ impl Fixture {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: Path::new(&self.repo_root),
             workspace: self.workspace.as_ref(),
+            run_log_context: &self.run_log_context,
         }
     }
 }

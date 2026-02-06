@@ -195,6 +195,8 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
 
         let repo_root = PathBuf::from("/test/repo");
         let workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(&workspace)
+            .expect("Failed to create run log context");
 
         let mut ctx = ralph_workflow::phases::PhaseContext {
             config: &config,
@@ -214,6 +216,7 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            run_log_context: &run_log_context,
         };
 
         // Start in FinalValidation so the loop runs without needing SaveCheckpoint.

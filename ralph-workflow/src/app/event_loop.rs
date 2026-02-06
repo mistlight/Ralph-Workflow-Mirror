@@ -29,6 +29,7 @@
 //!
 //! All internal errors route through the failure handling flow above.
 
+use crate::logging::EventLoopLogger;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::{Effect, EffectResult};
 use crate::reducer::event::{AwaitingDevFixEvent, CheckpointTrigger, PipelineEvent, PipelinePhase};
@@ -40,6 +41,7 @@ use anyhow::Result;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::path::Path;
+use std::time::Instant;
 
 /// Create initial pipeline state with continuation limits from config.
 ///
@@ -96,7 +98,6 @@ pub struct EventLoopResult {
     pub final_state: PipelineState,
 }
 
-const EVENT_LOOP_TRACE_PATH: &str = ".agent/tmp/event_loop_trace.jsonl";
 const DEFAULT_EVENT_LOOP_TRACE_CAPACITY: usize = 200;
 
 #[derive(Clone, Serialize, Debug)]
@@ -283,16 +284,21 @@ fn dump_event_loop_trace(
     out.push_str(&final_line);
     out.push('\n');
 
+    // Get trace path from run log context
+    let trace_path = ctx.run_log_context.event_loop_trace();
+
     // Ensure the trace directory exists. While `Workspace::write` is expected to
     // create parent directories, we do this explicitly so trace dumping is
     // resilient even under stricter workspace implementations.
-    if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
-        ctx.logger
-            .error(&format!("Failed to create trace directory: {err}"));
-        return false;
+    if let Some(parent) = trace_path.parent() {
+        if let Err(err) = ctx.workspace.create_dir_all(parent) {
+            ctx.logger
+                .error(&format!("Failed to create trace directory: {err}"));
+            return false;
+        }
     }
 
-    match ctx.workspace.write(Path::new(EVENT_LOOP_TRACE_PATH), &out) {
+    match ctx.workspace.write(&trace_path, &out) {
         Ok(()) => true,
         Err(err) => {
             ctx.logger
@@ -337,6 +343,7 @@ where
     handler.update_state(state.clone());
     let mut events_processed = 0;
     let mut trace = EventTraceBuffer::new(DEFAULT_EVENT_LOOP_TRACE_CAPACITY);
+    let mut event_loop_logger = EventLoopLogger::new();
 
     ctx.logger.info("Starting reducer-based event loop");
 
@@ -375,6 +382,7 @@ where
 
         // Execute returns EffectResult with both PipelineEvent and UIEvents.
         // Catch panics here so we can still dump a best-effort trace.
+        let start_time = Instant::now();
         let result = match execute_effect_guarded(handler, effect, ctx, &state) {
             GuardedEffectResult::Ok(result) => *result,
             GuardedEffectResult::Unrecoverable(err) => {
@@ -386,8 +394,10 @@ where
                     dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
                 let marker_written = write_completion_marker_on_error(ctx, &err);
                 if dumped {
+                    let trace_path = ctx.run_log_context.event_loop_trace();
                     ctx.logger.error(&format!(
-                        "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
+                        "Event loop encountered unrecoverable handler error (trace: {})",
+                        trace_path.display()
                     ));
                 } else {
                     ctx.logger
@@ -431,8 +441,10 @@ where
                 // dispatches dev-fix.
                 let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                 if dumped {
+                    let trace_path = ctx.run_log_context.event_loop_trace();
                     ctx.logger.error(&format!(
-                        "Event loop recovered from panic (trace: {EVENT_LOOP_TRACE_PATH})"
+                        "Event loop recovered from panic (trace: {})",
+                        trace_path.display()
                     ));
                 } else {
                     ctx.logger.error("Event loop recovered from panic");
@@ -488,9 +500,35 @@ where
         }
 
         let event_str = format!("{:?}", result.event);
+        let duration_ms = start_time.elapsed().as_millis() as u64;
 
         // Apply pipeline event to state (reducer remains pure)
         let new_state = reduce(state, result.event.clone());
+
+        // Log to event loop log (best-effort, does not affect correctness)
+        let extra_events: Vec<String> = result
+            .additional_events
+            .iter()
+            .map(|e| format!("{:?}", e))
+            .collect();
+        let context_pairs: Vec<(&str, String)> = vec![
+            ("iteration", new_state.iteration.to_string()),
+            ("reviewer_pass", new_state.reviewer_pass.to_string()),
+        ];
+        let context_refs: Vec<(&str, &str)> = context_pairs
+            .iter()
+            .map(|(k, v)| (*k, v.as_str()))
+            .collect();
+        event_loop_logger.log_effect(crate::logging::LogEffectParams {
+            workspace: ctx.workspace,
+            log_path: &ctx.run_log_context.event_loop_log(),
+            phase: new_state.phase,
+            effect: &effect_str,
+            primary_event: &event_str,
+            extra_events: &extra_events,
+            duration_ms,
+            context: &context_refs,
+        });
 
         trace.push(build_trace_entry(
             events_processed,
@@ -624,8 +662,10 @@ where
                     dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
                 let marker_written = write_completion_marker_on_error(ctx, &err);
                 if dumped {
+                    let trace_path = ctx.run_log_context.event_loop_trace();
                     ctx.logger.error(&format!(
-                        "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
+                        "Event loop encountered unrecoverable handler error (trace: {})",
+                        trace_path.display()
                     ));
                 } else {
                     ctx.logger
@@ -650,8 +690,10 @@ where
                 // Panics during forced completion are internal failures; route through AwaitingDevFix.
                 let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                 if dumped {
+                    let trace_path = ctx.run_log_context.event_loop_trace();
                     ctx.logger.error(&format!(
-                        "Event loop recovered from panic (trace: {EVENT_LOOP_TRACE_PATH})"
+                        "Event loop recovered from panic (trace: {})",
+                        trace_path.display()
                     ));
                 } else {
                     ctx.logger.error("Event loop recovered from panic");
@@ -783,8 +825,10 @@ where
                         dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
                     let marker_written = write_completion_marker_on_error(ctx, &err);
                     if dumped {
+                        let trace_path = ctx.run_log_context.event_loop_trace();
                         ctx.logger.error(&format!(
-                            "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
+                            "Event loop encountered unrecoverable handler error (trace: {})",
+                            trace_path.display()
                         ));
                     } else {
                         ctx.logger
@@ -810,8 +854,10 @@ where
                     // Panics during forced completion are internal failures; route through AwaitingDevFix.
                     let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                     if dumped {
+                        let trace_path = ctx.run_log_context.event_loop_trace();
                         ctx.logger.error(&format!(
-                            "Event loop recovered from panic (trace: {EVENT_LOOP_TRACE_PATH})"
+                            "Event loop recovered from panic (trace: {})",
+                            trace_path.display()
                         ));
                     } else {
                         ctx.logger.error("Event loop recovered from panic");
@@ -853,9 +899,11 @@ where
         }
 
         if dumped {
+            let trace_path = ctx.run_log_context.event_loop_trace();
             ctx.logger.warn(&format!(
-                "Event loop reached max iterations ({}) without completion (trace: {EVENT_LOOP_TRACE_PATH})",
-                config.max_iterations
+                "Event loop reached max iterations ({}) without completion (trace: {})",
+                config.max_iterations,
+                trace_path.display()
             ));
         } else {
             ctx.logger.warn(&format!(

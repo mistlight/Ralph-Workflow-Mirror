@@ -52,6 +52,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -70,6 +71,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     // Construct a boundary state that deterministically derives SaveCheckpoint.
@@ -148,6 +150,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -166,6 +169,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = PipelineState {
@@ -239,6 +243,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -257,6 +262,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = PipelineState::initial(0, 0);
@@ -269,7 +275,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         !result.completed,
         "expected handler panic to be reported as incomplete"
     );
-    assert!(workspace.exists(std::path::Path::new(super::EVENT_LOOP_TRACE_PATH)));
+    assert!(workspace.exists(&run_log_context.event_loop_trace()));
     assert!(workspace.exists(std::path::Path::new(".agent/tmp/completion_marker")));
 }
 
@@ -334,6 +340,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -352,6 +359,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut state = PipelineState::initial(1, 1);
@@ -462,6 +470,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -480,6 +489,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = PipelineState {
@@ -534,6 +544,7 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let ctx = PhaseContext {
         config: &config,
@@ -552,6 +563,7 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -588,6 +600,7 @@ fn test_run_event_loop_with_mock_handler() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     // Create PhaseContext
     let mut ctx = PhaseContext {
@@ -607,6 +620,7 @@ fn test_run_event_loop_with_mock_handler() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     // Create mock handler

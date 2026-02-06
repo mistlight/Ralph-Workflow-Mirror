@@ -7,6 +7,7 @@ use crate::cli::Args;
 use crate::config::Config;
 use crate::logger::Colors;
 use crate::logger::Logger;
+use crate::logging::RunLogContext;
 use crate::prompts::template_context::TemplateContext;
 use crate::workspace::Workspace;
 
@@ -33,4 +34,10 @@ pub struct PipelineContext {
     pub colors: Colors,
     pub template_context: TemplateContext,
     pub executor: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+    /// Run log context for per-run log path resolution.
+    ///
+    /// Provides paths to all log files under the per-run directory
+    /// (`.agent/logs-<run_id>/`). This ensures all logs from a single
+    /// pipeline invocation are grouped together for easy debugging.
+    pub run_log_context: RunLogContext,
 }

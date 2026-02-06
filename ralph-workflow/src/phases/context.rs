@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::executor::ProcessExecutor;
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
+use crate::logging::RunLogContext;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::workspace::Workspace;
@@ -67,6 +68,12 @@ pub struct PhaseContext<'a> {
     /// - Production code passes `&WorkspaceFs` (real filesystem)
     /// - Tests can pass `&MemoryWorkspace` (in-memory storage)
     pub workspace: &'a dyn Workspace,
+    /// Run log context for per-run log path resolution.
+    ///
+    /// Provides paths to all log files under the per-run directory
+    /// (`.agent/logs-<run_id>/`). This ensures all logs from a single
+    /// pipeline invocation are grouped together for easy debugging.
+    pub run_log_context: &'a RunLogContext,
 }
 
 impl PhaseContext<'_> {

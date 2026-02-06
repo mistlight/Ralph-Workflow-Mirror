@@ -287,6 +287,8 @@ fn test_completion_marker_file_written_on_failure() {
 
         let template_context = TemplateContext::default();
         let executor = Arc::new(MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
 
         let mut phase_ctx = ralph_workflow::phases::PhaseContext {
             config: &config,
@@ -306,6 +308,7 @@ fn test_completion_marker_file_written_on_failure() {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: workspace.as_ref(),
+            run_log_context: &run_log_context,
         };
 
         // Given: A state where agent chain will be exhausted immediately
@@ -473,6 +476,8 @@ fn test_budget_exhausted_continues_to_completion_via_event_loop() {
 
         let template_context = TemplateContext::default();
         let executor = Arc::new(MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
 
         let mut phase_ctx = ralph_workflow::phases::PhaseContext {
             config: &config,
@@ -492,6 +497,7 @@ fn test_budget_exhausted_continues_to_completion_via_event_loop() {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: workspace.as_ref(),
+            run_log_context: &run_log_context,
         };
 
         // Given: A state where budget will be exhausted immediately

@@ -7,6 +7,8 @@
 // - run_pipeline_with_default_handler: Production entry point with MainEffectHandler
 // - run_pipeline_with_effect_handler: Test entry point with custom effect handler
 
+use anyhow::Context;
+
 /// Parameters for preparing the pipeline context.
 ///
 /// Groups related parameters to avoid too many function arguments.
@@ -58,7 +60,49 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
             .map_err(|e| anyhow::anyhow!("{}", e))?;
     }
 
-    logger = logger.with_log_file(".agent/logs/pipeline.log");
+    // Create run log context for per-run log directory
+    // If resuming, continue with the same run_id from checkpoint; otherwise create new
+    use crate::logging::RunLogContext;
+    let run_log_context = if args.recovery.resume {
+        // Try to load checkpoint to get run_id for resume continuity
+        use crate::checkpoint::load_checkpoint_with_workspace;
+        let checkpoint = load_checkpoint_with_workspace(&*workspace)
+            .context("Failed to load checkpoint for resume")?;
+
+        if let Some(checkpoint) = checkpoint {
+            // Resume: continue logging to the same run directory
+            RunLogContext::from_checkpoint(&checkpoint.run_id, &*workspace)
+                .context("Failed to restore run log context from checkpoint")?
+        } else {
+            // No checkpoint found, but --resume was requested
+            // This is handled later by resume validation, but we need a run context now
+            RunLogContext::new(&*workspace).context("Failed to create run log context")?
+        }
+    } else {
+        // Fresh run: generate new run_id
+        RunLogContext::new(&*workspace).context("Failed to create run log context")?
+    };
+
+    // Use per-run pipeline.log path
+    logger = logger.with_log_file(run_log_context.pipeline_log().to_str().unwrap());
+
+    // Write run.json metadata
+    let run_metadata = crate::logging::RunMetadata {
+        run_id: run_log_context.run_id().to_string(),
+        started_at_utc: chrono::Utc::now().to_rfc3339(),
+        command: format!(
+            "ralph {}",
+            std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+        ),
+        resume: args.recovery.resume,
+        repo_root: repo_root.display().to_string(),
+        ralph_version: env!("CARGO_PKG_VERSION").to_string(),
+        pid: Some(std::process::id()),
+        config_summary: None, // TODO: add public getters to Config if we want to include this
+    };
+    if let Err(e) = run_log_context.write_run_metadata(&*workspace, &run_metadata) {
+        logger.warn(&format!("Failed to write run.json: {}", e));
+    }
 
     // Handle --dry-run
     if args.recovery.dry_run {
@@ -129,6 +173,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         colors,
         template_context,
         executor,
+        run_log_context,
     };
     Ok(Some(ctx))
 }

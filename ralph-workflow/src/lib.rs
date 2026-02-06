@@ -102,6 +102,7 @@ pub mod interrupt;
 pub mod json_parser;
 pub mod language_detector;
 pub mod logger;
+pub mod logging;
 pub mod phases;
 pub mod pipeline;
 pub mod platform;

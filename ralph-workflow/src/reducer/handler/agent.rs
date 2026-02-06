@@ -72,37 +72,40 @@ impl MainEffectHandler {
                 agent: effective_agent.clone(),
             })?;
 
-        // Determine log file path.
+        // Determine log file path using per-run log directory.
         //
+        // Logs are simplified to phase_index[_aN] format since they're already
+        // isolated in per-run directories. Agent identity is recorded in log headers.
         // Logs must uniquely identify the invocation attempt to avoid collisions across:
         // - model fallback (model index)
         // - agent fallback cycles (retry_cycle)
         // - XSD retries and continuation attempts
-        let phase_prefix = match self.state.phase {
-            PipelinePhase::Planning => format!(".agent/logs/planning_{}", self.state.iteration + 1),
+        let (phase_name, phase_index) = match self.state.phase {
+            PipelinePhase::Planning => ("planning", self.state.iteration + 1),
             PipelinePhase::Development => {
                 if role == AgentRole::Analysis {
-                    format!(".agent/logs/analysis_{}", self.state.iteration + 1)
+                    ("analysis", self.state.iteration + 1)
                 } else {
-                    format!(".agent/logs/developer_{}", self.state.iteration + 1)
+                    ("developer", self.state.iteration + 1)
                 }
             }
-            PipelinePhase::Review => {
-                format!(".agent/logs/reviewer_{}", self.state.reviewer_pass + 1)
-            }
+            PipelinePhase::Review => ("reviewer", self.state.reviewer_pass + 1),
             PipelinePhase::CommitMessage => {
                 let commit_attempt = match &self.state.commit {
                     crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
                     _ => 1,
                 };
-                format!(".agent/logs/commit_{commit_attempt}")
+                ("commit", commit_attempt)
             }
-            PipelinePhase::FinalValidation => ".agent/logs/final_validation".to_string(),
-            PipelinePhase::Finalizing => ".agent/logs/finalizing".to_string(),
-            PipelinePhase::Complete => ".agent/logs/complete".to_string(),
-            PipelinePhase::AwaitingDevFix => ".agent/logs/awaiting_dev_fix".to_string(),
-            PipelinePhase::Interrupted => ".agent/logs/interrupted".to_string(),
+            PipelinePhase::FinalValidation => ("final_validation", 1),
+            PipelinePhase::Finalizing => ("finalizing", 1),
+            PipelinePhase::Complete => ("complete", 1),
+            PipelinePhase::AwaitingDevFix => ("awaiting_dev_fix", 1),
+            PipelinePhase::Interrupted => ("interrupted", 1),
         };
+
+        // Get base log path from run_log_context (without attempt suffix)
+        let base_log_path = ctx.run_log_context.agent_log(phase_name, phase_index, None);
 
         // Determine a collision-free logfile attempt index.
         //
@@ -111,24 +114,49 @@ impl MainEffectHandler {
         // arithmetic attempt value can collide when counters exceed assumed
         // bounds, causing later attempts to overwrite earlier logs.
         //
-        // We avoid collisions by scanning existing logs for this
-        // `(phase_prefix, agent, model_index)` family and using the next
+        // We avoid collisions by scanning existing logs in the per-run agents/
+        // directory for this `{phase}_{index}` family and using the next
         // available attempt index.
-        let model_index = self.state.agent_chain.current_model_index;
-        let agent_for_log = effective_agent.to_lowercase();
-        let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
-            std::path::Path::new(&phase_prefix),
-            &agent_for_log,
-            model_index,
+        let attempt = crate::pipeline::logfile::next_simplified_logfile_attempt_index(
+            &base_log_path,
             ctx.workspace,
         );
 
-        let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
-            &phase_prefix,
-            &agent_for_log,
-            model_index,
+        let logfile = if attempt == 0 {
+            // First attempt: no suffix
+            base_log_path.to_str().unwrap().to_string()
+        } else {
+            // Subsequent attempts: add _aN suffix
+            ctx.run_log_context
+                .agent_log(phase_name, phase_index, Some(attempt))
+                .to_str()
+                .unwrap()
+                .to_string()
+        };
+
+        // Write log file header with agent metadata
+        let log_header = format!(
+            "# Ralph Agent Invocation Log\n\
+             # Role: {:?}\n\
+             # Agent: {}\n\
+             # Model Index: {}\n\
+             # Attempt: {}\n\
+             # Phase: {:?}\n\
+             # Timestamp: {}\n\n",
+            role,
+            effective_agent,
+            self.state.agent_chain.current_model_index,
             attempt,
+            self.state.phase,
+            chrono::Utc::now().to_rfc3339()
         );
+        if let Err(e) = ctx
+            .workspace
+            .write(std::path::Path::new(&logfile), &log_header)
+        {
+            ctx.logger
+                .warn(&format!("Failed to write agent log header: {}", e));
+        }
 
         // Build command string, honoring reducer-selected model (if any).
         // The reducer's agent chain drives model fallback (advance_to_next_model).
@@ -174,8 +202,8 @@ impl MainEffectHandler {
             env_vars: &agent_config.env_vars,
             prompt: &effective_prompt,
             display_name: &effective_agent,
-            log_prefix: &phase_prefix,
-            model_index,
+            log_prefix: &format!("{}_{}", phase_name, phase_index), // For attribution only
+            model_index: self.state.agent_chain.current_model_index,
             attempt,
             logfile: &logfile,
         };

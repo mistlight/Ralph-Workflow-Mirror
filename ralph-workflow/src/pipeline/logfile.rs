@@ -89,6 +89,57 @@ pub fn next_logfile_attempt_index(
     max_attempt.map_or(0, |n| n.saturating_add(1))
 }
 
+/// Determine the next attempt index for simplified per-run agent logs.
+///
+/// This scans the agents/ subdirectory for existing log files matching:
+///
+/// `{phase}_{index}_a{attempt}.log`
+///
+/// and returns `max(attempt)+1`, or `0` if no matching files exist.
+///
+/// This supports the per-run log directory structure where agent identity
+/// is recorded in log file headers rather than filenames.
+pub fn next_simplified_logfile_attempt_index(
+    base_log_path: &Path,
+    workspace: &dyn Workspace,
+) -> u32 {
+    let parent = base_log_path.parent().unwrap_or(Path::new("."));
+    let base_filename = match base_log_path.file_stem().and_then(|s| s.to_str()) {
+        Some(s) if !s.is_empty() => s,
+        _ => return 0,
+    };
+
+    let start = format!("{base_filename}_a");
+
+    let mut max_attempt: Option<u32> = None;
+    if let Ok(entries) = workspace.read_dir(parent) {
+        for entry in entries {
+            if !entry.is_file() {
+                continue;
+            }
+            let Some(filename) = entry.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !filename.starts_with(&start) || !filename.ends_with(".log") {
+                continue;
+            }
+
+            let attempt_digits = &filename[start.len()..filename.len().saturating_sub(4)];
+            if attempt_digits.is_empty() || !attempt_digits.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            if let Ok(n) = attempt_digits.parse::<u32>() {
+                max_attempt = Some(match max_attempt {
+                    Some(prev) => prev.max(n),
+                    None => n,
+                });
+            }
+        }
+    }
+
+    max_attempt.map_or(0, |n| n.saturating_add(1))
+}
+
 /// Extract the agent name from a log file path.
 ///
 /// Parses a log file name like `planning_1_ccs-glm_0.log` to extract

@@ -580,6 +580,10 @@ Ralph includes several automatic mitigations:
 
 ## Troubleshooting Guide
 
+> **Note on Log Paths**: As of recent versions, Ralph uses per-run log directories at `.agent/logs-<run_id>/agents/`. 
+> When checking agent logs, use `ls .agent/logs-*/agents/` to find the most recent run directory, then access logs like:
+> `.agent/logs-2026-02-06_14-03-27.123Z/agents/reviewer_1.log`
+
 ### GLM/CCS Agent Fails with "When using --print, --output-format=stream-json requires --verbose"
 
 **Symptoms**: Agent fails with error message about `--verbose` being required when using `--print` with `--output-format=stream-json`.
