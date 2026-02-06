@@ -4,45 +4,63 @@
 //! content consistently across all parsers. It handles visual distinction,
 //! real-time streaming display, and automatic transition from delta to complete.
 //!
-//! # `DeltaRenderer` Trait
+//! # Streaming Architecture: Append-Only Pattern
 //!
-//! The `DeltaRenderer` trait defines a consistent interface for rendering
-//! streaming deltas across all parsers. Implementations must ensure:
-//! - First chunk shows prefix with accumulated content ending with carriage return
-//! - Subsequent chunks update in-place (clear line, rewrite with prefix, carriage return)
-//! - Final output adds newline when streaming completes
+//! This module implements ChatGPT-style real-time streaming using an append-only
+//! pattern in Full mode (TTY with ANSI support):
 //!
-//! # In-Place Updates
-//!
-//! The terminal escape sequences used for in-place updates:
-//! - `\x1b[2K` - Clears the entire line (not just to end like `\x1b[0K`)
-//! - `\r` - Returns cursor to the beginning of the line
-//!
-//! This ensures that previous content is completely erased before displaying
-//! the updated content, preventing visual artifacts.
-//!
-//! # Multi-Line In-Place Update Pattern
-//!
-//! The renderer uses a multi-line pattern with cursor positioning for in-place updates.
-//! This is the industry standard for streaming CLIs (used by Rich, Ink, Bubble Tea).
+//! ## Append-Only Pattern (Full Mode)
 //!
 //! ```text
-//! [ccs-glm] Hello\n\x1b[1A             <- First chunk: prefix + content + newline + cursor up
-//! \x1b[2K\r[ccs-glm] Hello World\n\x1b[1A  <- Second chunk: clear, rewrite, newline, cursor up
-//! [ccs-glm] Hello World\n\x1b[1B\n       <- Final: move cursor down + newline
+//! [ccs/glm] Hello           <- First delta: prefix + content, NO newline
+//! \r[ccs/glm] Hello World   <- Second delta: \r (carriage return) + full line
+//! \r[ccs/glm] Hello World!  <- Third delta: \r + full line
+//! \n                         <- Completion: single newline
 //! ```
 //!
-//! This pattern ensures:
-//! - Newline forces immediate terminal output buffer flush
-//! - Cursor positioning provides reliable in-place updates
-//! - Production-quality rendering used by major CLI libraries
+//! ## Why Append-Only?
 //!
-//! # Terminal Mode Detection
+//! Previous implementations used `\n\x1b[1A` (newline + cursor up) for in-place
+//! updates. This pattern has critical flaws:
+//!
+//! 1. **Line wrapping breaks in-place updates**
+//!    - When content exceeds terminal width, it wraps to multiple rows
+//!    - `\x1b[2K` (clear line) only clears the current row, not wrapped rows above
+//!    - `\x1b[1A` (cursor up 1) assumes single-row content, incorrect when wrapped
+//!    - Result: multi-line waterfall effect instead of in-place update
+//!
+//! 2. **ANSI-stripping consoles see literal newlines**
+//!    - Many CI/log consoles strip ANSI sequences
+//!    - The `\n` from `\n\x1b[1A` becomes a real visible newline
+//!    - Cursor positioning is ignored, creating repeated prefixed lines
+//!
+//! 3. **Complexity and fragility**
+//!    - Width-aware multi-row updates require tracking terminal dimensions
+//!    - Different terminals handle wrapping differently
+//!    - Difficult to test all edge cases
+//!
+//! ## Append-Only Advantages
+//!
+//! 1. **Works with wrapping**: `\r` returns to column 0 of current row, regardless
+//!    of how many rows the content occupies
+//! 2. **No ANSI cursor positioning during streaming**: Only uses `\r` (carriage return)
+//!    which works even if ANSI is partially supported
+//! 3. **Simple and robust**: One pattern works for all terminal widths and content lengths
+//! 4. **Real-time streaming**: Each delta immediately updates the visible line
+//!
+//! ## Terminal Mode Behavior
 //!
 //! The renderer automatically detects terminal capability and adjusts output:
-//! - **Full mode**: Uses cursor positioning for in-place updates (TTY with capable terminal)
-//! - **Basic mode**: Uses colors but no cursor positioning (e.g., `TERM=dumb`)
-//! - **None mode**: No ANSI sequences (pipes, redirects, CI environments)
+//!
+//! - **Full mode (TTY)**: Append-only streaming with `\r` for in-place updates
+//!   - Real-time per-delta output using carriage return pattern
+//!   - Single `\n` at completion to finalize the line
+//!   - Works correctly even when content wraps to multiple rows
+//!
+//! - **Basic/None mode (logs, CI)**: Per-delta output suppressed, flush once at completion
+//!   - No per-delta output during streaming (prevents spam in logs)
+//!   - Accumulated content flushed ONCE at completion boundaries
+//!   - No ANSI sequences in None mode (pipes, redirects, CI environments)
 //!
 //! # Prefix Display Strategy
 //!

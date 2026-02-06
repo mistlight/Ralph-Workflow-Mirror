@@ -283,22 +283,27 @@ fn test_thinking_deltas_tty_finalize_before_text() {
         .expect("thinking delta should render in TTY");
     assert!(out1.contains("Thinking:"));
     assert!(out1.contains("git"));
-    assert!(out1.ends_with("\n\x1b[1A"));
+    // Append-only pattern: no newline, no cursor positioning
+    assert!(!out1.contains('\n'));
+    assert!(!out1.contains("\x1b[1A"));
 
     let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" status"}}}"#;
     let out2 = parser
         .parse_event(d2)
         .expect("thinking delta should render in TTY");
-    assert!(out2.contains(CLEAR_LINE));
+    // Append-only pattern: carriage return + full line rewrite
+    assert!(out2.starts_with('\r'));
     assert!(out2.contains("Thinking:"));
     assert!(out2.contains("git status"));
-    assert!(out2.ends_with("\n\x1b[1A"));
+    assert!(!out2.contains('\n'));
+    assert!(!out2.contains("\x1b[1A"));
+    assert!(!out2.contains(CLEAR_LINE)); // No line clear with \r pattern
 
-    // First text delta should first finalize thinking line (cursor down + newline)
+    // First text delta should first finalize thinking line (newline only)
     // and then begin streaming text.
     let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
     let out3 = parser.parse_event(text).expect("text delta should render");
-    assert!(out3.starts_with("\x1b[1B\n"));
+    assert!(out3.starts_with('\n')); // Thinking completion newline
     assert!(out3.contains("[ccs/codex]"));
     assert!(out3.contains("Hello"));
 }

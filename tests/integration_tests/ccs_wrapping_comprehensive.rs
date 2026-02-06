@@ -1,0 +1,436 @@
+//! Comprehensive wrapping tests for CCS streaming.
+//!
+//! These tests verify that the append-only streaming pattern works correctly
+//! across various wrapping scenarios: boundary conditions, unicode characters,
+//! narrow terminals, and multiple deltas causing incremental wrapping.
+
+use crate::test_timeout::with_default_timeout;
+use ralph_workflow::config::Verbosity;
+use ralph_workflow::json_parser::claude::ClaudeParser;
+use ralph_workflow::json_parser::codex::CodexParser;
+use ralph_workflow::json_parser::printer::VirtualTerminal;
+use ralph_workflow::json_parser::terminal::TerminalMode;
+use ralph_workflow::logger::Colors;
+use ralph_workflow::workspace::MemoryWorkspace;
+use std::cell::RefCell;
+use std::io::BufReader;
+use std::rc::Rc;
+
+// ============================================================================
+// Claude (ClaudeParser) Wrapping Tests
+// ============================================================================
+
+#[test]
+fn test_claude_wrapping_exactly_at_boundary() {
+    with_default_timeout(|| {
+        // Use a narrow terminal (40 cols) to control wrapping precisely
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, terminal.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::Full);
+
+        // Prefix is "[ccs/glm] " = 10 chars
+        // Content needs to be exactly 30 chars to fill to column 40
+        let content = "A".repeat(30); // Exactly fills width (10 + 30 = 40)
+        let stream = format!(
+            r#"
+{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        // Content at exact boundary should occupy exactly 1 line (no wrap)
+        assert_eq!(
+            visible_lines, 1,
+            "Content at exact boundary should not wrap. Found {} lines",
+            visible_lines
+        );
+
+        // Verify content is present
+        let screen_content = term.get_visible_output();
+        assert!(
+            screen_content.contains(&content),
+            "Content should be visible. Screen:\n{}",
+            screen_content
+        );
+    });
+}
+
+#[test]
+fn test_claude_wrapping_one_char_over() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, terminal.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::Full);
+
+        // Prefix is 10 chars, content is 31 chars = 41 total (wraps by 1 char)
+        let content = "A".repeat(31);
+        let stream = format!(
+            r#"
+{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        // Should still show only 1 visible line (wrapping handled internally)
+        assert_eq!(
+            visible_lines, 1,
+            "One char over boundary should still be 1 visible line. Found {} lines",
+            visible_lines
+        );
+
+        let screen_content = term.get_visible_output();
+        assert!(
+            screen_content.contains(&content),
+            "Content should be visible. Screen:\n{}",
+            screen_content
+        );
+    });
+}
+
+#[test]
+fn test_claude_wrapping_multi_line() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, terminal.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::Full);
+
+        // Create content that spans 3+ terminal lines (40 cols)
+        // Prefix = 10 chars, so we need 90+ chars of content for 3 lines
+        let content = "This is a long message that will definitely wrap across multiple lines in the terminal. ".repeat(2);
+        let stream = format!(
+            r#"
+{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        // Should still be 1 visible line (append-only pattern)
+        assert_eq!(
+            visible_lines, 1,
+            "Multi-line wrapping should still be 1 visible line. Found {} lines",
+            visible_lines
+        );
+
+        let screen_content = term.get_visible_output();
+        assert!(
+            screen_content.contains("This is a long message"),
+            "Content should be visible. Screen:\n{}",
+            screen_content
+        );
+    });
+}
+
+#[test]
+fn test_claude_wrapping_with_unicode() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, terminal.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::Full);
+
+        // Mix emoji and regular text to test unicode handling
+        let content = "Hello 👋 World 🌍 This is a test with emoji 🚀 and unicode 你好";
+        let stream = format!(
+            r#"
+{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        // Should be 1 visible line regardless of unicode
+        assert_eq!(
+            visible_lines, 1,
+            "Unicode content should still be 1 visible line. Found {} lines",
+            visible_lines
+        );
+
+        let screen_content = term.get_visible_output();
+        assert!(
+            screen_content.contains("Hello") && screen_content.contains("World"),
+            "Content should be visible. Screen:\n{}",
+            screen_content
+        );
+    });
+}
+
+#[test]
+fn test_claude_wrapping_multiple_deltas() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, terminal.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::Full);
+
+        // Each delta adds more content, eventually exceeding terminal width
+        let stream = r#"
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg1","content":[]}}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" World"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" This is getting longer"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" and will soon wrap"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" across the terminal width"}}}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+"#;
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        // Each delta should update in-place, resulting in 1 visible line
+        assert_eq!(
+            visible_lines, 1,
+            "Multiple deltas with wrapping should be 1 visible line. Found {} lines.\n\
+             This indicates the append-only pattern is working correctly.",
+            visible_lines
+        );
+
+        let screen_content = term.get_visible_output();
+        assert!(
+            screen_content.contains("Hello World"),
+            "Content should be visible. Screen:\n{}",
+            screen_content
+        );
+    });
+}
+
+#[test]
+fn test_claude_wrapping_very_narrow_terminal() {
+    with_default_timeout(|| {
+        // Extreme case: 20-column terminal
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(20, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, terminal.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::Full);
+
+        let content = "This message is much longer than the narrow terminal width";
+        let stream = format!(
+            r#"
+{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
+{{"type":"stream_event","event":{{"type":"message_stop"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        // Even in very narrow terminal, should be 1 visible line
+        assert_eq!(
+            visible_lines, 1,
+            "Very narrow terminal should still be 1 visible line. Found {} lines",
+            visible_lines
+        );
+
+        let screen_content = term.get_visible_output();
+        assert!(
+            screen_content.contains("This message"),
+            "Content should be visible. Screen:\n{}",
+            screen_content
+        );
+    });
+}
+
+// ============================================================================
+// Codex (CodexParser) Wrapping Tests
+// ============================================================================
+
+#[test]
+fn test_codex_wrapping_exactly_at_boundary() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = CodexParser::with_printer_for_test(colors, verbosity, terminal.clone())
+            .with_display_name_for_test("ccs/codex")
+            .with_terminal_mode(TerminalMode::Full);
+
+        // Prefix is "[ccs/codex] Thinking: " = 21 chars
+        // Content needs to be 19 chars to fill to column 40
+        let content = "A".repeat(19);
+        let stream = format!(
+            r#"
+{{"id":"init","event":"session.created"}}
+{{"id":"msg1","event":"conversation.item.created","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
+{{"id":"msg1","event":"response.created","response":{{"id":"resp1","status":"in_progress"}}}}
+{{"id":"msg1","event":"response.output_item.added","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
+{{"id":"msg1","event":"response.content_part.added","part":{{"type":"reasoning","text":""}},"content_index":0,"item_id":"item1"}}
+{{"id":"msg1","event":"response.reasoning.delta","delta":"{}"}}
+{{"id":"msg1","event":"response.reasoning.done"}}
+{{"id":"msg1","event":"response.done","response":{{"status":"completed"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        assert_eq!(
+            visible_lines, 1,
+            "Codex content at boundary should not wrap. Found {} lines",
+            visible_lines
+        );
+    });
+}
+
+#[test]
+fn test_codex_wrapping_multi_line() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = CodexParser::with_printer_for_test(colors, verbosity, terminal.clone())
+            .with_display_name_for_test("ccs/codex")
+            .with_terminal_mode(TerminalMode::Full);
+
+        let content = "This is extensive reasoning text that will definitely exceed the terminal width and cause wrapping across multiple lines in the narrow terminal window";
+        let stream = format!(
+            r#"
+{{"id":"init","event":"session.created"}}
+{{"id":"msg1","event":"conversation.item.created","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
+{{"id":"msg1","event":"response.created","response":{{"id":"resp1","status":"in_progress"}}}}
+{{"id":"msg1","event":"response.output_item.added","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
+{{"id":"msg1","event":"response.content_part.added","part":{{"type":"reasoning","text":""}},"content_index":0,"item_id":"item1"}}
+{{"id":"msg1","event":"response.reasoning.delta","delta":"{}"}}
+{{"id":"msg1","event":"response.reasoning.done"}}
+{{"id":"msg1","event":"response.done","response":{{"status":"completed"}}}}
+"#,
+            content
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        assert_eq!(
+            visible_lines, 1,
+            "Codex multi-line wrapping should be 1 visible line. Found {} lines",
+            visible_lines
+        );
+    });
+}
+
+#[test]
+fn test_codex_wrapping_multiple_deltas() {
+    with_default_timeout(|| {
+        let terminal = Rc::new(RefCell::new(VirtualTerminal::new_with_geometry(40, 24)));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = CodexParser::with_printer_for_test(colors, verbosity, terminal.clone())
+            .with_display_name_for_test("ccs/codex")
+            .with_terminal_mode(TerminalMode::Full);
+
+        let stream = r#"
+{"id":"init","event":"session.created"}
+{"id":"msg1","event":"conversation.item.created","item":{"id":"item1","type":"message","role":"assistant","content":[]}}
+{"id":"msg1","event":"response.created","response":{"id":"resp1","status":"in_progress"}}
+{"id":"msg1","event":"response.output_item.added","item":{"id":"item1","type":"message","role":"assistant","content":[]}}
+{"id":"msg1","event":"response.content_part.added","part":{"type":"reasoning","text":""},"content_index":0,"item_id":"item1"}
+{"id":"msg1","event":"response.reasoning.delta","delta":"Starting reasoning"}
+{"id":"msg1","event":"response.reasoning.delta","delta":" with more content"}
+{"id":"msg1","event":"response.reasoning.delta","delta":" that will eventually wrap"}
+{"id":"msg1","event":"response.reasoning.delta","delta":" across the terminal width"}
+{"id":"msg1","event":"response.reasoning.done"}
+{"id":"msg1","event":"response.done","response":{"status":"completed"}}
+"#;
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
+
+        let term = terminal.borrow();
+        let visible_lines = term.count_visible_lines();
+
+        assert_eq!(
+            visible_lines, 1,
+            "Codex multiple deltas with wrapping should be 1 visible line. Found {} lines",
+            visible_lines
+        );
+    });
+}

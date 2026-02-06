@@ -86,10 +86,10 @@ mod tests {
         );
         assert!(output.contains("[ccs-glm]"));
         assert!(output.contains("Hello"));
-        // Multi-line pattern: ends with newline + cursor up
-        assert!(output.ends_with("\x1b[1A"));
-        assert!(output.contains('\n'));
-        assert!(output.contains("\x1b[1A"));
+        // Append-only pattern: NO newline, NO cursor positioning
+        assert!(!output.contains('\n'));
+        assert!(!output.contains("\x1b[1A"));
+        assert!(!output.contains("\x1b[1B"));
     }
 
     #[test]
@@ -126,13 +126,15 @@ mod tests {
             test_colors(),
             TerminalMode::Full,
         );
-        assert!(output.contains(CLEAR_LINE));
+        // Append-only pattern: carriage return + full line rewrite
+        assert!(output.starts_with('\r'));
         assert!(output.contains('\r'));
         assert!(output.contains("Hello World"));
-        // Multi-line pattern: ends with newline + cursor up
-        assert!(output.contains("\x1b[1A"));
-        assert!(output.ends_with("\x1b[1A"));
         assert!(output.contains("[ccs-glm]"));
+        // NO newline, NO cursor positioning
+        assert!(!output.contains('\n'));
+        assert!(!output.contains("\x1b[1A"));
+        assert!(!output.contains("\x1b[1B"));
     }
 
     #[test]
@@ -149,26 +151,28 @@ mod tests {
     }
 
     #[test]
-    fn test_text_delta_renderer_uses_full_line_clear() {
+    fn test_text_delta_renderer_uses_carriage_return() {
         let output = TextDeltaRenderer::render_subsequent_delta(
             "Hello World",
             "ccs-glm",
             test_colors(),
             TerminalMode::Full,
         );
-        // Should use \x1b[2K (full line clear), not \x1b[0K (clear to end)
-        assert!(output.contains("\x1b[2K"));
-        // Should NOT contain \x1b[0K
+        // Append-only pattern uses \r (carriage return), not line clear
+        assert!(output.starts_with('\r'));
+        // Should NOT contain line clear sequences (not needed with \r pattern)
+        assert!(!output.contains("\x1b[2K"));
         assert!(!output.contains("\x1b[0K"));
     }
 
     #[test]
     fn test_text_delta_renderer_completion_full_mode() {
         let output = TextDeltaRenderer::render_completion(TerminalMode::Full);
-        // Multi-line pattern: cursor down + newline
-        assert!(output.contains("\x1b[1B"));
+        // Append-only pattern: just newline, no cursor positioning
         assert!(output.contains('\n'));
-        assert_eq!(output, "\x1b[1B\n");
+        assert!(!output.contains("\x1b[1B"));
+        assert!(!output.contains("\x1b[1A"));
+        assert_eq!(output, "\n");
     }
 
     #[test]
@@ -208,30 +212,31 @@ mod tests {
     fn test_text_delta_renderer_in_place_update_sequence() {
         let colors = test_colors();
 
-        // First chunk - multi-line pattern: ends with newline + cursor up
+        // First chunk - append-only pattern: no newline, no cursor positioning
         let out1 =
             TextDeltaRenderer::render_first_delta("Hello", "ccs-glm", colors, TerminalMode::Full);
         assert!(out1.contains("[ccs-glm]"));
-        assert!(out1.ends_with("\x1b[1A"));
-        assert!(out1.contains('\n'));
-        assert!(out1.contains("\x1b[1A"));
+        assert!(out1.contains("Hello"));
+        assert!(!out1.contains('\n'));
+        assert!(!out1.contains("\x1b[1A"));
 
-        // Second chunk (in-place update with newline + cursor up)
+        // Second chunk - carriage return + full line rewrite
         let out2 = TextDeltaRenderer::render_subsequent_delta(
             "Hello World",
             "ccs-glm",
             colors,
             TerminalMode::Full,
         );
-        assert!(out2.contains("\x1b[2K"));
-        assert!(out2.contains('\r'));
-        assert!(out2.contains("\x1b[1A")); // Cursor up in multi-line pattern
+        assert!(out2.starts_with('\r'));
         assert!(out2.contains("[ccs-glm]")); // Prefix is rewritten
+        assert!(out2.contains("Hello World"));
+        assert!(!out2.contains('\n'));
+        assert!(!out2.contains("\x1b[1A"));
+        assert!(!out2.contains("\x1b[2K")); // No line clear with \r pattern
 
-        // Completion
+        // Completion - just newline
         let out3 = TextDeltaRenderer::render_completion(TerminalMode::Full);
-        assert!(out3.contains("\x1b[1B"));
-        assert_eq!(out3, "\x1b[1B\n");
+        assert_eq!(out3, "\n");
     }
 
     #[test]
@@ -246,7 +251,9 @@ mod tests {
         assert!(out.contains("[ccs/codex]"));
         assert!(out.contains("Thinking:"));
         assert!(out.contains("git status"));
-        assert!(out.ends_with("\n\x1b[1A"));
+        // Append-only pattern: no newline, no cursor positioning
+        assert!(!out.contains('\n'));
+        assert!(!out.contains("\x1b[1A"));
     }
 
     #[test]
@@ -258,10 +265,13 @@ mod tests {
             colors,
             TerminalMode::Full,
         );
-        assert!(out.contains(CLEAR_LINE));
+        // Append-only pattern: carriage return + full line rewrite
+        assert!(out.starts_with('\r'));
         assert!(out.contains("Thinking:"));
         assert!(out.contains("git status --porcelain"));
-        assert!(out.ends_with("\n\x1b[1A"));
+        assert!(!out.contains('\n'));
+        assert!(!out.contains("\x1b[1A"));
+        assert!(!out.contains(CLEAR_LINE)); // No line clear with \r pattern
     }
 
     #[test]
@@ -324,7 +334,7 @@ mod tests {
     fn test_full_streaming_sequence_no_extra_blank_lines() {
         let colors = test_colors();
 
-        // Simulate a full streaming sequence and verify no extra blank lines
+        // Simulate a full streaming sequence with append-only pattern
         let first =
             TextDeltaRenderer::render_first_delta("Hello", "agent", colors, TerminalMode::Full);
         let second = TextDeltaRenderer::render_subsequent_delta(
@@ -335,17 +345,17 @@ mod tests {
         );
         let complete = TextDeltaRenderer::render_completion(TerminalMode::Full);
 
-        // First delta: ends with exactly one \n followed by cursor up
-        assert!(first.ends_with("\n\x1b[1A"));
-        assert_eq!(first.matches('\n').count(), 1);
+        // First delta: no newline (append-only pattern)
+        assert!(!first.contains('\n'));
+        assert_eq!(first.matches('\n').count(), 0);
 
-        // Subsequent delta: starts with clear+return, ends with \n + cursor up
-        assert!(second.starts_with("\x1b[2K\r"));
-        assert!(second.ends_with("\n\x1b[1A"));
-        assert_eq!(second.matches('\n').count(), 1);
+        // Subsequent delta: starts with \r, no newline
+        assert!(second.starts_with('\r'));
+        assert!(!second.contains('\n'));
+        assert_eq!(second.matches('\n').count(), 0);
 
-        // Completion: exactly cursor down + one newline
-        assert_eq!(complete, "\x1b[1B\n");
+        // Completion: exactly one newline, no cursor positioning
+        assert_eq!(complete, "\n");
         assert_eq!(complete.matches('\n').count(), 1);
     }
 

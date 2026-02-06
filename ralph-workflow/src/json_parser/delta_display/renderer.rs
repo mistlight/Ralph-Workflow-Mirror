@@ -43,11 +43,27 @@
 /// Renderer for streaming delta content.
 ///
 /// This trait defines the contract for rendering streaming deltas consistently
-/// across all parsers. Implementations must ensure:
+/// across all parsers using the append-only pattern.
 ///
-/// 1. **First chunk**: Shows prefix with accumulated content, ending with newline + cursor up
-/// 2. **Subsequent chunks**: Clear line, rewrite with prefix and accumulated content, newline + cursor up
-/// 3. **Completion**: Move cursor down + newline when streaming completes
+/// # Append-Only Pattern (Full Mode)
+///
+/// 1. **First delta**: Shows prefix with accumulated content, NO newline
+///    - Example: `[ccs/glm] Hello`
+///
+/// 2. **Subsequent deltas**: Carriage return + rewrite full line
+///    - Example: `\r[ccs/glm] Hello World`
+///
+/// 3. **Completion**: Single newline to finalize the line
+///    - Example: `\n`
+///
+/// This pattern works correctly even when content wraps to multiple terminal rows,
+/// because `\r` (carriage return) returns to column 0 of the current row without
+/// assuming anything about the number of rows occupied.
+///
+/// # Non-TTY Modes (Basic/None)
+///
+/// Per-delta output is suppressed. Content is flushed ONCE at completion boundaries
+/// by the parser layer to prevent spam in logs and CI output.
 ///
 /// # Rendering Rules
 ///
@@ -148,20 +164,20 @@ pub trait DeltaRenderer {
 
     /// Render the completion of streaming.
     ///
-    /// This is called when streaming completes to move cursor down and add newline.
-    /// This method ONLY handles cursor state cleanup - it does NOT render content.
+    /// This is called when streaming completes to finalize the line.
+    /// In Full mode with append-only pattern, this emits a single newline to complete the line.
     ///
     /// The streamed content is already visible on the terminal from previous deltas.
-    /// This method simply positions the cursor correctly for subsequent output.
+    /// This method simply adds the final newline for proper line termination.
     ///
     /// # Arguments
     /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A string with appropriate cursor sequence for the terminal mode.
+    /// A string with appropriate completion sequence for the terminal mode.
     fn render_completion(terminal_mode: TerminalMode) -> String {
         match terminal_mode {
-            TerminalMode::Full => "\x1b[1B\n".to_string(),
+            TerminalMode::Full => "\n".to_string(), // Single newline at end for append-only pattern
             // In non-TTY modes, streamed output is suppressed and the parser flushes
             // newline-terminated content at completion boundaries. Returning a newline here
             // would add an extra blank line if a caller invokes `render_completion`.
@@ -236,10 +252,10 @@ impl DeltaRenderer for TextDeltaRenderer {
 
         match terminal_mode {
             TerminalMode::Full => {
-                // Multi-line pattern: end with newline + cursor up for in-place updates
-                // This forces terminal output flush and positions cursor for rewrite
+                // Append-only pattern: prefix + content, NO NEWLINE
+                // This allows content to grow on same line without wrapping issues
                 format!(
-                    "{}[{}]{} {}{}{}\n\x1b[1A",
+                    "{}[{}]{} {}{}{}",
                     colors.dim(),
                     prefix,
                     colors.reset(),
@@ -270,10 +286,11 @@ impl DeltaRenderer for TextDeltaRenderer {
 
         match terminal_mode {
             TerminalMode::Full => {
-                // Clear line, rewrite with prefix and accumulated content, end with newline + cursor up
-                // This creates in-place update using multi-line pattern
+                // Append-only: compute diff and emit only NEW content
+                // Use carriage return to go back to start, rewrite full line
+                // This is the classic "progressive line update" pattern
                 format!(
-                    "{CLEAR_LINE}\r{}[{}]{} {}{}{}\n\x1b[1A",
+                    "\r{}[{}]{} {}{}{}",
                     colors.dim(),
                     prefix,
                     colors.reset(),
@@ -323,7 +340,7 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
 
         match terminal_mode {
             TerminalMode::Full => format!(
-                "{}[{}]{} {}Thinking: {}{}{}\n\x1b[1A",
+                "{}[{}]{} {}Thinking: {}{}{}",
                 colors.dim(),
                 prefix,
                 colors.reset(),
@@ -351,7 +368,7 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
 
         match terminal_mode {
             TerminalMode::Full => format!(
-                "{CLEAR_LINE}\r{}[{}]{} {}Thinking: {}{}{}\n\x1b[1A",
+                "\r{}[{}]{} {}Thinking: {}{}{}",
                 colors.dim(),
                 prefix,
                 colors.reset(),

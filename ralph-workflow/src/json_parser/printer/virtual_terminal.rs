@@ -14,8 +14,20 @@
 /// - **ANSI cursor up (`\x1b[1A`)**: Moves cursor up one row
 /// - **ANSI cursor down (`\x1b[1B`)**: Moves cursor down one row
 /// - **Text overwriting**: Writing after `\r` replaces previous content
+/// - **Line wrapping**: Writing past terminal width wraps to next row
+/// - **Scrolling**: Writing past terminal height scrolls content up
 ///
 /// This allows tests to verify what the user actually SEES, not just what was written.
+///
+/// # Terminal Geometry
+///
+/// The virtual terminal supports fixed geometry (width and height) to simulate
+/// real terminal constraints:
+///
+/// - **Wrapping**: Writing past column `cols` automatically wraps to next row
+/// - **Scrolling**: When cursor advances past `rows`, the screen scrolls up
+///   (top row is discarded, new blank row added at bottom)
+/// - **No reflow**: Resizing is not supported; geometry is fixed at creation
 ///
 /// # Example
 ///
@@ -23,6 +35,12 @@
 /// use ralph_workflow::json_parser::printer::VirtualTerminal;
 /// use std::io::Write;
 ///
+/// // Create a terminal with 80 columns and 24 rows
+/// let mut term = VirtualTerminal::new_with_geometry(80, 24);
+/// write!(term, "A".repeat(100)).unwrap();  // Wraps to multiple rows
+/// assert!(term.count_visible_lines() > 1);
+///
+/// // Traditional infinite-width terminal (backward compatible)
 /// let mut term = VirtualTerminal::new();
 /// write!(term, "Hello").unwrap();
 /// write!(term, "\rWorld").unwrap();  // Overwrites "Hello"
@@ -31,9 +49,11 @@
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
 pub struct VirtualTerminal {
-    /// The terminal buffer - each element is a line (row)
-    lines: RefCell<Vec<String>>,
-    /// Current cursor row (0-indexed)
+    /// The terminal screen buffer - each element is a line (row)
+    /// In geometry mode, this is a fixed-size circular buffer (scrolling)
+    /// In unbounded mode, this grows indefinitely
+    screen: RefCell<Vec<String>>,
+    /// Current cursor row (0-indexed, relative to screen buffer)
     cursor_row: RefCell<usize>,
     /// Current cursor column (0-indexed)
     cursor_col: RefCell<usize>,
@@ -41,29 +61,66 @@ pub struct VirtualTerminal {
     simulated_is_terminal: bool,
     /// Raw write history for debugging
     write_history: RefCell<Vec<String>>,
+    /// Terminal width in columns (None = unbounded, for backward compatibility)
+    cols: Option<usize>,
+    /// Terminal height in rows (None = unbounded, for backward compatibility)
+    rows: Option<usize>,
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 impl VirtualTerminal {
     /// Create a new virtual terminal (simulates being a TTY by default).
+    /// This creates an unbounded terminal (no wrapping, no scrolling) for backward compatibility.
     pub fn new() -> Self {
         Self {
-            lines: RefCell::new(vec![String::new()]),
+            screen: RefCell::new(vec![String::new()]),
             cursor_row: RefCell::new(0),
             cursor_col: RefCell::new(0),
             simulated_is_terminal: true,
             write_history: RefCell::new(Vec::new()),
+            cols: None,
+            rows: None,
         }
     }
 
     /// Create a new virtual terminal with specified terminal simulation.
+    /// This creates an unbounded terminal (no wrapping, no scrolling) for backward compatibility.
     pub fn new_with_terminal(is_terminal: bool) -> Self {
         Self {
-            lines: RefCell::new(vec![String::new()]),
+            screen: RefCell::new(vec![String::new()]),
             cursor_row: RefCell::new(0),
             cursor_col: RefCell::new(0),
             simulated_is_terminal: is_terminal,
             write_history: RefCell::new(Vec::new()),
+            cols: None,
+            rows: None,
+        }
+    }
+
+    /// Create a new virtual terminal with fixed geometry (width and height).
+    ///
+    /// This simulates a real terminal with specific dimensions:
+    /// - Writing past `cols` wraps to the next row
+    /// - Advancing past `rows` scrolls the screen (top row is discarded)
+    ///
+    /// # Arguments
+    /// * `cols` - Terminal width in columns
+    /// * `rows` - Terminal height in rows
+    ///
+    /// # Example
+    /// ```ignore
+    /// let term = VirtualTerminal::new_with_geometry(80, 24);
+    /// // Writing 100 characters will wrap to multiple rows
+    /// ```
+    pub fn new_with_geometry(cols: usize, rows: usize) -> Self {
+        Self {
+            screen: RefCell::new(vec![String::new()]),
+            cursor_row: RefCell::new(0),
+            cursor_col: RefCell::new(0),
+            simulated_is_terminal: true,
+            write_history: RefCell::new(Vec::new()),
+            cols: Some(cols),
+            rows: Some(rows),
         }
     }
 
@@ -72,9 +129,9 @@ impl VirtualTerminal {
     /// This returns the final rendered state of the terminal, with all
     /// ANSI sequences processed and overwrites applied.
     pub fn get_visible_output(&self) -> String {
-        let lines = self.lines.borrow();
+        let screen = self.screen.borrow();
         // Join non-empty lines, trimming trailing whitespace from each
-        lines
+        screen
             .iter()
             .map(|line| line.trim_end().to_string())
             .collect::<Vec<_>>()
@@ -83,12 +140,28 @@ impl VirtualTerminal {
 
     /// Get visible lines (non-empty lines only).
     pub fn get_visible_lines(&self) -> Vec<String> {
-        self.lines
+        self.screen
             .borrow()
             .iter()
             .map(|line| line.trim_end().to_string())
             .filter(|line| !line.is_empty())
             .collect()
+    }
+
+    /// Count the number of visible lines (non-empty lines).
+    ///
+    /// This is useful for detecting multi-line waterfall bugs where
+    /// streaming output creates multiple visible lines instead of
+    /// updating a single line in place.
+    pub fn count_visible_lines(&self) -> usize {
+        self.get_visible_lines().len()
+    }
+
+    /// Get the full screen content including empty lines.
+    ///
+    /// This is useful for debugging tests to see the exact screen state.
+    pub fn get_screen_content(&self) -> Vec<String> {
+        self.screen.borrow().clone()
     }
 
     /// Get the raw write history for debugging.
@@ -103,35 +176,101 @@ impl VirtualTerminal {
 
     /// Clear the terminal.
     pub fn clear(&self) {
-        self.lines.borrow_mut().clear();
-        self.lines.borrow_mut().push(String::new());
+        self.screen.borrow_mut().clear();
+        self.screen.borrow_mut().push(String::new());
         *self.cursor_row.borrow_mut() = 0;
         *self.cursor_col.borrow_mut() = 0;
         self.write_history.borrow_mut().clear();
     }
 
     /// Ensure the current row exists in the buffer.
+    ///
+    /// In geometry mode, this may trigger scrolling if cursor is past the bottom.
+    /// In unbounded mode, this grows the buffer as needed.
     fn ensure_row_exists(&self) {
         let row = *self.cursor_row.borrow();
-        let mut lines = self.lines.borrow_mut();
-        while lines.len() <= row {
-            lines.push(String::new());
+        let mut screen = self.screen.borrow_mut();
+
+        // In geometry mode, check if we need to scroll
+        if let Some(max_rows) = self.rows {
+            if row >= max_rows {
+                // Scroll: remove top row, add blank row at bottom
+                screen.remove(0);
+                screen.push(String::new());
+                // Cursor stays at bottom row (last row index)
+                *self.cursor_row.borrow_mut() = max_rows - 1;
+                return;
+            }
+        }
+
+        // Ensure row exists (grow buffer if needed)
+        while screen.len() <= row {
+            screen.push(String::new());
         }
     }
 
-    /// Write a character at the current cursor position.
     /// Write a string of regular characters at the current cursor position.
-    /// This is more efficient than write_char for multiple characters.
+    ///
+    /// In geometry mode, this handles automatic wrapping when writing past terminal width.
+    /// In unbounded mode, the line grows indefinitely.
     fn write_str(&self, s: &str) {
         if s.is_empty() {
             return;
         }
 
+        // Handle wrapping character by character in geometry mode
+        if self.cols.is_some() {
+            for ch in s.chars() {
+                self.write_char_with_wrap(ch);
+            }
+        } else {
+            // Unbounded mode: write entire string without wrapping
+            self.write_str_unbounded(s);
+        }
+    }
+
+    /// Write a single character with automatic wrapping (geometry mode).
+    fn write_char_with_wrap(&self, ch: char) {
+        self.ensure_row_exists();
+        let mut row = *self.cursor_row.borrow();
+        let mut col = *self.cursor_col.borrow();
+
+        // Check if we need to wrap to next line
+        if let Some(max_cols) = self.cols {
+            if col >= max_cols {
+                // Wrap to next row, column 0
+                *self.cursor_row.borrow_mut() = row + 1;
+                *self.cursor_col.borrow_mut() = 0;
+                self.ensure_row_exists(); // May trigger scrolling
+                row = *self.cursor_row.borrow();
+                col = 0;
+            }
+        }
+
+        let mut screen = self.screen.borrow_mut();
+        let line = &mut screen[row];
+
+        // Extend the line with spaces if needed
+        while line.chars().count() < col {
+            line.push(' ');
+        }
+
+        // Build new line: prefix + new char + suffix
+        let prefix: String = line.chars().take(col).collect();
+        let suffix: String = line.chars().skip(col + 1).collect();
+        *line = format!("{}{}{}", prefix, ch, suffix);
+
+        // Move cursor right
+        *self.cursor_col.borrow_mut() = col + 1;
+    }
+
+    /// Write a string without wrapping (unbounded mode, backward compatible).
+    fn write_str_unbounded(&self, s: &str) {
         self.ensure_row_exists();
         let row = *self.cursor_row.borrow();
         let col = *self.cursor_col.borrow();
-        let mut lines = self.lines.borrow_mut();
-        let line = &mut lines[row];
+        let mut screen = self.screen.borrow_mut();
+        let line = &mut screen[row];
 
         // Extend the line with spaces if needed
         while line.chars().count() < col {
@@ -148,11 +287,15 @@ impl VirtualTerminal {
     }
 
     /// Clear the current line.
+    ///
+    /// This clears ONLY the current row where the cursor is positioned.
+    /// If content has wrapped to multiple rows, this only clears the cursor's row.
+    /// This behavior matches real terminal `\x1b[2K` (erase line).
     fn clear_line(&self) {
         self.ensure_row_exists();
         let row = *self.cursor_row.borrow();
-        let mut lines = self.lines.borrow_mut();
-        lines[row].clear();
+        let mut screen = self.screen.borrow_mut();
+        screen[row].clear();
         // Note: cursor position is NOT changed by clear line
     }
 

@@ -325,25 +325,37 @@ fn test_codex_reasoning_full_mode_in_place_updates() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // In Full mode, should use cursor positioning for in-place updates
-    // First delta: ends with \n\x1b[1A (newline + cursor up)
+    // In Full mode, append-only pattern uses carriage return, no cursor positioning
+    // Subsequent deltas: carriage return only
     assert!(
-        output.contains("\n\x1b[1A"),
-        "Expected cursor up sequence for in-place updates. Output:\n{}",
+        output.contains('\r'),
+        "Expected carriage return for in-place updates. Output:\n{}",
         output
     );
 
-    // Subsequent deltas: clear line with \x1b[2K\r
+    // NO cursor positioning sequences (append-only pattern)
     assert!(
-        output.contains("\x1b[2K\r"),
-        "Expected clear line sequence for subsequent deltas. Output:\n{}",
+        !output.contains("\x1b[1A"),
+        "Should not contain cursor up in append-only pattern. Output:\n{}",
         output
     );
 
-    // Final completion: cursor down \x1b[1B\n
     assert!(
-        output.contains("\x1b[1B\n"),
-        "Expected cursor down sequence at completion. Output:\n{}",
+        !output.contains("\x1b[2K"),
+        "Should not contain line clear in append-only pattern. Output:\n{}",
+        output
+    );
+
+    assert!(
+        !output.contains("\x1b[1B"),
+        "Should not contain cursor down in append-only pattern. Output:\n{}",
+        output
+    );
+
+    // Final completion: just newline
+    assert!(
+        output.ends_with('\n'),
+        "Expected newline at completion. Output:\n{}",
         output
     );
 

@@ -64,6 +64,13 @@ pub struct ClaudeParser {
     /// first emit a completion sequence ("\x1b[1B\n") to avoid overwriting the
     /// visible streamed line.
     cursor_up_active: RefCell<bool>,
+
+    /// Tracks the last rendered content for append-only streaming in Full mode.
+    ///
+    /// In append-only mode, we emit the prefix once, then only emit new suffixes for subsequent deltas.
+    /// This map stores the last rendered content for each (ContentType, index) pair.
+    /// Key format: "{content_type}:{index}" (e.g., "text:0", "thinking:1")
+    last_rendered_content: RefCell<std::collections::HashMap<String, String>>,
 }
 
 impl ClaudeParser {
@@ -124,6 +131,7 @@ impl ClaudeParser {
             suppress_thinking_for_message: RefCell::new(false),
             text_line_active: RefCell::new(false),
             cursor_up_active: RefCell::new(false),
+            last_rendered_content: RefCell::new(std::collections::HashMap::new()),
         }
     }
 
