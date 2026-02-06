@@ -8,7 +8,7 @@ If you are looking specifically for effect-handler layering and filesystem rules
 
 Ralph's pipeline is driven by an explicit event loop with a strict separation of concerns:
 
-- `PipelineState`: immutable snapshot of "where we are".
+- `PipelineState`: immutable snapshot of "where we are" (this is the pipeline's app-state).
 - `Effect`: an intention to perform I/O (run an agent, write a checkpoint, run git, etc.).
 - `PipelineEvent`: a fact about something that happened (success, failure, data produced). In code this is an umbrella enum that wraps category events.
 - `Reducer`: pure function that applies an event to the current state.
@@ -36,7 +36,7 @@ At a high level (pipeline layer):
 2. Handle: execute the effect in the `EffectHandler` (I/O happens here).
 3. Emit: return an `EffectResult` (primary `PipelineEvent`, optional `additional_events`, optional `ui_events`).
 4. Reduce: compute the next state by applying the primary event and then any additional events, in order.
-5. Repeat until orchestration yields no further effects / a terminal state.
+5. Repeat until the state reaches a terminal condition (`PipelineState::is_complete()`).
 
 Two rules prevent subtle bugs:
 
@@ -44,6 +44,43 @@ Two rules prevent subtle bugs:
 - The handler is responsible for the side effect itself; the reducer is responsible for decisions.
 
 This includes checkpointing: `Effect::SaveCheckpoint` must still execute through the handler even when persistence is disabled. (If persistence is disabled, the handler can skip writing files, but the effect still runs.)
+
+## PipelineState (The App State)
+
+`PipelineState` is the canonical application state for the pipeline reducer architecture.
+
+- It is the single source of truth for pipeline progress.
+- It is the checkpoint payload: serialize to JSON to resume later.
+- It is reducer-owned: state transitions only happen by applying reducer events.
+
+### What belongs in state
+
+State should include the minimum information needed to:
+
+- deterministically derive the next `Effect`
+- explain why the pipeline is in its current phase
+- safely resume after interruption
+
+In practice this means a lot of "single-task sequencing" fields (for example: "prompt prepared for iteration N", "xml extracted for pass P", "validated outcome stored", etc.). These flags keep orchestration deterministic and prevent handlers from bundling policy decisions into I/O.
+
+### What must not be state
+
+- mutable caches of external reality (filesystem, git status, network)
+- hidden control flags that are not driven by events
+- anything that would make `reduce(state, event)` depend on time, environment, or I/O
+
+## Terminal State Semantics
+
+The event loop terminates based on `PipelineState::is_complete()`, not on orchestration returning "no effect".
+
+Current terminal semantics (see `ralph-workflow/src/reducer/state/pipeline.rs`):
+
+- `PipelinePhase::Complete` is always terminal.
+- `PipelinePhase::Interrupted` is terminal when either:
+  - at least one checkpoint has been saved (`checkpoint_saved_count > 0`), or
+  - we transitioned from `PipelinePhase::AwaitingDevFix` (completion marker already emitted).
+
+The `AwaitingDevFix -> Interrupted` path is intentionally considered terminal even before the checkpoint write, because external orchestration observes termination via the completion marker. The event loop still ensures `Effect::SaveCheckpoint` runs next for persistence.
 
 ## Event and Effect Shapes (Current)
 
@@ -83,6 +120,38 @@ The pipeline is designed to keep running and route internal failures through the
 - Orchestration derives a dev-fix flow effect, which emits a completion marker and then transitions to `Interrupted`.
 - The event loop should exit with `completed=true` after the checkpoint is saved for the interrupted state.
 
+## Orchestration: Priority Order
+
+Orchestration is a pure function from state to the next effect (`determine_next_effect(&PipelineState) -> Effect`). It intentionally encodes a priority order so that recovery/cleanup always preempts phase work.
+
+The current priority ordering is documented in code (see `ralph-workflow/src/reducer/orchestration/xsd_retry.rs`) and includes, roughly:
+
+1. Continuation context cleanup
+2. Same-agent retry pending (transient invocation failures)
+3. XSD retry pending (invalid XML output)
+4. Continuation pending (valid output but incomplete work)
+5. Rebase in progress
+6. Agent-chain exhaustion / backoff waiting
+7. Phase-specific effects (the normal single-task sequence)
+
+Do not implement hidden retries or fallback loops inside handlers; retries/fallback must be reducer-visible state so the orchestrator can remain pure and deterministic.
+
+## Handler Error Recovery (Downcasting)
+
+Handlers normally return `Ok(EffectResult { .. })`. When a handler needs to surface a failure that should still be handled by the state machine, it returns `Err(ErrorEvent::... .into())`.
+
+The event loop attempts to downcast typed `ErrorEvent` values out of `anyhow::Error` and re-emit them as a reducer event (`PipelineEvent::PromptInput(PromptInputEvent::HandlerError { .. })`). This keeps recovery logic in reducers without forcing new top-level `PipelineEvent` variants.
+
+Handler panics are also treated as internal failures: the event loop catches them and routes through the same non-terminating failure flow.
+
+## Debuggability: Event Loop Trace
+
+The event loop keeps a bounded in-memory ring buffer of recent (effect, event, phase, retry counters) entries. When the loop encounters an internal failure or hits its iteration cap, it writes a trace to:
+
+- `.agent/tmp/event_loop_trace.jsonl`
+
+This is designed to make "stuck" pipelines diagnosable without reconstructing control flow.
+
 ## Where This Lives in Code
 
 The exact file layout can evolve, but conceptually Ralph keeps these concerns separate:
@@ -100,8 +169,6 @@ The exact file layout can evolve, but conceptually Ralph keeps these concerns se
 `LifecycleEvent` is intentionally frozen so effect handlers cannot introduce new "control" events.
 
 If you need to represent a new observation or failure, add it to the appropriate phase/category event and let the reducer decide what to do.
-
-## Best Practices: Events vs Decisions
 
 ### Events must be descriptive facts
 

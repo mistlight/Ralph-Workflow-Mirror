@@ -8,6 +8,7 @@ For the most up-to-date architecture documentation, prefer:
 
 - `../architecture/event-loop-and-reducers.md`
 - `../architecture/effect-system.md`
+- `../architecture/streaming-and-parsers.md`
 
 ## What is an RFC?
 

@@ -148,7 +148,7 @@ This ensures clean visual output during streaming while preserving the original 
 1. **Very rapid deltas** may cause visual flicker on some terminals
 2. **Standard ANSI sequences** are assumed - may not work on non-ANSI terminals
 3. **Long lines** may wrap, affecting in-place update visual appearance
-4. **Non-interactive output** (piped to file) will contain escape sequences
+4. **Non-interactive output** (piped to file) defaults to `TerminalMode::None` and must not emit ANSI escape sequences. (If users force color via `CLICOLOR_FORCE`, output may include color escapes but still must not use cursor positioning.)
 
 ### Snapshot-as-Delta Auto-Repair
 

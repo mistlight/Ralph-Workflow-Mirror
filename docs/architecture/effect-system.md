@@ -10,7 +10,7 @@ Ralph separates **pure logic** from **side effects** to enable testability:
 
 - **Pure functions** compute state transitions and determine what effects to execute
 - **Effect handlers** execute side effects (I/O, git, filesystem) and report results
-- **Reducers** orchestrate the flow: state → effect → event → new state
+- **The event loop** orchestrates the flow: state → effect → event → new state
 
 This separation allows testing business logic without real I/O by injecting mock handlers.
 
