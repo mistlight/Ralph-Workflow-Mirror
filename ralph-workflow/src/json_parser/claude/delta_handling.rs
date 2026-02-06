@@ -82,8 +82,9 @@ impl ClaudeParser {
                 // Keep `session` in the signature for symmetry with other finalizers.
                 // Thinking finalization is parser-owned state in Full mode.
                 let _ = session;
-                // Finalize the multi-line in-place update pattern for thinking.
-                // This leaves the final thinking line visible and moves the cursor to the next line.
+                // Finalize the streamed thinking line.
+                // In append-only streaming, this emits the completion newline so subsequent output
+                // doesn't glue onto the thinking line.
                 <crate::json_parser::delta_display::ThinkingDeltaRenderer as DeltaRenderer>::render_completion(
                     terminal_mode,
                 )
@@ -678,10 +679,10 @@ impl ClaudeParser {
         let metrics = session.get_streaming_quality_metrics();
         let was_in_block = session.on_message_stop();
 
-        // In Full mode, a streamed text line can leave the cursor positioned on the line
-        // (via a trailing "\n\x1b[1A"). Normally `was_in_block` implies we should emit a
-        // completion sequence, but some real-world logs can violate block lifecycle ordering.
-        // If we have an active text streaming line, still emit a completion sequence.
+        // In Full mode, a streamed text line can leave the cursor positioned on the current line
+        // (append-only streaming emits no cursor controls during deltas). Normally `was_in_block`
+        // implies we should emit a completion newline, but some real-world logs can violate block
+        // lifecycle ordering. If we have an active text streaming line, still emit completion.
         let needs_text_completion = terminal_mode == TerminalMode::Full
             && (*self.text_line_active.borrow() || *self.cursor_up_active.borrow());
         let should_emit_completion = was_in_block || needs_text_completion;

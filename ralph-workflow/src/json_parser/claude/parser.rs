@@ -26,8 +26,9 @@ pub struct ClaudeParser {
 
     /// Tracks whether a thinking delta line is currently being streamed.
     ///
-    /// - In `TerminalMode::Full`, thinking deltas use the multi-line in-place update pattern
-    ///   and must be finalized (cursor down + newline) before emitting other newline-based output.
+    /// - In `TerminalMode::Full`, thinking deltas use the append-only streaming pattern (no cursor
+    ///   movement during deltas) and must be finalized (emit the completion newline) before emitting
+    ///   other newline-based output.
     /// - In `TerminalMode::Basic|None`, we suppress per-delta thinking output and flush accumulated
     ///   thinking content once at the next output boundary (or at `message_stop`).
     thinking_active_index: RefCell<Option<u64>>,
@@ -44,8 +45,8 @@ pub struct ClaudeParser {
     /// subsequent thinking deltas to avoid corrupting visible output.
     ///
     /// Claude/CCS can occasionally emit thinking deltas after text deltas. Because
-    /// both use in-place terminal updates, allowing late thinking can overwrite
-    /// previously-rendered text.
+    /// both streams append on the current line in Full mode, allowing late thinking can
+    /// glue onto or visually corrupt previously-rendered text.
     suppress_thinking_for_message: RefCell<bool>,
 
     /// Tracks whether a text delta line is currently being streamed (Full mode).
@@ -60,8 +61,8 @@ pub struct ClaudeParser {
     ///
     /// The append-only streaming implementation should not emit cursor-up sequences,
     /// but real-world logs can include raw passthrough output with escape codes.
-    /// When this flag is true, newline-based output should first emit a completion
-    /// sequence ("\x1b[1B\n") to avoid overwriting visible content.
+    /// When this flag is true, newline-based output should first emit a completion newline
+    /// to avoid overwriting/gluing onto visible content.
     cursor_up_active: RefCell<bool>,
 
     /// Tracks the last rendered content for append-only streaming in Full mode.

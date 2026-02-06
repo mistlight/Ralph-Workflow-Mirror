@@ -8,12 +8,16 @@
 /// prefix debouncing and multi-line handling.
 ///
 /// Default values:
-/// - `prefix_delta_threshold`: 0 (show prefix only on first delta)
-/// - `prefix_time_threshold`: None (no time-based debouncing)
+/// - `prefix_delta_threshold`: 0 (disable count-based repetition; first delta still shows prefix)
+/// - `prefix_time_threshold`: None (disable time-based repetition)
 #[derive(Debug, Clone, Default)]
 #[cfg(test)]
 pub struct StreamingConfig {
-    /// Minimum number of deltas between prefix displays (0 = show on every delta)
+    /// Minimum number of deltas between prefix displays.
+    ///
+    /// Semantics:
+    /// - `0`: disable count-based repetition (prefix is still shown on the first delta)
+    /// - `N > 0`: show the prefix every N deltas after the first (i.e., after N suppressed deltas)
     pub prefix_delta_threshold: u32,
     /// Minimum time between prefix displays (None = no time-based debouncing)
     pub prefix_time_threshold: Option<Duration>,

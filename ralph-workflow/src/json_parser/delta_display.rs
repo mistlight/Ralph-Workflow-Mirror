@@ -94,19 +94,22 @@
 //!
 //! # Prefix Display Strategy
 //!
-//! The prefix (e.g., `[ccs-glm]`) is displayed on every delta update by default.
-//! This provides clear visual feedback about which agent is currently streaming.
+//! In the append-only streaming contract, the prefix (e.g., `[ccs-glm]`) is displayed **once**
+//! per streamed content block:
 //!
-//! ## Prefix Debouncing
+//! - **Full mode (TTY)**: prefix is emitted on the first delta only; subsequent deltas append
+//!   only the new suffix (no prefix, no cursor movement).
+//! - **Basic/None (non-TTY)**: per-delta output is suppressed; the parser flushes the final
+//!   accumulated content once at completion boundaries, producing one prefix per block.
 //!
-//! For scenarios where prefix repetition creates visual noise (e.g., character-by-character
-//! streaming), a `PrefixDebouncer` can be used to control prefix display frequency.
-//! It supports both delta-count-based and time-based strategies:
+//! ## Prefix Debouncing (test-only)
 //!
-//! - **Count-based**: Show prefix every N deltas (default: every delta)
-//! - **Time-based**: Show prefix after M milliseconds since last prefix
+//! Historically, in-place/cursor-up implementations re-rendered the full line (including the
+//! prefix) on each delta. For experimentation in tests, `PrefixDebouncer` can control how often
+//! a legacy renderer would re-emit the prefix.
 //!
-//! The debouncer is opt-in; the default behavior shows prefix on every delta.
+//! Current default behavior for the debouncer is **first delta only** (no repeated prefixes)
+//! unless a count- or time-threshold is configured.
 
 use crate::json_parser::terminal::TerminalMode;
 use crate::logger::Colors;

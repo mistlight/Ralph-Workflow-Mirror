@@ -490,8 +490,8 @@ mod tests {
         );
         // Trailing spaces should be trimmed
         assert!(output.contains("Hello World"));
-        // Content should not end with space before escape sequences
-        // (it ends with reset color then \n\x1b[1A)
+        // Content should not end with space before escape sequences.
+        // (In append-only mode, there are no cursor escape sequences; only a color reset may follow.)
     }
 
     // Tests for StreamingConfig

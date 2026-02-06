@@ -364,7 +364,7 @@ mod tests {
     #[cfg(any(test, feature = "test-utils"))]
     #[test]
     fn test_virtual_terminal_streaming_simulation() {
-        // Simulate the actual streaming pattern used by parsers:
+        // Simulate the legacy cursor-up streaming pattern (historical):
         // 1. Write "[agent] Hello" + newline + cursor up
         // 2. Clear line + carriage return + write "[agent] Hello World" + newline + cursor up
         // 3. Cursor down at end

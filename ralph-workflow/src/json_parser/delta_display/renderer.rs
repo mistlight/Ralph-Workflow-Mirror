@@ -27,7 +27,7 @@
 // - CodexParser: `item.completed` handlers (in `codex/event_handlers/*.rs`)
 //
 // This ensures:
-// - **Full mode (TTY)**: In-place updates work normally with cursor positioning
+// - **Full mode (TTY)**: Real-time append-only streaming (no cursor movement)
 // - **Basic/None modes**: One prefixed line per content block, regardless of delta count
 //
 // ## Validation
@@ -97,10 +97,9 @@
 ///   - Shows the accumulated content so far
 ///
 /// - `render_subsequent_delta()`: Called for subsequent deltas
-///   - **Parsers implementing append-only should compute suffix and bypass this method**
-///   - This method is kept for backward compatibility with parsers not yet using append-only
-///   - In Full mode: uses `\r` to rewrite line (legacy pattern, has wrapping issues)
-///   - In Basic/None mode: suppresses output (parser flushes at completion)
+///   - **Parsers implementing append-only MUST compute the suffix and bypass this method**
+///   - Renderer implementations in this repo intentionally return empty strings in all modes
+///     to avoid reintroducing cursor/CR patterns.
 ///
 /// - `render_completion()`: Called when streaming completes
 ///   - Returns single newline (`\n`) in Full mode to finalize the line
@@ -109,9 +108,9 @@
 /// # Terminal Mode Awareness
 ///
 /// The renderer automatically adapts output based on terminal capability:
-/// - **Full mode**: Uses cursor positioning for in-place updates
-/// - **Basic mode**: Uses colors but simple line output (no cursor positioning)
-/// - **None mode**: Plain text output (no ANSI sequences)
+/// - **Full mode**: Append-only streaming (no cursor movement during deltas)
+/// - **Basic mode**: Per-delta output suppressed; parser flushes once at completion
+/// - **None mode**: Per-delta output suppressed; parser flushes once at completion, plain text
 ///
 /// # Example
 ///
@@ -155,8 +154,13 @@ pub trait DeltaRenderer {
     /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
-    /// In Basic/None modes, returns empty string (per-delta output suppressed).
+    /// A formatted string with prefix and content.
+    ///
+    /// In Full mode, this MUST NOT include a trailing newline or any cursor movement.
+    /// (Append-only streaming keeps the cursor on the current line until completion.)
+    ///
+    /// In Basic/None modes, returns an empty string (per-delta output is suppressed; the parser
+    /// flushes the final newline-terminated content at completion boundaries).
     fn render_first_delta(
         accumulated: &str,
         prefix: &str,
@@ -177,8 +181,13 @@ pub trait DeltaRenderer {
     /// * `terminal_mode` - The detected terminal capability mode
     ///
     /// # Returns
-    /// A formatted string with prefix and content. In Full mode, ends with `\n\x1b[1A`.
-    /// In Basic/None modes, returns empty string (per-delta output suppressed).
+    /// A formatted string representing the delta.
+    ///
+    /// In the append-only contract, parsers should NOT call this method in Full mode; they should
+    /// compute the new suffix and emit it directly. The default renderer implementations return
+    /// empty strings to make incorrect usage obvious.
+    ///
+    /// In Basic/None modes, this returns an empty string (per-delta output is suppressed).
     fn render_subsequent_delta(
         accumulated: &str,
         prefix: &str,

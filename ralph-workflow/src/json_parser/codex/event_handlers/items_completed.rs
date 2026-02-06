@@ -178,8 +178,8 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 /// This handler completes the reasoning spam fix by flushing accumulated content:
 ///
 /// ## Full TTY Mode
-/// - Reasoning was already rendered in-place during deltas
-/// - Emit cursor finalization sequence (`\x1b[1B\n`) to move cursor down
+/// - Reasoning is rendered using the append-only streaming contract during deltas
+/// - Emit the completion newline to finalize the line
 ///
 /// ## Non-TTY Modes (Basic/None)
 /// - Per-delta output was suppressed during streaming
