@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
@@ -21,7 +21,7 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -36,7 +36,6 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -91,7 +90,7 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -106,7 +105,6 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -179,7 +177,7 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -194,7 +192,6 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -267,7 +264,7 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -282,7 +279,6 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -347,7 +343,7 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -362,7 +358,6 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -438,7 +433,7 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -453,7 +448,6 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

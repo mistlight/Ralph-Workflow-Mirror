@@ -5,7 +5,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::workspace::{MemoryWorkspace, Workspace};
     use std::io;
@@ -121,7 +121,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -134,7 +134,6 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -205,7 +204,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::phases::PhaseContext;
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::reducer::state::PipelineState;
@@ -239,7 +238,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -252,7 +251,6 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -310,7 +308,7 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
@@ -327,7 +325,7 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -340,7 +338,6 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -373,7 +370,7 @@ fn test_event_loop_applies_additional_events_in_order() {
     use crate::config::Config;
     use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
-    use crate::pipeline::{Stats, Timer};
+    use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::reducer::PipelineEvent;
@@ -419,7 +416,7 @@ fn test_event_loop_applies_additional_events_in_order() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -432,7 +429,6 @@ fn test_event_loop_applies_additional_events_in_order() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,

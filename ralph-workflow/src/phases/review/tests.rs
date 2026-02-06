@@ -5,7 +5,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
@@ -19,7 +19,7 @@ struct TestFixture {
     colors: Colors,
     logger: Logger,
     timer: Timer,
-    stats: Stats,
+    
     template_context: TemplateContext,
     executor_arc: Arc<dyn crate::executor::ProcessExecutor>,
     repo_root: PathBuf,
@@ -38,7 +38,7 @@ impl TestFixture {
             colors,
             logger: Logger::new(colors),
             timer: Timer::new(),
-            stats: Stats::default(),
+            
             template_context: TemplateContext::default(),
             executor_arc,
             repo_root,
@@ -53,7 +53,6 @@ impl TestFixture {
             logger: &self.logger,
             colors: &self.colors,
             timer: &mut self.timer,
-            stats: &mut self.stats,
             developer_agent: "dev",
             reviewer_agent: "review",
             review_guidelines: None,
@@ -123,7 +122,7 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -140,7 +139,6 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "claude",
         review_guidelines: None,
@@ -175,7 +173,7 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -192,7 +190,6 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "claude",
         review_guidelines: None,

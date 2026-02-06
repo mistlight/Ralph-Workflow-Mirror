@@ -98,7 +98,6 @@ fn create_phase_context_with_config<'ctx>(
     ctx: &'ctx PipelineContext,
     config: &'ctx crate::config::Config,
     timer: &'ctx mut Timer,
-    stats: &'ctx mut Stats,
     review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
     run_context: &'ctx crate::checkpoint::RunContext,
     resume_checkpoint: Option<&PipelineCheckpoint>,
@@ -124,7 +123,6 @@ fn create_phase_context_with_config<'ctx>(
         logger: &ctx.logger,
         colors: &ctx.colors,
         timer,
-        stats,
         developer_agent: &ctx.developer_agent,
         reviewer_agent: &ctx.reviewer_agent,
         review_guidelines,
@@ -177,8 +175,9 @@ fn save_start_commit_or_warn(ctx: &PipelineContext) {
             if ctx.config.verbosity.is_debug() || summary.commits_since > 5 || summary.is_stale {
                 ctx.logger.info(&summary.format_compact());
                 if summary.is_stale {
-                    ctx.logger
-                        .warn("Start commit is stale. Consider running: ralph --reset-start-commit");
+                    ctx.logger.warn(
+                        "Start commit is stale. Consider running: ralph --reset-start-commit",
+                    );
                 } else if summary.commits_since > 5 {
                     ctx.logger
                         .info("Tip: Run 'ralph --show-baseline' for more details");

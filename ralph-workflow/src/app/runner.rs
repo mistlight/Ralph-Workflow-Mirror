@@ -60,7 +60,7 @@ use crate::git_helpers::{
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::PhaseContext;
-use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
+use crate::pipeline::{AgentPhaseGuard, Timer};
 use crate::prompts::template_context::TemplateContext;
 
 use super::config_init::initialize_config;

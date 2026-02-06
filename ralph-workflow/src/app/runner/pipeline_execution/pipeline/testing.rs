@@ -107,12 +107,11 @@ where
     println!();
 
     // Create phase context and save starting commit
-    let (mut timer, mut stats) = (Timer::new(), Stats::new());
+    let mut timer = Timer::new();
     let mut phase_ctx = create_phase_context_with_config(
         ctx,
         &config,
         &mut timer,
-        &mut stats,
         review_guidelines.as_ref(),
         &run_context,
         resume_checkpoint.as_ref(),

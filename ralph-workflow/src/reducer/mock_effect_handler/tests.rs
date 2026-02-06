@@ -185,7 +185,7 @@ mod tests {
         use crate::executor::MockProcessExecutor;
         use crate::logger::{Colors, Logger};
         use crate::phases::PhaseContext;
-        use crate::pipeline::{Stats, Timer};
+        use crate::pipeline::Timer;
         use crate::prompts::template_context::TemplateContext;
         use crate::workspace::MemoryWorkspace;
         use std::path::PathBuf;
@@ -196,7 +196,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+        
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
@@ -210,7 +210,6 @@ mod tests {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,
@@ -264,7 +263,7 @@ mod tests {
         use crate::executor::MockProcessExecutor;
         use crate::logger::{Colors, Logger};
         use crate::phases::PhaseContext;
-        use crate::pipeline::{Stats, Timer};
+        use crate::pipeline::Timer;
         use crate::prompts::template_context::TemplateContext;
         use crate::reducer::event::PipelinePhase;
         use crate::workspace::{MemoryWorkspace, Workspace};
@@ -381,7 +380,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+        
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
@@ -394,7 +393,6 @@ mod tests {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,
@@ -435,7 +433,7 @@ mod tests {
         use crate::executor::MockProcessExecutor;
         use crate::logger::{Colors, Logger};
         use crate::phases::PhaseContext;
-        use crate::pipeline::{Stats, Timer};
+        use crate::pipeline::Timer;
         use crate::prompts::template_context::TemplateContext;
         use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
         use crate::workspace::{MemoryWorkspace, Workspace};
@@ -542,7 +540,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        let mut stats = Stats::default();
+        
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
@@ -555,7 +553,6 @@ mod tests {
             logger: &logger,
             colors: &colors,
             timer: &mut timer,
-            stats: &mut stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,

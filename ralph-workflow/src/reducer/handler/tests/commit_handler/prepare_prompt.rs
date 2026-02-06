@@ -4,7 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
@@ -26,7 +26,7 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -41,7 +41,6 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -89,7 +88,7 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -104,7 +103,6 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -164,7 +162,7 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -179,7 +177,6 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -238,7 +235,7 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -253,7 +250,6 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -317,7 +313,7 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -332,7 +328,6 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -429,7 +424,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -444,7 +439,6 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -530,7 +524,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -545,7 +539,6 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -621,7 +614,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -636,7 +629,6 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::phases::PhaseContext;
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::effect::{Effect, EffectHandler};
 use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
@@ -226,7 +226,6 @@ fn build_context<'a>(
     colors: &'a Colors,
     template_context: &'a TemplateContext,
     timer: &'a mut Timer,
-    stats: &'a mut Stats,
 ) -> PhaseContext<'a> {
     PhaseContext {
         config,
@@ -234,7 +233,6 @@ fn build_context<'a>(
         logger,
         colors,
         timer,
-        stats,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -260,7 +258,6 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let mut ctx = build_context(
         &workspace,
@@ -271,8 +268,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
         &logger,
         &colors,
         &template_context,
-        &mut timer,
-        &mut stats,
+        &mut timer,mut timer,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -309,7 +305,6 @@ fn emit_completion_marker_emits_event_on_write_failure() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = FailingMarkerWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let mut ctx = build_context(
         &workspace,
@@ -320,8 +315,7 @@ fn emit_completion_marker_emits_event_on_write_failure() {
         &logger,
         &colors,
         &template_context,
-        &mut timer,
-        &mut stats,
+        &mut timer,mut timer,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -360,7 +354,6 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
 
     let mut ctx = build_context(
         &workspace,
@@ -371,8 +364,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
         &logger,
         &colors,
         &template_context,
-        &mut timer,
-        &mut stats,
+        &mut timer,mut timer,
     );
     ctx.developer_agent = "missing-agent";
 

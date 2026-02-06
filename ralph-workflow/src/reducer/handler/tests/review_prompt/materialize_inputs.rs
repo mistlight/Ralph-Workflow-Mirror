@@ -5,7 +5,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
@@ -242,7 +242,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -258,7 +258,6 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -308,7 +307,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -324,7 +323,6 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -363,7 +361,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -379,7 +377,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -428,7 +425,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -444,7 +441,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -493,7 +489,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -508,7 +504,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -551,7 +546,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let mut config = Config::default();
     config.isolation_mode = true;
@@ -567,7 +562,6 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -616,7 +610,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -631,7 +625,6 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -675,7 +668,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -690,7 +683,6 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,

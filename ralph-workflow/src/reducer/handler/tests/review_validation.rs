@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
@@ -125,7 +125,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -142,7 +142,6 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -195,7 +194,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -212,7 +211,6 @@ fn test_validate_fix_result_xml_emits_ui_output() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -259,7 +257,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -276,7 +274,6 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
@@ -326,7 +323,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -343,7 +340,6 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -404,7 +400,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -421,7 +417,6 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -481,7 +476,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -498,7 +493,6 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,
@@ -549,7 +543,7 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -566,7 +560,6 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

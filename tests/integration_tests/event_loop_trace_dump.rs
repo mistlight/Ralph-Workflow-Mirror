@@ -14,7 +14,7 @@ use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
 use ralph_workflow::config::Config;
 use ralph_workflow::executor::MockProcessExecutor;
 use ralph_workflow::logger::{Colors, Logger};
-use ralph_workflow::pipeline::{Stats, Timer};
+use ralph_workflow::pipeline::Timer;
 use ralph_workflow::prompts::template_context::TemplateContext;
 use ralph_workflow::reducer::effect::{Effect, EffectHandler, EffectResult};
 use ralph_workflow::reducer::event::PipelinePhase;
@@ -31,7 +31,7 @@ struct Fixture {
     colors: Colors,
     logger: Logger,
     timer: Timer,
-    stats: Stats,
+    
     template_context: TemplateContext,
     registry: AgentRegistry,
     executor: Arc<MockProcessExecutor>,
@@ -54,7 +54,7 @@ impl Fixture {
             colors,
             logger,
             timer: Timer::new(),
-            stats: Stats::default(),
+            
             template_context: TemplateContext::default(),
             registry,
             executor,
@@ -80,7 +80,7 @@ impl Fixture {
             colors,
             logger,
             timer: Timer::new(),
-            stats: Stats::default(),
+            
             template_context: TemplateContext::default(),
             registry,
             executor,
@@ -96,7 +96,6 @@ impl Fixture {
             logger: &self.logger,
             colors: &self.colors,
             timer: &mut self.timer,
-            stats: &mut self.stats,
             developer_agent: "test-developer",
             reviewer_agent: "test-reviewer",
             review_guidelines: None,

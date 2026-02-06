@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::logger::{Colors, Logger};
-use crate::pipeline::{Stats, Timer};
+use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{AgentChainState, CommitState, PipelineState};
@@ -26,7 +26,7 @@ fn test_cleanup_commit_xml_removes_stale_commit_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    let mut stats = Stats::default();
+    
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -41,7 +41,6 @@ fn test_cleanup_commit_xml_removes_stale_commit_xml() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        stats: &mut stats,
         developer_agent: "claude",
         reviewer_agent: "codex",
         review_guidelines: None,

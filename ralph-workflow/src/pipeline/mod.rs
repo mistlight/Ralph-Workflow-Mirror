@@ -30,7 +30,7 @@ mod prompt;
 mod types;
 
 pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
-pub use types::{AgentPhaseGuard, Stats};
+pub use types::AgentPhaseGuard;
 
 // ===== Timer Utilities =====
 
