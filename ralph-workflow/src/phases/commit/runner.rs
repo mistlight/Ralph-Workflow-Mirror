@@ -124,13 +124,9 @@ pub fn run_commit_attempt(
         log_attempt,
         chrono::Utc::now().to_rfc3339()
     );
-    if let Err(e) = ctx
-        .workspace
+    ctx.workspace
         .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
-    {
-        ctx.logger
-            .warn(&format!("Failed to write agent log header: {}", e));
-    }
+        .context("Failed to write agent log header - log would be incomplete without metadata")?;
 
     let log_prefix = format!("commit_{attempt}"); // For attribution only
     let model_index = 0usize; // Default model index for attribution

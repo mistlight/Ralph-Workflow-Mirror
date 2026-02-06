@@ -131,7 +131,12 @@ impl RunLogContext {
         }
 
         // If we exhausted all collision counters, bail
-        anyhow::bail!("Too many collisions creating run log directory (tried base + 99 variants)")
+        anyhow::bail!(
+            "Too many collisions creating run log directory (tried base + 99 variants). \
+             This is extremely rare (100+ runs in the same millisecond). \
+             Possible causes: clock skew, or filesystem issues. \
+             Suggestion: Wait 1ms and retry, or check system clock."
+        )
     }
 
     /// Create a RunLogContext from an existing checkpoint (for resume).
@@ -203,7 +208,7 @@ impl RunLogContext {
     /// # Arguments
     /// * `phase` - Phase name (e.g., "planning", "dev", "reviewer", "commit")
     /// * `index` - Invocation index within the phase (1-based)
-    /// * `attempt` - Optional attempt number for retries (1-based, None for first attempt)
+    /// * `attempt` - Optional retry attempt counter (1 for first retry, 2 for second retry, etc.; None for initial attempt with no retries)
     ///
     /// # Returns
     /// Path like `.agent/logs-<run_id>/agents/planning_1.log` or

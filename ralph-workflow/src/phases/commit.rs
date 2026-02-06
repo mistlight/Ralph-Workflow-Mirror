@@ -18,6 +18,7 @@ use crate::prompts::{
     TemplateContext,
 };
 use crate::workspace::Workspace;
+use anyhow::Context as _;
 use std::collections::HashMap;
 use std::path::Path;
 

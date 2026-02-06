@@ -66,7 +66,7 @@ pub struct PipelineCheckpoint {
     pub resume_count: u32,
     /// Logging run_id (timestamp-based) for per-run log directory
     /// Format: YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]
-    /// This is separate from run_id which is a UUID v4
+    /// This is separate from run_id which uses format "run-{uuid}"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_run_id: Option<String>,
 

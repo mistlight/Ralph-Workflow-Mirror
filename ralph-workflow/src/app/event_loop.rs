@@ -422,7 +422,30 @@ where
                 );
 
                 let event_str = format!("{:?}", failure_event);
+                let duration_ms = start_time.elapsed().as_millis() as u64;
                 let new_state = reduce(state, failure_event);
+
+                // Log to event loop log (best-effort, does not affect correctness)
+                let context_pairs: Vec<(&str, String)> = vec![
+                    ("iteration", new_state.iteration.to_string()),
+                    ("reviewer_pass", new_state.reviewer_pass.to_string()),
+                    ("error", "unrecoverable".to_string()),
+                ];
+                let context_refs: Vec<(&str, &str)> = context_pairs
+                    .iter()
+                    .map(|(k, v)| (*k, v.as_str()))
+                    .collect();
+                event_loop_logger.log_effect(crate::logging::LogEffectParams {
+                    workspace: ctx.workspace,
+                    log_path: &ctx.run_log_context.event_loop_log(),
+                    phase: new_state.phase,
+                    effect: &effect_str,
+                    primary_event: &event_str,
+                    extra_events: &[],
+                    duration_ms,
+                    context: &context_refs,
+                });
+
                 trace.push(build_trace_entry(
                     events_processed,
                     &new_state,
@@ -478,7 +501,30 @@ where
                 );
 
                 let event_str = format!("{:?}", failure_event);
+                let duration_ms = start_time.elapsed().as_millis() as u64;
                 let new_state = reduce(state, failure_event);
+
+                // Log to event loop log (best-effort, does not affect correctness)
+                let context_pairs: Vec<(&str, String)> = vec![
+                    ("iteration", new_state.iteration.to_string()),
+                    ("reviewer_pass", new_state.reviewer_pass.to_string()),
+                    ("error", "panic".to_string()),
+                ];
+                let context_refs: Vec<(&str, &str)> = context_pairs
+                    .iter()
+                    .map(|(k, v)| (*k, v.as_str()))
+                    .collect();
+                event_loop_logger.log_effect(crate::logging::LogEffectParams {
+                    workspace: ctx.workspace,
+                    log_path: &ctx.run_log_context.event_loop_log(),
+                    phase: new_state.phase,
+                    effect: &effect_str,
+                    primary_event: &event_str,
+                    extra_events: &[],
+                    duration_ms,
+                    context: &context_refs,
+                });
+
                 trace.push(build_trace_entry(
                     events_processed,
                     &new_state,

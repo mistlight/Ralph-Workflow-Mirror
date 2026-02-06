@@ -140,6 +140,8 @@ An always-on observability log recording the event loop's progression:
 <seq> ts=<rfc3339> phase=<Phase> effect=<Effect> event=<Event> [extra=[E1,E2]] [ctx=k1=v1,k2=v2] ms=<N>
 ```
 
+Note: The `ctx` field shows key-value pairs without brackets (e.g., `ctx=k1=v1,k2=v2`), not `[ctx=k1=v1,k2=v2]`.
+
 **Example**:
 ```
 1 ts=2026-02-06T14:03:27.123Z phase=Development effect=InvokePrompt event=PromptCompleted ms=1234

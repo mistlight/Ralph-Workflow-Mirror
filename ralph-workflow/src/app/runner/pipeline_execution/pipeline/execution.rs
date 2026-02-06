@@ -69,7 +69,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         let checkpoint = load_checkpoint_with_workspace(&*workspace)
             .context("Failed to load checkpoint for resume")?;
 
-        if let Some(checkpoint) = checkpoint {
+        if let Some(mut checkpoint) = checkpoint {
             // Resume: continue logging to the same run directory using log_run_id
             if let Some(log_run_id) = checkpoint.log_run_id {
                 RunLogContext::from_checkpoint(&log_run_id, &*workspace)
@@ -78,7 +78,20 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
                 // Older checkpoint without log_run_id field, generate new one
                 logger
                     .warn("Checkpoint missing log_run_id field, generating new run log directory");
-                RunLogContext::new(&*workspace).context("Failed to create run log context")?
+                let run_log_context =
+                    RunLogContext::new(&*workspace).context("Failed to create run log context")?;
+
+                // Update checkpoint with new log_run_id to ensure subsequent resumes continue with the same directory
+                checkpoint.log_run_id = Some(run_log_context.run_id().to_string());
+                use crate::checkpoint::save_checkpoint_with_workspace;
+                if let Err(e) = save_checkpoint_with_workspace(&*workspace, &checkpoint) {
+                    logger.warn(&format!(
+                        "Failed to update checkpoint with log_run_id: {}",
+                        e
+                    ));
+                }
+
+                run_log_context
             }
         } else {
             // No checkpoint found, but --resume was requested

@@ -16,6 +16,7 @@ use crate::prompts::{
     get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_review_xml_with_references,
     ContextLevel, PromptContentBuilder,
 };
+use anyhow::Context as _;
 
 use std::path::Path;
 use std::time::Instant;
@@ -119,13 +120,9 @@ pub fn run_review_pass(
         attempt,
         chrono::Utc::now().to_rfc3339()
     );
-    if let Err(e) = ctx
-        .workspace
+    ctx.workspace
         .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
-    {
-        ctx.logger
-            .warn(&format!("Failed to write agent log header: {}", e));
-    }
+        .context("Failed to write agent log header - log would be incomplete without metadata")?;
 
     let log_prefix = format!("reviewer_{j}"); // For attribution only
     let model_index = 0usize; // Default model index for attribution

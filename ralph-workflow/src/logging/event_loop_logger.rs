@@ -75,7 +75,7 @@ impl EventLoopLogger {
         };
 
         let line = format!(
-            "{} ts={} phase={:?} effect={} event={}{}{}ms={}\n",
+            "{} ts={} phase={:?} effect={} event={}{}{} ms={}\n",
             self.seq,
             ts,
             params.phase,

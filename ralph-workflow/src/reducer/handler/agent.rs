@@ -124,13 +124,12 @@ impl MainEffectHandler {
 
         let logfile = if attempt == 0 {
             // First attempt: no suffix
-            base_log_path.to_str().unwrap().to_string()
+            base_log_path.to_string_lossy().to_string()
         } else {
             // Subsequent attempts: add _aN suffix
             ctx.run_log_context
                 .agent_log(phase_name, phase_index, Some(attempt))
-                .to_str()
-                .unwrap()
+                .to_string_lossy()
                 .to_string()
         };
 
@@ -151,13 +150,14 @@ impl MainEffectHandler {
             self.state.phase,
             chrono::Utc::now().to_rfc3339()
         );
-        if let Err(e) = ctx
-            .workspace
+        ctx.workspace
             .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
-        {
-            ctx.logger
-                .warn(&format!("Failed to write agent log header: {}", e));
-        }
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to write agent log header - log would be incomplete without metadata: {}",
+                    e
+                )
+            })?;
 
         // Build command string, honoring reducer-selected model (if any).
         // The reducer's agent chain drives model fallback (advance_to_next_model).
