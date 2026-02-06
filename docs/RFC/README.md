@@ -1,6 +1,13 @@
 # Ralph RFCs (Request for Comments)
 
-This directory contains design proposals for significant changes to Ralph.
+This directory contains design proposals and incident writeups for significant changes to Ralph.
+
+RFCs are primarily kept for historical context. Even when an RFC is marked "Implemented", the codebase may have evolved since it was written.
+
+For the most up-to-date architecture documentation, prefer:
+
+- `../architecture/event-loop-and-reducers.md`
+- `../architecture/effect-system.md`
 
 ## What is an RFC?
 

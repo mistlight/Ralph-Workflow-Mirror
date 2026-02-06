@@ -7,6 +7,9 @@
 **Created**: 2026-01-21
 **Completed**: 2026-01-22
 
+> NOTE: RFCs are historical documents. This RFC may not reflect current behavior.
+> For the canonical architecture docs, see `../architecture/event-loop-and-reducers.md` and `../architecture/effect-system.md`.
+
 ---
 
 ## Abstract

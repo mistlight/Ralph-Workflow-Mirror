@@ -7,6 +7,9 @@
 **Created**: 2026-01-15
 **Last Updated**: 2026-01-16
 
+> NOTE: RFCs are historical documents. This RFC may not reflect current behavior.
+> For up-to-date architecture docs, see `../architecture/event-loop-and-reducers.md` and `../architecture/effect-system.md`.
+
 ---
 
 ## Executive Summary

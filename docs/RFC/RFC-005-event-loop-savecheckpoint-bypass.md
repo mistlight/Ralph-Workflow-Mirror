@@ -1,10 +1,16 @@
 
+
+# RFC-005: Event Loop Must Not Bypass SaveCheckpoint Effects
+
 **RFC Number**: RFC-005
 **Title**: Event Loop Must Not Bypass SaveCheckpoint Effects
 **Status**: Implemented
 **Author**: OpenCode
 **Created**: 2026-01-30
 **Completed**: 2026-01-30
+
+> NOTE: RFCs are historical documents. This RFC may not reflect current behavior.
+> For up-to-date architecture docs, see `../architecture/event-loop-and-reducers.md` and `../architecture/effect-system.md`.
 
 ---
 

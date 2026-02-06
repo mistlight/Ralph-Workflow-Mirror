@@ -1,6 +1,8 @@
 # Effect System Architecture
 
-This document defines the effect system and reducer architecture used in Ralph for managing side effects and application state. This architecture is **non-negotiable** and must be followed by all code changes.
+This document defines the effect system layers used in Ralph for managing side effects and filesystem access rules. This architecture is **non-negotiable** and must be followed by all code changes.
+
+For the broader pipeline event loop and reducer best practices (events as facts, decisions in pure reducers, migration from decision-shaped actions), see `event-loop-and-reducers.md`.
 
 ## Design Philosophy
 
@@ -130,8 +132,8 @@ fn test_cli_operation() {
 
 ### Location
 
-- `ralph-workflow/src/reducer/effect.rs` - Effect enum and trait
-- `ralph-workflow/src/reducer/handler.rs` - Main implementation
+- `ralph-workflow/src/reducer/effect.rs` / `ralph-workflow/src/reducer/effect/types.rs` - Effect enum, EffectResult, handler trait
+- `ralph-workflow/src/reducer/handler/` - Main implementation (split by concern)
 - `ralph-workflow/src/reducer/mock_effect_handler.rs` - Test implementation
 
 ### Purpose
@@ -143,13 +145,13 @@ Handles side effects during pipeline execution, **after** the repository root is
 1. **Has Workspace access** - Via `ctx.workspace` in `PhaseContext`
 2. **Has PhaseContext** - Full access to config, registry, logger, etc.
 3. **Uses ctx.workspace** - `MainEffectHandler` uses workspace for file ops
-4. **Returns PipelineEvent** - Effects produce events for state machine
+4. **Returns EffectResult** - Effects produce reducer events plus optional UI events
 
 ### Handler Signature
 
 ```rust
 pub trait EffectHandler<'ctx> {
-    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent>;
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult>;
 }
 ```
 
@@ -157,46 +159,27 @@ Note: Has `PhaseContext` parameter which includes `workspace: &dyn Workspace`.
 
 ### Operations
 
+Effects are intentionally granular ("single-task"). For example:
+
 ```rust
 pub enum Effect {
-    // Agent operations
-    AgentInvocation { role: AgentRole, agent: String, model: Option<String>, prompt: String },
-    InitializeAgentChain { role: AgentRole },
-
-    // Phase operations
-    GeneratePlan { iteration: u32 },
-    RunDevelopmentIteration { iteration: u32 },
-    RunReviewPass { pass: u32 },
-    RunFixAttempt { pass: u32 },
-
-    // Git operations (high-level)
-    RunRebase { phase: RebasePhase, target_branch: String },
-    ResolveRebaseConflicts { strategy: ConflictStrategy },
-
-    // Commit operations
-    CheckCommitDiff,
-    PrepareCommitPrompt,
-    InvokeCommitAgent,
-    ExtractCommitXml,
-    ValidateCommitXml,
-    ApplyCommitMessageOutcome,
-    ArchiveCommitXml,
-    CreateCommit { message: String },
-    SkipCommit { reason: String },
-
-    // Pipeline management
-    ValidateFinalState,
+    PrepareDevelopmentPrompt { iteration: u32, prompt_mode: PromptMode },
+    InvokeDevelopmentAgent { iteration: u32 },
+    ExtractDevelopmentXml { iteration: u32 },
+    ValidateDevelopmentXml { iteration: u32 },
+    ApplyDevelopmentOutcome { iteration: u32 },
     SaveCheckpoint { trigger: CheckpointTrigger },
     CleanupContext,
-    RestorePromptPermissions,
 }
 ```
+
+The complete, canonical list lives in `ralph-workflow/src/reducer/effect/types.rs`.
 
 ### When to Use
 
 - All pipeline phase execution
 - Operations that need `Workspace`
-- Operations that produce `PipelineEvent`s
+- Operations that produce reducer `PipelineEvent`s
 - Phase boundary operations (like `RestorePromptPermissions`)
 
 ### Testing
@@ -212,8 +195,9 @@ fn test_cleanup_context() {
     
     let mut ctx = create_test_phase_context(&workspace);
     let mut handler = MainEffectHandler::new(state);
-    
-    handler.cleanup_context(&mut ctx).unwrap();
+
+    let result = handler.execute(Effect::CleanupContext, &mut ctx).unwrap();
+    assert!(matches!(result.event, PipelineEvent::ContextCleaned));
     
     assert!(!workspace.exists(Path::new(".agent/PLAN.md")));
 }
@@ -301,7 +285,7 @@ pub trait Workspace: Send + Sync {
 │                                                                       │
 │  ┌─────────────────────┐    ┌─────────────────────┐                 │
 │  │ MainEffectHandler   │    │ MockEffectHandler    │                 │
-│  │   ctx.workspace     │    │   synthetic events   │                 │
+│  │   ctx.workspace     │    │   EffectResult       │                 │
 │  └─────────────────────┘    └─────────────────────┘                 │
 └──────────────────────────────────────────────────────────────────────┘
                                    │
@@ -347,15 +331,16 @@ impl AppEffectHandler for RealAppEffectHandler {
 ```rust
 // WRONG - Using std::fs in EffectHandler
 impl EffectHandler for MyHandler {
-    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext) -> Result<PipelineEvent> {
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext) -> Result<EffectResult> {
         std::fs::write(".agent/PLAN.md", content);  // ERROR: Bypass workspace
     }
 }
 
 // CORRECT - Use ctx.workspace
 impl EffectHandler for MainEffectHandler {
-    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext) -> Result<PipelineEvent> {
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext) -> Result<EffectResult> {
         ctx.workspace.write(Path::new(".agent/PLAN.md"), content)?;  // Via workspace
+        Ok(EffectResult::event(PipelineEvent::ContextCleaned))
     }
 }
 ```
@@ -439,9 +424,9 @@ pub enum Effect {
 }
 
 // 2. Handler executes via workspace
-fn restore_prompt_permissions(&self, ctx: &mut PhaseContext) -> Result<PipelineEvent> {
+fn restore_prompt_permissions(&self, ctx: &mut PhaseContext) -> Result<EffectResult> {
     make_prompt_writable_with_workspace(ctx.workspace);
-    Ok(PipelineEvent::PromptPermissionsRestored)
+    Ok(EffectResult::event(PipelineEvent::PromptPermissionsRestored))
 }
 
 // 3. State machine transitions on event
@@ -457,7 +442,7 @@ fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 
 ### 6. Within-Phase Operations Use ctx.workspace Directly
 
-Operations inside a phase (not at boundaries) can use `ctx.workspace` directly:
+Inside effect handlers (the impure layer), operations can use `ctx.workspace` directly:
 
 ```rust
 // CORRECT - Within-phase file operation
@@ -538,31 +523,21 @@ State is **immutable** - reducers return new state instances.
 
 #### PipelineEvent
 
-Signals outcomes:
-- `PlanGenerated` - Planning phase completed
-- `DevelopmentIterationCompleted` - One dev iteration done
-- `ReviewCompleted { passed: bool }` - Review finished
-- `CommitCreated { oid: String }` - Commit succeeded
-- `PromptPermissionsRestored` - Finalization done
+Pipeline events are category-based: the top-level `PipelineEvent` wraps phase/category enums (Planning, Development, Review, Commit, Agent, Rebase, PromptInput, AwaitingDevFix, etc.).
 
-Events are **facts** - they describe what happened, not commands.
+Events are **facts**: they describe what happened, not what the system should do next.
 
 #### Effect
 
-Describes operations to perform:
-- `GeneratePlan` - Run planning phase
-- `RunDevelopmentIteration` - Execute one dev iteration
-- `RunReviewPass` - Execute review
-- `CreateCommit` - Make a git commit
-- `RestorePromptPermissions` - Restore file permissions
+Effects are **intentions**: they describe a single side-effect operation to perform.
 
-Effects are **intentions** - they describe what should happen.
+In the current pipeline layer, effects are intentionally "single-task" and sequenced by state fields (prepare prompt -> invoke agent -> extract -> validate -> apply outcome -> archive, etc.).
 
 #### Orchestrator
 
-Pure function: `State → Option<Effect>`
+Pure function: `State -> Effect`
 
-Decides what to do next based on state. Returns `None` when complete.
+Decides what to do next based on state. Completion is represented in state (for example `PipelinePhase::Complete` / `PipelinePhase::Interrupted` plus any required bookkeeping like a saved checkpoint).
 
 #### Reducer
 
@@ -572,9 +547,9 @@ Computes state transitions. No side effects.
 
 #### EffectHandler
 
-Impure: `(Effect, Context) → Event`
+Impure: `(Effect, Context) -> EffectResult`
 
-Executes effects and reports results. This is where I/O happens.
+Executes effects and reports results. The primary reducer event is `EffectResult.event`; handlers may also emit `EffectResult.additional_events` (processed in order) and `EffectResult.ui_events` (display only).
 
 ### Testing Strategy
 
@@ -583,12 +558,18 @@ Executes effects and reports results. This is where I/O happens.
 ```rust
 #[test]
 fn test_review_passed_advances_to_commit() {
-    let state = PipelineState { phase: Phase::Review, ... };
-    let event = PipelineEvent::ReviewCompleted { passed: true };
+    let state = PipelineState { phase: PipelinePhase::Review, .. };
+    let event = PipelineEvent::Review(ReviewEvent::IssuesXmlValidated {
+        pass: 0,
+        issues_found: false,
+        clean_no_issues: true,
+        issues: vec![],
+        no_issues_found: None,
+    });
     
     let new_state = reduce(state, event);
     
-    assert_eq!(new_state.phase, Phase::Commit);
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
 }
 ```
 
@@ -597,11 +578,11 @@ fn test_review_passed_advances_to_commit() {
 ```rust
 #[test]
 fn test_orchestrator_starts_development_after_planning() {
-    let state = PipelineState { phase: Phase::Development, iteration: 1, ... };
+    let state = PipelineState { phase: PipelinePhase::Development, iteration: 1, .. };
     
-    let effect = orchestrate(&state);
+    let effect = determine_next_effect(&state);
     
-    assert!(matches!(effect, Some(Effect::RunDevelopmentIteration { iteration: 1 })));
+    assert!(matches!(effect, Effect::PrepareDevelopmentContext { iteration: 1 }));
 }
 ```
 
@@ -614,9 +595,9 @@ fn test_handler_creates_commit() {
     let mut ctx = create_context(&workspace);
     let mut handler = MainEffectHandler::new();
     
-    let event = handler.execute(Effect::CreateCommit { message: "test" }, &mut ctx)?;
-    
-    assert!(matches!(event, PipelineEvent::CommitCreated { .. }));
+    let result = handler.execute(Effect::CreateCommit { message: "test" }, &mut ctx)?;
+
+    assert!(matches!(result.event, PipelineEvent::Commit(_)));
 }
 ```
 
