@@ -150,6 +150,21 @@ pub struct ContinuationState {
     /// After this many continuations, proceeds to commit even if issues remain.
     #[serde(default = "default_max_continue_count")]
     pub max_fix_continue_count: u32,
+
+    // =========================================================================
+    // Loop detection fields (to prevent infinite tight loops)
+    // =========================================================================
+    /// Loop detection: last effect executed (for detecting repeats).
+    #[serde(default)]
+    pub last_effect_kind: Option<String>,
+
+    /// Loop detection: count of consecutive identical effects.
+    #[serde(default)]
+    pub consecutive_same_effect_count: u32,
+
+    /// Maximum consecutive identical effects before triggering recovery.
+    #[serde(default = "default_max_consecutive_same_effect")]
+    pub max_consecutive_same_effect: u32,
 }
 
 const fn default_max_xsd_retry_count() -> u32 {
@@ -162,6 +177,10 @@ const fn default_max_same_agent_retry_count() -> u32 {
 
 const fn default_max_continue_count() -> u32 {
     3
+}
+
+const fn default_max_consecutive_same_effect() -> u32 {
+    5
 }
 
 impl Default for ContinuationState {
@@ -195,6 +214,10 @@ impl Default for ContinuationState {
             fix_continuation_attempt: 0,
             fix_continue_pending: false,
             max_fix_continue_count: default_max_continue_count(),
+            // Loop detection fields
+            last_effect_kind: None,
+            consecutive_same_effect_count: 0,
+            max_consecutive_same_effect: default_max_consecutive_same_effect(),
         }
     }
 }
@@ -267,12 +290,18 @@ impl ContinuationState {
     /// resets (e.g., resetting only fix continuation while preserving development
     /// continuation state), use field-level updates instead.
     pub fn reset(&self) -> Self {
-        // Preserve configured limits, reset everything else
+        // Preserve configured limits, reset everything else including loop detection counters.
+        // The struct initialization below explicitly preserves max_* fields,
+        // then the spread operator ..Self::default() resets ALL other fields
+        // (including loop detection fields: last_effect_kind -> None,
+        // consecutive_same_effect_count -> 0). This is intentional during
+        // loop recovery to break the tight loop cycle and start fresh.
         Self {
             max_xsd_retry_count: self.max_xsd_retry_count,
             max_same_agent_retry_count: self.max_same_agent_retry_count,
             max_continue_count: self.max_continue_count,
             max_fix_continue_count: self.max_fix_continue_count,
+            max_consecutive_same_effect: self.max_consecutive_same_effect,
             ..Self::default()
         }
     }
@@ -430,6 +459,10 @@ impl ContinuationState {
             fix_continuation_attempt: self.fix_continuation_attempt,
             fix_continue_pending: self.fix_continue_pending,
             max_fix_continue_count: self.max_fix_continue_count,
+            // Preserve loop detection fields
+            last_effect_kind: self.last_effect_kind.clone(),
+            consecutive_same_effect_count: self.consecutive_same_effect_count,
+            max_consecutive_same_effect: self.max_consecutive_same_effect,
         }
     }
 
@@ -487,5 +520,46 @@ impl ContinuationState {
             fix_continue_pending: false,
             ..self.clone()
         }
+    }
+
+    // =========================================================================
+    // Loop detection methods
+    // =========================================================================
+
+    /// Update loop detection counters based on the current effect fingerprint.
+    ///
+    /// This method updates `last_effect_kind` and `consecutive_same_effect_count`
+    /// based on whether the current effect fingerprint matches the previous one.
+    ///
+    /// # Returns
+    ///
+    /// A new `ContinuationState` with updated loop detection counters.
+    ///
+    /// # Behavior
+    ///
+    /// - If `current_fingerprint` equals `last_effect_kind`: increment `consecutive_same_effect_count`
+    /// - Otherwise: reset `consecutive_same_effect_count` to 1 and update `last_effect_kind`
+    pub fn update_loop_detection_counters(&self, current_fingerprint: String) -> Self {
+        if self.last_effect_kind.as_deref() == Some(&current_fingerprint) {
+            // Same effect as last time - increment counter
+            Self {
+                consecutive_same_effect_count: self.consecutive_same_effect_count + 1,
+                ..self.clone()
+            }
+        } else {
+            // Different effect - reset counter and update fingerprint
+            Self {
+                last_effect_kind: Some(current_fingerprint),
+                consecutive_same_effect_count: 1,
+                ..self.clone()
+            }
+        }
+    }
+
+    /// Check if loop detection threshold has been exceeded.
+    ///
+    /// Returns `true` if `consecutive_same_effect_count` >= `max_consecutive_same_effect`.
+    pub fn is_loop_detected(&self) -> bool {
+        self.consecutive_same_effect_count >= self.max_consecutive_same_effect
     }
 }

@@ -393,7 +393,8 @@ fn reduce_commit_validation_failed(
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
-                xsd_retry_session_reuse_pending: false,
+                // Reuse last session id for commit XSD retry when available.
+                xsd_retry_session_reuse_pending: true,
                 last_xsd_error: Some(reason),
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,

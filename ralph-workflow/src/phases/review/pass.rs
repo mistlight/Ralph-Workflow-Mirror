@@ -56,7 +56,7 @@ pub fn run_review_pass(
                 .with_diff(changes_content.clone(), &baseline_oid_for_prompts)
                 .build();
 
-            prompt_review_xml_with_references(ctx.template_context, &refs)
+            prompt_review_xml_with_references(ctx.template_context, &refs, ctx.workspace)
         });
 
     // Enforce that the rendered prompt does not contain unresolved template placeholders.
@@ -302,6 +302,7 @@ pub fn run_fix_pass(
                 &plan_content,
                 &issues_content,
                 &files_to_modify,
+                ctx.workspace,
             )
         });
 

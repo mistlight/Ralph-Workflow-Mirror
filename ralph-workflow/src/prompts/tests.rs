@@ -1,9 +1,12 @@
 use super::*;
 use crate::prompts::template_context::TemplateContext;
+use crate::workspace::MemoryWorkspace;
+use std::path::PathBuf;
 
 #[test]
 fn test_prompt_for_agent_developer() {
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
     let result = prompt_for_agent(
         Role::Developer,
         Action::Iterate,
@@ -12,6 +15,7 @@ fn test_prompt_for_agent_developer() {
         PromptConfig::new()
             .with_iterations(3, 10)
             .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        &workspace,
     );
     // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
     assert!(!result.contains("PROMPT.md"));
@@ -22,11 +26,13 @@ fn test_prompt_for_agent_developer() {
 #[test]
 fn test_prompt_for_agent_reviewer() {
     // Use the actual review prompt function that's used in production
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_review_xml_with_context(
         &TemplateContext::default(),
         "sample prompt",
         "sample plan",
         "sample diff",
+        &workspace,
     );
     // Verify the review_xml template behavior
     assert!(result.contains("REVIEW MODE"));
@@ -37,12 +43,14 @@ fn test_prompt_for_agent_reviewer() {
 #[test]
 fn test_prompt_for_agent_plan() {
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Developer,
         Action::Plan,
         ContextLevel::Normal,
         &template_context,
         PromptConfig::new().with_prompt_md("test requirements".to_string()),
+        &workspace,
     );
     // Plan is now returned as XML structured output
     assert!(result.contains("PLANNING MODE"));
@@ -60,10 +68,11 @@ fn test_prompts_are_agent_agnostic() {
     ];
 
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let prompts_to_check: Vec<String> = vec![
         prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
         prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
-        prompt_review_xml_with_context(&template_context, "", "", "sample diff"),
+        prompt_review_xml_with_context(&template_context, "", "", "sample diff", &workspace),
         prompt_fix("", "", ""),
         prompt_plan(None),
         prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
@@ -85,6 +94,7 @@ fn test_prompts_are_agent_agnostic() {
 #[test]
 fn test_prompt_for_agent_fix() {
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Developer,
         Action::Fix,
@@ -95,6 +105,7 @@ fn test_prompt_for_agent_fix() {
             "test plan".to_string(),
             "test issues".to_string(),
         ),
+        &workspace,
     );
     assert!(result.contains("FIX MODE"));
     assert!(result.contains("test issues"));
@@ -106,12 +117,14 @@ fn test_prompt_for_agent_fix() {
 #[test]
 fn test_prompt_for_agent_fix_with_empty_context() {
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Developer,
         Action::Fix,
         ContextLevel::Normal,
         &template_context,
         PromptConfig::new(),
+        &workspace,
     );
     assert!(result.contains("FIX MODE"));
     // Should still work with empty context
@@ -122,6 +135,7 @@ fn test_prompt_for_agent_fix_with_empty_context() {
 fn test_reviewer_can_use_iterate_action() {
     // Edge case: Reviewer using Iterate action (fallback behavior)
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Reviewer,
         Action::Iterate,
@@ -130,6 +144,7 @@ fn test_reviewer_can_use_iterate_action() {
         PromptConfig::new()
             .with_iterations(1, 3)
             .with_prompt_and_plan(String::new(), String::new()),
+        &workspace,
     );
     // Should fall back to developer iteration prompt
     assert!(result.contains("IMPLEMENTATION MODE"));
@@ -213,10 +228,11 @@ fn test_all_prompts_isolate_agents_from_git() {
     // This is part of the recovery mechanism for vague issues
 
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let prompts_to_check: Vec<String> = vec![
         prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
         prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
-        prompt_review_xml_with_context(&template_context, "", "", "sample diff"),
+        prompt_review_xml_with_context(&template_context, "", "", "sample diff", &workspace),
         // Note: fix_mode_xml.txt is intentionally excluded from "Use git" check
         // because it contains "Use git grep/rg ONLY when issue descriptions lack file context"
         // which is part of the fault tolerance design
@@ -289,6 +305,7 @@ fn test_all_prompts_isolate_agents_from_git() {
 #[test]
 fn test_prompt_with_resume_context() {
     let template_context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Developer,
         Action::Iterate,
@@ -298,6 +315,7 @@ fn test_prompt_with_resume_context() {
             .with_resume(true)
             .with_iterations(2, 5)
             .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        &workspace,
     );
     // Should include resume note
     assert!(result.contains("resuming from a previous run"));
@@ -324,6 +342,7 @@ fn test_prompt_with_rich_resume_context_development() {
         execution_history: None,
     };
 
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Developer,
         Action::Iterate,
@@ -333,6 +352,7 @@ fn test_prompt_with_rich_resume_context_development() {
             .with_resume_context(resume_context)
             .with_iterations(3, 5)
             .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        &workspace,
     );
 
     // Should include rich resume context
@@ -363,6 +383,7 @@ fn test_prompt_with_rich_resume_context_review() {
         execution_history: None,
     };
 
+    let workspace = MemoryWorkspace::new_test();
     let result = prompt_for_agent(
         Role::Reviewer,
         Action::Fix,
@@ -375,6 +396,7 @@ fn test_prompt_with_rich_resume_context_review() {
                 "test plan".to_string(),
                 "test issues".to_string(),
             ),
+        &workspace,
     );
 
     // Should include rich resume context for review

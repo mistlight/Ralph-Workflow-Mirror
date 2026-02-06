@@ -157,7 +157,7 @@ mod tests;
 pub use effect::{EffectHandler, EffectResult};
 pub use event::PipelineEvent;
 pub use handler::MainEffectHandler;
-pub use orchestration::determine_next_effect;
+pub use orchestration::{compute_effect_fingerprint, determine_next_effect};
 pub use state::PipelineState;
 pub use state_reduction::reduce;
 pub use ui_event::UIEvent;

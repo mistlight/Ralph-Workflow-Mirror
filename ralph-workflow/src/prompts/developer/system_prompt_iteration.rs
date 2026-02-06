@@ -108,10 +108,12 @@ pub fn prompt_developer_iteration_with_context(
 /// * `context` - Template context containing the template registry
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_developer_iteration_xml_with_context(
     context: &TemplateContext,
     prompt_content: &str,
     plan_content: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -124,11 +126,11 @@ pub fn prompt_developer_iteration_xml_with_context(
         ("PLAN", plan_content.to_string()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xml"),
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
         ),
         (
             "DEVELOPMENT_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
         ),
     ]);
 
@@ -153,9 +155,11 @@ pub fn prompt_developer_iteration_xml_with_context(
 ///
 /// * `context` - Template context containing the template registry
 /// * `refs` - Content references for PROMPT and PLAN
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_developer_iteration_xml_with_references(
     context: &TemplateContext,
     refs: &super::content_builder::PromptContentReferences,
+    workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
     let template_content = context
@@ -168,11 +172,11 @@ pub fn prompt_developer_iteration_xml_with_references(
         ("PLAN", refs.plan_for_template()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xml"),
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
         ),
         (
             "DEVELOPMENT_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
         ),
     ]);
 
@@ -219,15 +223,64 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
 /// Generate XSD validation retry prompt for developer iteration with error feedback.
 ///
 /// This variant assumes `.agent/tmp/last_output.xml` is already materialized.
+///
+/// Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+/// If required files are missing, a deterministic fallback prompt is produced that includes
+/// diagnostic information but still provides valid instructions to the agent.
 pub fn prompt_developer_iteration_xsd_retry_with_context_files(
     context: &TemplateContext,
     xsd_error: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    use std::path::Path;
+
     let partials = get_shared_partials();
     // Ensure schema file exists; last_output.xml is expected to already be present.
     write_dev_iteration_xsd_retry_schema_files(workspace);
 
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/development_result.xsd");
+    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+
+    let schema_exists = workspace.exists(schema_path);
+    let last_output_exists = workspace.exists(last_output_path);
+
+    // Build diagnostic prefix for missing files (per acceptance criteria #3)
+    let mut diagnostic_prefix = String::new();
+    if !schema_exists || !last_output_exists {
+        diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
+        if !schema_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Schema file: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/development_result.xsd"),
+                workspace.root().display()
+            ));
+        }
+        if !last_output_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Last output: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/last_output.xml"),
+                workspace.root().display()
+            ));
+        }
+        diagnostic_prefix.push_str(
+            "This likely indicates CWD != workspace.root() path mismatch.\n\n",
+        );
+    }
+
+    // If both files are missing, return fallback prompt with diagnostics (per AC #5)
+    if !schema_exists && !last_output_exists {
+        return format!(
+            "{}XSD VALIDATION FAILED - CONTINUE IMPLEMENTATION\n\n\
+             Error: {}\n\n\
+             The schema and previous output files could not be found. \
+             Please continue the implementation based on PROMPT.md and PLAN.md.\n\n\
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
+            diagnostic_prefix, xsd_error
+        );
+    }
+
+    // Proceed with normal XSD retry prompt generation if at least schema exists
     let template_content = context
         .registry()
         .get_template("developer_iteration_xsd_retry")
@@ -238,18 +291,19 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
         ("XSD_ERROR", xsd_error.to_string()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xml"),
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
         ),
         (
             "DEVELOPMENT_RESULT_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
         ),
         (
             "LAST_OUTPUT_XML_PATH",
-            resolve_absolute_path(".agent/tmp/last_output.xml"),
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
         ),
     ]);
-    Template::new(&template_content)
+
+    let rendered_prompt = Template::new(&template_content)
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
@@ -258,7 +312,14 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
                  Please resend your status in valid XML format conforming to the XSD schema.\n",
                 xsd_error
             )
-        })
+        });
+
+    // Prepend diagnostic prefix if files were missing but we continued anyway
+    if !diagnostic_prefix.is_empty() {
+        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
+    } else {
+        rendered_prompt
+    }
 }
 
 /// Generate continuation prompt for development iteration.
@@ -268,6 +329,7 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
 pub fn prompt_developer_iteration_continuation_xml(
     context: &TemplateContext,
     continuation_state: &crate::reducer::state::ContinuationState,
+    workspace: &dyn Workspace,
 ) -> String {
     let template_content = context
         .registry()
@@ -306,11 +368,11 @@ pub fn prompt_developer_iteration_continuation_xml(
     );
     variables.insert(
         "DEVELOPMENT_RESULT_XML_PATH",
-        resolve_absolute_path(".agent/tmp/development_result.xml"),
+        workspace.absolute_str(".agent/tmp/development_result.xml"),
     );
     variables.insert(
         "DEVELOPMENT_RESULT_XSD_PATH",
-        resolve_absolute_path(".agent/tmp/development_result.xsd"),
+        workspace.absolute_str(".agent/tmp/development_result.xsd"),
     );
 
     // Optional fields - add if present

@@ -345,12 +345,19 @@ impl MainEffectHandler {
             }
         }
 
-        ctx.workspace
+        // Write prompt file (non-fatal: if write fails, log warning and continue)
+        // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+        // If the prompt file write fails, we continue with orchestration - loop recovery will
+        // handle convergence if needed.
+        if let Err(err) = ctx
+            .workspace
             .write(Path::new(PLANNING_PROMPT_PATH), &prompt)
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: PLANNING_PROMPT_PATH.to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
+        {
+            ctx.logger.warn(&format!(
+                "Failed to write planning prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                err
+            ));
+        }
 
         let mut result = EffectResult::event(PipelineEvent::planning_prompt_prepared(iteration));
         for ev in additional_events {
@@ -364,6 +371,9 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Developer);
+
         let prompt = match ctx.workspace.read(Path::new(PLANNING_PROMPT_PATH)) {
             Ok(s) => s,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {

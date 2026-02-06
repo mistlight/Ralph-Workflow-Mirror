@@ -204,4 +204,80 @@ impl MainEffectHandler {
 
         Ok(result)
     }
+
+    /// Normalize agent chain state before agent invocation for determinism.
+    ///
+    /// This function ensures that:
+    /// 1. The agent chain role matches the expected role for this invocation
+    /// 2. Session ID policy is consistent with the current retry mode
+    /// 3. Agent and model indices are within valid bounds (defensive programming)
+    /// 4. Rate limit continuation prompt role matches the current role
+    ///
+    /// This is critical for checkpoint replay safety: the same pre-invocation state
+    /// must produce the same agent/role/session selection.
+    pub(super) fn normalize_agent_chain_for_invocation(
+        &mut self,
+        _ctx: &PhaseContext<'_>,
+        expected_role: AgentRole,
+    ) {
+        // Ensure agent chain role matches expected role
+        // The agent chain should already be initialized with the correct role from
+        // the reducer, but we defensively ensure consistency here.
+        if self.state.agent_chain.current_role != expected_role {
+            self.state.agent_chain.current_role = expected_role;
+        }
+
+        // Defensively validate agent chain index bounds for consistency.
+        // These should never be out of bounds in normal operation, but if they are
+        // (e.g., due to manual checkpoint edits or bugs), we clamp them to valid
+        // ranges to prevent panics and ensure deterministic behavior.
+        if self.state.agent_chain.agents.is_empty() {
+            // No agents configured - reset indices to safe defaults
+            self.state.agent_chain.current_agent_index = 0;
+            self.state.agent_chain.current_model_index = 0;
+        } else {
+            // Clamp agent index to valid range
+            if self.state.agent_chain.current_agent_index >= self.state.agent_chain.agents.len() {
+                self.state.agent_chain.current_agent_index = 0;
+                self.state.agent_chain.current_model_index = 0;
+            }
+
+            // Clamp model index to valid range for the current agent
+            if let Some(models) = self
+                .state
+                .agent_chain
+                .models_per_agent
+                .get(self.state.agent_chain.current_agent_index)
+            {
+                if !models.is_empty() && self.state.agent_chain.current_model_index >= models.len()
+                {
+                    self.state.agent_chain.current_model_index = 0;
+                }
+            } else {
+                self.state.agent_chain.current_model_index = 0;
+            }
+        }
+
+        // Ensure rate_limit_continuation_prompt role matches current role.
+        // If they don't match, clear the continuation prompt to prevent cross-task
+        // contamination (e.g., a developer continuation prompt overriding an analysis prompt).
+        if let Some(ref continuation) = self.state.agent_chain.rate_limit_continuation_prompt {
+            if continuation.role != expected_role {
+                self.state.agent_chain.rate_limit_continuation_prompt = None;
+            }
+        }
+
+        // Normalize session ID policy based on retry mode:
+        // - XSD retry: preserve session (session ID already set if available)
+        // - Same-agent retry: clear session to start fresh
+        // - Normal: session policy already set by reducer
+        //
+        // Note: We don't modify last_session_id for XSD retry because it should already
+        // be set from the previous attempt (via xsd_retry_session_reuse_pending flag).
+        // We only clear it for same-agent retry to force a fresh conversation.
+        if self.state.continuation.same_agent_retry_pending {
+            // Same-agent retry: clear last session id to start fresh conversation
+            self.state.agent_chain.last_session_id = None;
+        }
+    }
 }

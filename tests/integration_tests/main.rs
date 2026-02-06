@@ -26,7 +26,9 @@
 //! Tests requiring real git/filesystem operations are in `tests/system_tests/`.
 //! See `tests/system_tests/SYSTEM_TESTS.md` for those guidelines.
 
+mod agent_chain_normalization;
 mod agent_spawn_errors;
+mod awaiting_dev_fix_recovery;
 mod ccs_all_delta_types_spam_reproduction;
 mod ccs_ansi_stripping_console;
 mod ccs_ansi_stripping_waterfall;
@@ -53,7 +55,10 @@ mod fix_xml_validation;
 mod gemini_parser_tests;
 mod git;
 mod logger;
+mod loop_detection_after_additional_events;
+mod loop_detection_recovery;
 mod opencode_parser_tests;
+mod prompt_path_resolution;
 mod reducer_agent_fallback;
 mod reducer_effect_invariants;
 mod reducer_error_handling;
@@ -65,10 +70,12 @@ mod reducer_resume_tests;
 mod reducer_state_machine;
 mod review_output_validation;
 mod review_xml_validation;
+mod template_rendering_errors;
 mod test_count_guard;
 mod test_timeout;
 mod test_traits;
 mod ui_events;
 mod workflows;
+mod xsd_retry_missing_files;
 
 mod dylint_target;

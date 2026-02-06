@@ -1,0 +1,127 @@
+//! Integration test for workspace-rooted prompt path resolution.
+//!
+//! Verifies that prompts use workspace.root() for absolute paths, not process CWD.
+//! This prevents the bug where reviewers write XML to the wrong directory in
+//! multi-worktree or isolation mode scenarios.
+
+use ralph_workflow::prompts::{
+    prompt_generate_commit_message_with_diff_with_context, prompt_planning_xml_with_references,
+    prompt_planning_xsd_retry_with_context_files, prompt_review_xml_with_references,
+    PromptContentReference, TemplateContext,
+};
+use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+use std::path::PathBuf;
+
+use crate::test_timeout::with_default_timeout;
+
+/// Test that planning prompts use workspace-rooted paths, not CWD.
+#[test]
+fn test_planning_prompts_use_workspace_root() {
+    with_default_timeout(|| {
+        let workspace_root = PathBuf::from("/tmp/test_workspace");
+        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let template_context = TemplateContext::default();
+        let prompt_ref = PromptContentReference::inline("Test prompt".to_string());
+
+        // Generate planning prompt
+        let prompt =
+            prompt_planning_xml_with_references(&template_context, &prompt_ref, &workspace);
+
+        // Verify: prompt contains workspace root paths, not current_dir paths
+        let expected_path = workspace.absolute_str(".agent/tmp/plan.xml");
+        assert!(
+            prompt.contains(&expected_path),
+            "Planning prompt should contain workspace-rooted path: {}",
+            expected_path
+        );
+    });
+}
+
+/// Test that review prompts use workspace-rooted paths, not CWD.
+#[test]
+fn test_review_prompts_use_workspace_root() {
+    with_default_timeout(|| {
+        let workspace_root = PathBuf::from("/tmp/test_workspace");
+        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let template_context = TemplateContext::default();
+
+        // Generate review prompt
+        use ralph_workflow::prompts::content_reference::{
+            DiffContentReference, PlanContentReference,
+        };
+        use std::path::Path;
+        let plan_ref = PlanContentReference::from_plan(
+            "Test plan".to_string(),
+            Path::new(".agent/PLAN.md"),
+            None,
+        );
+        let diff_ref = DiffContentReference::from_diff(
+            "Test changes".to_string(),
+            "",
+            Path::new(".agent/DIFF.backup"),
+        );
+        let refs = ralph_workflow::prompts::content_builder::PromptContentReferences {
+            prompt: None,
+            plan: Some(plan_ref),
+            diff: Some(diff_ref),
+        };
+        let prompt = prompt_review_xml_with_references(&template_context, &refs, &workspace);
+
+        // Verify: prompt contains workspace root paths
+        let expected_path = workspace.absolute_str(".agent/tmp/issues.xml");
+        assert!(
+            prompt.contains(&expected_path),
+            "Review prompt should contain workspace-rooted path: {}",
+            expected_path
+        );
+    });
+}
+
+/// Test that XSD retry prompts detect missing schema files with workspace root context.
+#[test]
+fn test_xsd_retry_missing_schema_includes_workspace_root() {
+    with_default_timeout(|| {
+        let workspace_root = PathBuf::from("/tmp/test_workspace");
+        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let template_context = TemplateContext::default();
+
+        // Generate XSD retry prompt when schema file is missing
+        let prompt = prompt_planning_xsd_retry_with_context_files(
+            &template_context,
+            "Test XSD error",
+            &workspace,
+        );
+
+        // When schema is missing, prompt should include workspace root for diagnostics
+        assert!(
+            prompt.contains("workspace.root()")
+                || prompt.contains(&workspace.root().display().to_string()),
+            "XSD retry prompt should include workspace root when files are missing"
+        );
+    });
+}
+
+/// Test that commit prompts use workspace-rooted paths.
+#[test]
+fn test_commit_prompts_use_workspace_root() {
+    with_default_timeout(|| {
+        let workspace_root = PathBuf::from("/tmp/test_workspace");
+        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let template_context = TemplateContext::default();
+
+        // Generate commit prompt
+        let prompt = prompt_generate_commit_message_with_diff_with_context(
+            &template_context,
+            "Test diff",
+            &workspace,
+        );
+
+        // Verify: prompt contains workspace root paths
+        let expected_path = workspace.absolute_str(".agent/tmp/commit_message.xml");
+        assert!(
+            prompt.contains(&expected_path),
+            "Commit prompt should contain workspace-rooted path: {}",
+            expected_path
+        );
+    });
+}

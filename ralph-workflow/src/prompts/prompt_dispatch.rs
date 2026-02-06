@@ -29,12 +29,14 @@ use super::{
 /// * `context` - The context level (minimal or normal)
 /// * `template_context` - Template context for user template overrides
 /// * `config` - Prompt configuration with content variables
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_for_agent(
     role: Role,
     action: Action,
     context: ContextLevel,
     template_context: &TemplateContext,
     config: PromptConfig,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> String {
     let resume_note = if let Some(resume_ctx) = &config.resume_context {
         generate_resume_note(resume_ctx)
@@ -46,9 +48,11 @@ pub fn prompt_for_agent(
     };
 
     let base_prompt = match (role, action) {
-        (_, Action::Plan) => {
-            prompt_plan_with_context(template_context, config.prompt_md_content.as_deref())
-        }
+        (_, Action::Plan) => prompt_plan_with_context(
+            template_context,
+            config.prompt_md_content.as_deref(),
+            workspace,
+        ),
         (Role::Developer | Role::Reviewer, Action::Iterate) => {
             let (prompt_content, plan_content) = config
                 .prompt_and_plan
@@ -71,6 +75,7 @@ pub fn prompt_for_agent(
                 &prompt_content,
                 &plan_content,
                 &issues_content,
+                workspace,
             )
         }
     };

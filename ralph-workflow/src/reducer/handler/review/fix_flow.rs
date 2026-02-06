@@ -140,6 +140,7 @@ impl MainEffectHandler {
                                 &plan_content,
                                 &issues_content,
                                 &[],
+                                ctx.workspace,
                             ),
                             true,
                         ),
@@ -161,6 +162,7 @@ impl MainEffectHandler {
                                 &plan_content,
                                 &issues_content,
                                 &[],
+                                ctx.workspace,
                             )
                         });
                     (prompt_key, prompt, was_replayed, "fix_mode_xml", true)
@@ -194,12 +196,16 @@ impl MainEffectHandler {
             ctx.capture_prompt(&prompt_key, &fix_prompt);
         }
 
-        ctx.workspace
+        // Write prompt file (non-fatal: if write fails, log warning and continue)
+        if let Err(err) = ctx
+            .workspace
             .write(Path::new(".agent/tmp/fix_prompt.txt"), &fix_prompt)
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: ".agent/tmp/fix_prompt.txt".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
+        {
+            ctx.logger.warn(&format!(
+                "Failed to write fix prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                err
+            ));
+        }
 
         Ok(EffectResult::event(PipelineEvent::fix_prompt_prepared(
             pass,
@@ -213,6 +219,9 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::agents::AgentRole;
         use std::path::Path;
+
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Reviewer);
 
         let prompt = match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
             Ok(s) => s,

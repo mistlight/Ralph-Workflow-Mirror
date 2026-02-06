@@ -490,7 +490,8 @@ where
         let event_str = format!("{:?}", result.event);
 
         // Apply pipeline event to state (reducer remains pure)
-        let mut new_state = reduce(state, result.event.clone());
+        let new_state = reduce(state, result.event.clone());
+
         trace.push(build_trace_entry(
             events_processed,
             &new_state,
@@ -504,17 +505,29 @@ where
         // Apply additional pipeline events in order.
         for event in result.additional_events {
             let event_str = format!("{:?}", event);
-            new_state = reduce(state, event);
+            let additional_state = reduce(state, event);
             trace.push(build_trace_entry(
                 events_processed,
-                &new_state,
+                &additional_state,
                 &effect_str,
                 &event_str,
             ));
-            handler.update_state(new_state.clone());
-            state = new_state;
+            handler.update_state(additional_state.clone());
+            state = additional_state;
             events_processed += 1;
         }
+
+        // Update loop detection counters AFTER all events have been processed.
+        // This is critical: additional events can change phase, agent chain, etc.,
+        // and loop detection must consider the final state after all reductions.
+        let current_fingerprint = crate::reducer::compute_effect_fingerprint(&state);
+        state = PipelineState {
+            continuation: state
+                .continuation
+                .update_loop_detection_counters(current_fingerprint),
+            ..state
+        };
+        handler.update_state(state.clone());
 
         // Check completion AFTER effect execution and state update.
         // This ensures that transitions to terminal phases (e.g., Interrupted)

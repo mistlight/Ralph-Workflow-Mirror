@@ -203,6 +203,7 @@ impl MainEffectHandler {
                             prompt_developer_iteration_continuation_xml(
                                 ctx.template_context,
                                 continuation_state,
+                                ctx.workspace,
                             )
                         });
                     (
@@ -386,6 +387,7 @@ impl MainEffectHandler {
                                 prompt_developer_iteration_xml_with_references(
                                     ctx.template_context,
                                     &refs,
+                                    ctx.workspace,
                                 ),
                                 true,
                             )
@@ -487,6 +489,7 @@ impl MainEffectHandler {
                             prompt_developer_iteration_xml_with_references(
                                 ctx.template_context,
                                 &refs,
+                                ctx.workspace,
                             )
                         });
                     (
@@ -533,12 +536,19 @@ impl MainEffectHandler {
             })?;
         }
 
-        ctx.workspace
+        // Write prompt file (non-fatal: if write fails, log warning and continue)
+        // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+        // If the prompt file write fails, we continue with orchestration - loop recovery will
+        // handle convergence if needed.
+        if let Err(err) = ctx
+            .workspace
             .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: ".agent/tmp/development_prompt.txt".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
+        {
+            ctx.logger.warn(&format!(
+                "Failed to write development prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                err
+            ));
+        }
 
         let mut result = EffectResult::event(PipelineEvent::development_prompt_prepared(iteration));
         for ev in additional_events {
@@ -552,6 +562,9 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Developer);
+
         let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/development_prompt.txt"))

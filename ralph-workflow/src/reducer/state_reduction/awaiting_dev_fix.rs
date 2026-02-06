@@ -29,6 +29,11 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             // Dev-fix attempt completed, prepare for termination
             state
         }
+        AwaitingDevFixEvent::DevFixAgentUnavailable { .. } => {
+            // Dev-fix agent unavailable (quota/usage limit), prepare for termination
+            // Completion marker already written, pipeline will terminate gracefully
+            state
+        }
         AwaitingDevFixEvent::CompletionMarkerEmitted { .. } => {
             // Completion marker emitted, transition to Interrupted
             PipelineState {

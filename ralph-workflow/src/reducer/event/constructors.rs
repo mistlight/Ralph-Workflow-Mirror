@@ -9,3 +9,17 @@ include!("constructors_development.rs");
 include!("constructors_review.rs");
 include!("constructors_agent.rs");
 include!("constructors_commit.rs");
+
+// ============================================================================
+// Miscellaneous event constructors
+// ============================================================================
+
+impl PipelineEvent {
+    /// Construct a LoopRecoveryTriggered event.
+    pub fn loop_recovery_triggered(detected_loop: String, loop_count: u32) -> Self {
+        PipelineEvent::LoopRecoveryTriggered {
+            detected_loop,
+            loop_count,
+        }
+    }
+}

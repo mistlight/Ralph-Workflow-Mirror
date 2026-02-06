@@ -1,3 +1,28 @@
+/// Compute an effect fingerprint for loop detection.
+///
+/// The fingerprint uniquely identifies the "work context" that would produce
+/// an effect. If the same fingerprint appears consecutively many times, we're
+/// likely in a tight loop.
+///
+/// The fingerprint includes:
+/// - Current phase
+/// - Current agent role
+/// - Current iteration
+/// - Current reviewer pass
+/// - XSD retry pending flag
+/// - XSD retry count (to distinguish retry 1 from retry 10 in tight loop detection)
+pub fn compute_effect_fingerprint(state: &PipelineState) -> String {
+    format!(
+        "{}:{}:iter={}:pass={}:xsd_retry={}:count={}",
+        state.phase,
+        state.agent_chain.current_role,
+        state.iteration,
+        state.reviewer_pass,
+        state.continuation.xsd_retry_pending,
+        state.continuation.xsd_retry_count
+    )
+}
+
 /// Derive the effect for XSD retry based on current phase.
 ///
 /// XSD retry reuses the same agent and session if available.
@@ -164,6 +189,31 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
     if state.phase == PipelinePhase::Interrupted && state.checkpoint_saved_count == 0 {
         return Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::Interrupt,
+        };
+    }
+
+    // Loop detection: check if the same effect has been derived too many times consecutively.
+    // This prevents infinite tight loops when XSD retry or other recovery mechanisms cannot
+    // converge (e.g., due to workspace/CWD path mismatch).
+    let effect_fingerprint = compute_effect_fingerprint(state);
+    let loop_detected = state
+        .continuation
+        .last_effect_kind
+        .as_deref()
+        .is_some_and(|last| last == effect_fingerprint)
+        && state.continuation.consecutive_same_effect_count
+            >= state.continuation.max_consecutive_same_effect;
+
+    if loop_detected
+        && !matches!(
+            state.phase,
+            PipelinePhase::Complete | PipelinePhase::Interrupted
+        )
+    {
+        // MANDATORY RECOVERY: we're in a tight loop and not in a terminal phase
+        return Effect::TriggerLoopRecovery {
+            detected_loop: effect_fingerprint,
+            loop_count: state.continuation.consecutive_same_effect_count,
         };
     }
 

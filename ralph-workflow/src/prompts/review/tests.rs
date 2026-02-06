@@ -1,11 +1,18 @@
 use super::*;
 use crate::workspace::MemoryWorkspace;
+use std::path::PathBuf;
 
 #[test]
 fn test_prompt_review_xml_with_context() {
     let context = TemplateContext::default();
-    let result =
-        prompt_review_xml_with_context(&context, "test prompt", "test plan", "test changes");
+    let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+    let result = prompt_review_xml_with_context(
+        &context,
+        "test prompt",
+        "test plan",
+        "test changes",
+        &workspace,
+    );
     // prompt_content is no longer embedded - reviewer reads PROMPT.md.backup directly
     assert!(!result.contains("test prompt"));
     assert!(result.contains("PROMPT.md.backup"));
@@ -62,7 +69,8 @@ fn test_prompt_review_xml_with_context() {
 #[test]
 fn test_prompt_review_xml_with_context_allows_empty_plan_and_changes() {
     let context = TemplateContext::default();
-    let result = prompt_review_xml_with_context(&context, "prompt", "", "");
+    let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+    let result = prompt_review_xml_with_context(&context, "prompt", "", "", &workspace);
 
     assert!(
         !result.contains("{{PLAN}}"),
@@ -85,7 +93,9 @@ fn test_prompt_review_xml_with_context_allows_empty_plan_and_changes() {
 #[test]
 fn test_prompt_review_xml_with_context_uses_inline_plan_and_changes_when_present() {
     let context = TemplateContext::default();
-    let result = prompt_review_xml_with_context(&context, "prompt", "plan here", "diff here");
+    let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+    let result =
+        prompt_review_xml_with_context(&context, "prompt", "plan here", "diff here", &workspace);
 
     assert!(result.contains("plan here"));
     assert!(result.contains("diff here"));
@@ -169,8 +179,15 @@ fn test_prompt_review_xsd_retry_with_context() {
 #[test]
 fn test_prompt_fix_xml_with_context() {
     let context = TemplateContext::default();
-    let result =
-        prompt_fix_xml_with_context(&context, "test prompt", "test plan", "test issues", &[]);
+    let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+    let result = prompt_fix_xml_with_context(
+        &context,
+        "test prompt",
+        "test plan",
+        "test issues",
+        &[],
+        &workspace,
+    );
     assert!(result.contains("test issues"));
     assert!(result.contains("FIX MODE"));
     assert!(result.contains("<ralph-fix-result>"));
@@ -221,7 +238,7 @@ fn test_prompt_review_xml_with_references_small_content() {
         .with_diff("Small diff content".to_string(), "abc123")
         .build();
 
-    let result = prompt_review_xml_with_references(&context, &refs);
+    let result = prompt_review_xml_with_references(&context, &refs, &workspace);
 
     // Should embed content inline
     assert!(result.contains("Small plan content"));
@@ -243,7 +260,7 @@ fn test_prompt_review_xml_with_references_large_plan() {
         .with_diff("Small diff".to_string(), "abc123")
         .build();
 
-    let result = prompt_review_xml_with_references(&context, &refs);
+    let result = prompt_review_xml_with_references(&context, &refs, &workspace);
 
     // Should reference PLAN.md file, not embed content
     assert!(result.contains(".agent/PLAN.md"));
@@ -265,7 +282,7 @@ fn test_prompt_review_xml_with_references_large_diff() {
         .with_diff(large_diff, "abc123def")
         .build();
 
-    let result = prompt_review_xml_with_references(&context, &refs);
+    let result = prompt_review_xml_with_references(&context, &refs, &workspace);
 
     // Should instruct to use git diff fallback commands, not embed content
     assert!(result.contains("git diff abc123def"));
@@ -288,7 +305,7 @@ fn test_prompt_review_xml_with_references_both_large() {
         .with_diff(large_diff, "start123")
         .build();
 
-    let result = prompt_review_xml_with_references(&context, &refs);
+    let result = prompt_review_xml_with_references(&context, &refs, &workspace);
 
     // Both should be referenced by file/git command
     assert!(result.contains(".agent/PLAN.md"));

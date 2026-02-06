@@ -438,6 +438,11 @@ pub enum AwaitingDevFixEvent {
         success: bool,
         summary: Option<String>,
     },
+    /// Dev-fix agent is unavailable (quota/usage limit).
+    DevFixAgentUnavailable {
+        failed_phase: PipelinePhase,
+        reason: String,
+    },
     /// Completion marker was emitted to filesystem.
     CompletionMarkerEmitted { is_failure: bool },
 }
@@ -637,6 +642,13 @@ pub enum PipelineEvent {
     FinalizingStarted,
     /// PROMPT.md permissions restored.
     PromptPermissionsRestored,
+    /// Loop recovery triggered (tight loop detected and broken).
+    LoopRecoveryTriggered {
+        /// String representation of the detected loop.
+        detected_loop: String,
+        /// Number of times the loop was repeated.
+        loop_count: u32,
+    },
 }
 
 // ============================================================================
@@ -750,6 +762,7 @@ mod tests {
                 PipelineEvent::CheckpointSaved { .. } => "checkpoint_saved",
                 PipelineEvent::FinalizingStarted => "finalizing_started",
                 PipelineEvent::PromptPermissionsRestored => "prompt_permissions_restored",
+                PipelineEvent::LoopRecoveryTriggered { .. } => "loop_recovery_triggered",
                 // DO NOT ADD _ WILDCARD - intentionally exhaustive
             }
         }

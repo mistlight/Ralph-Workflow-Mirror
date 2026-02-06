@@ -117,6 +117,34 @@ impl MainEffectHandler {
             PipelineEvent::development_continuation_context_cleaned(),
         ))
     }
+
+    pub(super) fn trigger_loop_recovery(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        detected_loop: String,
+        loop_count: u32,
+    ) -> Result<EffectResult> {
+        ctx.logger.warn(&format!(
+            "⚠️  LOOP DETECTED: Same effect repeated {} times: {}",
+            loop_count, detected_loop
+        ));
+        ctx.logger
+            .info("Triggering mandatory loop recovery to break the cycle...");
+        ctx.logger
+            .info("Emitting loop recovery event (state cleanup will occur in reducer)");
+
+        // Note: The actual state cleanup (XSD retry reset, session clear, loop counter reset)
+        // happens in the reducer when LoopRecoveryTriggered event is reduced.
+        // This handler only emits the event to trigger that cleanup.
+
+        ctx.logger
+            .success("Loop recovery triggered. Pipeline will resume with fresh state.");
+
+        Ok(EffectResult::event(PipelineEvent::loop_recovery_triggered(
+            detected_loop,
+            loop_count,
+        )))
+    }
 }
 
 fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {

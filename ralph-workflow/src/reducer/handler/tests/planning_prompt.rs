@@ -6,7 +6,7 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
+use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{
     AgentChainState, ContinuationState, PipelineState, PromptMode, SameAgentRetryReason,
@@ -186,7 +186,9 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
 }
 
 #[test]
-fn test_prepare_planning_prompt_maps_workspace_write_failure_to_error_event() {
+fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
+    // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+    // When prompt file write fails, the handler logs a warning and continues successfully.
     let inner = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
         .with_dir(".agent/tmp")
@@ -236,20 +238,20 @@ fn test_prepare_planning_prompt_maps_workspace_write_failure_to_error_event() {
         ..PipelineState::initial(1, 0)
     });
 
-    let err = handler
+    // Per AC #5: Write failure should NOT return an error; it should succeed
+    // with a warning logged instead.
+    let result = handler
         .prepare_planning_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
-        .expect_err("prepare_planning_prompt should return a typed error event on write failure");
+        .expect("prepare_planning_prompt should succeed even when write fails (non-fatal)");
 
-    let error_event = err
-        .downcast_ref::<ErrorEvent>()
-        .expect("error should preserve ErrorEvent for event-loop recovery");
+    // Verify that the prompt was prepared in memory even though the write failed
     assert!(
         matches!(
-            error_event,
-            ErrorEvent::WorkspaceWriteFailed { path, kind: WorkspaceIoErrorKind::Other }
-                if path == ".agent/tmp/planning_prompt.txt"
+            result.event,
+            PipelineEvent::Planning(crate::reducer::event::PlanningEvent::PromptPrepared { .. })
         ),
-        "expected WorkspaceWriteFailed for planning prompt write, got: {error_event:?}"
+        "should emit Planning(PromptPrepared) event even when write fails, got: {:?}",
+        result.event
     );
 }
 

@@ -232,12 +232,20 @@ impl MainEffectHandler {
                     }
                 })?;
             }
-            ctx.workspace
+
+            // Write prompt file (non-fatal: if write fails, log warning and continue)
+            // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+            // If the prompt file write fails, we continue with orchestration - loop recovery will
+            // handle convergence if needed.
+            if let Err(err) = ctx
+                .workspace
                 .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
-                .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                    path: ".agent/tmp/commit_prompt.txt".to_string(),
-                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                })?;
+            {
+                ctx.logger.warn(&format!(
+                    "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                    err
+                ));
+            }
 
             return Ok(
                 EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -383,24 +391,6 @@ impl MainEffectHandler {
                 );
                 (prompt_key, prompt, false, should_validate)
             }
-            PromptMode::XsdRetry => {
-                let xsd_error = continuation_state
-                    .last_xsd_error
-                    .clone()
-                    .unwrap_or_else(|| {
-                        "XSD validation failed. Provide valid XML output.".to_string()
-                    });
-                let prompt = prompt_commit_xsd_retry_with_context(
-                    ctx.template_context,
-                    &xsd_error,
-                    ctx.workspace,
-                );
-                let prompt_key = format!(
-                    "commit_message_attempt_{attempt}_xsd_retry_{}",
-                    continuation_state.xsd_retry_count
-                );
-                (prompt_key, prompt, false, true)
-            }
             PromptMode::Normal => {
                 let prompt_key = format!("commit_message_attempt_{attempt}");
                 let (prompt, was_replayed) =
@@ -412,6 +402,13 @@ impl MainEffectHandler {
                         )
                     });
                 (prompt_key, prompt, was_replayed, true)
+            }
+            PromptMode::XsdRetry => {
+                // XsdRetry is handled in prepare_commit_prompt() which returns early.
+                // This branch is unreachable but required for exhaustiveness.
+                unreachable!(
+                    "XsdRetry mode should be handled by prepare_commit_prompt() before calling this function"
+                )
             }
             PromptMode::Continuation => {
                 return Err(ErrorEvent::CommitContinuationNotSupported.into());
@@ -450,12 +447,19 @@ impl MainEffectHandler {
             })?;
         }
 
-        ctx.workspace
+        // Write prompt file (non-fatal: if write fails, log warning and continue)
+        // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
+        // If the prompt file write fails, we continue with orchestration - loop recovery will
+        // handle convergence if needed.
+        if let Err(err) = ctx
+            .workspace
             .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: ".agent/tmp/commit_prompt.txt".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
+        {
+            ctx.logger.warn(&format!(
+                "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
+                err
+            ));
+        }
 
         Ok(
             EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -468,6 +472,9 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
+        // Normalize agent chain state before invocation for determinism
+        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Commit);
+
         let attempt = current_commit_attempt(&self.state.commit);
         let prompt = match ctx
             .workspace

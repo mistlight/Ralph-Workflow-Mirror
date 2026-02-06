@@ -160,70 +160,6 @@ fn spawn_stdout_pump(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    #[derive(Debug)]
-    struct ControlledReader {
-        stop: Arc<AtomicBool>,
-    }
-
-    impl io::Read for ControlledReader {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            if self.stop.load(Ordering::Acquire) {
-                return Ok(0);
-            }
-            if buf.is_empty() {
-                return Ok(0);
-            }
-            buf[0] = b'x';
-            Ok(1)
-        }
-    }
-
-    #[test]
-    fn stdout_pump_exits_when_receiver_dropped() {
-        let stop = Arc::new(AtomicBool::new(false));
-        let reader: Box<dyn io::Read + Send> = Box::new(ControlledReader {
-            stop: Arc::clone(&stop),
-        });
-
-        let timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
-        let (tx, rx) = mpsc::channel();
-        let cancel = Arc::new(AtomicBool::new(false));
-
-        let handle = spawn_stdout_pump(reader, timestamp, tx, cancel);
-        drop(rx);
-
-        let test_result = {
-            let handle_ref = &handle;
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                let deadline = std::time::Instant::now() + Duration::from_millis(200);
-                while std::time::Instant::now() < deadline {
-                    if handle_ref.is_finished() {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                panic!("stdout pump thread did not exit after receiver drop");
-            }))
-        };
-
-        // Always stop and join so the test doesn't leak threads.
-        stop.store(true, Ordering::Release);
-        let _ = handle.join();
-
-        if let Err(payload) = test_result {
-            std::panic::resume_unwind(payload);
-        }
-    }
-}
-
 fn cleanup_stdout_pump(
     pump_handle: std::thread::JoinHandle<()>,
     cancel: &Arc<AtomicBool>,
@@ -393,4 +329,68 @@ pub(super) fn stream_agent_output_from_handle(
 
     cleanup_stdout_pump(pump_handle, &cancel, runtime, &parse_result);
     parse_result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[derive(Debug)]
+    struct ControlledReader {
+        stop: Arc<AtomicBool>,
+    }
+
+    impl io::Read for ControlledReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.stop.load(Ordering::Acquire) {
+                return Ok(0);
+            }
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            buf[0] = b'x';
+            Ok(1)
+        }
+    }
+
+    #[test]
+    fn stdout_pump_exits_when_receiver_dropped() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let reader: Box<dyn io::Read + Send> = Box::new(ControlledReader {
+            stop: Arc::clone(&stop),
+        });
+
+        let timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
+        let (tx, rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let handle = spawn_stdout_pump(reader, timestamp, tx, cancel);
+        drop(rx);
+
+        let test_result = {
+            let handle_ref = &handle;
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                let deadline = std::time::Instant::now() + Duration::from_millis(200);
+                while std::time::Instant::now() < deadline {
+                    if handle_ref.is_finished() {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                panic!("stdout pump thread did not exit after receiver drop");
+            }))
+        };
+
+        // Always stop and join so the test doesn't leak threads.
+        stop.store(true, Ordering::Release);
+        let _ = handle.join();
+
+        if let Err(payload) = test_result {
+            std::panic::resume_unwind(payload);
+        }
+    }
 }
