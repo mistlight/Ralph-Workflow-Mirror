@@ -86,7 +86,22 @@ fn test_continuation_does_not_increment_iterations_started() {
 }
 
 #[test]
-fn test_review_pass_started_increments_counter() {
+fn test_review_pass_started_increments_counter_for_pass_0() {
+    // Start with initial state (reviewer_pass = 0)
+    let state = PipelineState::initial(0, 3);
+    assert_eq!(state.reviewer_pass, 0);
+    assert_eq!(state.metrics.review_passes_started, 0);
+
+    // Starting pass 0 should count as starting the first pass.
+    let event = PipelineEvent::review_pass_started(0);
+    let state = reduce(state, event);
+
+    assert_eq!(state.metrics.review_passes_started, 1);
+    assert_eq!(state.reviewer_pass, 0);
+}
+
+#[test]
+fn test_review_pass_started_increments_counter_for_pass_1() {
     // Start with initial state (reviewer_pass = 0)
     let state = PipelineState::initial(0, 3);
     assert_eq!(state.reviewer_pass, 0);

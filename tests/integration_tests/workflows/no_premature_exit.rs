@@ -204,10 +204,8 @@ fn test_fix_continuation_does_not_advance_pass() {
             state,
             PipelineEvent::Review(ReviewEvent::PassStarted { pass: 0 }),
         );
-        // NOTE: review_passes_started increments when pass != current reviewer_pass.
-        // Initial PipelineState has reviewer_pass = 0, so starting pass 0 is not counted as a
-        // "new pass" by the reducer.
-        assert_eq!(state.metrics.review_passes_started, 0);
+        // Starting pass 0 counts as starting the first pass.
+        assert_eq!(state.metrics.review_passes_started, 1);
 
         // When: Trigger first fix continuation
         let event = PipelineEvent::Review(ReviewEvent::FixContinuationTriggered {

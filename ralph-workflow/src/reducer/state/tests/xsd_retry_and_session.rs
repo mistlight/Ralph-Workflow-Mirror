@@ -67,6 +67,10 @@
 
         assert!(state.xsd_retry_pending);
         assert_eq!(state.xsd_retry_count, 1);
+        assert!(
+            state.xsd_retry_session_reuse_pending,
+            "XSD retry should reuse the prior session when available"
+        );
         assert_eq!(state.current_artifact, Some(ArtifactType::Plan));
     }
 

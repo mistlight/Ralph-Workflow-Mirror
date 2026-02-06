@@ -31,8 +31,9 @@ fn reduce_phase_started(state: PipelineState) -> PipelineState {
 
 fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
     let mut metrics = state.metrics.clone();
-    // Only increment if this is truly a new pass (not a retry within same pass)
-    if state.reviewer_pass != pass {
+    // Increment for the first PassStarted (pass 0) and for any truly new pass.
+    // A PassStarted re-emitted for the same pass (retry) must not increment.
+    if state.metrics.review_passes_started == 0 || state.reviewer_pass != pass {
         metrics.review_passes_started += 1;
     }
     // Update current pass tracker

@@ -27,7 +27,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             review_prompt_prepared_pass: Some(pass),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
-                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_pending,
+                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_session_reuse_pending,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
                 ..state.continuation
@@ -216,7 +216,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             fix_prompt_prepared_pass: Some(pass),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
-                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_pending,
+                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_session_reuse_pending,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
                 // Clear fix_continue_pending to prevent infinite loop.

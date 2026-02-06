@@ -650,6 +650,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
         )
         .with_session_id(Some(session_id.clone()));
     state.continuation.xsd_retry_pending = true;
+    state.continuation.xsd_retry_session_reuse_pending = true;
 
     state = reduce(state, PipelineEvent::planning_prompt_prepared(0));
     assert!(

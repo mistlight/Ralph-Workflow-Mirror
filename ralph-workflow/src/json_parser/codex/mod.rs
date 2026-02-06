@@ -42,7 +42,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use super::health::HealthMonitor;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use super::health::StreamingQualityMetrics;
 use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;

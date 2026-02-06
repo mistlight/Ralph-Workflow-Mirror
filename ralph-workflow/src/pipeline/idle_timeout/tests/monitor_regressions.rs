@@ -335,8 +335,11 @@ fn monitor_succeeds_with_sigterm_when_process_terminates() {
                 should_stop_clone,
                 executor_dyn,
                 Duration::from_millis(1),
+                // Give the test ample SIGTERM grace so the polling loop has time
+                // to observe the TERM send and flip the mock child to "exited"
+                // before escalation.
                 config(
-                    Duration::from_millis(50),
+                    Duration::from_millis(200),
                     Duration::from_millis(1),
                     Duration::from_millis(50),
                     Duration::from_secs(2),

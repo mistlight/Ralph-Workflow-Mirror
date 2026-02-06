@@ -293,11 +293,14 @@ impl ContinuationState {
     }
 
     /// Mark XSD validation as failed, triggering a retry.
+    ///
+    /// For XSD retry, we want to re-invoke the same agent in the same session when possible,
+    /// to keep retries deterministic and to preserve provider-side context.
     pub fn trigger_xsd_retry(&self) -> Self {
         Self {
             xsd_retry_pending: true,
             xsd_retry_count: self.xsd_retry_count + 1,
-            xsd_retry_session_reuse_pending: false,
+            xsd_retry_session_reuse_pending: true,
             ..self.clone()
         }
     }

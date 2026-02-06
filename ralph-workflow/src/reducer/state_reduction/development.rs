@@ -70,7 +70,7 @@ pub(super) fn reduce_development_event(
             development_prompt_prepared_iteration: Some(iteration),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
-                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_pending,
+                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_session_reuse_pending,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
                 ..state.continuation
