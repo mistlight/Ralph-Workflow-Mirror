@@ -708,6 +708,69 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                 use crate::reducer::event::ErrorEvent;
                 Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
             }
+            Effect::SaveCheckpoint { trigger } => {
+                // Actually save checkpoint to workspace for resume tests
+                use crate::checkpoint::{
+                    save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase,
+                };
+
+                // Map reducer phase to checkpoint phase
+                let checkpoint_phase = match self.state.phase {
+                    crate::reducer::event::PipelinePhase::Planning => PipelinePhase::Planning,
+                    crate::reducer::event::PipelinePhase::Development => PipelinePhase::Development,
+                    crate::reducer::event::PipelinePhase::Review => PipelinePhase::Review,
+                    crate::reducer::event::PipelinePhase::CommitMessage => {
+                        PipelinePhase::CommitMessage
+                    }
+                    crate::reducer::event::PipelinePhase::FinalValidation => {
+                        PipelinePhase::FinalValidation
+                    }
+                    crate::reducer::event::PipelinePhase::Finalizing => {
+                        PipelinePhase::FinalValidation
+                    }
+                    crate::reducer::event::PipelinePhase::Complete => PipelinePhase::Complete,
+                    crate::reducer::event::PipelinePhase::AwaitingDevFix => {
+                        PipelinePhase::AwaitingDevFix
+                    }
+                    crate::reducer::event::PipelinePhase::Interrupted => PipelinePhase::Interrupted,
+                };
+
+                // Build checkpoint using CheckpointBuilder
+                let builder = CheckpointBuilder::new()
+                    .phase(
+                        checkpoint_phase,
+                        self.state.iteration,
+                        self.state.total_iterations,
+                    )
+                    .reviewer_pass(self.state.reviewer_pass, self.state.total_reviewer_passes)
+                    .capture_from_context(
+                        ctx.config,
+                        ctx.registry,
+                        ctx.developer_agent,
+                        ctx.reviewer_agent,
+                        ctx.logger,
+                        &ctx.run_context,
+                    )
+                    .with_executor_from_context(std::sync::Arc::clone(&ctx.executor_arc))
+                    .with_execution_history(ctx.execution_history.clone())
+                    .with_prompt_history(ctx.clone_prompt_history())
+                    .with_prompt_inputs(self.state.prompt_inputs.clone());
+
+                if let Some(checkpoint) = builder.build_with_workspace(ctx.workspace) {
+                    if let Err(err) = save_checkpoint_with_workspace(ctx.workspace, &checkpoint) {
+                        ctx.logger
+                            .warn(&format!("Failed to save checkpoint in mock: {}", err));
+                    }
+                }
+
+                // Capture the effect for test verification
+                self.captured_effects
+                    .borrow_mut()
+                    .push(Effect::SaveCheckpoint { trigger });
+
+                // Return the mock result
+                Ok(self.execute_mock(Effect::SaveCheckpoint { trigger }))
+            }
             Effect::TriggerDevFixFlow {
                 failed_phase,
                 failed_role,

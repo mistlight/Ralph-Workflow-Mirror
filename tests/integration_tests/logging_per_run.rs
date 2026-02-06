@@ -504,6 +504,51 @@ fn test_resume_logging_continuity_impl() -> Result<()> {
         .expect("event_loop.log should exist after first run");
     let first_event_loop_log_lines: Vec<_> = first_event_loop_log.lines().collect();
 
+    // Manually create a checkpoint for the resume test
+    // (The mock pipeline completes too quickly to save a checkpoint through normal flow)
+    let run_id_str = first_run_dir
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .strip_prefix("logs-")
+        .unwrap();
+
+    // Create a minimal checkpoint JSON directly
+    let checkpoint_json = format!(
+        r#"{{
+        "version": 3,
+        "phase": "Complete",
+        "iteration": 1,
+        "total_iterations": 1,
+        "reviewer_pass": 0,
+        "total_reviewer_passes": 0,
+        "timestamp": "2026-02-06T16:00:00Z",
+        "developer_agent": "mock_dev",
+        "reviewer_agent": "mock_reviewer",
+        "cli_args": {{
+            "recovery_flags": {{}},
+            "rebase_flags": {{}},
+            "analysis_flags": {{}}
+        }},
+        "developer_agent_config": {{
+            "agent_identifier": "mock_dev"
+        }},
+        "reviewer_agent_config": {{
+            "agent_identifier": "mock_reviewer"
+        }},
+        "rebase_state": "NotStarted",
+        "working_dir": "/mock/repo",
+        "run_id": "{}",
+        "resume_count": 0,
+        "actual_developer_runs": 0,
+        "actual_reviewer_runs": 0
+    }}"#,
+        run_id_str
+    );
+
+    app_handler.add_file(".agent/checkpoint.json", &checkpoint_json);
+
     // Resume run (simulate --resume with the same handler)
     let _ = crate::common::run_ralph_cli_with_handlers(
         &["--resume"],

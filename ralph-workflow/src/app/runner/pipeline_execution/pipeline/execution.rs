@@ -83,8 +83,11 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         RunLogContext::new(&*workspace).context("Failed to create run log context")?
     };
 
-    // Use per-run pipeline.log path
-    logger = logger.with_log_file(run_log_context.pipeline_log().to_str().unwrap());
+    // Use per-run pipeline.log path via workspace (supports MemoryWorkspace in tests)
+    logger = logger.with_workspace_log(
+        std::sync::Arc::clone(&workspace),
+        run_log_context.pipeline_log().to_str().unwrap(),
+    );
 
     // Write run.json metadata
     let run_metadata = crate::logging::RunMetadata {
