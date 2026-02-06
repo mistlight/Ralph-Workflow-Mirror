@@ -400,6 +400,8 @@ impl ClaudeParser {
                 // Set message ID for tracking and clear session state on new message
                 session.set_current_message_id(effective_message_id);
                 session.on_message_start();
+                // Clear last rendered content for append-only pattern on new message
+                self.last_rendered_content.borrow_mut().clear();
                 in_place_finalize
             }
             StreamInnerEvent::ContentBlockStart {

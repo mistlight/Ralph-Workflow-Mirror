@@ -233,12 +233,13 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // In Full TTY mode, each delta re-renders the line in-place and therefore includes the prefix.
+    // With append-only pattern, only the first delta includes the prefix.
+    // Subsequent deltas emit only the new suffix without repeating the prefix.
     // Even though ContentBlockStart is repeated, it's for the same index so accumulation continues.
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 3,
-        "Should have 3 prefixes (one per delta) with repeated ContentBlockStart for same index. \
+        prefix_count, 1,
+        "Should have 1 prefix (first delta only with append-only pattern) with repeated ContentBlockStart for same index. \
         Got {prefix_count} prefixes. Output: {output:?}"
     );
 
@@ -291,12 +292,12 @@ fn test_multiple_messages_with_proper_separation() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // With the single-line pattern, each delta includes the prefix
-    // 2 messages x 2 deltas each = 4 prefixes in output string
+    // With append-only pattern, only the first delta of each message includes the prefix
+    // 2 messages x 1 prefix each = 2 prefixes in output string
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 4,
-        "Should have 4 prefixes (2 per message). Got {prefix_count}. Output: {output:?}"
+        prefix_count, 2,
+        "Should have 2 prefixes (1 per message with append-only pattern). Got {prefix_count}. Output: {output:?}"
     );
 
     // Should contain both messages

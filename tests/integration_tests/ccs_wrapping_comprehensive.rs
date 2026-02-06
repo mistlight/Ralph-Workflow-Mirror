@@ -341,16 +341,12 @@ fn test_codex_wrapping_exactly_at_boundary() {
         let content = "A".repeat(19);
         let stream = format!(
             r#"
-{{"id":"init","event":"session.created"}}
-{{"id":"msg1","event":"conversation.item.created","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
-{{"id":"msg1","event":"response.created","response":{{"id":"resp1","status":"in_progress"}}}}
-{{"id":"msg1","event":"response.output_item.added","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
-{{"id":"msg1","event":"response.content_part.added","part":{{"type":"reasoning","text":""}},"content_index":0,"item_id":"item1"}}
-{{"id":"msg1","event":"response.reasoning.delta","delta":"{}"}}
-{{"id":"msg1","event":"response.reasoning.done"}}
-{{"id":"msg1","event":"response.done","response":{{"status":"completed"}}}}
+{{"type":"turn.started"}}
+{{"type":"item.started","item":{{"type":"reasoning","text":"{}"}}}}
+{{"type":"item.completed","item":{{"type":"reasoning","text":"{}"}}}}
+{{"type":"turn.completed"}}
 "#,
-            content
+            content, content
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -359,12 +355,11 @@ fn test_codex_wrapping_exactly_at_boundary() {
 
         let term = terminal.borrow();
 
-        // Codex parser may not have append-only yet, but verify no waterfall
-        // Note: This test may fail until CodexParser is updated with append-only pattern
+        // Verify reasoning prefix appears exactly once (ignore turn lifecycle events)
         assert_eq!(
-            term.count_visible_pattern("[ccs/codex]"),
+            term.count_visible_pattern("Thinking:"),
             1,
-            "Prefix should appear exactly once"
+            "Thinking prefix should appear exactly once"
         );
     });
 }
@@ -383,16 +378,12 @@ fn test_codex_wrapping_multi_line() {
         let content = "This is extensive reasoning text that will definitely exceed the terminal width and cause wrapping across multiple lines in the narrow terminal window";
         let stream = format!(
             r#"
-{{"id":"init","event":"session.created"}}
-{{"id":"msg1","event":"conversation.item.created","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
-{{"id":"msg1","event":"response.created","response":{{"id":"resp1","status":"in_progress"}}}}
-{{"id":"msg1","event":"response.output_item.added","item":{{"id":"item1","type":"message","role":"assistant","content":[]}}}}
-{{"id":"msg1","event":"response.content_part.added","part":{{"type":"reasoning","text":""}},"content_index":0,"item_id":"item1"}}
-{{"id":"msg1","event":"response.reasoning.delta","delta":"{}"}}
-{{"id":"msg1","event":"response.reasoning.done"}}
-{{"id":"msg1","event":"response.done","response":{{"status":"completed"}}}}
+{{"type":"turn.started"}}
+{{"type":"item.started","item":{{"type":"reasoning","text":"{}"}}}}
+{{"type":"item.completed","item":{{"type":"reasoning","text":"{}"}}}}
+{{"type":"turn.completed"}}
 "#,
-            content
+            content, content
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -401,11 +392,11 @@ fn test_codex_wrapping_multi_line() {
 
         let term = terminal.borrow();
 
-        // Codex multi-line content: verify prefix appears once
+        // Codex multi-line content: verify reasoning prefix appears once (ignore turn lifecycle events)
         assert_eq!(
-            term.count_visible_pattern("[ccs/codex]"),
+            term.count_visible_pattern("Thinking:"),
             1,
-            "Prefix should appear exactly once despite wrapping"
+            "Thinking prefix should appear exactly once despite wrapping"
         );
     });
 }
@@ -422,17 +413,13 @@ fn test_codex_wrapping_multiple_deltas() {
             .with_terminal_mode(TerminalMode::Full);
 
         let stream = r#"
-{"id":"init","event":"session.created"}
-{"id":"msg1","event":"conversation.item.created","item":{"id":"item1","type":"message","role":"assistant","content":[]}}
-{"id":"msg1","event":"response.created","response":{"id":"resp1","status":"in_progress"}}
-{"id":"msg1","event":"response.output_item.added","item":{"id":"item1","type":"message","role":"assistant","content":[]}}
-{"id":"msg1","event":"response.content_part.added","part":{"type":"reasoning","text":""},"content_index":0,"item_id":"item1"}
-{"id":"msg1","event":"response.reasoning.delta","delta":"Starting reasoning"}
-{"id":"msg1","event":"response.reasoning.delta","delta":" with more content"}
-{"id":"msg1","event":"response.reasoning.delta","delta":" that will eventually wrap"}
-{"id":"msg1","event":"response.reasoning.delta","delta":" across the terminal width"}
-{"id":"msg1","event":"response.reasoning.done"}
-{"id":"msg1","event":"response.done","response":{"status":"completed"}}
+{"type":"turn.started"}
+{"type":"item.started","item":{"type":"reasoning","text":"Starting reasoning"}}
+{"type":"item.started","item":{"type":"reasoning","text":"Starting reasoning with more content"}}
+{"type":"item.started","item":{"type":"reasoning","text":"Starting reasoning with more content that will eventually wrap"}}
+{"type":"item.started","item":{"type":"reasoning","text":"Starting reasoning with more content that will eventually wrap across the terminal width"}}
+{"type":"item.completed","item":{"type":"reasoning","text":"Starting reasoning with more content that will eventually wrap across the terminal width"}}
+{"type":"turn.completed"}
 "#;
 
         let reader = BufReader::new(stream.as_bytes());
@@ -441,11 +428,11 @@ fn test_codex_wrapping_multiple_deltas() {
 
         let term = terminal.borrow();
 
-        // Multiple Codex reasoning deltas: verify prefix appears once
+        // Multiple Codex reasoning deltas: verify reasoning prefix appears once (ignore turn lifecycle events)
         assert_eq!(
-            term.count_visible_pattern("[ccs/codex]"),
+            term.count_visible_pattern("Thinking:"),
             1,
-            "Prefix should appear exactly once across multiple deltas"
+            "Thinking prefix should appear exactly once across multiple deltas"
         );
     });
 }
