@@ -19,9 +19,9 @@ impl OpenCodeParser {
                     (show_prefix, accumulated_text)
                 };
 
-                // Show delta in real-time (both verbose and normal mode)
-                let limit = self.verbosity.truncate_limit("text");
-                let preview = truncate_text(&accumulated_text, limit);
+                // Do NOT truncate during streaming: truncation breaks the append-only suffix
+                // contract once the preview stops being a prefix of prior output.
+                let preview = accumulated_text;
 
                 use crate::json_parser::terminal::TerminalMode;
                 let terminal_mode = *self.terminal_mode.borrow();
@@ -57,6 +57,20 @@ impl OpenCodeParser {
                     &last_rendered,
                     sanitized.as_str(),
                 );
+
+                // Detect discontinuities in OpenCode text deltas
+                if suffix.is_empty() && !last_rendered.is_empty() && !sanitized.is_empty() {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "Warning: Delta discontinuity detected in OpenCode text. \
+                         Provider sent non-monotonic content. \
+                         Last: {:?} (len={}), Current: {:?} (len={})",
+                        &last_rendered[..last_rendered.len().min(40)],
+                        last_rendered.len(),
+                        &sanitized[..sanitized.len().min(40)],
+                        sanitized.len()
+                    );
+                }
 
                 self.last_rendered_content
                     .borrow_mut()

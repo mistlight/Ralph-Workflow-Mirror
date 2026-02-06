@@ -91,10 +91,12 @@ fn test_legacy_pattern_fails_when_ansi_stripped() {
             .copied()
             .collect();
 
-        // This demonstrates the BUG: multiple prefix lines appear
+        // Under this helper's model, ANSI is stripped but `\r` still overwrites within a line.
+        // The legacy pattern relies on `\n` + cursor-up to rewrite; if cursor-up is ignored/stripped,
+        // the literal newlines remain and cause repeated visible prefix lines.
         assert!(
             prefix_lines.len() > 1,
-            "Legacy pattern creates multiple lines when ANSI stripped (expected bug): {:?}",
+            "Legacy pattern should create multiple lines when ANSI is stripped and cursor-up is ignored. Lines: {:?}",
             prefix_lines
         );
     });

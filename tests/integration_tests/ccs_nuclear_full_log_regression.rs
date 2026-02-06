@@ -32,9 +32,9 @@ fn test_ccs_codex_full_example_log_no_spam_none_mode() {
         // Use existing example_log.log (already referenced in codex_reasoning_spam_regression.rs)
         let log = include_str!("artifacts/example_log.log");
 
-        // Skip test if log is not in Codex format (this log is Claude format)
+        // NOTE: This fixture is Claude/CCS-focused and may not include Codex events.
+        // Codex regression coverage is validated by tests that provide Codex-specific streams.
         if !log.contains("item.started") {
-            // Skip silently when fixtures are in Claude format.
             return;
         }
 
@@ -169,9 +169,9 @@ fn test_ccs_codex_full_example_log_no_spam_basic_mode() {
 
         let log = include_str!("artifacts/example_log.log");
 
-        // Skip test if log is not in Codex format (this log is Claude format)
+        // NOTE: This fixture is Claude/CCS-focused and may not include Codex events.
+        // Codex regression coverage is validated by tests that provide Codex-specific streams.
         if !log.contains("item.started") {
-            // Skip silently when fixtures are in Claude format.
             return;
         }
 

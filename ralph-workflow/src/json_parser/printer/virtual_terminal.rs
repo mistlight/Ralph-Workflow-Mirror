@@ -419,26 +419,31 @@ impl VirtualTerminal {
         self.get_visible_output().matches(pattern).count()
     }
 
-    /// Get visible output with ANSI sequences stripped (simulates non-ANSI console).
+    /// Get visible output as if ANSI escape sequences were ignored/stripped.
     ///
-    /// This simulates what the user would see in a CI/log console that strips
-    /// or ignores ANSI escape sequences. Useful for testing that append-only
-    /// pattern works correctly when ANSI cursor movement is stripped.
+    /// This simulates what the user would see in a CI/log console that strips or ignores
+    /// ANSI escape sequences.
     ///
-    /// # Example
+    /// Model:
+    /// - ANSI escape sequences are removed
+    /// - Newlines (`\n`) are preserved
+    /// - Carriage returns (`\r`) are treated as moving to column 0 on the current line,
+    ///   overwriting subsequent text on that same line
     ///
-    /// ```ignore
-    /// let term = VirtualTerminal::new();
-    /// write!(term, "Hello\x1b[31mWorld\x1b[0m").unwrap();
-    /// assert_eq!(term.get_visible_output_ansi_stripped(), "HelloWorld");
-    /// ```
+    /// Rationale:
+    /// Many log consoles strip ANSI, but still interpret `\r` (e.g., progress bars).
+    /// If we ignore `\r`, tests can overestimate visible spam or miss overwrite-related bugs.
+    ///
+    /// NOTE: We intentionally do not attempt to model cursor up/down movement here.
     pub fn get_visible_output_ansi_stripped(&self) -> String {
-        // Process write history and strip ANSI sequences
-        let mut output = String::new();
-        for write in self.write_history.borrow().iter() {
-            output.push_str(&strip_ansi_sequences(write));
-        }
-        output
+        let stripped_writes: Vec<String> = self
+            .write_history
+            .borrow()
+            .iter()
+            .map(|write| strip_ansi_sequences(write))
+            .collect();
+
+        apply_cr_overwrite_semantics(&stripped_writes.join(""))
     }
 
     /// Count physical rows occupied by content (accounting for wrapping).
@@ -602,6 +607,42 @@ fn strip_ansi_sequences(s: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+fn apply_cr_overwrite_semantics(s: &str) -> String {
+    // Simulate a log console that does NOT interpret ANSI escape codes, but DOES treat
+    // carriage return as "return to start of current line" (common for progress output).
+    //
+    // Approach: process character-by-character, maintaining a current line buffer and
+    // cursor position. `\n` commits the line, `\r` sets cursor to 0.
+    let mut out = String::new();
+    let mut line: Vec<char> = Vec::new();
+    let mut col: usize = 0;
+
+    for ch in s.chars() {
+        match ch {
+            '\n' => {
+                out.extend(line.iter());
+                out.push('\n');
+                line.clear();
+                col = 0;
+            }
+            '\r' => {
+                col = 0;
+            }
+            _ => {
+                if col >= line.len() {
+                    line.resize(col + 1, ' ');
+                }
+                line[col] = ch;
+                col += 1;
+            }
+        }
+    }
+
+    out.extend(line.iter());
+    out
 }
 
 #[cfg(any(test, feature = "test-utils"))]

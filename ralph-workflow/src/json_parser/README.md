@@ -6,11 +6,11 @@ NDJSON (Newline-delimited JSON) is the streaming format used by agent CLIs to pr
 
 ## Streaming Contract
 
-The parsers enforce a strict **delta contract** for all streaming content to prevent duplication bugs.
+The parsers enforce a strict **append-only rendering contract** for streaming output to prevent duplication bugs, even when providers send snapshot-style streams.
 
 ### Core Principles
 
-1. **Delta Contract**: Each streaming event must contain only the newly generated text (delta), never the full accumulated content (snapshot).
+1. **Streaming Input Contract (Best Effort)**: Providers *should* stream only newly generated text (true deltas), but many real-world streams are snapshot-style (full accumulated content). The parsers + `StreamingSession` are designed to be robust to both.
 
 2. **Message Lifecycle**: `MessageStart` → (`ContentBlockStart` + deltas)* → `MessageStop`
 
@@ -151,7 +151,7 @@ This ensures clean visual output during streaming while preserving the original 
 
 ### Snapshot-as-Delta Auto-Repair
 
-Some agents (e.g., GLM/CCS) send snapshot-style content instead of true deltas. The streaming session automatically detects and repairs this:
+Some agents (e.g., GLM/CCS) send snapshot-style content instead of true deltas. The streaming session can detect and repair this:
 
 1. **Detection**: Incoming "delta" starts with or contains previously accumulated content
 2. **Extraction**: The truly new portion is extracted from the snapshot

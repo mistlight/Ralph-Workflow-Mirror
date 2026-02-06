@@ -153,6 +153,20 @@ impl GeminiParser {
                     sanitized.as_str(),
                 );
 
+                // Detect discontinuities in Gemini text deltas
+                if suffix.is_empty() && !last_rendered.is_empty() && !sanitized.is_empty() {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "Warning: Delta discontinuity detected in Gemini text. \
+                         Provider sent non-monotonic content. \
+                         Last: {:?} (len={}), Current: {:?} (len={})",
+                        &last_rendered[..last_rendered.len().min(40)],
+                        last_rendered.len(),
+                        &sanitized[..sanitized.len().min(40)],
+                        sanitized.len()
+                    );
+                }
+
                 self.last_rendered_content
                     .borrow_mut()
                     .insert(key.to_string(), sanitized.clone());
@@ -174,16 +188,54 @@ impl GeminiParser {
                 // Finalize the message (this marks it as displayed)
                 let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
 
+                let terminal_mode = *self.terminal_mode.borrow();
+
+                // In non-TTY modes, per-delta output is suppressed. Flush accumulated assistant text
+                // once at the completion boundary so piped/log output contains the assistant content.
+                let text_flush_non_tty = match terminal_mode {
+                    TerminalMode::Full => String::new(),
+                    TerminalMode::Basic | TerminalMode::None => {
+                        let session = self.streaming_session.borrow();
+                        let mut out = String::new();
+                        for key in session.accumulated_keys(ContentType::Text) {
+                            let accumulated =
+                                session.get_accumulated(ContentType::Text, &key).unwrap_or("");
+                            let sanitized = delta_display::sanitize_for_display(accumulated);
+                            if sanitized.is_empty() {
+                                continue;
+                            }
+
+                            match terminal_mode {
+                                TerminalMode::Basic => {
+                                    out.push_str(&format!(
+                                        "{}[{}]{} {}{}{}\n",
+                                        c.dim(),
+                                        prefix,
+                                        c.reset(),
+                                        c.white(),
+                                        sanitized,
+                                        c.reset()
+                                    ));
+                                }
+                                TerminalMode::None => {
+                                    out.push_str(&format!("[{}] {}\n", prefix, sanitized));
+                                }
+                                TerminalMode::Full => unreachable!(),
+                            }
+                        }
+                        out
+                    }
+                };
+
                 // If this is a duplicate or content was streamed, use TextDeltaRenderer for completion
                 if is_duplicate || was_streaming {
-                    let terminal_mode = *self.terminal_mode.borrow();
                     let completion = TextDeltaRenderer::render_completion(terminal_mode);
                     let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
                         && metrics.total_deltas > 0;
                     if show_metrics {
-                        return format!("{}\n{}", completion, metrics.format(*c));
+                        return format!("{}{}\n{}", text_flush_non_tty, completion, metrics.format(*c));
                     }
-                    return completion;
+                    return format!("{}{}", text_flush_non_tty, completion);
                 }
 
                 // Otherwise, show the full content (non-streaming path)

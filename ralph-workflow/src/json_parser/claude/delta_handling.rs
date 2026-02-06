@@ -203,6 +203,26 @@ impl ClaudeParser {
                             &sanitized_text,
                         );
 
+                        // Detect discontinuities: when both last_rendered and current are non-empty
+                        // but the suffix is empty, it indicates non-monotonic deltas from the provider
+                        if new_suffix.is_empty()
+                            && !last_rendered.is_empty()
+                            && !sanitized_text.is_empty()
+                        {
+                            // This is a protocol violation - content changed unexpectedly
+                            // Log it for debugging provider behavior (similar to snapshot-as-delta warnings)
+                            #[cfg(debug_assertions)]
+                            eprintln!(
+                                "Warning: Delta discontinuity detected for text block {index}. \
+                                 Provider sent non-monotonic content. \
+                                 Last: {:?} (len={}), Current: {:?} (len={})",
+                                &last_rendered[..last_rendered.len().min(40)],
+                                last_rendered.len(),
+                                &sanitized_text[..sanitized_text.len().min(40)],
+                                sanitized_text.len()
+                            );
+                        }
+
                         // Track new rendered content
                         self.last_rendered_content
                             .borrow_mut()
@@ -290,6 +310,23 @@ impl ClaudeParser {
                                 &last_rendered,
                                 &sanitized,
                             );
+
+                            // Detect discontinuities in thinking deltas
+                            if new_suffix.is_empty()
+                                && !last_rendered.is_empty()
+                                && !sanitized.is_empty()
+                            {
+                                #[cfg(debug_assertions)]
+                                eprintln!(
+                                    "Warning: Delta discontinuity detected for thinking block {index}. \
+                                     Provider sent non-monotonic content. \
+                                     Last: {:?} (len={}), Current: {:?} (len={})",
+                                    &last_rendered[..last_rendered.len().min(40)],
+                                    last_rendered.len(),
+                                    &sanitized[..sanitized.len().min(40)],
+                                    sanitized.len()
+                                );
+                            }
 
                             // Track new rendered content
                             self.last_rendered_content
@@ -448,6 +485,23 @@ impl ClaudeParser {
                     &last_rendered,
                     &sanitized_text,
                 );
+
+                // Detect discontinuities in tool use deltas
+                if new_suffix.is_empty()
+                    && !last_rendered.is_empty()
+                    && !sanitized_text.is_empty()
+                {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "Warning: Delta discontinuity detected for tool use text. \
+                         Provider sent non-monotonic content. \
+                         Last: {:?} (len={}), Current: {:?} (len={})",
+                        &last_rendered[..last_rendered.len().min(40)],
+                        last_rendered.len(),
+                        &sanitized_text[..sanitized_text.len().min(40)],
+                        sanitized_text.len()
+                    );
+                }
 
                 // Track new rendered content
                 self.last_rendered_content

@@ -400,9 +400,27 @@ mod tests {
     #[test]
     fn test_compute_append_only_suffix_snapshot_delta() {
         let last = "Hello World";
-        let current = "Goodbye";
+        let current = "Hello World!";
         let suffix = compute_append_only_suffix(last, current);
-        assert_eq!(suffix, "Goodbye");
+        assert_eq!(suffix, "!");
+    }
+
+    #[test]
+    fn test_compute_append_only_suffix_discontinuity_does_not_duplicate_full_snapshot() {
+        // If the provider sends a replacement (not pure append), the safe behavior is to
+        // avoid appending the entire "current" snapshot onto already-rendered content.
+        //
+        // Example:
+        // - rendered so far: "Hello World"
+        // - new snapshot:    "Hi"
+        // A naive "emit current" strategy would produce "Hello WorldHi" (corrupted).
+        //
+        // We conservatively emit nothing on discontinuities; the parser can choose to
+        // finalize the line and re-render in a new line if desired.
+        let last = "Hello World";
+        let current = "Hi";
+        let suffix = compute_append_only_suffix(last, current);
+        assert_eq!(suffix, "");
     }
 
     #[test]

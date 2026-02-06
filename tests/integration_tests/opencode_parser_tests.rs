@@ -81,6 +81,42 @@ fn test_opencode_parser_text_streaming() {
     });
 }
 
+/// Test that non-TTY modes flush accumulated text at completion boundary.
+///
+/// Regression guard: Basic/None modes suppress per-delta output, so the step_finish
+/// boundary must flush the accumulated text, otherwise logs/piped output show nothing.
+#[test]
+fn test_opencode_parser_none_mode_flushes_at_step_finish() {
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let printer: SharedPrinter = test_printer.clone();
+        let parser =
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::None);
+
+        let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"test","part":{"type":"step-start"}}
+{"type":"text","timestamp":1001,"sessionID":"test","part":{"type":"text","text":"Hello"}}
+{"type":"text","timestamp":1002,"sessionID":"test","part":{"type":"text","text":" World"}}
+{"type":"step_finish","timestamp":1003,"sessionID":"test","part":{"type":"step-finish","reason":"end-turn"}}"#;
+
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
+
+        let output = test_printer.borrow().get_output();
+        assert!(
+            output.contains("Hello World"),
+            "Expected accumulated text to be flushed at step_finish in None mode. Output:\n{output}"
+        );
+        // In None mode, verify we didn't emit per-delta prefix spam.
+        // This stream includes step start + one flushed text line + step finish.
+        assert!(
+            output.matches("[OpenCode]").count() <= 3,
+            "Expected no per-delta prefix spam in None mode. Output:\n{output}"
+        );
+    });
+}
+
 /// Test that tool use events with completed status produce formatted output.
 #[test]
 fn test_opencode_parser_tool_use_completed() {

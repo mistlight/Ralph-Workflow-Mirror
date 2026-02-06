@@ -1,6 +1,7 @@
 // Claude parser tests.
 
-#[cfg(test)]
+// These tests exercise monitoring/test-only APIs; they require the `test-utils` feature.
+#[cfg(all(test, feature = "test-utils"))]
 mod tests {
     use super::*;
     use crate::json_parser::printer::{SharedPrinter, TestPrinter};

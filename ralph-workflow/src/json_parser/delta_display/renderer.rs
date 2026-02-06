@@ -305,14 +305,48 @@ pub trait DeltaRenderer {
 /// Rules:
 /// - If `last_rendered` is empty, emit `current` (first delta).
 /// - If `current` starts with `last_rendered`, emit the new suffix only.
-/// - Otherwise, treat as a discontinuity/snapshot reset and emit `current`.
+/// - Otherwise, treat as a discontinuity/reset and emit an empty suffix.
+///
+/// ## Why discontinuities emit nothing
+///
+/// In an append-only renderer, emitting `current` on a discontinuity would append an entire
+/// replacement snapshot onto already-rendered output, producing duplicated/corrupted display.
+/// Callers that need to surface a reset must do so explicitly (e.g., finalize the current line
+/// and start a new one).
+///
+/// ## Discontinuity Detection
+///
+/// A discontinuity occurs when `current` does not start with `last_rendered` (i.e.,
+/// `current.strip_prefix(last_rendered)` returns `None`). This indicates:
+/// - Non-monotonic deltas from the provider (e.g., "Hello World" followed by "Hello Universe")
+/// - Protocol violations where content changes unexpectedly
+/// - Content resets that should be handled explicitly by the caller
+///
+/// When a discontinuity is detected, this function returns an empty string. Callers should
+/// detect this condition (when both `last_rendered` and `current` are non-empty but the
+/// result is empty) and emit appropriate warnings or metrics to track provider behavior.
 pub fn compute_append_only_suffix<'a>(last_rendered: &str, current: &'a str) -> &'a str {
     if last_rendered.is_empty() {
         return current;
     }
-    current
-        .strip_prefix(last_rendered)
-        .unwrap_or(current)
+
+    let suffix = current.strip_prefix(last_rendered).unwrap_or_default();
+
+    // Debug assertion to help detect unexpected discontinuities during development
+    #[cfg(debug_assertions)]
+    if suffix.is_empty() && !current.is_empty() && !last_rendered.is_empty() {
+        eprintln!(
+            "Debug: Delta discontinuity detected in compute_append_only_suffix. \
+             Last rendered: {:?} (len={}), Current: {:?} (len={}). \
+             This may indicate non-monotonic deltas from the provider.",
+            &last_rendered[..last_rendered.len().min(50)],
+            last_rendered.len(),
+            &current[..current.len().min(50)],
+            current.len()
+        );
+    }
+
+    suffix
 }
 
 pub struct TextDeltaRenderer;

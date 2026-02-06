@@ -93,6 +93,42 @@ fn test_gemini_parser_delta_streaming() {
     });
 }
 
+/// Test that non-TTY modes (Basic/None) still flush accumulated streaming content.
+///
+/// Regression guard: delta renderers suppress per-delta output in Basic/None. If the
+/// completion boundary does not flush the accumulated content, logs/piped output
+/// can show no assistant content at all.
+#[test]
+fn test_gemini_parser_none_mode_flushes_streamed_text_at_completion() {
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let printer: SharedPrinter = test_printer.clone();
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::None);
+
+        let input = r#"{"type":"init","session_id":"stream-test-none","model":"gemini-2.0"}
+{"type":"message","role":"assistant","content":"Hello","delta":true}
+{"type":"message","role":"assistant","content":" World","delta":true}
+{"type":"message","role":"assistant","content":"Hello World","delta":false}"#;
+
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
+
+        let output = test_printer.borrow().get_output();
+        assert!(
+            output.contains("Hello World"),
+            "Expected streamed content to be flushed in None mode. Output:\n{output}"
+        );
+        // In None mode we should not spam prefixes per delta.
+        // This stream includes a session-start line plus one flushed text line.
+        assert!(
+            output.matches("[Gemini]").count() <= 2,
+            "Expected no per-delta prefix spam in None mode. Output:\n{output}"
+        );
+    });
+}
+
 /// Test that tool use events produce formatted output.
 ///
 /// This verifies that when a tool use event is received, the system

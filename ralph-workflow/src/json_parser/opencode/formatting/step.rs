@@ -117,6 +117,42 @@ impl OpenCodeParser {
         // Finalize the message (this marks it as displayed)
         let _was_in_block = self.streaming_session.borrow_mut().on_message_stop();
 
+        // In non-TTY modes, per-delta output is suppressed. Flush accumulated assistant text
+        // once at the completion boundary so piped/log output contains the assistant content.
+        let terminal_mode = *self.terminal_mode.borrow();
+        let text_flush_non_tty = match terminal_mode {
+            TerminalMode::Full => String::new(),
+            TerminalMode::Basic | TerminalMode::None => {
+                let session = self.streaming_session.borrow();
+                let mut out = String::new();
+                for key in session.accumulated_keys(ContentType::Text) {
+                    let accumulated = session.get_accumulated(ContentType::Text, &key).unwrap_or("");
+                    let sanitized = crate::json_parser::delta_display::sanitize_for_display(accumulated);
+                    if sanitized.is_empty() {
+                        continue;
+                    }
+                    match terminal_mode {
+                        TerminalMode::Basic => {
+                            out.push_str(&format!(
+                                "{}[{}]{} {}{}{}\n",
+                                c.dim(),
+                                prefix,
+                                c.reset(),
+                                c.white(),
+                                sanitized,
+                                c.reset()
+                            ));
+                        }
+                        TerminalMode::None => {
+                            out.push_str(&format!("[{}] {}\n", prefix, sanitized));
+                        }
+                        TerminalMode::Full => unreachable!(),
+                    }
+                }
+                out
+            }
+        };
+
         event.part.as_ref().map_or_else(String::new, |part| {
             let reason = part.reason.as_deref().unwrap_or("unknown");
             let cost = part.cost.unwrap_or(0.0);
@@ -139,8 +175,11 @@ impl OpenCodeParser {
             let icon = if is_success { CHECK } else { CROSS };
             let color = if is_success { c.green() } else { c.yellow() };
 
-            // Add final newline if we were streaming text
-            let terminal_mode = *self.terminal_mode.borrow();
+            // Add completion marker if we were streaming text.
+            //
+            // In Full mode we only need the final newline; in Basic/None modes we already
+            // flushed the accumulated text above (newline-terminated), and the renderer's
+            // completion is a no-op.
             let newline_prefix = if is_duplicate || was_streaming {
                 let completion = TextDeltaRenderer::render_completion(terminal_mode);
                 let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
@@ -154,8 +193,12 @@ impl OpenCodeParser {
                 String::new()
             };
 
+            // Prepend the non-TTY text flush so logs include assistant content.
+            let flush_prefix = &text_flush_non_tty;
+
             let mut out = format!(
-                "{}{}[{}]{} {}{} Step finished{} {}({}",
+                "{}{}{}[{}]{} {}{} Step finished{} {}({}",
+                flush_prefix,
                 newline_prefix,
                 c.dim(),
                 prefix,

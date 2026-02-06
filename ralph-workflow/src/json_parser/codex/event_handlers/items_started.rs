@@ -113,6 +113,20 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
                     &sanitized,
                 );
 
+                // Detect discontinuities
+                if new_suffix.is_empty() && !last_rendered.is_empty() && !sanitized.is_empty() {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "Warning: Delta discontinuity detected in Codex text item. \
+                         Provider sent non-monotonic content. \
+                         Last: {:?} (len={}), Current: {:?} (len={})",
+                        &last_rendered[..last_rendered.len().min(40)],
+                        last_rendered.len(),
+                        &sanitized[..sanitized.len().min(40)],
+                        sanitized.len()
+                    );
+                }
+
                 ctx.last_rendered_content
                     .borrow_mut()
                     .insert(key, sanitized.clone());
@@ -237,6 +251,20 @@ pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>
                     &last_rendered,
                     &sanitized,
                 );
+
+                // Detect discontinuities in thinking deltas
+                if new_suffix.is_empty() && !last_rendered.is_empty() && !sanitized.is_empty() {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "Warning: Delta discontinuity detected in Codex thinking item. \
+                         Provider sent non-monotonic content. \
+                         Last: {:?} (len={}), Current: {:?} (len={})",
+                        &last_rendered[..last_rendered.len().min(40)],
+                        last_rendered.len(),
+                        &sanitized[..sanitized.len().min(40)],
+                        sanitized.len()
+                    );
+                }
 
                 ctx.last_rendered_content
                     .borrow_mut()
