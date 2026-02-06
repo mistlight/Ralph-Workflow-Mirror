@@ -110,6 +110,20 @@ cargo test --test '*' summary_consistency
 
 All tests must pass with NO OUTPUT (warnings or failures).
 
+**Additional verification for logging changes:**
+
+When changing per-run logging infrastructure, event loop logging, or log file paths, run the logging tests to ensure the logging system remains correct:
+
+```bash
+# Per-run logging infrastructure tests
+cargo test --test '*' logging_per_run
+
+# Event loop trace dump tests
+cargo test --test '*' event_loop_trace_dump
+```
+
+All tests must pass with NO OUTPUT (warnings or failures).
+
 ---
 
 ## Custom Lints (dylint)

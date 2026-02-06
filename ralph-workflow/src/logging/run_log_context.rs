@@ -6,9 +6,79 @@ use std::path::{Path, PathBuf};
 
 /// Context for managing per-run log directories and files.
 ///
-/// Owns the run_id and provides path resolution for all logs.
-/// All logs from a single pipeline invocation are grouped under
-/// `.agent/logs-<run_id>/` for easy sharing and diagnosis.
+/// This struct owns the run_id and provides path resolution for all logs
+/// from a single Ralph invocation. All logs are grouped under a per-run
+/// directory (`.agent/logs-<run_id>/`) for easy sharing and diagnosis.
+///
+/// ## Design Rationale
+///
+/// **Why per-run directories?**
+/// - **Shareability**: All logs from a run can be shared as a single tarball
+/// - **Resume continuity**: `--resume` continues logging to the same directory
+/// - **Isolation**: Multiple concurrent runs don't interfere with each other
+/// - **Organization**: Chronological sorting is natural (lexicographic sort)
+///
+/// **Why not scatter logs across `.agent/logs/`, `.agent/tmp/`, etc?**
+/// - Hard to identify which logs belong to which run
+/// - Difficult to share logs for debugging
+/// - Resume would create fragmented log artifacts
+/// - Log rotation and cleanup become complex
+///
+/// ## Integration with Checkpoint/Resume
+///
+/// The `run_id` is stored in the checkpoint (`.agent/checkpoint.json`) so that
+/// `--resume` can continue logging to the same directory. This ensures:
+/// - Logs from the original run and resumed run are in one place
+/// - Event loop sequence numbers continue from where they left off
+/// - Pipeline log is appended (not overwritten)
+///
+/// ## Architecture Compliance
+///
+/// This struct is created once per run in the **impure layer** (effect handlers)
+/// and passed to all effect handlers via `PhaseContext`. It must never be used
+/// in reducers or orchestrators (which are pure).
+///
+/// All filesystem operations go through the `Workspace` trait (never `std::fs`
+/// in pipeline code) to support both `WorkspaceFs` (production) and
+/// `MemoryWorkspace` (tests).
+///
+/// ## Future Extensibility
+///
+/// The per-run directory structure includes reserved subdirectories for future use:
+/// - `provider/`: Provider streaming logs (infrastructure exists, not yet used)
+/// - `debug/`: Future debug artifacts (e.g., memory dumps, profiling data)
+///
+/// ## Examples
+///
+/// ### Fresh run
+/// ```no_run
+/// use ralph_workflow::logging::RunLogContext;
+/// use ralph_workflow::workspace::WorkspaceFs;
+/// use std::path::PathBuf;
+///
+/// let workspace = WorkspaceFs::new(PathBuf::from("."));
+/// let ctx = RunLogContext::new(&workspace)?;
+///
+/// // Get log paths
+/// let pipeline_log = ctx.pipeline_log();  // .agent/logs-2026-02-06_14-03-27.123Z/pipeline.log
+/// let agent_log = ctx.agent_log("planning", 1, None);  // .agent/logs-.../agents/planning_1.log
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// ### Resume
+/// ```no_run
+/// use ralph_workflow::logging::RunLogContext;
+/// use ralph_workflow::workspace::WorkspaceFs;
+/// use std::path::PathBuf;
+///
+/// let workspace = WorkspaceFs::new(PathBuf::from("."));
+/// let run_id = "2026-02-06_14-03-27.123Z";  // From checkpoint
+/// let ctx = RunLogContext::from_checkpoint(run_id, &workspace)?;
+///
+/// // Logs will append to existing files in the same run directory
+/// let pipeline_log = ctx.pipeline_log();
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub struct RunLogContext {
     run_id: RunId,
     run_dir: PathBuf,
