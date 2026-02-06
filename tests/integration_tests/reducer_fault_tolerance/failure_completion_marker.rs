@@ -34,7 +34,7 @@ struct Fixture {
     colors: Colors,
     logger: Logger,
     timer: Timer,
-    
+
     template_context: TemplateContext,
     registry: AgentRegistry,
     executor: Arc<MockProcessExecutor>,
@@ -62,7 +62,7 @@ impl Fixture {
             colors,
             logger,
             timer: Timer::new(),
-            
+
             template_context: TemplateContext::default(),
             registry,
             executor,

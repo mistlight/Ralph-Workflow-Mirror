@@ -21,7 +21,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

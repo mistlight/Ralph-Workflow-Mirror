@@ -238,10 +238,10 @@ fn test_metrics_config_fields_preserved() {
 fn test_metrics_survive_checkpoint_resume() {
     with_default_timeout(|| {
         use ralph_workflow::reducer::state::RunMetrics;
-        
+
         // Given: Create PipelineState with metrics partially populated
         let mut state = PipelineState::initial(5, 3);
-        
+
         // Manually populate some metrics to simulate mid-run state
         state.metrics = RunMetrics {
             dev_iterations_started: 2,
@@ -275,13 +275,14 @@ fn test_metrics_survive_checkpoint_resume() {
             max_fix_continuation_count: state.metrics.max_fix_continuation_count,
             max_same_agent_retry_count: state.metrics.max_same_agent_retry_count,
         };
-        
+
         // When: Serialize to JSON (simulating checkpoint write)
         let json = serde_json::to_string(&state).expect("Failed to serialize state");
-        
+
         // When: Deserialize from JSON (simulating checkpoint resume)
-        let restored: PipelineState = serde_json::from_str(&json).expect("Failed to deserialize state");
-        
+        let restored: PipelineState =
+            serde_json::from_str(&json).expect("Failed to deserialize state");
+
         // Then: All metrics should match original values (no drift, no reset to 0)
         assert_eq!(restored.metrics.dev_iterations_started, 2);
         assert_eq!(restored.metrics.dev_iterations_completed, 1);
@@ -307,13 +308,31 @@ fn test_metrics_survive_checkpoint_resume() {
         assert_eq!(restored.metrics.model_fallbacks_total, 1);
         assert_eq!(restored.metrics.retry_cycles_started_total, 0);
         assert_eq!(restored.metrics.commits_created_total, 1);
-        
+
         // Verify config-derived display fields also survived
-        assert_eq!(restored.metrics.max_dev_iterations, state.metrics.max_dev_iterations);
-        assert_eq!(restored.metrics.max_review_passes, state.metrics.max_review_passes);
-        assert_eq!(restored.metrics.max_xsd_retry_count, state.metrics.max_xsd_retry_count);
-        assert_eq!(restored.metrics.max_dev_continuation_count, state.metrics.max_dev_continuation_count);
-        assert_eq!(restored.metrics.max_fix_continuation_count, state.metrics.max_fix_continuation_count);
-        assert_eq!(restored.metrics.max_same_agent_retry_count, state.metrics.max_same_agent_retry_count);
+        assert_eq!(
+            restored.metrics.max_dev_iterations,
+            state.metrics.max_dev_iterations
+        );
+        assert_eq!(
+            restored.metrics.max_review_passes,
+            state.metrics.max_review_passes
+        );
+        assert_eq!(
+            restored.metrics.max_xsd_retry_count,
+            state.metrics.max_xsd_retry_count
+        );
+        assert_eq!(
+            restored.metrics.max_dev_continuation_count,
+            state.metrics.max_dev_continuation_count
+        );
+        assert_eq!(
+            restored.metrics.max_fix_continuation_count,
+            state.metrics.max_fix_continuation_count
+        );
+        assert_eq!(
+            restored.metrics.max_same_agent_retry_count,
+            state.metrics.max_same_agent_retry_count
+        );
     });
 }

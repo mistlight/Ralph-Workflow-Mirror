@@ -21,7 +21,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

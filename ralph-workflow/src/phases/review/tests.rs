@@ -19,7 +19,7 @@ struct TestFixture {
     colors: Colors,
     logger: Logger,
     timer: Timer,
-    
+
     template_context: TemplateContext,
     executor_arc: Arc<dyn crate::executor::ProcessExecutor>,
     repo_root: PathBuf,
@@ -38,7 +38,7 @@ impl TestFixture {
             colors,
             logger: Logger::new(colors),
             timer: Timer::new(),
-            
+
             template_context: TemplateContext::default(),
             executor_arc,
             repo_root,
@@ -122,7 +122,7 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -173,7 +173,7 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

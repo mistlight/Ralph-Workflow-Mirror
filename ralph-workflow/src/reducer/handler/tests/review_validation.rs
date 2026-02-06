@@ -125,7 +125,6 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -194,7 +193,6 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -257,7 +255,6 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -323,7 +320,6 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -400,7 +396,6 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -476,7 +471,6 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -543,7 +537,6 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();

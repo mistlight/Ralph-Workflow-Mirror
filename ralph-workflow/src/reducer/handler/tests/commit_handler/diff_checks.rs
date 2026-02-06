@@ -23,7 +23,7 @@ fn test_check_commit_diff_emits_prepared_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -77,7 +77,7 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

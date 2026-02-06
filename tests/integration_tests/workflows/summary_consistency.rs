@@ -401,11 +401,11 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
 #[test]
 fn test_xsd_retry_attribution_across_phases() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::event::{PlanningEvent, CommitEvent, PipelinePhase};
-        
+        use ralph_workflow::reducer::event::{PipelinePhase, PlanningEvent};
+
         // Start with initial state
         let mut state = PipelineState::initial(1, 1);
-        
+
         // Simulate planning XSD retry (1 attempt)
         state.phase = PipelinePhase::Planning;
         let event = PipelineEvent::Planning(PlanningEvent::OutputValidationFailed {
@@ -413,11 +413,11 @@ fn test_xsd_retry_attribution_across_phases() {
             attempt: 0,
         });
         state = reduce(state, event);
-        
+
         // Verify planning XSD retry was tracked
         assert_eq!(state.metrics.xsd_retry_planning, 1);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
-        
+
         // Simulate development XSD retry (2 attempts)
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
@@ -426,17 +426,17 @@ fn test_xsd_retry_attribution_across_phases() {
             attempt: 0,
         });
         state = reduce(state, event);
-        
+
         let event = PipelineEvent::Development(DevelopmentEvent::OutputValidationFailed {
             iteration: 0,
             attempt: 1,
         });
         state = reduce(state, event);
-        
+
         // Verify development XSD retries were tracked
         assert_eq!(state.metrics.xsd_retry_development, 2);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 3);
-        
+
         // Simulate review XSD retry (1 attempt)
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;
@@ -446,11 +446,11 @@ fn test_xsd_retry_attribution_across_phases() {
             error_detail: None,
         });
         state = reduce(state, event);
-        
+
         // Verify review XSD retry was tracked
         assert_eq!(state.metrics.xsd_retry_review, 1);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 4);
-        
+
         // Simulate fix XSD retry (1 attempt)
         let event = PipelineEvent::Review(ReviewEvent::FixOutputValidationFailed {
             pass: 0,
@@ -458,11 +458,11 @@ fn test_xsd_retry_attribution_across_phases() {
             error_detail: None,
         });
         state = reduce(state, event);
-        
+
         // Verify fix XSD retry was tracked
         assert_eq!(state.metrics.xsd_retry_fix, 1);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 5);
-        
+
         // Final assertions: verify total and per-phase attribution
         assert_eq!(
             state.metrics.xsd_retry_attempts_total, 5,
@@ -488,7 +488,7 @@ fn test_xsd_retry_attribution_across_phases() {
             state.metrics.xsd_retry_commit, 0,
             "Commit XSD retries should be 0 (not tested in this scenario)"
         );
-        
+
         // Verify sum matches total
         let sum = state.metrics.xsd_retry_planning
             + state.metrics.xsd_retry_development

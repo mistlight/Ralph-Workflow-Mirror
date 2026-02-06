@@ -26,7 +26,7 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -88,7 +88,7 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -162,7 +162,7 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -235,7 +235,7 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -313,7 +313,7 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -424,7 +424,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -524,7 +524,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -614,7 +614,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

@@ -284,7 +284,7 @@ fn test_completion_marker_file_written_on_failure() {
         let colors = Colors::new();
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let template_context = TemplateContext::default();
         let executor = Arc::new(MockProcessExecutor::new());
 
@@ -470,7 +470,7 @@ fn test_budget_exhausted_continues_to_completion_via_event_loop() {
         let colors = Colors::new();
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let template_context = TemplateContext::default();
         let executor = Arc::new(MockProcessExecutor::new());
 

@@ -251,11 +251,11 @@ fn test_dev_continuation_metrics_match_state() {
         let continuation = ContinuationState::with_limits(99, 3, 2);
         let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
-        
+
         // Initial: no continuations yet
         assert_eq!(state.continuation.continuation_attempt, 0);
         assert_eq!(state.metrics.dev_continuation_attempt, 0);
-        
+
         // After first continuation
         state = reduce(
             state,
@@ -267,13 +267,12 @@ fn test_dev_continuation_metrics_match_state() {
                 next_steps: None,
             }),
         );
-        
+
         assert_eq!(
-            state.metrics.dev_continuation_attempt,
-            state.continuation.continuation_attempt,
+            state.metrics.dev_continuation_attempt, state.continuation.continuation_attempt,
             "Metrics should match continuation state after first continuation"
         );
-        
+
         // After second continuation
         state = reduce(
             state,
@@ -285,10 +284,9 @@ fn test_dev_continuation_metrics_match_state() {
                 next_steps: None,
             }),
         );
-        
+
         assert_eq!(
-            state.metrics.dev_continuation_attempt,
-            state.continuation.continuation_attempt,
+            state.metrics.dev_continuation_attempt, state.continuation.continuation_attempt,
             "Metrics should match continuation state after second continuation"
         );
     });
@@ -302,11 +300,11 @@ fn test_fix_continuation_metrics_match_state() {
         let mut state = PipelineState::initial_with_continuation(0, 1, continuation);
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
         state.reviewer_pass = 0;
-        
+
         // Initial: no fix continuations yet
         assert_eq!(state.continuation.fix_continuation_attempt, 0);
         assert_eq!(state.metrics.fix_continuation_attempt, 0);
-        
+
         // After first fix continuation
         state = reduce(
             state,
@@ -316,13 +314,12 @@ fn test_fix_continuation_metrics_match_state() {
                 summary: Some("partial fix".to_string()),
             }),
         );
-        
+
         assert_eq!(
-            state.metrics.fix_continuation_attempt,
-            state.continuation.fix_continuation_attempt,
+            state.metrics.fix_continuation_attempt, state.continuation.fix_continuation_attempt,
             "Metrics should match continuation state after first fix continuation"
         );
-        
+
         // After second fix continuation
         state = reduce(
             state,
@@ -332,10 +329,9 @@ fn test_fix_continuation_metrics_match_state() {
                 summary: Some("more partial fix".to_string()),
             }),
         );
-        
+
         assert_eq!(
-            state.metrics.fix_continuation_attempt,
-            state.continuation.fix_continuation_attempt,
+            state.metrics.fix_continuation_attempt, state.continuation.fix_continuation_attempt,
             "Metrics should match continuation state after second fix continuation"
         );
     });
@@ -348,7 +344,7 @@ fn test_continuation_exhaustion_matches_metrics() {
         let continuation = ContinuationState::with_limits(99, 3, 2);
         let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
-        
+
         // Exhaust continuations (3 attempts total: 0, 1, 2)
         for i in 1..=3 {
             state = reduce(
@@ -362,7 +358,7 @@ fn test_continuation_exhaustion_matches_metrics() {
                 }),
             );
         }
-        
+
         // At exhaustion: both state and metrics should agree
         assert!(
             state.continuation.continuations_exhausted(),

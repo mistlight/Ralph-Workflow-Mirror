@@ -242,7 +242,6 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -307,7 +306,6 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -361,7 +359,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -425,7 +422,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let mut config = Config::default();
     config.isolation_mode = false;
@@ -489,7 +485,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -546,7 +541,6 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let mut config = Config::default();
     config.isolation_mode = true;
@@ -610,7 +604,6 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -668,7 +661,6 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();

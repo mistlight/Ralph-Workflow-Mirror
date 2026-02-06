@@ -42,7 +42,6 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
     let mut timer = Timer::new();
-    
 
     let mut ctx = crate::phases::PhaseContext {
         config: &config,

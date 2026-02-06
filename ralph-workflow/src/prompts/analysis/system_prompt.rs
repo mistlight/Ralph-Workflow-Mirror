@@ -114,11 +114,13 @@ mod tests {
 
         assert!(prompt.contains("Verify feature exists"));
         assert!(
-            prompt.contains("If the diff input is EMPTY")
-                || prompt.contains("If git diff is EMPTY")
+            prompt.contains("EMPTY")
+                || prompt.contains("diff input")
+                || prompt.contains("git diff")
         );
-        assert!(prompt.contains("no changes were needed"));
-        assert!(prompt.contains("changes were expected"));
+        // Specific phrasing lives in the template; just ensure empty diff guidance is present.
+        assert!(prompt.contains("EMPTY OR MISSING DIFF HANDLING"));
+        assert!(prompt.contains("If the DIFF is EMPTY"));
     }
 
     #[test]

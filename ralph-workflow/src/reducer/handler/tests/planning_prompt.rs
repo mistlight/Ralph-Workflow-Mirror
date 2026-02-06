@@ -131,7 +131,6 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -201,7 +200,6 @@ fn test_prepare_planning_prompt_maps_workspace_write_failure_to_error_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -266,7 +264,6 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -345,7 +342,6 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -413,7 +409,6 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -462,7 +457,6 @@ fn test_prepare_planning_prompt_errors_when_prompt_missing() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -529,7 +523,6 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -578,7 +571,6 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -642,7 +634,6 @@ fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();

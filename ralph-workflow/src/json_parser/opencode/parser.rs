@@ -355,21 +355,21 @@ impl OpenCodeParser {
         }
 
         // OpenCode models may emit XML directly in text output (without using tools to write
-        // `.agent/tmp/*.xml`). Capture `<ralph-commit>...</ralph-commit>` from the accumulated
-        // text stream and write it to the standard commit artifact path so the commit phase can
-        // validate it via file-based extraction.
+        // `.agent/tmp/*.xml`). Capture known XML artifacts from the accumulated text stream and
+        // write them to standard artifact paths so phase extractors can validate them via
+        // file-based extraction.
         //
         // SECURITY: Bound the amount of accumulated text we scan and the size of the extracted
         // XML we write. This prevents pathological model output from causing unbounded memory/IO.
-        const MAX_COMMIT_XML_SEARCH_BYTES: usize = 512 * 1024;
-        const MAX_COMMIT_XML_BYTES: usize = 128 * 1024;
+        const MAX_XML_SEARCH_BYTES: usize = 512 * 1024;
+        const MAX_XML_BYTES: usize = 128 * 1024;
         if let Some(accumulated) = self
             .streaming_session
             .borrow()
             .get_accumulated(ContentType::Text, "main")
         {
-            let accumulated_tail = if accumulated.len() > MAX_COMMIT_XML_SEARCH_BYTES {
-                let mut start = accumulated.len() - MAX_COMMIT_XML_SEARCH_BYTES;
+            let accumulated_tail = if accumulated.len() > MAX_XML_SEARCH_BYTES {
+                let mut start = accumulated.len() - MAX_XML_SEARCH_BYTES;
                 while start < accumulated.len() && !accumulated.is_char_boundary(start) {
                     start += 1;
                 }
@@ -381,10 +381,22 @@ impl OpenCodeParser {
             if let Some(xml) = crate::files::llm_output_extraction::xml_extraction::extract_xml_commit(
                 accumulated_tail,
             ) {
-                if xml.len() <= MAX_COMMIT_XML_BYTES {
+                if xml.len() <= MAX_XML_BYTES {
                     workspace.create_dir_all(Path::new(".agent/tmp"))?;
                     workspace.write(
                         Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::COMMIT_MESSAGE_XML),
+                        &xml,
+                    )?;
+                }
+            }
+
+            if let Some(xml) = crate::files::llm_output_extraction::extract_issues_xml(
+                accumulated_tail,
+            ) {
+                if xml.len() <= MAX_XML_BYTES {
+                    workspace.create_dir_all(Path::new(".agent/tmp"))?;
+                    workspace.write(
+                        Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::ISSUES_XML),
                         &xml,
                     )?;
                 }

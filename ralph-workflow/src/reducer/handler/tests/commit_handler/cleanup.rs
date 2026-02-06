@@ -26,7 +26,7 @@ fn test_cleanup_commit_xml_removes_stale_commit_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

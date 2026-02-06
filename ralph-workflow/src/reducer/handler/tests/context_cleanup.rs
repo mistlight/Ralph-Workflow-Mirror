@@ -248,7 +248,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -309,7 +309,7 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

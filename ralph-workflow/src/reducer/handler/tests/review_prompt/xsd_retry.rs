@@ -33,7 +33,6 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -106,7 +105,6 @@ fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -177,7 +175,6 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -237,7 +234,6 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -296,7 +292,6 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -365,7 +360,6 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -426,7 +420,6 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -490,7 +483,6 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -547,7 +539,6 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();

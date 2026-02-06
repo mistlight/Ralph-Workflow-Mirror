@@ -5,11 +5,18 @@ use crate::agents::JsonParserType;
 /// This creates a minimal valid NDJSON output that the streaming parser can
 /// successfully parse without hanging. The output format depends on the parser
 /// type being used.
-pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> String {
-    let commit_message = r#"<ralph-commit>
+pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, command: &str) -> String {
+    let primary_text = if command.contains("claude") {
+        // The claude parser uses assistant text blocks directly.
+        // Include a recognizable analysis-task header so tests can assert the analysis prompt
+        // was materialized (rather than a stale continuation prompt).
+        "ANALYSIS TASK\nYou are an independent, objective code analysis agent."
+    } else {
+        r#"<ralph-commit>
  <ralph-subject>test: commit message</ralph-subject>
  <ralph-body>Test commit message for integration tests.</ralph-body>
- </ralph-commit>"#;
+ </ralph-commit>"#
+    };
 
     fn line(value: serde_json::Value) -> String {
         let json = serde_json::to_string(&value).expect("mock JSON must serialize");
@@ -28,7 +35,7 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, _command: 
                 "type": "assistant",
                 "message": {
                     "content": [
-                        {"type": "text", "text": commit_message}
+                        {"type": "text", "text": primary_text}
                     ]
                 }
             })));
@@ -50,7 +57,7 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, _command: 
             })));
             out.push_str(&line(serde_json::json!({
                 "type": "item.completed",
-                "item": {"type": "agent_message", "text": commit_message}
+                "item": {"type": "agent_message", "text": primary_text}
             })));
             out.push_str(&line(serde_json::json!({
                 "type": "turn.completed",
@@ -69,7 +76,7 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, _command: 
             out.push_str(&line(serde_json::json!({
                 "type": "message",
                 "role": "assistant",
-                "content": commit_message,
+                "content": primary_text,
                 "timestamp": "2025-10-10T12:00:01.000Z"
             })));
             out
@@ -98,7 +105,7 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, _command: 
                     "sessionID": session_id,
                     "messageID": "msg_1",
                     "type": "text",
-                    "text": commit_message
+                    "text": primary_text
                 }
             })));
             out.push_str(&line(serde_json::json!({
@@ -115,6 +122,6 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, _command: 
             })));
             out
         }
-        JsonParserType::Generic => format!("{}\n", commit_message),
+        JsonParserType::Generic => format!("{}\n", primary_text),
     }
 }

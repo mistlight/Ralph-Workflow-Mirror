@@ -263,7 +263,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 
     let registry = AgentRegistry::new()?;
     let mut timer = Timer::new();
-    
+
     let workspace = crate::workspace::WorkspaceFs::new(repo_root.to_path_buf());
 
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");

@@ -19,7 +19,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -70,7 +70,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -121,7 +121,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -172,7 +172,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
@@ -225,7 +225,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();

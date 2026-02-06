@@ -188,7 +188,7 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
         let colors = Colors::new();
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());

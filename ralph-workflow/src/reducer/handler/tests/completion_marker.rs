@@ -268,7 +268,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
         &logger,
         &colors,
         &template_context,
-        &mut timer,mut timer,
+        &mut timer,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -315,7 +315,7 @@ fn emit_completion_marker_emits_event_on_write_failure() {
         &logger,
         &colors,
         &template_context,
-        &mut timer,mut timer,
+        &mut timer,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -364,7 +364,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
         &logger,
         &colors,
         &template_context,
-        &mut timer,mut timer,
+        &mut timer,
     );
     ctx.developer_agent = "missing-agent";
 

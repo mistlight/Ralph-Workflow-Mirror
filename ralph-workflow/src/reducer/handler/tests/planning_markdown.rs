@@ -22,7 +22,6 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -82,7 +81,6 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();

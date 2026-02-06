@@ -23,7 +23,6 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
@@ -73,8 +72,8 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
     assert!(
-        prompt.contains("ANALYSIS TASK"),
-        "expected analysis task header in prompt, got: {prompt}"
+        prompt.contains("Your task is to determine whether the ACTUAL CHANGES satisfy the PLAN"),
+        "expected analysis prompt header in prompt, got: {prompt}"
     );
     // Validate that the DIFF section contains either a placeholder or an actual diff.
     assert!(
@@ -95,7 +94,6 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
 
     let config = Config::default();
     let registry = AgentRegistry::new().unwrap();
