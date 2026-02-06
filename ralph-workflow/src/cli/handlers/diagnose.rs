@@ -356,14 +356,22 @@ fn print_project_stack(colors: Colors, workspace: &dyn Workspace) {
 /// Print recent log entries section.
 fn print_recent_logs(colors: Colors, workspace: &dyn Workspace) {
     // Try to find logs from current run (per-run logging)
+    // First try to get log_run_id from checkpoint, then try lexicographic sort
     let log_path = if let Ok(Some(checkpoint)) =
         crate::checkpoint::load_checkpoint_with_workspace(workspace)
     {
-        // Use run_id from checkpoint to find per-run logs
-        PathBuf::from(format!(".agent/logs-{}/pipeline.log", checkpoint.run_id))
+        // Use log_run_id from checkpoint to find per-run logs
+        if let Some(log_run_id) = checkpoint.log_run_id {
+            PathBuf::from(format!(".agent/logs-{}/pipeline.log", log_run_id))
+        } else {
+            // Older checkpoint without log_run_id, try to find latest run directory
+            find_latest_run_log_directory(workspace)
+                .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
+        }
     } else {
-        // Fall back to legacy path if no checkpoint exists
-        PathBuf::from(".agent/logs/pipeline.log")
+        // No checkpoint exists, try to find latest run directory
+        find_latest_run_log_directory(workspace)
+            .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
     };
 
     if workspace.exists(&log_path) {
@@ -382,4 +390,42 @@ fn print_recent_logs(colors: Colors, workspace: &dyn Workspace) {
     } else {
         println!("{}No log file found{}", colors.yellow(), colors.reset());
     }
+}
+
+/// Find the latest run log directory by lexicographic sort.
+///
+/// Returns None if no run directories are found.
+fn find_latest_run_log_directory(workspace: &dyn Workspace) -> Option<PathBuf> {
+    // Read .agent directory to find logs-* directories
+    let agent_dir = Path::new(".agent");
+    if !workspace.is_dir(agent_dir) {
+        return None;
+    }
+
+    let entries = workspace.read_dir(agent_dir).ok()?;
+
+    // Find all logs-* directories and sort them
+    let mut log_dirs: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.starts_with("logs-") && entry.is_dir())
+                .unwrap_or(false)
+        })
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+
+    log_dirs.sort();
+
+    // Return the pipeline.log path for the latest directory
+    log_dirs
+        .last()
+        .map(|dir_name| PathBuf::from(format!(".agent/{}/pipeline.log", dir_name)))
 }

@@ -64,15 +64,22 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     // If resuming, continue with the same run_id from checkpoint; otherwise create new
     use crate::logging::RunLogContext;
     let run_log_context = if args.recovery.resume {
-        // Try to load checkpoint to get run_id for resume continuity
+        // Try to load checkpoint to get log_run_id for resume continuity
         use crate::checkpoint::load_checkpoint_with_workspace;
         let checkpoint = load_checkpoint_with_workspace(&*workspace)
             .context("Failed to load checkpoint for resume")?;
 
         if let Some(checkpoint) = checkpoint {
-            // Resume: continue logging to the same run directory
-            RunLogContext::from_checkpoint(&checkpoint.run_id, &*workspace)
-                .context("Failed to restore run log context from checkpoint")?
+            // Resume: continue logging to the same run directory using log_run_id
+            if let Some(log_run_id) = checkpoint.log_run_id {
+                RunLogContext::from_checkpoint(&log_run_id, &*workspace)
+                    .context("Failed to restore run log context from checkpoint")?
+            } else {
+                // Older checkpoint without log_run_id field, generate new one
+                logger
+                    .warn("Checkpoint missing log_run_id field, generating new run log directory");
+                RunLogContext::new(&*workspace).context("Failed to create run log context")?
+            }
         } else {
             // No checkpoint found, but --resume was requested
             // This is handled later by resume validation, but we need a run context now
@@ -86,7 +93,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     // Use per-run pipeline.log path via workspace (supports MemoryWorkspace in tests)
     logger = logger.with_workspace_log(
         std::sync::Arc::clone(&workspace),
-        run_log_context.pipeline_log().to_str().unwrap(),
+        &run_log_context.pipeline_log().to_string_lossy(),
     );
 
     // Write run.json metadata
@@ -504,7 +511,8 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
         let builder = builder
             .with_execution_history(execution_history_before)
-            .with_prompt_history(prompt_history_before);
+            .with_prompt_history(prompt_history_before)
+            .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
         if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);

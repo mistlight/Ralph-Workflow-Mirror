@@ -111,6 +111,7 @@ pub fn run_commit_attempt(
     };
 
     // Write log file header with agent metadata
+    // Use append_bytes to avoid overwriting if file exists (defense-in-depth)
     let log_header = format!(
         "# Ralph Agent Invocation Log\n\
          # Role: Commit\n\
@@ -125,7 +126,7 @@ pub fn run_commit_attempt(
     );
     if let Err(e) = ctx
         .workspace
-        .write(std::path::Path::new(&logfile), &log_header)
+        .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
     {
         ctx.logger
             .warn(&format!("Failed to write agent log header: {}", e));

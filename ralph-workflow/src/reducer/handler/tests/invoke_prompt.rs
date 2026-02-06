@@ -123,7 +123,7 @@ impl crate::workspace::Workspace for ReadFailingWorkspace {
 #[test]
 fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -134,6 +134,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -186,6 +187,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -245,6 +247,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
     ));
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -320,6 +323,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -375,7 +379,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 #[test]
 fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuation_prompt() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -389,6 +393,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -465,7 +470,7 @@ RETRY PROMPT MARKER"
 #[test]
 fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_prompt() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -479,6 +484,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -552,6 +558,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -626,6 +633,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -704,6 +712,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -786,6 +795,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -844,7 +854,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
 #[test]
 fn test_invoke_development_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -855,6 +865,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -891,7 +902,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
 #[test]
 fn test_invoke_review_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -902,6 +913,7 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -954,6 +966,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -999,7 +1012,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 #[test]
 fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -1010,6 +1023,7 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1062,6 +1076,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1107,7 +1122,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
 #[test]
 fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -1118,6 +1133,7 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1180,6 +1196,7 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1238,7 +1255,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
     // It must surface a typed ErrorEvent so the reducer can decide interruption policy.
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_prompt.txt", "commit prompt content");
-    let run_log_context = RunLogContext::new(&workspace).unwrap();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -1249,6 +1266,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1329,6 +1347,7 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1406,6 +1425,7 @@ fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {

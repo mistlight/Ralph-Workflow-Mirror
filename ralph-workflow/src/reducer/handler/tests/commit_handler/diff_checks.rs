@@ -32,6 +32,7 @@ fn test_check_commit_diff_emits_prepared_event() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -49,6 +50,7 @@ fn test_check_commit_diff_emits_prepared_event() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -87,6 +89,7 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -104,6 +107,7 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

@@ -158,6 +158,7 @@ mod tests {
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: PathBuf,
         workspace: MemoryWorkspace,
+        run_log_context: crate::logging::RunLogContext,
     }
 
     impl TestFixture {
@@ -168,6 +169,7 @@ mod tests {
             let repo_root = PathBuf::from("/test/repo");
             // Use MemoryWorkspace for testing - no real filesystem access
             let workspace = MemoryWorkspace::new(repo_root.clone());
+            let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
             Self {
                 config: Config::default(),
                 colors,
@@ -177,6 +179,7 @@ mod tests {
                 executor_arc,
                 repo_root,
                 workspace,
+                run_log_context,
             }
         }
     }
@@ -213,6 +216,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            run_log_context: &fixture.run_log_context,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -254,6 +258,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            run_log_context: &fixture.run_log_context,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -287,6 +292,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            run_log_context: &fixture.run_log_context,
         };
 
         let result = get_primary_commit_agent(&ctx);

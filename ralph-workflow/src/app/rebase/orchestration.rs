@@ -399,7 +399,8 @@ fn save_post_rebase_checkpoint(phase_ctx: &PhaseContext<'_>, run_context: &RunCo
         )
         .with_executor_from_context(std::sync::Arc::clone(&phase_ctx.executor_arc))
         .with_execution_history(phase_ctx.execution_history.clone())
-        .with_prompt_history(phase_ctx.clone_prompt_history());
+        .with_prompt_history(phase_ctx.clone_prompt_history())
+        .with_log_run_id(phase_ctx.run_log_context.run_id().to_string());
 
     if let Some(checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
         let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
@@ -426,6 +427,7 @@ fn create_checkpoint_builder(
         .with_executor_from_context(std::sync::Arc::clone(&phase_ctx.executor_arc))
         .with_execution_history(phase_ctx.execution_history.clone())
         .with_prompt_history(phase_ctx.clone_prompt_history())
+        .with_log_run_id(phase_ctx.run_log_context.run_id().to_string())
 }
 
 fn read_repo_head_or_unknown(workspace: &dyn Workspace) -> String {

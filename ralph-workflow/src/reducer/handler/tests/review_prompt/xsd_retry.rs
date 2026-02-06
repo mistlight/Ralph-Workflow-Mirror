@@ -41,6 +41,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -58,6 +59,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -113,6 +115,7 @@ fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -130,6 +133,7 @@ fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -189,6 +193,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
         "Last output was {{MISSING}}".to_string(),
     );
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -206,6 +211,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -242,6 +248,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -259,6 +266,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -306,6 +314,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         "retry prompt {{UNRESOLVED}}".to_string(),
     );
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -323,6 +332,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -368,6 +378,7 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -385,6 +396,7 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -434,6 +446,7 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
         "retry prompt {{UNRESOLVED}}".to_string(),
     );
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -451,6 +464,7 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -491,6 +505,7 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -508,6 +523,7 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -550,6 +566,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
     let mut prompt_history = HashMap::new();
     prompt_history.insert("fix_0".to_string(), "REPLAYED PROMPT".to_string());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -567,6 +584,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

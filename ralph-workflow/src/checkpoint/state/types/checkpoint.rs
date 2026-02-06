@@ -64,6 +64,11 @@ pub struct PipelineCheckpoint {
     pub parent_run_id: Option<String>,
     /// Number of times this session has been resumed
     pub resume_count: u32,
+    /// Logging run_id (timestamp-based) for per-run log directory
+    /// Format: YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]
+    /// This is separate from run_id which is a UUID v4
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_run_id: Option<String>,
 
     // === Actual execution state (v2+) ===
     /// Actual number of developer iterations that completed
@@ -136,6 +141,7 @@ impl PipelineCheckpoint {
             prompt_history: None,
             env_snapshot: None,
             prompt_inputs: None,
+            log_run_id: None,
         }
     }
 

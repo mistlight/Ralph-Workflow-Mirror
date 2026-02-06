@@ -36,6 +36,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         .as_nanos();
     let repo_root = std::env::temp_dir().join(format!("ralph-nonexistent-repo-{unique}"));
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -53,6 +54,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

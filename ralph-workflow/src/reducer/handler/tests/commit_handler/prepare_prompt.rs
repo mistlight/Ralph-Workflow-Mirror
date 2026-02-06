@@ -35,6 +35,7 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -52,6 +53,7 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -105,6 +107,7 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -122,6 +125,7 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -179,6 +183,7 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -196,6 +201,7 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -252,6 +258,7 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -269,6 +276,7 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -330,6 +338,7 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -347,6 +356,7 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -441,6 +451,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -458,6 +469,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -541,6 +553,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -558,6 +571,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -631,6 +645,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -648,6 +663,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

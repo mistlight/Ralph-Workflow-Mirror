@@ -43,6 +43,7 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
     let repo_root = PathBuf::from("/mock/repo");
     let mut timer = Timer::new();
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -60,6 +61,7 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let result = handler

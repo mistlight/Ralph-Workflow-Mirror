@@ -56,6 +56,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
     let mut prompt_history = HashMap::new();
     prompt_history.insert("development_0".to_string(), "{{MISSING}}".to_string());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -73,6 +74,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -125,6 +127,7 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
         "{{UNRESOLVED}}".to_string(),
     );
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -142,6 +145,7 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -208,6 +212,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -225,6 +230,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -261,6 +267,7 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -278,6 +285,7 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -315,6 +323,7 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -332,6 +341,7 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -383,6 +393,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -400,6 +411,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -460,6 +472,7 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -477,6 +490,7 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -515,6 +529,7 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -532,6 +547,7 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -572,6 +588,7 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -589,6 +606,7 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -631,6 +649,7 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -648,6 +667,7 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -688,6 +708,7 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -705,6 +726,7 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

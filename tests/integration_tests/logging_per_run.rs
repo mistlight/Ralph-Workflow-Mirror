@@ -236,8 +236,7 @@ fn test_collision_handling_impl() -> Result<()> {
     let workspace = MemoryWorkspace::new(tempdir.path().to_path_buf());
 
     // Create a run log context manually to get a base run_id
-    let ctx1 = RunLogContext::new(&workspace)?;
-    let base_run_id = ctx1.run_id().to_string();
+    let _ctx1 = RunLogContext::new(&workspace)?;
 
     // Manually create a directory with a collision suffix to test collision handling
     // Since RunLogContext::new() will detect the existing directory and add a suffix,

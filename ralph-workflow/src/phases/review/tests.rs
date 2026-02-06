@@ -24,6 +24,7 @@ struct TestFixture {
     executor_arc: Arc<dyn crate::executor::ProcessExecutor>,
     repo_root: PathBuf,
     workspace: MemoryWorkspace,
+    run_log_context: crate::logging::RunLogContext,
 }
 
 impl TestFixture {
@@ -32,6 +33,7 @@ impl TestFixture {
         let executor_arc =
             Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
         let repo_root = PathBuf::from("/test/repo");
+        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         Self {
             config: Config::default(),
             registry: AgentRegistry::new().unwrap(),
@@ -43,6 +45,7 @@ impl TestFixture {
             executor_arc,
             repo_root,
             workspace,
+            run_log_context,
         }
     }
 
@@ -64,6 +67,7 @@ impl TestFixture {
             executor_arc: self.executor_arc.clone(),
             repo_root: self.repo_root.as_path(),
             workspace: &self.workspace,
+            run_log_context: &self.run_log_context,
         }
     }
 }
@@ -133,6 +137,7 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = super::super::context::PhaseContext {
         config: &config,
         registry: &registry,
@@ -150,6 +155,7 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
         executor_arc: executor_arc.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let _ =
@@ -184,6 +190,7 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = super::super::context::PhaseContext {
         config: &config,
         registry: &registry,
@@ -201,6 +208,7 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
         executor_arc: executor_arc.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let resume_ctx: Option<&crate::checkpoint::restore::ResumeContext> = None;

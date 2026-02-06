@@ -147,6 +147,7 @@ fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -164,6 +165,7 @@ fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -196,6 +198,7 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -213,6 +216,7 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -264,6 +268,7 @@ fn test_prepare_review_prompt_workspace_write_failure_is_non_fatal() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -281,6 +286,7 @@ fn test_prepare_review_prompt_workspace_write_failure_is_non_fatal() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -325,6 +331,7 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -342,6 +349,7 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -405,6 +413,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_error
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -422,6 +431,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_error
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -495,6 +505,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_baseline_read_err
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -512,6 +523,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_baseline_read_err
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -581,6 +593,7 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -598,6 +611,7 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -647,6 +661,7 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -664,6 +679,7 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -713,6 +729,7 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -730,6 +747,7 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -791,6 +809,7 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -808,6 +827,7 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -847,6 +867,7 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
     let mut prompt_history = HashMap::new();
     prompt_history.insert("review_0".to_string(), "{{UNRESOLVED}}".to_string());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -864,6 +885,7 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -912,6 +934,7 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -929,6 +952,7 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -986,6 +1010,7 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -1003,6 +1028,7 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

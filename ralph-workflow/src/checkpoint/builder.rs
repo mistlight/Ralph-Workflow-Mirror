@@ -55,6 +55,8 @@ pub struct CheckpointBuilder {
     prompt_inputs: Option<PromptInputsState>,
     // Process executor for external process execution
     executor: Option<Arc<dyn ProcessExecutor>>,
+    // Logging run_id (timestamp-based) for per-run log directory
+    log_run_id: Option<String>,
 }
 
 impl Default for CheckpointBuilder {
@@ -86,6 +88,7 @@ impl CheckpointBuilder {
             prompt_history: None,
             prompt_inputs: None,
             executor: None,
+            log_run_id: None,
         }
     }
 
@@ -291,6 +294,15 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Set the logging run_id (timestamp-based) for per-run log directory.
+    ///
+    /// This should be set from the RunLogContext.run_id() to ensure resume
+    /// continuity - when resuming, logs will continue in the same directory.
+    pub fn with_log_run_id(mut self, log_run_id: String) -> Self {
+        self.log_run_id = Some(log_run_id);
+        self
+    }
+
     /// Build the checkpoint without workspace.
     ///
     /// Returns None if required fields (phase, agent configs) are missing.
@@ -387,6 +399,9 @@ impl CheckpointBuilder {
 
         // Populate reducer prompt input materialization state
         checkpoint.prompt_inputs = self.prompt_inputs;
+
+        // Populate logging run_id
+        checkpoint.log_run_id = self.log_run_id;
 
         // Capture and populate file system state
         // Use workspace-based capture when workspace is available (pipeline code),

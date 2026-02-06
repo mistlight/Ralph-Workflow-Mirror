@@ -96,10 +96,16 @@ impl RunLogContext {
     /// - `.agent/logs-<run_id>/provider/` for provider streaming logs
     /// - `.agent/logs-<run_id>/debug/` for future debug artifacts
     pub fn new(workspace: &dyn Workspace) -> Result<Self> {
-        let mut run_id = RunId::new();
-        let mut counter = 1u32;
+        let base_run_id = RunId::new();
 
-        loop {
+        // Try base run_id first, then collision variants 1-99
+        for counter in 0..=99 {
+            let run_id = if counter == 0 {
+                base_run_id.clone()
+            } else {
+                base_run_id.with_collision_counter(counter)
+            };
+
             let run_dir = PathBuf::from(format!(".agent/logs-{}", run_id));
 
             if !workspace.exists(&run_dir) {
@@ -122,14 +128,10 @@ impl RunLogContext {
 
                 return Ok(Self { run_id, run_dir });
             }
-
-            // Collision detected, try next counter
-            if counter > 99 {
-                anyhow::bail!("Too many collisions creating run log directory");
-            }
-            run_id = run_id.with_collision_counter(counter);
-            counter += 1;
         }
+
+        // If we exhausted all collision counters, bail
+        anyhow::bail!("Too many collisions creating run log directory (tried base + 99 variants)")
     }
 
     /// Create a RunLogContext from an existing checkpoint (for resume).
@@ -302,7 +304,6 @@ pub struct ConfigSummary {
 mod tests {
     use super::*;
     use crate::workspace::WorkspaceFs;
-    use std::path::PathBuf;
 
     #[test]
     fn test_run_log_context_creation() {

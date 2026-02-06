@@ -30,6 +30,7 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -47,6 +48,7 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -89,6 +91,7 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -106,6 +109,7 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

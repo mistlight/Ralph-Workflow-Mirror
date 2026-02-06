@@ -42,7 +42,10 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         }
 
         fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
-            if relative == ctx.run_log_context.event_loop_trace()
+            // Check if this is an event_loop_trace.jsonl file in any run log directory
+            if relative
+                .to_string_lossy()
+                .contains("event_loop_trace.jsonl")
                 && !self.tmp_created.load(Ordering::Acquire)
             {
                 return Err(io::Error::new(
@@ -121,12 +124,13 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let strict_workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+    let run_log_context = crate::logging::RunLogContext::new(&strict_workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -145,6 +149,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &strict_workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut trace = EventTraceBuffer::new(1);
@@ -159,7 +164,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     assert!(
         strict_workspace
             .inner
-            .exists(ctx.run_log_context.event_loop_trace()),
+            .exists(&ctx.run_log_context.event_loop_trace()),
         "expected trace file to be created"
     );
 }
@@ -238,7 +243,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -281,7 +286,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     );
 
     assert!(
-        workspace.exists(ctx.run_log_context.event_loop_trace()),
+        workspace.exists(&ctx.run_log_context.event_loop_trace()),
         "expected trace file to be dumped on unrecoverable handler error"
     );
     assert!(
@@ -327,7 +332,7 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
@@ -420,7 +425,7 @@ fn test_event_loop_applies_additional_events_in_order() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
