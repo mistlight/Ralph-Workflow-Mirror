@@ -417,27 +417,23 @@ impl MainEffectHandler {
                     .map(|err| is_agent_unavailable_error(&err.to_string()))
                     .unwrap_or(false);
 
-                let dev_fix_success = agent_result
-                    .as_ref()
-                    .map(|result| {
-                        result.additional_events.iter().any(|event| {
-                            matches!(
-                                event,
-                                PipelineEvent::Agent(
-                                    crate::reducer::event::AgentEvent::InvocationSucceeded { .. }
-                                )
-                            )
-                        })
-                    })
-                    .unwrap_or(false);
+                // Dev-fix success cannot be determined at invocation time - it requires
+                // extraction and validation of fix_result.xml. The InvocationSucceeded event
+                // only indicates the agent started successfully, not that the fix completed.
+                // Therefore, we always set success=false here and rely on the reducer to
+                // emit DevFixCompleted with proper success status after validation.
+                let dev_fix_success = false;
 
-                let dev_fix_summary = agent_result
-                    .as_ref()
-                    .err()
-                    .map(|err| format!("Dev-fix agent invocation failed: {}", err));
-
-                // Extract error reason before consuming agent_result
+                // Extract error reason for logging and summary
                 let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
+
+                let dev_fix_summary = if let Some(ref err) = error_reason {
+                    Some(format!("Dev-fix agent invocation failed: {}", err))
+                } else {
+                    // Agent invoked successfully, but success cannot be determined until
+                    // fix_result.xml is extracted and validated
+                    Some("Dev-fix agent invoked; validation pending".to_string())
+                };
 
                 let mut result = match agent_result.as_ref() {
                     Ok(result) => EffectResult::with_ui(

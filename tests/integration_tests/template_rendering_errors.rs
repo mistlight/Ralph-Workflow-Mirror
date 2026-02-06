@@ -3,10 +3,11 @@
 //! Verifies that prompt template rendering failures do not terminate the pipeline.
 //! The pipeline should use fallback prompts and continue advancing through effects.
 
+use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::determine_next_effect;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase, PlanningEvent};
-use ralph_workflow::reducer::state::PipelineState;
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 
 use crate::test_timeout::with_default_timeout;
@@ -18,7 +19,16 @@ use crate::test_timeout::with_default_timeout;
 #[test]
 fn test_pipeline_advances_after_prompt_preparation() {
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["test-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            context_cleaned: true,
+            planning_xml_cleaned_iteration: Some(0),
+            ..PipelineState::initial(1, 0)
+        };
         state.phase = PipelinePhase::Planning;
         state.iteration = 0;
 
@@ -64,7 +74,17 @@ fn test_development_advances_after_prompt_preparation() {
     with_default_timeout(|| {
         use ralph_workflow::reducer::event::DevelopmentEvent;
 
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["test-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            context_cleaned: true,
+            development_context_prepared_iteration: Some(0),
+            development_xml_cleaned_iteration: Some(0),
+            ..PipelineState::initial(1, 0)
+        };
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
 
@@ -91,7 +111,17 @@ fn test_review_advances_after_prompt_preparation() {
     with_default_timeout(|| {
         use ralph_workflow::reducer::event::ReviewEvent;
 
-        let mut state = PipelineState::initial(0, 1);
+        let mut state = PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["test-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            ),
+            context_cleaned: true,
+            review_context_prepared_pass: Some(0),
+            review_issues_xml_cleaned_pass: Some(0),
+            ..PipelineState::initial(0, 1)
+        };
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;
 
