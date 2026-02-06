@@ -16,6 +16,8 @@ If instructions conflict with other files (e.g., `CONTRIBUTING.md`), follow the 
 
 See **[CODE_STYLE.md](CODE_STYLE.md)** for design principles and testing philosophy.
 
+If you change **pipeline behavior** (phases, retries/fallback, effect sequencing, checkpoint/resume, or any reducer/event/effect shape), the reducer/effect architecture is **mandatory reading**: `CODE_STYLE.md` (Architecture section), `docs/architecture/event-loop-and-reducers.md`, `docs/architecture/effect-system.md`.
+
 ---
 
 ## File Creation Rules

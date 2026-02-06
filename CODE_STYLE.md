@@ -13,6 +13,11 @@
 
 Ralph uses an **event-sourced reducer architecture**. See [effect-system.md](docs/architecture/effect-system.md).
 
+If you change **pipeline behavior** (phases, retries/fallback, effect sequencing, checkpoint/resume, or any reducer/event/effect shape), treat the reducer/effect architecture as **mandatory reading**:
+
+- `docs/architecture/event-loop-and-reducers.md`
+- `docs/architecture/effect-system.md`
+
 ```
 State → Orchestrator → Effect → Handler → Event → Reducer → State
 ```
@@ -25,6 +30,13 @@ State → Orchestrator → Effect → Handler → Event → Reducer → State
 | `EffectHandler` | No | Executes effects, produces events |
 
 **Business logic → reducers/orchestration (pure). I/O → handlers (impure).**
+
+### Reducers, Effects, and Events (Non-Negotiable)
+
+- **Events are facts:** effect handlers emit descriptive, past-tense outcome events ("what happened"), not control/decision events ("what to do next").
+- **Reducers decide policy:** retry/fallback, phase transitions, counters/limits, and pipeline sequencing live in reducers/orchestration (pure) and must be state-driven.
+- **Handlers execute, not decide:** handlers perform I/O and translate outcomes into events; they must not contain hidden retries/fallback loops or mutate pipeline state directly.
+- **UI events are not correctness:** `UIEvent` is display-only; pipeline correctness must not depend on UI output.
 
 ### Two Effect Layers
 
