@@ -17,7 +17,7 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::rc::Rc;
 
 #[test]
@@ -145,6 +145,54 @@ fn test_wrapping_no_waterfall_codex() {
             visible_output.contains("even more"),
             "Final delta content should be visible. Screen:\n{}",
             visible_output
+        );
+    });
+}
+
+#[test]
+fn test_cursor_up_pattern_fails_with_wrapping() {
+    with_default_timeout(|| {
+        // This test demonstrates the ROOT CAUSE: cursor-up pattern cannot erase wrapped content.
+        // When content wraps to N rows, "\x1b[1A\x1b[2K" (cursor up 1, clear line) only clears
+        // the last row, leaving N-1 rows visible (orphaned wrapped content).
+
+        // Create narrow terminal (40 cols) to force wrapping
+        let mut term = VirtualTerminal::new_with_geometry(40, 24);
+
+        // Write content that wraps to 3 rows
+        // Prefix "[ccs/glm] " = 10 chars
+        // Content = 100 A's will wrap: row1=30 chars, row2=40 chars, row3=30 chars + newline
+        let prefix = "[ccs/glm] ";
+        let content = "A".repeat(100);
+        write!(term, "{}{}\n\x1b[1A", prefix, content).unwrap();
+
+        // Verify content wrapped to multiple rows
+        assert!(
+            term.count_visible_lines() > 1,
+            "Content should wrap to multiple rows"
+        );
+        let rows_before = term.count_physical_rows();
+        assert!(
+            rows_before > 1,
+            "Content should occupy multiple physical rows before clear attempt"
+        );
+
+        // Try to clear with cursor-up-1 + clear-line (legacy pattern)
+        write!(term, "\x1b[1A\x1b[2K").unwrap();
+
+        // Assert: orphaned content still visible
+        let rows_after = term.count_physical_rows();
+        assert!(
+            rows_after > 0,
+            "Cursor-up pattern leaves orphaned wrapped rows (cleared {} rows but {} remain)",
+            rows_before - rows_after,
+            rows_after
+        );
+
+        // Assert: VirtualTerminal can detect this failure mode
+        assert!(
+            term.would_cursor_up_leave_orphans(&format!("{}{}", prefix, content)),
+            "VirtualTerminal should detect cursor-up would leave orphans"
         );
     });
 }

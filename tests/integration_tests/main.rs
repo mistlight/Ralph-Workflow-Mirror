@@ -28,6 +28,7 @@
 
 mod agent_spawn_errors;
 mod ccs_all_delta_types_spam_reproduction;
+mod ccs_ansi_stripping_console;
 mod ccs_ansi_stripping_waterfall;
 mod ccs_basic_mode_nuclear_test;
 mod ccs_comprehensive_spam_verification;

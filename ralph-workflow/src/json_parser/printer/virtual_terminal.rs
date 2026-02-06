@@ -487,6 +487,68 @@ impl VirtualTerminal {
             false // Unbounded terminal, no wrapping
         }
     }
+
+    /// Get a debug summary of the terminal state for diagnostics.
+    ///
+    /// Returns a formatted string showing:
+    /// - Terminal geometry (cols x rows)
+    /// - Cursor position
+    /// - Number of visible lines
+    /// - Number of physical rows occupied
+    /// - Raw write history summary
+    ///
+    /// Useful for diagnosing streaming issues in tests.
+    pub fn debug_summary(&self) -> String {
+        let (row, col) = self.cursor_position();
+        let geometry = match (self.cols, self.rows) {
+            (Some(c), Some(r)) => format!("{}x{}", c, r),
+            _ => "unbounded".to_string(),
+        };
+
+        format!(
+            "VirtualTerminal Debug:\n\
+             - Geometry: {}\n\
+             - Cursor: ({}, {})\n\
+             - Visible lines: {}\n\
+             - Physical rows: {}\n\
+             - Write history entries: {}\n",
+            geometry,
+            row,
+            col,
+            self.count_visible_lines(),
+            self.count_physical_rows(),
+            self.write_history.borrow().len()
+        )
+    }
+
+    /// Detect if current screen state shows waterfall pattern.
+    ///
+    /// Waterfall pattern: multiple consecutive lines with same prefix.
+    /// This is a symptom of broken cursor-up or carriage-return patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The prefix to check for repetition (e.g., "[ccs/glm]")
+    ///
+    /// # Returns
+    ///
+    /// True if the prefix appears on multiple consecutive lines, indicating
+    /// a waterfall bug where each delta created a new visible line instead
+    /// of updating in-place.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let term = VirtualTerminal::new();
+    /// // ... stream content that should update in-place ...
+    /// assert!(!term.has_waterfall_pattern("[ccs/glm]"),
+    ///     "Should not have waterfall pattern with append-only streaming");
+    /// ```
+    pub fn has_waterfall_pattern(&self, prefix: &str) -> bool {
+        let lines = self.get_visible_lines();
+        let prefix_lines: Vec<_> = lines.iter().filter(|l| l.contains(prefix)).collect();
+        prefix_lines.len() > 1
+    }
 }
 
 /// Strip ANSI escape sequences from a string.
@@ -501,6 +563,7 @@ impl VirtualTerminal {
 /// # Returns
 ///
 /// The string with ANSI sequences removed
+#[cfg(any(test, feature = "test-utils"))]
 fn strip_ansi_sequences(s: &str) -> String {
     // Simple regex-free implementation: skip \x1b[...m and \x1b[...A/B/K sequences
     let mut result = String::new();

@@ -114,25 +114,43 @@ fn test_codex_reasoning_in_place_updates_in_full_mode() {
 
         let output = test_printer.borrow().get_output();
 
-        // In Full mode, we should see:
-        // 1. First delta: "[ccs/codex] Thinking: First chunk\n\x1b[1A" (newline + cursor up)
-        // 2. Subsequent deltas: "\x1b[2K\r[ccs/codex] Thinking: First chunk second\n\x1b[1A"
-        // 3. Completion: "\x1b[1B\n" (cursor down + newline)
+        // NEW: Append-only pattern in Full mode
+        // 1. First delta: "[ccs/codex] Thinking: First chunk" (NO newline, stays on line)
+        // 2. Subsequent deltas: " second" (just the suffix, no prefix, no cursor movement)
+        // 3. Subsequent deltas: " third"
+        // 4. Completion: "\n" (single newline to finalize line)
+        //
+        // This pattern works correctly under wrapping and when ANSI is stripped.
 
-        // Verify cursor sequences are present (in-place update pattern)
+        // Verify append-only pattern: prefix appears exactly once (no waterfall)
+        let thinking_count = output.matches("Thinking:").count();
+        assert_eq!(
+            thinking_count, 1,
+            "Expected 'Thinking:' to appear exactly once in Full mode (append-only pattern). Found {} times. Output:\n{}",
+            thinking_count, output
+        );
+
+        // Verify full content is present
         assert!(
-            output.contains("\x1b[1A"), // cursor up (from in-place updates)
-            "Expected cursor up sequences for in-place updates in Full mode. Output:\n{}",
+            output.contains("First chunk"),
+            "Expected content 'First chunk' to be present. Output:\n{}",
             output
         );
         assert!(
-            output.contains("\x1b[2K"), // clear line (from subsequent deltas)
-            "Expected line clear sequences for in-place updates in Full mode. Output:\n{}",
+            output.contains("second"),
+            "Expected content 'second' to be present. Output:\n{}",
             output
         );
         assert!(
-            output.contains("\x1b[1B"), // cursor down (from completion)
-            "Expected cursor down sequence at completion in Full mode. Output:\n{}",
+            output.contains("third"),
+            "Expected content 'third' to be present. Output:\n{}",
+            output
+        );
+
+        // Verify NO cursor-up sequences (append-only doesn't use cursor movement during streaming)
+        assert!(
+            !output.contains("\x1b[1A"),
+            "Append-only pattern should NOT use cursor-up sequences during streaming. Output:\n{}",
             output
         );
     });
