@@ -43,6 +43,10 @@ Ralph runs a multi-phase workflow:
 
 All orchestration files (PLAN.md, ISSUES.md) are controlled by Ralph, not the AI agents. This ensures deterministic, reliable operation.
 
+## Architecture
+
+The canonical (developer-facing) architecture docs live in `../docs/architecture/README.md`.
+
 ## Design Philosophy
 
 Ralph makes **deterministic decisions whenever possible**, only calling on AI when needed:
@@ -239,6 +243,7 @@ Full documentation is available on [Codeberg](https://codeberg.org/mistlight/Ral
 - **[Agent Compatibility](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/agent-compatibility.md)** - Supported AI agents and configuration
 - **[Git Workflow](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/git-workflow.md)** - How Ralph handles commits and diffs
 - **[Template Guide](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/template-guide.md)** - PROMPT.md Work Guides and agent prompt customization
+- **[Architecture](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/architecture/README.md)** - Reducer/event-loop architecture and codebase tour
 
 **Note:** When viewing on crates.io, these links point to the source repository on Codeberg.
 

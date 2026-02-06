@@ -4,6 +4,8 @@ This document describes the *end-to-end* behavior of Ralph's pipeline: how it mo
 
 If you are looking for the generic reducer/event-loop mechanics, see `event-loop-and-reducers.md`.
 If you are looking for effect-handler layering and filesystem rules, see `effect-system.md`.
+If you are looking for checkpoint/resume persistence details, see `checkpoint-and-resume.md`.
+If you are looking for git baseline/rebase behavior, see `git-and-rebase.md`.
 
 ## The Big Picture: Nested Loops
 
@@ -143,6 +145,8 @@ Ralph is designed to route terminal failures through a non-early-exit path:
 `AwaitingDevFix` -> `TriggerDevFixFlow` (writes completion marker, optional dev-fix agent) -> `Interrupted` -> `SaveCheckpoint`
 
 Terminal semantics for the event loop are implemented by `PipelineState::is_complete()` (see `ralph-workflow/src/reducer/state/pipeline.rs`).
+
+Checkpoint persistence for interrupted runs is implemented in the CLI/app layer and written to `.agent/checkpoint.json` (see `checkpoint-and-resume.md`).
 
 ## Where To Look in Code
 

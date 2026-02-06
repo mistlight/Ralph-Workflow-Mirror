@@ -4,6 +4,7 @@ This document describes Ralph's pipeline event loop and reducer architecture: ho
 
 If you are looking for the end-to-end lifecycle (Planning -> Development -> result verification -> Commit -> Review/Fix loops), see `pipeline-lifecycle.md`.
 If you are looking specifically for effect-handler layering and filesystem rules (`AppEffect` vs pipeline `Effect`, `Workspace` requirements, `std::fs` exceptions), see `effect-system.md`.
+If you are looking for a codebase-level module map and entrypoints, see `codebase-tour.md`.
 
 ## Core Contract
 
@@ -162,6 +163,13 @@ The exact file layout can evolve, but conceptually Ralph keeps these concerns se
 - Reduction (state + event -> next state): `ralph-workflow/src/reducer/state_reduction/`
 - Effects (intent enum) and handler trait: `ralph-workflow/src/reducer/effect*`
 - Effect handler implementations (I/O): `ralph-workflow/src/reducer/handler/`
+
+## See Also
+
+- `README.md` (topic index)
+- `agents-and-prompts.md` (agent registry, prompt generation, provider selection)
+- `checkpoint-and-resume.md` (checkpoint semantics and resume flow)
+- `git-and-rebase.md` (libgit2 operations and baseline diff tracking)
 
 ## Best Practices: Events vs Decisions
 

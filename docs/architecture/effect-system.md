@@ -1,6 +1,8 @@
 # Effect System Architecture
 
-This document defines the effect system layers used in Ralph for managing side effects and filesystem access rules. This architecture is **non-negotiable** and must be followed by all code changes.
+This document defines the effect system layers used in Ralph for managing side effects and filesystem access rules.
+
+Scope note: this doc is about *where side effects live* and *what filesystem APIs are allowed*. For the reducer/event-loop contract, see `event-loop-and-reducers.md`.
 
 For the end-to-end pipeline lifecycle (Plan -> Development -> Verify -> Commit -> Review/Fix loops), see `pipeline-lifecycle.md`.
 For the broader pipeline event loop and reducer best practices (events as facts, decisions in pure reducers, migration from decision-shaped actions), see `event-loop-and-reducers.md`.
@@ -495,7 +497,7 @@ The pipeline layer uses a **reducer pattern** to manage complex state transition
 1. **Orchestrator** examines current state, returns next effect to execute
 2. **Handler** executes the effect, returns an event describing the outcome
 3. **Reducer** computes new state from current state + event
-4. Loop continues until orchestrator returns "complete"
+4. Loop continues until the state reaches a terminal condition (`PipelineState::is_complete()`).
 
 ### Why This Pattern?
 
@@ -672,6 +674,6 @@ Production code already uses `_with_workspace` variants:
 | When is TempDir acceptable? | **Only** for tests crossing both layers |
 | When to use Effect/Event vs direct workspace? | Phase boundaries = Effect/Event, within-phase = direct |
 | What does the reducer do? | Pure state transitions: `(State, Event) → State` |
-| What does the orchestrator do? | Decides next effect: `State → Option<Effect>` |
-| What does the handler do? | Executes effects: `(Effect, Context) → Event` |
+| What does the orchestrator do? | Decides next effect: `State → Effect` (completion is encoded in terminal state) |
+| What does the handler do? | Executes effects: `(Effect, Context) → EffectResult` (primary reducer event + optional additional/ui events) |
 | Why separate these? | Testability - test logic without I/O |
