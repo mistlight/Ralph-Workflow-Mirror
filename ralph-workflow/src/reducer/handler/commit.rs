@@ -232,16 +232,14 @@ impl MainEffectHandler {
                     }
                 })?;
             }
-            // Write prompt file (non-fatal: if write fails, log warning and continue)
-            if let Err(err) = ctx
-                .workspace
+
+            // Write prompt file (fatal: prompt file is required for agent invocation)
+            ctx.workspace
                 .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
-            {
-                ctx.logger.warn(&format!(
-                    "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                    err
-                ));
-            }
+                .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                    path: ".agent/tmp/commit_prompt.txt".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
 
             return Ok(
                 EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -443,16 +441,13 @@ impl MainEffectHandler {
             })?;
         }
 
-        // Write prompt file (non-fatal: if write fails, log warning and continue)
-        if let Err(err) = ctx
-            .workspace
+        // Write prompt file (fatal: prompt file is required for agent invocation)
+        ctx.workspace
             .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
-        {
-            ctx.logger.warn(&format!(
-                "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
-            ));
-        }
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/commit_prompt.txt".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         Ok(
             EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(

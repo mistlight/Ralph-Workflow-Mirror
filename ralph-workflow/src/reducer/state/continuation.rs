@@ -521,4 +521,45 @@ impl ContinuationState {
             ..self.clone()
         }
     }
+
+    // =========================================================================
+    // Loop detection methods
+    // =========================================================================
+
+    /// Update loop detection counters based on the current effect fingerprint.
+    ///
+    /// This method updates `last_effect_kind` and `consecutive_same_effect_count`
+    /// based on whether the current effect fingerprint matches the previous one.
+    ///
+    /// # Returns
+    ///
+    /// A new `ContinuationState` with updated loop detection counters.
+    ///
+    /// # Behavior
+    ///
+    /// - If `current_fingerprint` equals `last_effect_kind`: increment `consecutive_same_effect_count`
+    /// - Otherwise: reset `consecutive_same_effect_count` to 1 and update `last_effect_kind`
+    pub fn update_loop_detection_counters(&self, current_fingerprint: String) -> Self {
+        if self.last_effect_kind.as_deref() == Some(&current_fingerprint) {
+            // Same effect as last time - increment counter
+            Self {
+                consecutive_same_effect_count: self.consecutive_same_effect_count + 1,
+                ..self.clone()
+            }
+        } else {
+            // Different effect - reset counter and update fingerprint
+            Self {
+                last_effect_kind: Some(current_fingerprint),
+                consecutive_same_effect_count: 1,
+                ..self.clone()
+            }
+        }
+    }
+
+    /// Check if loop detection threshold has been exceeded.
+    ///
+    /// Returns `true` if `consecutive_same_effect_count` >= `max_consecutive_same_effect`.
+    pub fn is_loop_detected(&self) -> bool {
+        self.consecutive_same_effect_count >= self.max_consecutive_same_effect
+    }
 }

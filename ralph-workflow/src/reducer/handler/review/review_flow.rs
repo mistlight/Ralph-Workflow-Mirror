@@ -652,16 +652,16 @@ impl MainEffectHandler {
             ctx.capture_prompt(&prompt_key, &review_prompt_xml);
         }
 
-        // Write prompt file (non-fatal: if write fails, log warning and continue)
-        if let Err(err) = ctx.workspace.write(
+        // Write prompt file (fatal: prompt file is required for agent invocation)
+        ctx.workspace.write(
             Path::new(".agent/tmp/review_prompt.txt"),
             &review_prompt_xml,
-        ) {
-            ctx.logger.warn(&format!(
-                "Failed to write review prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
-            ));
-        }
+        ).map_err(|err| {
+            ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/review_prompt.txt".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            }
+        })?;
 
         let mut result = EffectResult::event(PipelineEvent::review_prompt_prepared(pass));
         for ev in additional_events {

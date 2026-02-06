@@ -521,26 +521,11 @@ where
         // This is critical: additional events can change phase, agent chain, etc.,
         // and loop detection must consider the final state after all reductions.
         let current_fingerprint = crate::reducer::compute_effect_fingerprint(&state);
-        state = if state.continuation.last_effect_kind.as_deref() == Some(&current_fingerprint) {
-            // Same effect as last time - increment counter
-            PipelineState {
-                continuation: crate::reducer::state::ContinuationState {
-                    consecutive_same_effect_count: state.continuation.consecutive_same_effect_count
-                        + 1,
-                    ..state.continuation.clone()
-                },
-                ..state
-            }
-        } else {
-            // Different effect - reset counter
-            PipelineState {
-                continuation: crate::reducer::state::ContinuationState {
-                    last_effect_kind: Some(current_fingerprint),
-                    consecutive_same_effect_count: 1,
-                    ..state.continuation.clone()
-                },
-                ..state
-            }
+        state = PipelineState {
+            continuation: state
+                .continuation
+                .update_loop_detection_counters(current_fingerprint),
+            ..state
         };
         handler.update_state(state.clone());
 

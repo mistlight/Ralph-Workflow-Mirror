@@ -378,6 +378,15 @@ impl MainEffectHandler {
                 );
                 Self::write_completion_marker(ctx, &completion_marker_content, true);
 
+                /// Helper function to detect agent unavailability from error messages.
+                /// Checks for quota/usage/rate limit indicators in error text.
+                fn is_agent_unavailable_error(err_msg: &str) -> bool {
+                    let err_msg_lower = err_msg.to_lowercase();
+                    err_msg_lower.contains("usage limit")
+                        || err_msg_lower.contains("quota exceeded")
+                        || err_msg_lower.contains("rate limit")
+                }
+
                 let agent_result = match self.invoke_agent(
                     ctx,
                     crate::agents::AgentRole::Developer,
@@ -387,13 +396,9 @@ impl MainEffectHandler {
                 ) {
                     Ok(result) => Ok(result),
                     Err(err) => {
-                        // Check if error is due to agent unavailability (quota/usage limit)
-                        let err_msg = err.to_string().to_lowercase();
-                        let is_agent_unavailable = err_msg.contains("usage limit")
-                            || err_msg.contains("quota exceeded")
-                            || err_msg.contains("rate limit");
+                        let unavailable = is_agent_unavailable_error(&err.to_string());
 
-                        if is_agent_unavailable {
+                        if unavailable {
                             ctx.logger.warn(&format!(
                                 "Dev-fix agent unavailable: {}. Pipeline will terminate with failure marker.",
                                 err
@@ -409,12 +414,7 @@ impl MainEffectHandler {
                 let is_agent_unavailable = agent_result
                     .as_ref()
                     .err()
-                    .map(|err| {
-                        let err_msg = err.to_string().to_lowercase();
-                        err_msg.contains("usage limit")
-                            || err_msg.contains("quota exceeded")
-                            || err_msg.contains("rate limit")
-                    })
+                    .map(|err| is_agent_unavailable_error(&err.to_string()))
                     .unwrap_or(false);
 
                 let dev_fix_success = agent_result
@@ -457,14 +457,16 @@ impl MainEffectHandler {
                     )),
                 };
 
-                if let Ok(result_events) = agent_result {
-                    result = result.with_additional_event(result_events.event);
-                    for event in result_events.additional_events {
-                        result = result.with_additional_event(event);
+                // Add any additional events from the agent result if it succeeded
+                if let Ok(ref result_events) = agent_result {
+                    result = result.with_additional_event(result_events.event.clone());
+                    for event in &result_events.additional_events {
+                        result = result.with_additional_event(event.clone());
                     }
                 }
 
-                // Emit appropriate event based on agent availability
+                // Emit appropriate event based on agent availability.
+                // Only ONE of these events should be emitted, not both.
                 if is_agent_unavailable {
                     result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                         crate::reducer::event::AwaitingDevFixEvent::DevFixAgentUnavailable {
@@ -472,7 +474,8 @@ impl MainEffectHandler {
                             reason: error_reason.unwrap_or_else(|| "unknown".to_string()),
                         },
                     ));
-                } else {
+                } else if agent_result.is_ok() {
+                    // Only emit DevFixCompleted when the agent was available
                     result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                         crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
                             success: dev_fix_success,
