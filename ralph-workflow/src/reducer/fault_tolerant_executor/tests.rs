@@ -854,6 +854,25 @@ mod rate_limit_patterns {
         }
 
         #[test]
+        fn test_filename_with_usage_limit_not_rate_limit() {
+            // File paths and source code locations should not trigger rate limit detection,
+            // even if they contain keywords like "usage_limit.rs".
+            //
+            // Context: Compiler errors, linter messages, and stack traces often include
+            // file paths that may contain usage_limit keywords but are not API errors.
+            //
+            // This test ensures parity with test_filename_with_rate_limit_not_rate_limit
+            // for the "usage limit" patterns added in the bug fix.
+            //
+            // Expected: ParsingError or InternalError, NOT RateLimit
+            let stderr = "usage_limit.rs:123:1: syntax error: unexpected token";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as ParsingError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
         fn test_connection_limit_not_rate_limit() {
             // Network connection pool limits are distinct from API rate limits.
             // Connection pool exhaustion is a client-side resource issue, not a
