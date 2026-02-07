@@ -370,9 +370,12 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].logfile, ".agent/logs/planning_1_claude_0_a0.log",
-        "logfile should include phase, model index, and attempt suffix"
+    // New per-run log format: .agent/logs-<run_id>/agents/planning_1.log
+    // Agent identity is in the log file header, not the filename
+    assert!(
+        calls[0].logfile.contains("/agents/planning_1.log"),
+        "logfile should use per-run format with phase_index naming: {}",
+        calls[0].logfile
     );
 }
 
@@ -772,9 +775,12 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].logfile, ".agent/logs/planning_1_claude_0_a0.log",
-        "logfile attempt should start at a0 for first invocation"
+    // New per-run log format: .agent/logs-<run_id>/agents/planning_1.log
+    // Agent identity is in the log file header, not the filename
+    assert!(
+        calls[0].logfile.contains("/agents/planning_1.log"),
+        "logfile should use per-run format with phase_index naming: {}",
+        calls[0].logfile
     );
 }
 

@@ -163,9 +163,10 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].logfile, ".agent/logs/reviewer_review_1_claude_0_a0.log",
-        "review logfile should include agent, model index, and attempt suffix"
+    assert!(
+        calls[0].logfile.contains("/agents/reviewer_1.log"),
+        "review logfile should use per-run format with phase_index naming: {}",
+        calls[0].logfile
     );
 }
 
@@ -223,8 +224,11 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].logfile, ".agent/logs/reviewer_fix_1_claude_0_a0.log",
-        "fix logfile should include agent, model index, and attempt suffix"
+    // New per-run log format: .agent/logs-<run_id>/agents/reviewer_fix_1.log
+    // Agent identity is in the log file header, not the filename
+    assert!(
+        calls[0].logfile.contains("/agents/reviewer_fix_1.log"),
+        "fix logfile should use per-run format with phase_index naming: {}",
+        calls[0].logfile
     );
 }

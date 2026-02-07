@@ -160,9 +160,12 @@ mod tests {
 
         let calls = executor.agent_calls();
         assert_eq!(calls.len(), 1);
-        assert_eq!(
-            calls[0].logfile, ".agent/logs/commit_generation/commit_generation_claude_0_a2.log",
-            "commit generation log should include agent, model index, and attempt suffix"
+        // New per-run log format: .agent/logs-<run_id>/agents/commit_2.log
+        // Agent identity is in the log file header, not the filename
+        assert!(
+            calls[0].logfile.contains("/agents/commit_2.log"),
+            "commit generation log should use per-run format with phase_index naming: {}",
+            calls[0].logfile
         );
     }
 

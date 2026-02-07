@@ -173,6 +173,53 @@ impl RunLogContext {
         Ok(Self { run_id, run_dir })
     }
 
+    /// Test-only helper to create a RunLogContext with a fixed base run_id.
+    ///
+    /// This allows testing the collision handling logic by providing a predictable
+    /// run_id that can be pre-created on the filesystem to simulate collisions.
+    #[cfg(test)]
+    fn with_base_run_id_for_test(base_run_id: RunId, workspace: &dyn Workspace) -> Result<Self> {
+        // Try base run_id first, then collision variants 1-99
+        for counter in 0..=99 {
+            let run_id = if counter == 0 {
+                base_run_id.clone()
+            } else {
+                base_run_id.with_collision_counter(counter)
+            };
+
+            let run_dir = PathBuf::from(format!(".agent/logs-{}", run_id));
+
+            if !workspace.exists(&run_dir) {
+                // Create run directory and subdirectories
+                workspace
+                    .create_dir_all(&run_dir)
+                    .context("Failed to create run log directory")?;
+
+                workspace
+                    .create_dir_all(&run_dir.join("agents"))
+                    .context("Failed to create agents log subdirectory")?;
+
+                workspace
+                    .create_dir_all(&run_dir.join("provider"))
+                    .context("Failed to create provider log subdirectory")?;
+
+                workspace
+                    .create_dir_all(&run_dir.join("debug"))
+                    .context("Failed to create debug log subdirectory")?;
+
+                return Ok(Self { run_id, run_dir });
+            }
+        }
+
+        // If we exhausted all collision counters, bail
+        anyhow::bail!(
+            "Too many collisions creating run log directory (tried base + 99 variants). \
+             This is extremely rare (100+ runs in the same millisecond). \
+             Possible causes: clock skew, or filesystem issues. \
+             Suggestion: Wait 1ms and retry, or check system clock."
+        )
+    }
+
     /// Get a reference to the run ID.
     ///
     /// This is the timestamp-based log run ID (format: `YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]`)
@@ -248,11 +295,21 @@ impl RunLogContext {
         metadata: &RunMetadata,
     ) -> Result<()> {
         let path = self.run_metadata();
-        let json =
-            serde_json::to_string_pretty(metadata).context("Failed to serialize run metadata")?;
+        let json = serde_json::to_string_pretty(metadata).with_context(|| {
+            format!(
+                "Failed to serialize run metadata for run_id '{}'. \
+                 This usually means a field contains data that cannot be represented as JSON.",
+                self.run_id
+            )
+        })?;
         workspace
             .write(&path, &json)
-            .context("Failed to write run.json")
+            .with_context(|| {
+                format!(
+                    "Failed to write run.json to '{}'. Check filesystem permissions and disk space.",
+                    path.display()
+                )
+            })
     }
 }
 
@@ -431,5 +488,90 @@ mod tests {
         // Verify content
         let content = workspace.read(&json_path).unwrap();
         assert!(content.contains(&ctx.run_id().to_string()));
+    }
+
+    #[test]
+    fn test_collision_handling() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let workspace = WorkspaceFs::new(tempdir.path().to_path_buf());
+
+        // Create a fixed run_id that we can use to simulate collision
+        let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
+
+        // Create the base directory to simulate a collision
+        let base_dir = PathBuf::from(format!(".agent/logs-{}", fixed_id));
+        workspace
+            .create_dir_all(&base_dir)
+            .expect("Failed to create base directory for collision test");
+
+        // Also create collision variants 1-5
+        for i in 1..=5 {
+            let collision_dir = PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i));
+            workspace
+                .create_dir_all(&collision_dir)
+                .expect("Failed to create collision directory");
+        }
+
+        // Now create a RunLogContext with the fixed base run_id
+        // It should skip base and collisions 1-5 and create collision variant 06
+        let ctx = RunLogContext::with_base_run_id_for_test(fixed_id, &workspace).unwrap();
+
+        // Verify the run_id has a collision suffix -06
+        let run_id_str = ctx.run_id().as_str();
+        assert!(
+            run_id_str.ends_with("-06"),
+            "Run ID should have collision suffix -06, got: {}",
+            run_id_str
+        );
+
+        // Verify the directory exists
+        assert!(workspace.exists(ctx.run_dir()));
+
+        // Verify the directory name matches
+        let expected_dir = PathBuf::from(format!(".agent/logs-{}", run_id_str));
+        assert_eq!(
+            ctx.run_dir(),
+            &expected_dir,
+            "Run directory should match the collision suffix path"
+        );
+    }
+
+    #[test]
+    fn test_collision_exhaustion() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let workspace = WorkspaceFs::new(tempdir.path().to_path_buf());
+
+        // Create a fixed run_id
+        let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
+
+        // Create the base directory and all 99 collision variants
+        workspace
+            .create_dir_all(&PathBuf::from(format!(".agent/logs-{}", fixed_id)))
+            .unwrap();
+        for i in 1..=99 {
+            workspace
+                .create_dir_all(&PathBuf::from(format!(
+                    ".agent/logs-{}-{:02}",
+                    fixed_id, i
+                )))
+                .unwrap();
+        }
+
+        // Now try to create a RunLogContext with the fixed base run_id - it should fail
+        let result = RunLogContext::with_base_run_id_for_test(fixed_id, &workspace);
+        assert!(
+            result.is_err(),
+            "Should fail when all collision variants are exhausted"
+        );
+
+        let err_msg = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("Expected error but got success"),
+        };
+        assert!(
+            err_msg.contains("Too many collisions") || err_msg.contains("collisions"),
+            "Error message should mention collisions: {}",
+            err_msg
+        );
     }
 }

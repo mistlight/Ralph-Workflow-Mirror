@@ -130,13 +130,27 @@ impl MainEffectHandler {
             PromptMode::XsdRetry => {
                 // Materialize last invalid output to a stable path so the retry prompt can
                 // reference it without inlining content into the prompt itself.
-                let last_output =
-                    ctx.workspace
-                        .read(Path::new(xml_paths::PLAN_XML))
-                        .map_err(|err| ErrorEvent::WorkspaceReadFailed {
-                            path: xml_paths::PLAN_XML.to_string(),
-                            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                        })?;
+                let last_output = ctx
+                    .workspace
+                    .read(Path::new(xml_paths::PLAN_XML))
+                    .or_else(|err| {
+                        if err.kind() == std::io::ErrorKind::NotFound {
+                            // Try reading from the archived .processed file as a fallback
+                            let processed_path = Path::new(".agent/tmp/plan.xml.processed");
+                            ctx.workspace.read(processed_path).map(|output| {
+                                ctx.logger.info(
+                                    "XSD retry: using archived .processed file as last output",
+                                );
+                                output
+                            })
+                        } else {
+                            Err(err)
+                        }
+                    })
+                    .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                        path: xml_paths::PLAN_XML.to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    })?;
 
                 let content_id_sha256 = sha256_hex_str(&last_output);
                 let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();

@@ -93,7 +93,10 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         }
 
         fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
-            if relative == Path::new(".agent/tmp") {
+            // Allow .agent/tmp directory creation (old behavior) and per-run log directories (new behavior)
+            if relative == Path::new(".agent/tmp")
+                || relative.to_string_lossy().starts_with(".agent/logs-")
+            {
                 self.tmp_created.store(true, Ordering::Release);
             }
             self.inner.create_dir_all(relative)

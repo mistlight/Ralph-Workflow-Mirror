@@ -24,6 +24,27 @@ use std::path::Path;
 ///
 /// This struct holds references to all the shared state that phases need
 /// to access. It is passed by mutable reference to each phase function.
+///
+/// # Phase Name Convention
+///
+/// When working with phase names (e.g., for log file naming), use **lowercase**
+/// identifiers with underscores for multi-word phases. The canonical phase names are:
+/// - `"planning"` - Planning phase
+/// - `"analysis"` - Analysis sub-phase of development (when role == AgentRole::Analysis)
+/// - `"developer"` - Development phase (when role == AgentRole::Developer)
+/// - `"reviewer"` - Review phase
+/// - `"commit"` - Commit message generation phase
+/// - `"final_validation"` - Final validation phase
+/// - `"finalizing"` - Finalizing phase
+/// - `"complete"` - Complete phase
+/// - `"awaiting_dev_fix"` - Awaiting dev fix phase
+/// - `"interrupted"` - Interrupted phase
+///
+/// These phase names are used for log file naming under `.agent/logs-<run_id>/agents/`
+/// (e.g., `planning_1.log`, `developer_2_a1.log`).
+///
+/// When adding new phases or extending the phase system, maintain this lowercase
+/// convention for consistency.
 pub struct PhaseContext<'a> {
     /// Configuration settings for the pipeline.
     pub config: &'a Config,

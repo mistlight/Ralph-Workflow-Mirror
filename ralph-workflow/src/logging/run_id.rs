@@ -24,6 +24,15 @@ impl RunId {
         Self(base)
     }
 
+    /// Create a RunId from a string value (for testing).
+    ///
+    /// This is a test-only constructor that allows creating a RunId with
+    /// a fixed timestamp value for deterministic testing of collision handling.
+    #[cfg(test)]
+    pub fn for_test(id: &str) -> Self {
+        Self(id.to_string())
+    }
+
     /// Create a RunId from an existing string (for resume).
     ///
     /// This is used when loading a checkpoint to continue using

@@ -392,10 +392,22 @@ impl MainEffectHandler {
             let last_output = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
                 Ok(output) => output,
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    ctx.logger.warn(
-                        "Missing .agent/tmp/issues.xml; using empty output for review XSD retry",
-                    );
-                    String::new()
+                    // The canonical file was archived after successful validation or a previous retry.
+                    // Try reading from the archived .processed file as a fallback.
+                    let processed_path = Path::new(".agent/tmp/issues.xml.processed");
+                    match ctx.workspace.read(processed_path) {
+                        Ok(output) => {
+                            ctx.logger
+                                .info("XSD retry: using archived .processed file as last output");
+                            output
+                        }
+                        Err(_) => {
+                            ctx.logger.warn(
+                                "Missing .agent/tmp/issues.xml and .processed fallback; using empty output for review XSD retry",
+                            );
+                            String::new()
+                        }
+                    }
                 }
                 Err(err) => {
                     return Err(ErrorEvent::WorkspaceReadFailed {

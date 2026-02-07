@@ -96,6 +96,10 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         } else {
             // No checkpoint found, but --resume was requested
             // This is handled later by resume validation, but we need a run context now
+            logger.warn(
+                "No checkpoint file found (--resume flag was set). A fresh run directory has been created. \
+                 If you expected to resume from a previous run, please check that .agent/checkpoint.json exists.",
+            );
             RunLogContext::new(&*workspace).context("Failed to create run log context")?
         }
     } else {

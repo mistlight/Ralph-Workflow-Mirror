@@ -105,9 +105,9 @@ impl OpenCodeResolver {
         AgentConfig {
             cmd: "opencode run".to_string(),
             output_flag: "--format json".to_string(),
-            // OpenCode doesn't have an auto-approve flag - permissions are controlled
-            // via OPENCODE_PERMISSION environment variable (set above)
-            yolo_flag: String::new(),
+            // OpenCode requires --dangerously-skip-permissions for YOLO mode (see AGENTS.md)
+            // The OPENCODE_PERMISSION env var above allows all operations when the flag is set
+            yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--log-level DEBUG --print-logs".to_string(),
             can_commit: true,
             json_parser: JsonParserType::OpenCode,
@@ -134,7 +134,7 @@ impl OpenCodeResolver {
         AgentConfig {
             cmd: "opencode run".to_string(),
             output_flag: "--format json".to_string(),
-            yolo_flag: String::new(),
+            yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--log-level DEBUG --print-logs".to_string(),
             can_commit: true,
             json_parser: JsonParserType::OpenCode,
@@ -441,8 +441,8 @@ mod tests {
             Some("-m anthropic/claude-sonnet-4-5".to_string())
         );
         assert_eq!(config.output_flag, "--format json");
-        // OpenCode's `run` command is non-interactive by default, no yolo flag needed
-        assert_eq!(config.yolo_flag, "");
+        // OpenCode requires --dangerously-skip-permissions for YOLO mode (see AGENTS.md)
+        assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
         assert_eq!(config.json_parser, JsonParserType::OpenCode);
         assert!(config.can_commit);
         // Verify OPENCODE_PERMISSION is set for non-interactive mode
