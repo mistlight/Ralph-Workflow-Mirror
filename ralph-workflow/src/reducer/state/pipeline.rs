@@ -458,11 +458,19 @@ impl From<PipelineCheckpoint> for PipelineState {
         PipelineState {
             phase: map_checkpoint_phase(checkpoint.phase),
             previous_phase: None,
+            // Restore iteration/pass counters from checkpoint.
+            // Note: All progress flags are reset to None below.
+            // Orchestration uses inclusive boundary checks (iteration <= total)
+            // to ensure work is re-run at boundaries when flags are None.
+            // See phase_effects.rs for the boundary logic.
             iteration: checkpoint.iteration,
             total_iterations: checkpoint.total_iterations,
             reviewer_pass: checkpoint.reviewer_pass,
             total_reviewer_passes: checkpoint.total_reviewer_passes,
             review_issues_found: false,
+            // All progress flags reset to None to allow re-running current work.
+            // The orchestration layer determines which step to execute based on
+            // these flags combined with the iteration/pass counters.
             planning_prompt_prepared_iteration: None,
             planning_xml_cleaned_iteration: None,
             planning_agent_invoked_iteration: None,
