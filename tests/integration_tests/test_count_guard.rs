@@ -436,6 +436,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         path: "xsd_retry_missing_files.rs",
         contents: include_str!("xsd_retry_missing_files.rs"),
     },
+    SourceFile {
+        path: "xsd_retry_workflow.rs",
+        contents: include_str!("xsd_retry_workflow.rs"),
+    },
 ];
 
 fn source_for_path(path: &str) -> Option<&'static str> {
