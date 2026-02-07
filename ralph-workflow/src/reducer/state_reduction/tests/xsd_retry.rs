@@ -472,3 +472,107 @@ fn test_review_pass_completed_clean_resets_commit_diff_flags() {
     assert!(!new_state.commit_diff_prepared);
     assert!(!new_state.commit_diff_empty);
 }
+
+/// Test that review output validation failure resets agent invocation state
+/// so the agent gets re-invoked with the XSD retry prompt.
+///
+/// This is the regression test for the bug where XSD retry prompts were
+/// prepared but never sent to the AI agent because `review_agent_invoked_pass`
+/// was not reset.
+#[test]
+fn test_review_output_validation_failed_resets_agent_invoked_pass() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        review_agent_invoked_pass: Some(0), // Agent was invoked
+        review_issues_xml_extracted_pass: None, // Extraction not done yet
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
+
+    // After validation failure, agent invocation should be reset so orchestration
+    // can re-invoke the agent with the XSD retry prompt
+    assert!(
+        new_state.review_agent_invoked_pass.is_none(),
+        "review_agent_invoked_pass should be reset after validation failure, got {:?}",
+        new_state.review_agent_invoked_pass
+    );
+}
+
+/// Test that review issues.xml missing resets agent invocation state
+/// so the agent gets re-invoked with the XSD retry prompt.
+#[test]
+fn test_review_issues_xml_missing_resets_agent_invoked_pass() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        review_agent_invoked_pass: Some(0), // Agent was invoked
+        review_issues_xml_extracted_pass: None,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(state, PipelineEvent::review_issues_xml_missing(0, 0, None));
+
+    // After missing XML is detected, agent invocation should be reset so orchestration
+    // can re-invoke the agent with the XSD retry prompt
+    assert!(
+        new_state.review_agent_invoked_pass.is_none(),
+        "review_agent_invoked_pass should be reset after issues.xml missing, got {:?}",
+        new_state.review_agent_invoked_pass
+    );
+}
+
+/// Test that fix output validation failure resets agent invocation state
+/// so the agent gets re-invoked with the XSD retry prompt.
+#[test]
+fn test_fix_output_validation_failed_resets_agent_invoked_pass() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        review_issues_found: true,       // Indicates we're in fix mode
+        fix_agent_invoked_pass: Some(0), // Agent was invoked
+        fix_result_xml_extracted_pass: None,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::fix_output_validation_failed(0, 0, None),
+    );
+
+    // After validation failure, agent invocation should be reset so orchestration
+    // can re-invoke the agent with the XSD retry prompt
+    assert!(
+        new_state.fix_agent_invoked_pass.is_none(),
+        "fix_agent_invoked_pass should be reset after validation failure, got {:?}",
+        new_state.fix_agent_invoked_pass
+    );
+}
+
+/// Test that fix result.xml missing resets agent invocation state
+/// so the agent gets re-invoked with the XSD retry prompt.
+#[test]
+fn test_fix_result_xml_missing_resets_agent_invoked_pass() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        review_issues_found: true,       // Indicates we're in fix mode
+        fix_agent_invoked_pass: Some(0), // Agent was invoked
+        fix_result_xml_extracted_pass: None,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(state, PipelineEvent::fix_result_xml_missing(0, 0, None));
+
+    // After missing XML is detected, agent invocation should be reset so orchestration
+    // can re-invoke the agent with the XSD retry prompt
+    assert!(
+        new_state.fix_agent_invoked_pass.is_none(),
+        "fix_agent_invoked_pass should be reset after fix_result.xml missing, got {:?}",
+        new_state.fix_agent_invoked_pass
+    );
+}

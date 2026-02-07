@@ -464,6 +464,7 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
 
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
+                // Reset orchestration flags to ensure prompt is prepared and new agent is invoked
                 let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::Review,
@@ -481,12 +482,20 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         last_review_xsd_error: None,
                         ..state.continuation
                     },
+                    // Reset orchestration flags to ensure:
+                    // 1. Prompt is prepared for new agent
+                    // 2. New agent is invoked
+                    // 3. Cleanup runs before invocation
+                    review_prompt_prepared_pass: None,
+                    review_agent_invoked_pass: None,
                     review_issues_xml_cleaned_pass: None,
                     metrics,
                     ..state
                 }
             } else {
                 // Stay in Review, increment attempt counters, set retry pending
+                // Reset orchestration flags to ensure XSD retry prompt is prepared
+                // and agent is re-invoked with the retry prompt.
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::Review,
                     reviewer_pass: pass,
@@ -500,6 +509,13 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         last_review_xsd_error: error_detail.clone(),
                         ..state.continuation
                     },
+                    // Reset orchestration flags to ensure:
+                    // 1. XSD retry prompt is prepared (review_prompt_prepared_pass = None)
+                    // 2. Agent is re-invoked with the retry prompt (review_agent_invoked_pass = None)
+                    // 3. Cleanup runs before re-invocation (review_issues_xml_cleaned_pass = None)
+                    // 4. Extraction runs after agent produces new output (already None from missing)
+                    review_prompt_prepared_pass: None,
+                    review_agent_invoked_pass: None,
                     review_issues_xml_cleaned_pass: None,
                     metrics,
                     ..state

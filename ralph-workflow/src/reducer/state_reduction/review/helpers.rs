@@ -138,6 +138,7 @@ fn reduce_fix_output_validation_failure(
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent
+        // Reset orchestration flags to ensure prompt is prepared and new agent is invoked
         let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
         PipelineState {
             phase: crate::reducer::event::PipelinePhase::Review,
@@ -152,12 +153,20 @@ fn reduce_fix_output_validation_failure(
                 last_fix_xsd_error: None,
                 ..state.continuation
             },
+            // Reset orchestration flags to ensure:
+            // 1. Prompt is prepared for new agent
+            // 2. New agent is invoked
+            // 3. Cleanup runs before invocation
+            fix_prompt_prepared_pass: None,
+            fix_agent_invoked_pass: None,
             fix_result_xml_cleaned_pass: None,
             metrics,
             ..state
         }
     } else {
         // Stay in Review, increment attempt counters, set retry pending
+        // Reset orchestration flags to ensure XSD retry prompt is prepared
+        // and agent is re-invoked with the retry prompt.
         PipelineState {
             phase: crate::reducer::event::PipelinePhase::Review,
             reviewer_pass: pass,
@@ -171,6 +180,12 @@ fn reduce_fix_output_validation_failure(
                 last_fix_xsd_error: error_detail,
                 ..state.continuation
             },
+            // Reset orchestration flags to ensure:
+            // 1. XSD retry prompt is prepared (fix_prompt_prepared_pass = None)
+            // 2. Agent is re-invoked with the retry prompt (fix_agent_invoked_pass = None)
+            // 3. Cleanup runs before re-invocation (fix_result_xml_cleaned_pass = None)
+            fix_prompt_prepared_pass: None,
+            fix_agent_invoked_pass: None,
             fix_result_xml_cleaned_pass: None,
             metrics,
             ..state
