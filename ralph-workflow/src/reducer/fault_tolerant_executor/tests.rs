@@ -1190,14 +1190,20 @@ mod rate_limit_patterns {
 
         #[test]
         fn test_usage_limit_filename_c_extension_not_rate_limit() {
-            // "error: usage_limit.c file not found" - C file extension.
+            // "error: usage limit.c file not found" - C file extension.
             //
             // Context: Verify that the generic file extension pattern correctly
             // excludes .c files from rate limit detection. Note that single-letter
             // extensions are a valid edge case.
             //
+            // This test uses "usage limit.c" (with space) to verify that the
+            // file extension detection correctly excludes this pattern from
+            // rate limit classification. Without proper file extension detection,
+            // this would incorrectly match "error: usage limit" and be classified
+            // as a RateLimit error.
+            //
             // Expected: FileSystem or InternalError, NOT RateLimit
-            let stderr = "error: usage_limit.c file not found";
+            let stderr = "error: usage limit.c file not found";
             let error_kind = classify_agent_error(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));

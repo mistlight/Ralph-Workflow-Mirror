@@ -175,8 +175,8 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
         // For both cases, we need to exclude patterns where a file extension (e.g., .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, etc.)
         // appears immediately after "usage limit" or "usage_limit" in an error context.
         //
-        // We use a general pattern to match any file extension: a dot followed by 2-5 alphanumeric characters.
-        // This covers all common programming language file extensions (.rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, .swift, .kt, .scala, .rs, .sh, .bash, .zsh, .fish, etc.)
+        // We use a general pattern to match any file extension: a dot followed by 1-5 alphanumeric characters.
+        // This covers all common programming language file extensions (.rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .rs, .sh, .bash, .zsh, .fish, etc.)
         // and is future-proof for new file extensions.
         if is_followed_by_file_extension_generic(stderr_lower, "usage limit")
             || is_followed_by_file_extension_generic(stderr_lower, "usage_limit")
@@ -328,7 +328,7 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
 /// This prevents false positives where "usage limit" appears as part of a filename
 /// (e.g., "error: usage limit.rs file not found") rather than as an API error message.
 ///
-/// Uses a regex pattern to match any file extension (dot followed by 2-5 alphanumeric chars).
+/// Uses a regex pattern to match any file extension (dot followed by 1-5 alphanumeric chars).
 /// This covers all common programming language file extensions and is future-proof.
 ///
 /// # Arguments
@@ -342,16 +342,16 @@ fn is_followed_by_file_extension_generic(text: &str, pattern: &str) -> bool {
         return false;
     };
 
-    // Check if the character after the pattern is a dot followed by 2-5 alphanumeric chars
-    // This matches common file extensions like: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, .swift, .kt, .scala, .sh, etc.
+    // Check if the character after the pattern is a dot followed by 1-5 alphanumeric chars
+    // This matches common file extensions like: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, etc.
     let after_pattern = text.get(pos + pattern.len()..);
     match after_pattern {
         None | Some("") => false, // Pattern is at end of string, no extension
         Some(rest) => {
-            // Check if it starts with a dot followed by 2-5 alphanumeric characters
-            // The pattern is: "." + [a-z0-9]{2,5}
+            // Check if it starts with a dot followed by 1-5 alphanumeric characters
+            // The pattern is: "." + [a-z0-9]{1,5}
             // After the extension, there should be a non-alphanumeric character or end of string
-            let extension_regex = regex::Regex::new(r"^\.[a-z0-9]{2,5}([^a-z0-9]|$)").unwrap();
+            let extension_regex = regex::Regex::new(r"^\.[a-z0-9]{1,5}([^a-z0-9]|$)").unwrap();
             extension_regex.is_match(rest)
         }
     }
