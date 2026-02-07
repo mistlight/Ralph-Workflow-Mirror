@@ -167,12 +167,19 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     if stderr_lower.contains("usage limit") {
         // First, exclude filename patterns to avoid false positives
         // File patterns like "usage_limit.rs" or "usage limit.rs" should NOT match
-        if stderr_lower.contains("usage_limit.rs:")
-            || stderr_lower.contains("usage limit.rs:")
-            || stderr_lower.contains("usage_limit.py:")
-            || stderr_lower.contains("usage limit.py:")
-            || stderr_lower.contains("usage_limit.js:")
-            || stderr_lower.contains("usage limit.js:")
+        //
+        // We need to check two types of filename patterns:
+        // 1. Compiler/source error format: "usage_limit.rs:123" (with trailing colon)
+        // 2. File-not-found format: "error: usage_limit.rs file not found" (no colon after extension)
+        //
+        // For both cases, we need to exclude patterns where a file extension (e.g., .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, etc.)
+        // appears immediately after "usage limit" or "usage_limit" in an error context.
+        //
+        // We use a general pattern to match any file extension: a dot followed by 2-5 alphanumeric characters.
+        // This covers all common programming language file extensions (.rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, .swift, .kt, .scala, .rs, .sh, .bash, .zsh, .fish, etc.)
+        // and is future-proof for new file extensions.
+        if is_followed_by_file_extension_generic(stderr_lower, "usage limit")
+            || is_followed_by_file_extension_generic(stderr_lower, "usage_limit")
         {
             return false;
         }
@@ -314,6 +321,40 @@ pub fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
 /// InvocationFailed so the reducer can apply deterministic policy.
 pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Authentication)
+}
+
+/// Check if a pattern is immediately followed by a file extension.
+///
+/// This prevents false positives where "usage limit" appears as part of a filename
+/// (e.g., "error: usage limit.rs file not found") rather than as an API error message.
+///
+/// Uses a regex pattern to match any file extension (dot followed by 2-5 alphanumeric chars).
+/// This covers all common programming language file extensions and is future-proof.
+///
+/// # Arguments
+/// * `text` - The full text to search in (lowercase)
+/// * `pattern` - The pattern to check (e.g., "usage limit", "usage_limit")
+///
+/// # Returns
+/// `true` if the pattern is found and is followed by a file extension pattern
+fn is_followed_by_file_extension_generic(text: &str, pattern: &str) -> bool {
+    let Some(pos) = text.find(pattern) else {
+        return false;
+    };
+
+    // Check if the character after the pattern is a dot followed by 2-5 alphanumeric chars
+    // This matches common file extensions like: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, .swift, .kt, .scala, .sh, etc.
+    let after_pattern = text.get(pos + pattern.len()..);
+    match after_pattern {
+        None | Some("") => false, // Pattern is at end of string, no extension
+        Some(rest) => {
+            // Check if it starts with a dot followed by 2-5 alphanumeric characters
+            // The pattern is: "." + [a-z0-9]{2,5}
+            // After the extension, there should be a non-alphanumeric character or end of string
+            let extension_regex = regex::Regex::new(r"^\.[a-z0-9]{2,5}([^a-z0-9]|$)").unwrap();
+            extension_regex.is_match(rest)
+        }
+    }
 }
 
 #[cfg(test)]

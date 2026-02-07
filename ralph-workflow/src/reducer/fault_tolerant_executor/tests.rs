@@ -1078,6 +1078,243 @@ mod rate_limit_patterns {
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
+
+        #[test]
+        fn test_usage_limit_filename_in_error_prefix_not_rate_limit() {
+            // "error: usage limit.rs file not found" should NOT trigger rate limit detection.
+            //
+            // Context: This is a file-not-found error where "usage limit.rs" is a filename,
+            // not an API usage limit error. The pattern "error: usage limit" followed by a
+            // file extension (.rs, .py, .js) indicates a filename context, not an API error.
+            //
+            // Bug Fix Context:
+            // The bare "error: usage limit" check on line 184 of error_classification.rs
+            // uses contains() which matches "error: usage limit.rs file not found" because
+            // it contains "error: usage limit". The filename exclusion on lines 170-176 only
+            // catches patterns with a trailing colon (compiler error format like
+            // "usage limit.rs:123"), but file-not-found errors don't include the colon.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.rs file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as FileSystem or InternalError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_with_space_in_error_prefix_not_rate_limit() {
+            // "error: usage limit.py file not found" - variant with space in filename.
+            //
+            // Context: Similar to test_usage_limit_filename_in_error_prefix_not_rate_limit
+            // but with .py extension instead of .rs extension.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.py file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as FileSystem or InternalError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_with_underscore_in_error_prefix_not_rate_limit() {
+            // "error: usage_limit.js file not found" - variant with underscore in filename.
+            //
+            // Context: Similar to test_usage_limit_filename_in_error_prefix_not_rate_limit
+            // but with underscore (usage_limit) instead of space (usage limit) and .js extension.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage_limit.js file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as FileSystem or InternalError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_go_extension_not_rate_limit() {
+            // "error: usage limit.go file not found" - Go file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .go files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.go file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_rb_extension_not_rate_limit() {
+            // "error: usage_limit.rb file not found" - Ruby file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .rb files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage_limit.rb file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_java_extension_not_rate_limit() {
+            // "error: usage limit.java file not found" - Java file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .java files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.java file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_cpp_extension_not_rate_limit() {
+            // "error: usage limit.cpp file not found" - C++ file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .cpp files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.cpp file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_c_extension_not_rate_limit() {
+            // "error: usage_limit.c file not found" - C file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .c files from rate limit detection. Note that single-letter
+            // extensions are a valid edge case.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage_limit.c file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_php_extension_not_rate_limit() {
+            // "error: usage limit.php file not found" - PHP file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .php files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.php file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_cs_extension_not_rate_limit() {
+            // "error: usage_limit.cs file not found" - C# file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .cs files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage_limit.cs file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_swift_extension_not_rate_limit() {
+            // "error: usage limit.swift file not found" - Swift file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .swift files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.swift file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_kt_extension_not_rate_limit() {
+            // "error: usage_limit.kt file not found" - Kotlin file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .kt files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage_limit.kt file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_scala_extension_not_rate_limit() {
+            // "error: usage limit.scala file not found" - Scala file extension (5 chars).
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .scala files from rate limit detection. This tests the
+            // upper bound of the 2-5 character extension pattern.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.scala file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_sh_extension_not_rate_limit() {
+            // "error: usage_limit.sh file not found" - Shell script file extension.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .sh files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage_limit.sh file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_bash_extension_not_rate_limit() {
+            // "error: usage limit.bash file not found" - Bash script file extension (4 chars).
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes .bash files from rate limit detection.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit.bash file not found";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_compiler_error_format() {
+            // "usage_limit.go:123:1: syntax error" - Compiler error format with .go file.
+            //
+            // Context: Verify that the generic file extension pattern correctly
+            // excludes compiler error formats with various extensions.
+            //
+            // Expected: ParsingError, NOT RateLimit
+            let stderr = "usage_limit.go:123:1: syntax error: unexpected token";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
     }
 }
 

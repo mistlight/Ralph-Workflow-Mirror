@@ -137,7 +137,13 @@ impl MainEffectHandler {
         // Use append_bytes to avoid overwriting if file exists (defense-in-depth)
         let is_resume = ctx.run_context.parent_run_id.is_some();
         let resume_indicator = if is_resume {
-            format!("# Resume: true (Original Run ID: {})\n", ctx.run_context.parent_run_id.as_ref().unwrap_or(&"(unknown)".to_string()))
+            format!(
+                "# Resume: true (Original Run ID: {})\n",
+                ctx.run_context
+                    .parent_run_id
+                    .as_ref()
+                    .unwrap_or(&"(unknown)".to_string())
+            )
         } else {
             "# Resume: false\n".to_string()
         };
