@@ -199,6 +199,14 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // false positives from filenames (e.g., "usage_limit.rs") or non-error text.
     // Context markers: "error:" prefix, sentence punctuation, or HTTP status codes.
     //
+    // Last Verified: 2026-02-07
+    // Source: OpenCode production logs and multi-provider gateway behavior
+    // How to verify:
+    //   1. Check OpenCode source at https://github.com/anomalyco/opencode
+    //   2. Review /packages/opencode/src/cli/cmd/run.ts for error emission
+    //   3. Test with OpenCode CLI near usage limit to observe actual messages
+    //   4. Update patterns if format changes
+    //
     // Providers affected: OpenCode (multi-provider), Claude API wrappers
     // Related patterns: "quota exceeded", "rate limit exceeded"
     if stderr_lower.contains("usage limit has been reached")

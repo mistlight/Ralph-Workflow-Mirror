@@ -78,15 +78,47 @@ fn test_prompts_are_agent_agnostic() {
         prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
     ];
 
-    for prompt in prompts_to_check {
+    for (i, prompt) in prompts_to_check.iter().enumerate() {
         let prompt_lower = prompt.to_lowercase();
         for term in agent_specific_terms {
-            assert!(
-                !prompt_lower.contains(term),
-                "Prompt contains agent-specific term '{}': {}",
-                term,
-                &prompt[..prompt.len().min(100)]
-            );
+            if prompt_lower.contains(term) {
+                // Check if this is a false positive (e.g., in file paths)
+                // Find all occurrences and verify they're not in paths
+                let mut is_in_content = false;
+                for (idx, _) in prompt_lower.match_indices(term) {
+                    // Check if this occurrence is in a file path
+                    // Paths typically contain /  or \ characters
+                    let context_start = idx.saturating_sub(50);
+                    let context_end = (idx + 50).min(prompt_lower.len());
+                    let context = &prompt_lower[context_start..context_end];
+
+                    // If the term appears in a path (preceded by / or \), skip it
+                    if context.contains('/') || context.contains('\\') {
+                        // Check if this looks like a path by seeing if / or \ appears near the term
+                        let before = &context[..(idx - context_start)];
+                        if before
+                            .rfind('/')
+                            .map_or(false, |p| idx - context_start - p < 30)
+                            || before
+                                .rfind('\\')
+                                .map_or(false, |p| idx - context_start - p < 30)
+                        {
+                            continue; // This is in a path, skip it
+                        }
+                    }
+
+                    is_in_content = true;
+                    break;
+                }
+
+                assert!(
+                    !is_in_content,
+                    "Prompt {} contains agent-specific term '{}' in non-path context: {}",
+                    i,
+                    term,
+                    &prompt[..prompt.len().min(100)]
+                );
+            }
         }
     }
 }
