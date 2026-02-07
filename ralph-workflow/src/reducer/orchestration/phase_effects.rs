@@ -154,8 +154,11 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             // The orchestration will determine which step to execute based on the flags.
             //
             // The SaveCheckpoint path (iteration_needs_work = false) is reached when:
-            // 1. iteration > total_iterations (should not happen in normal flow)
-            // 2. total_iterations == 0 (no iterations configured, skip to next phase)
+            // 1. iteration >= total_iterations AND total_iterations == 0 (abnormal: zero iterations configured)
+            // 2. iteration > total_iterations with total_iterations > 0 (should not happen in normal flow)
+            //
+            // When total_iterations == 0, both conditions (iteration < total) and (iteration == total && total > 0)
+            // are false, so iteration_needs_work = false regardless of iteration value, causing transition.
             let iteration_needs_work = state.iteration < state.total_iterations
                 || (state.iteration == state.total_iterations && state.total_iterations > 0);
 

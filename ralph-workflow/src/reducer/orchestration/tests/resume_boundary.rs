@@ -4,6 +4,7 @@
 // would skip work at boundaries (e.g., iteration == total_iterations).
 
 use super::*;
+use crate::reducer::event::CheckpointTrigger;
 
 /// Helper to create a minimal PipelineState for testing resume scenarios.
 fn create_resume_state(
@@ -205,10 +206,18 @@ fn test_resume_at_boundary_with_zero_total_iterations() {
     // Then: Should transition to next phase (SaveCheckpoint with PhaseTransition)
     // With total_iterations=0, iteration_needs_work = (0 < 0) || (0 == 0 && 0 > 0) = false
     // So we derive SaveCheckpoint to trigger phase transition
+    //
+    // The trigger must be PhaseTransition (not Interrupt) to indicate normal
+    // progression rather than pipeline termination.
     assert!(
-        matches!(effect, Effect::SaveCheckpoint { .. }),
+        matches!(
+            effect,
+            Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::PhaseTransition
+            }
+        ),
         "With total_iterations=0 in Development phase (abnormal state), \
-         should transition to next phase. Got: {:?}",
+         should transition to next phase via PhaseTransition. Got: {:?}",
         effect
     );
 }

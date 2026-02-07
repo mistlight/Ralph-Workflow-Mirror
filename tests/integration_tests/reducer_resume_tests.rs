@@ -482,9 +482,9 @@ fn test_resume_at_final_review_pass_boundary_runs_review() {
         use ralph_workflow::reducer::orchestration::determine_next_effect;
 
         // Given: Checkpoint at reviewer_pass=2, total_reviewer_passes=2 (final boundary)
+        // create_test_checkpoint sets total_reviewer_passes=2, and the conversion preserves it.
         let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 3, 3, 2);
-        let mut state = PipelineState::from(checkpoint);
-        state.total_reviewer_passes = 2;
+        let state = PipelineState::from(checkpoint);
 
         assert_eq!(state.reviewer_pass, 2);
         assert_eq!(state.total_reviewer_passes, 2);

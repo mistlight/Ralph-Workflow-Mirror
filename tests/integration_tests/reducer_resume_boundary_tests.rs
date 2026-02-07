@@ -252,9 +252,10 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         // - If total_reviewer_passes > 0: transitions to Review
         // - If total_reviewer_passes == 0: transitions to CommitMessage
         //
-        // In this test, we configured 1 review pass, but the actual transition
-        // logic is determined by the DevelopmentPhaseCompleted event handler.
-        // Let me just verify the pipeline doesn't exit/complete immediately
+        // When using development_iteration_completed with last_of_phase=true,
+        // the reducer transitions to CommitMessage first. From there, if review
+        // passes are configured, it would transition to Review. The key assertion
+        // is that the pipeline doesn't exit/complete immediately.
         assert!(
             !matches!(
                 state.phase,
