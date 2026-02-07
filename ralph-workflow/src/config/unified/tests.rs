@@ -570,3 +570,101 @@ fn test_merge_with_ccs_non_empty_overrides() {
     assert_eq!(merged.ccs.session_flag, "--resume {}");
     assert!(!merged.ccs.can_commit);
 }
+
+#[test]
+fn test_merge_with_minimal_local_preserves_global() {
+    // This is the critical test case from Issue #1
+    // When local config contains only developer_iters, other fields should preserve global values
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            verbosity: 3,
+            developer_iters: 5,
+            reviewer_reviews: 2,
+            developer_context: 1,
+            reviewer_context: 0,
+            behavior: GeneralBehaviorFlags {
+                interactive: false,
+                auto_detect_stack: false,
+                strict_validation: true,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    // Local config with only developer_iters set (all others at default)
+    let local = UnifiedConfig {
+        general: GeneralConfig {
+            developer_iters: 10, // Only this is overridden
+            // Everything else is at default values
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    // developer_iters should be from local
+    assert_eq!(merged.general.developer_iters, 10);
+
+    // All other values should be from global, NOT defaults
+    assert_eq!(
+        merged.general.verbosity, 3,
+        "verbosity should be from global"
+    );
+    assert_eq!(
+        merged.general.reviewer_reviews, 2,
+        "reviewer_reviews should be from global"
+    );
+    assert_eq!(
+        merged.general.developer_context, 1,
+        "developer_context should be from global"
+    );
+    assert_eq!(
+        merged.general.reviewer_context, 0,
+        "reviewer_context should be from global"
+    );
+    assert!(
+        !merged.general.behavior.interactive,
+        "interactive should be from global"
+    );
+    assert!(
+        !merged.general.behavior.auto_detect_stack,
+        "auto_detect_stack should be from global"
+    );
+    assert!(
+        merged.general.behavior.strict_validation,
+        "strict_validation should be from global"
+    );
+}
+
+#[test]
+fn test_merge_with_partial_override_preserves_rest() {
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            verbosity: 4,
+            developer_iters: 7,
+            reviewer_reviews: 3,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    // Local overrides verbosity but not reviewer_reviews
+    let local = UnifiedConfig {
+        general: GeneralConfig {
+            verbosity: 1,
+            developer_iters: 3, // Also override this
+            // reviewer_reviews is at default (2)
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    assert_eq!(merged.general.verbosity, 1);
+    assert_eq!(merged.general.developer_iters, 3);
+    // This should be from global, not default
+    assert_eq!(merged.general.reviewer_reviews, 3);
+}

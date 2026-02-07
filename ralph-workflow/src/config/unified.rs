@@ -458,34 +458,99 @@ impl UnifiedConfig {
     /// Merge local config into self (global), returning merged config.
     ///
     /// Local values override global values with these semantics:
-    /// - Scalar values: local replaces global
+    /// - Scalar values: local replaces global ONLY if local differs from default
     /// - Maps (agents, ccs_aliases): local entries merge with global (local wins on collision)
     /// - Arrays (agent_chain): local replaces global entirely (not appended)
     /// - Optional values: local Some(_) replaces global, local None preserves global
     /// - CCS string values: empty string ("") in local does NOT override global (preserves global)
     ///
     /// This is a pure function - no I/O, cannot fail.
+    ///
+    /// IMPORTANT: This function compares local values against defaults to determine
+    /// if they were explicitly set. Only explicitly-set values override global.
     pub fn merge_with(&self, local: &UnifiedConfig) -> UnifiedConfig {
-        // Merge general config (scalar overrides)
+        let defaults = GeneralConfig::default();
+
+        // Merge general config with smart override detection
+        // Only override if local value differs from default (indicating explicit setting)
         let general = GeneralConfig {
-            verbosity: local.general.verbosity,
+            verbosity: if local.general.verbosity != defaults.verbosity {
+                local.general.verbosity
+            } else {
+                self.general.verbosity
+            },
             behavior: GeneralBehaviorFlags {
-                interactive: local.general.behavior.interactive,
-                auto_detect_stack: local.general.behavior.auto_detect_stack,
-                strict_validation: local.general.behavior.strict_validation,
+                interactive: if local.general.behavior.interactive != defaults.behavior.interactive
+                {
+                    local.general.behavior.interactive
+                } else {
+                    self.general.behavior.interactive
+                },
+                auto_detect_stack: if local.general.behavior.auto_detect_stack
+                    != defaults.behavior.auto_detect_stack
+                {
+                    local.general.behavior.auto_detect_stack
+                } else {
+                    self.general.behavior.auto_detect_stack
+                },
+                strict_validation: if local.general.behavior.strict_validation
+                    != defaults.behavior.strict_validation
+                {
+                    local.general.behavior.strict_validation
+                } else {
+                    self.general.behavior.strict_validation
+                },
             },
             workflow: GeneralWorkflowFlags {
-                checkpoint_enabled: local.general.workflow.checkpoint_enabled,
+                checkpoint_enabled: if local.general.workflow.checkpoint_enabled
+                    != defaults.workflow.checkpoint_enabled
+                {
+                    local.general.workflow.checkpoint_enabled
+                } else {
+                    self.general.workflow.checkpoint_enabled
+                },
             },
             execution: GeneralExecutionFlags {
-                force_universal_prompt: local.general.execution.force_universal_prompt,
-                isolation_mode: local.general.execution.isolation_mode,
+                force_universal_prompt: if local.general.execution.force_universal_prompt
+                    != defaults.execution.force_universal_prompt
+                {
+                    local.general.execution.force_universal_prompt
+                } else {
+                    self.general.execution.force_universal_prompt
+                },
+                isolation_mode: if local.general.execution.isolation_mode
+                    != defaults.execution.isolation_mode
+                {
+                    local.general.execution.isolation_mode
+                } else {
+                    self.general.execution.isolation_mode
+                },
             },
-            developer_iters: local.general.developer_iters,
-            reviewer_reviews: local.general.reviewer_reviews,
-            developer_context: local.general.developer_context,
-            reviewer_context: local.general.reviewer_context,
-            review_depth: local.general.review_depth.clone(),
+            developer_iters: if local.general.developer_iters != defaults.developer_iters {
+                local.general.developer_iters
+            } else {
+                self.general.developer_iters
+            },
+            reviewer_reviews: if local.general.reviewer_reviews != defaults.reviewer_reviews {
+                local.general.reviewer_reviews
+            } else {
+                self.general.reviewer_reviews
+            },
+            developer_context: if local.general.developer_context != defaults.developer_context {
+                local.general.developer_context
+            } else {
+                self.general.developer_context
+            },
+            reviewer_context: if local.general.reviewer_context != defaults.reviewer_context {
+                local.general.reviewer_context
+            } else {
+                self.general.reviewer_context
+            },
+            review_depth: if local.general.review_depth != defaults.review_depth {
+                local.general.review_depth.clone()
+            } else {
+                self.general.review_depth.clone()
+            },
             prompt_path: local
                 .general
                 .prompt_path
@@ -506,14 +571,31 @@ impl UnifiedConfig {
                 .git_user_email
                 .clone()
                 .or_else(|| self.general.git_user_email.clone()),
-            max_dev_continuations: local.general.max_dev_continuations,
-            max_xsd_retries: local.general.max_xsd_retries,
-            max_same_agent_retries: local.general.max_same_agent_retries,
+            max_dev_continuations: if local.general.max_dev_continuations
+                != defaults.max_dev_continuations
+            {
+                local.general.max_dev_continuations
+            } else {
+                self.general.max_dev_continuations
+            },
+            max_xsd_retries: if local.general.max_xsd_retries != defaults.max_xsd_retries {
+                local.general.max_xsd_retries
+            } else {
+                self.general.max_xsd_retries
+            },
+            max_same_agent_retries: if local.general.max_same_agent_retries
+                != defaults.max_same_agent_retries
+            {
+                local.general.max_same_agent_retries
+            } else {
+                self.general.max_same_agent_retries
+            },
         };
 
         // Merge CCS config with empty string semantics
-        // In CCS config, empty string explicitly means "disable this feature"
-        // So we preserve global value when local is empty string
+        // In CCS config, empty string in local means "not explicitly set, use global"
+        // Non-empty string in local means "override global with this value"
+        // To explicitly disable a CCS feature, set it to empty in BOTH global and local
         fn merge_ccs_string(local: &str, global: &str) -> String {
             if local.is_empty() {
                 global.to_string()
@@ -530,7 +612,11 @@ impl UnifiedConfig {
             streaming_flag: merge_ccs_string(&local.ccs.streaming_flag, &self.ccs.streaming_flag),
             json_parser: merge_ccs_string(&local.ccs.json_parser, &self.ccs.json_parser),
             session_flag: merge_ccs_string(&local.ccs.session_flag, &self.ccs.session_flag),
-            can_commit: local.ccs.can_commit,
+            can_commit: if local.ccs.can_commit != CcsConfig::default().can_commit {
+                local.ccs.can_commit
+            } else {
+                self.ccs.can_commit
+            },
         };
 
         // Merge agents map (local entries override global entries)

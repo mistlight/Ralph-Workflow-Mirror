@@ -35,7 +35,13 @@ pub enum ConfigValidationError {
 }
 
 /// Result of config validation.
-pub type ValidationResult<T> = Result<T, Vec<ConfigValidationError>>;
+/// On success: Ok(warnings) where warnings is a Vec<String> of deprecation warnings
+/// On failure: Err(errors) where errors is a Vec<ConfigValidationError>
+pub type ValidationResult = Result<Vec<String>, Vec<ConfigValidationError>>;
+
+/// Type alias for a list of (key_name, location) pairs.
+/// Used for tracking unknown and deprecated keys found during validation.
+type KeyLocationList = Vec<(String, String)>;
 
 /// Calculate Levenshtein distance between two strings.
 fn levenshtein_distance(a: &str, b: &str) -> usize {
@@ -84,14 +90,22 @@ pub fn suggest_key(unknown_key: &str, valid_keys: &[&str]) -> Option<String> {
         .map(|(key, _)| key.to_string())
 }
 
-/// Validate a config file and collect errors.
+/// Validate a config file and collect errors and warnings.
 ///
 /// This validates:
 /// - TOML syntax
 /// - Type checking against UnifiedConfig schema
 /// - Unknown keys with typo suggestions
-pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> {
+/// - Deprecated keys (returns as warnings, not errors)
+///
+/// Returns Ok((warnings)) on success with optional deprecation warnings,
+/// or Err(errors) on validation failure.
+pub fn validate_config_file(
+    path: &Path,
+    content: &str,
+) -> Result<Vec<String>, Vec<ConfigValidationError>> {
     let mut errors = Vec::new();
+    let mut warnings = Vec::new();
 
     // Step 1: Validate TOML syntax and parse to generic Value for unknown key detection
     let parsed_value: toml::Value = match toml::from_str(content) {
@@ -105,9 +119,11 @@ pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> 
         }
     };
 
-    // Step 2: Detect unknown keys by walking the TOML structure
+    // Step 2: Detect unknown and deprecated keys by walking the TOML structure
     // This is necessary because #[serde(default)] causes serde to silently ignore unknown fields
-    let unknown_keys = detect_unknown_keys(&parsed_value);
+    let (unknown_keys, deprecated_keys) = detect_unknown_and_deprecated_keys(&parsed_value);
+
+    // Unknown keys are errors
     for (key, location) in unknown_keys {
         let valid_keys = get_valid_config_keys();
         let suggestion = suggest_key(&key, &valid_keys);
@@ -116,6 +132,16 @@ pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> 
             key: format!("{}{}", location, key),
             suggestion,
         });
+    }
+
+    // Deprecated keys are warnings
+    for (key, location) in deprecated_keys {
+        let full_key = format!("{}{}", location, key);
+        warnings.push(format!(
+            "Deprecated key '{}' in {} - this key is no longer used and can be safely removed",
+            full_key,
+            path.display()
+        ));
     }
 
     // Step 3: Validate against UnifiedConfig schema for type checking
@@ -150,7 +176,7 @@ pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> 
     }
 
     if errors.is_empty() {
-        Ok(())
+        Ok(warnings)
     } else {
         Err(errors)
     }
@@ -190,13 +216,16 @@ fn format_invalid_type_message(error: &str) -> String {
     error.to_string()
 }
 
-/// Detect unknown keys in a parsed TOML value.
+/// Detect unknown keys and deprecated keys in a parsed TOML value.
 ///
-/// Returns a list of (key_name, location) pairs for keys that are not
-/// part of the valid configuration schema. The location helps identify
-/// which section the unknown key is in (e.g., "general.", "agents.claude.").
-fn detect_unknown_keys(value: &toml::Value) -> Vec<(String, String)> {
+/// Returns a tuple of:
+/// - KeyLocationList for unknown keys
+/// - KeyLocationList for deprecated keys
+///
+/// The location helps identify which section the key is in (e.g., "general.", "agents.claude.").
+fn detect_unknown_and_deprecated_keys(value: &toml::Value) -> (KeyLocationList, KeyLocationList) {
     let mut unknown = Vec::new();
+    let mut deprecated = Vec::new();
 
     // Get the top-level table
     if let Some(table) = value.as_table() {
@@ -205,7 +234,10 @@ fn detect_unknown_keys(value: &toml::Value) -> Vec<(String, String)> {
                 // Valid top-level sections
                 "general" | "ccs" | "agents" | "ccs_aliases" | "agent_chain" => {
                     // Recursively check subsections
-                    unknown.extend(check_section(key.as_str(), value, &format!("{}.", key)));
+                    let (section_unknown, section_deprecated) =
+                        check_section(key.as_str(), value, &format!("{}.", key));
+                    unknown.extend(section_unknown);
+                    deprecated.extend(section_deprecated);
                 }
                 // Unknown top-level section
                 _ => {
@@ -215,21 +247,28 @@ fn detect_unknown_keys(value: &toml::Value) -> Vec<(String, String)> {
         }
     }
 
-    unknown
+    (unknown, deprecated)
 }
 
-/// Check a section for unknown keys.
+/// Check a section for unknown and deprecated keys.
 ///
-/// Returns a list of (key_name, location) pairs for unknown keys within
-/// the section. The location includes the section prefix.
-fn check_section(section: &str, value: &toml::Value, prefix: &str) -> Vec<(String, String)> {
+/// Returns a tuple of:
+/// - KeyLocationList for unknown keys
+/// - KeyLocationList for deprecated keys
+///
+/// The location includes the section prefix.
+fn check_section(section: &str, value: &toml::Value, prefix: &str) -> (KeyLocationList, KeyLocationList) {
     let mut unknown = Vec::new();
+    let mut deprecated = Vec::new();
 
     match section {
         "general" => {
             if let Some(table) = value.as_table() {
                 for key in table.keys() {
-                    if !VALID_GENERAL_KEYS.contains(&key.as_str()) {
+                    let key_str = key.as_str();
+                    if DEPRECATED_GENERAL_KEYS.contains(&key_str) {
+                        deprecated.push((key.clone(), prefix.to_string()));
+                    } else if !VALID_GENERAL_KEYS.contains(&key_str) {
                         unknown.push((key.clone(), prefix.to_string()));
                     }
                 }
@@ -290,8 +329,15 @@ fn check_section(section: &str, value: &toml::Value, prefix: &str) -> Vec<(Strin
         }
     }
 
-    unknown
+    (unknown, deprecated)
 }
+
+/// Deprecated keys for the [general] section.
+/// These keys are accepted for backward compatibility but their use should trigger warnings.
+const DEPRECATED_GENERAL_KEYS: &[&str] = &[
+    "auto_rebase",           // Never implemented, removed in favor of manual git control
+    "max_recovery_attempts", // Never implemented, superseded by retry mechanisms
+];
 
 /// Valid keys for the [general] section.
 const VALID_GENERAL_KEYS: &[&str] = &[
@@ -317,6 +363,9 @@ const VALID_GENERAL_KEYS: &[&str] = &[
     "behavior",
     "workflow",
     "execution",
+    // Deprecated keys are still technically valid to avoid breaking existing configs
+    "auto_rebase",
+    "max_recovery_attempts",
 ];
 
 /// Valid keys for the [ccs] section.
@@ -361,7 +410,20 @@ const VALID_CCS_ALIAS_CONFIG_KEYS: &[&str] = &[
 ];
 
 /// Valid keys for the [agent_chain] section.
-const VALID_AGENT_CHAIN_KEYS: &[&str] = &["developer", "reviewer"];
+///
+/// This must match all fields in FallbackConfig from agents/fallback.rs.
+const VALID_AGENT_CHAIN_KEYS: &[&str] = &[
+    "developer",
+    "reviewer",
+    "commit",
+    "analysis",
+    "provider_fallback",
+    "max_retries",
+    "retry_delay_ms",
+    "backoff_multiplier",
+    "max_backoff_ms",
+    "max_cycles",
+];
 
 /// Get all valid configuration keys for typo detection.
 fn get_valid_config_keys() -> Vec<&'static str> {
@@ -608,5 +670,132 @@ work = "ccs work"
         let content = "";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok(), "Empty file should use default values");
+    }
+
+    #[test]
+    fn test_validate_agent_chain_with_all_valid_keys() {
+        // Verify all FallbackConfig fields are accepted in agent_chain section
+        let content = r#"
+[general]
+developer_iters = 5
+
+[agent_chain]
+developer = ["claude", "codex"]
+reviewer = ["claude"]
+commit = ["claude"]
+analysis = ["claude"]
+max_retries = 5
+retry_delay_ms = 2000
+backoff_multiplier = 2.5
+max_backoff_ms = 120000
+max_cycles = 5
+
+[agent_chain.provider_fallback]
+opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(result.is_ok(), "All FallbackConfig fields should be valid");
+    }
+
+    #[test]
+    fn test_validate_agent_chain_commit_key() {
+        // The commit key was missing from VALID_AGENT_CHAIN_KEYS
+        let content = r#"
+[agent_chain]
+developer = ["claude"]
+commit = ["claude"]
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(result.is_ok(), "commit key should be valid in agent_chain");
+    }
+
+    #[test]
+    fn test_validate_agent_chain_analysis_key() {
+        // The analysis key was missing from VALID_AGENT_CHAIN_KEYS
+        let content = r#"
+[agent_chain]
+developer = ["claude"]
+analysis = ["claude"]
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(
+            result.is_ok(),
+            "analysis key should be valid in agent_chain"
+        );
+    }
+
+    #[test]
+    fn test_validate_agent_chain_retry_keys() {
+        // These retry/backoff keys were missing from VALID_AGENT_CHAIN_KEYS
+        let content = r#"
+[agent_chain]
+developer = ["claude"]
+max_retries = 3
+retry_delay_ms = 5000
+backoff_multiplier = 1.5
+max_backoff_ms = 30000
+max_cycles = 2
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(
+            result.is_ok(),
+            "retry/backoff keys should be valid in agent_chain"
+        );
+    }
+
+    #[test]
+    fn test_validate_agent_chain_provider_fallback_key() {
+        // The provider_fallback nested table was missing from VALID_AGENT_CHAIN_KEYS
+        let content = r#"
+[agent_chain]
+developer = ["opencode"]
+
+[agent_chain.provider_fallback]
+opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(
+            result.is_ok(),
+            "provider_fallback nested table should be valid in agent_chain"
+        );
+    }
+
+    #[test]
+    fn test_validate_config_file_deprecated_key_warning() {
+        let content = r#"
+[general]
+verbosity = 2
+auto_rebase = true
+max_recovery_attempts = 3
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(result.is_ok(), "Deprecated keys should not cause errors");
+
+        if let Ok(warnings) = result {
+            assert_eq!(warnings.len(), 2, "Should have 2 deprecation warnings");
+            assert!(
+                warnings.iter().any(|w| w.contains("auto_rebase")),
+                "Should warn about auto_rebase"
+            );
+            assert!(
+                warnings.iter().any(|w| w.contains("max_recovery_attempts")),
+                "Should warn about max_recovery_attempts"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_config_file_no_warnings_without_deprecated() {
+        let content = r#"
+[general]
+verbosity = 2
+developer_iters = 5
+"#;
+        let result = validate_config_file(Path::new("test.toml"), content);
+        assert!(result.is_ok(), "Valid config should pass");
+
+        if let Ok(warnings) = result {
+            assert_eq!(warnings.len(), 0, "Should have no warnings");
+        }
     }
 }

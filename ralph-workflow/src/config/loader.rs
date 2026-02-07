@@ -207,17 +207,22 @@ pub fn load_config_from_path_with_env(
         if env.file_exists(path) {
             let content = env.read_file(path)?;
             // Validate the config file
-            if let Err(errors) = validate_config_file(path, &content) {
-                validation_errors.extend(errors);
+            match validate_config_file(path, &content) {
+                Ok(config_warnings) => {
+                    warnings.extend(config_warnings);
+                }
+                Err(errors) => {
+                    validation_errors.extend(errors);
+                }
             }
             match UnifiedConfig::load_from_content(&content) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
-                    warnings.push(format!(
-                        "Failed to load global config from {}: {}",
-                        path.display(),
-                        e
-                    ));
+                    validation_errors.push(ConfigValidationError::InvalidValue {
+                        file: path.to_path_buf(),
+                        key: "config".to_string(),
+                        message: format!("Failed to parse config: {}", e),
+                    });
                     None
                 }
             }
@@ -231,17 +236,22 @@ pub fn load_config_from_path_with_env(
             if env.file_exists(&global_path) {
                 let content = env.read_file(&global_path)?;
                 // Validate the config file
-                if let Err(errors) = validate_config_file(&global_path, &content) {
-                    validation_errors.extend(errors);
+                match validate_config_file(&global_path, &content) {
+                    Ok(config_warnings) => {
+                        warnings.extend(config_warnings);
+                    }
+                    Err(errors) => {
+                        validation_errors.extend(errors);
+                    }
                 }
                 match UnifiedConfig::load_from_content(&content) {
                     Ok(cfg) => Some(cfg),
                     Err(e) => {
-                        warnings.push(format!(
-                            "Failed to load global config from {}: {}",
-                            global_path.display(),
-                            e
-                        ));
+                        validation_errors.push(ConfigValidationError::InvalidValue {
+                            file: global_path.to_path_buf(),
+                            key: "config".to_string(),
+                            message: format!("Failed to parse config: {}", e),
+                        });
                         None
                     }
                 }
@@ -259,17 +269,22 @@ pub fn load_config_from_path_with_env(
         if env.file_exists(&local_path) {
             let content = env.read_file(&local_path)?;
             // Validate the config file
-            if let Err(errors) = validate_config_file(&local_path, &content) {
-                validation_errors.extend(errors);
+            match validate_config_file(&local_path, &content) {
+                Ok(config_warnings) => {
+                    warnings.extend(config_warnings);
+                }
+                Err(errors) => {
+                    validation_errors.extend(errors);
+                }
             }
             match UnifiedConfig::load_from_content(&content) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
-                    warnings.push(format!(
-                        "Failed to load local config from {}: {}",
-                        local_path.display(),
-                        e
-                    ));
+                    validation_errors.push(ConfigValidationError::InvalidValue {
+                        file: local_path.to_path_buf(),
+                        key: "config".to_string(),
+                        message: format!("Failed to parse config: {}", e),
+                    });
                     None
                 }
             }
