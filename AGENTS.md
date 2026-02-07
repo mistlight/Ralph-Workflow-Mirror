@@ -95,6 +95,27 @@ Handle dead code by:
 
 Run the commands in `docs/agents/verification.md`. All commands must produce **NO OUTPUT**.
 
+### YOU MUST FIX ALL FAILURES - NOT JUST YOUR OWN
+
+**CRITICAL:** When verification fails, you MUST fix ALL failures before committing - even if they are pre-existing issues you did not introduce.
+
+**Why this matters:**
+- Pre-existing failures mean someone else skipped verification
+- Every commit that ignores failures makes the problem worse
+- If you don't fix it now, it will block the next contributor
+- **Pre-existing issues are MORE urgent, not less** - they've been rotting longer
+
+**The rule is simple:**
+1. Run verification
+2. If ANY command produces output → FIX IT
+3. Do not rationalize ("not my change", "pre-existing", "unrelated")
+4. Do not defer ("I'll file an issue", "someone else should fix it")
+5. FIX IT NOW, then commit
+
+**If you encounter pre-existing failures:**
+- Fix them as part of your commit (note in commit message: "Also fixes pre-existing...")
+- This is not optional. This is not extra credit. This is the job.
+
 **Additional verification for metrics changes:**
 
 When changing iteration/retry/continuation/fallback logic, run the metrics tests to ensure metrics remain accurate and no drift occurs:
