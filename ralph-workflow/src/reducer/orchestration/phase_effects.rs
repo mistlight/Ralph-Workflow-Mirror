@@ -148,7 +148,7 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             //
             // At the boundary (iteration == total_iterations), we ALWAYS have work to do:
             // - If not started/incomplete: Run iteration steps
-            // - If complete (archived == Some(iteration)): ApplyDevelopmentOutcome (line 241)
+            // - If complete (archived == Some(iteration)): ApplyDevelopmentOutcome to process the result and transition to the next phase
             //
             // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
             // The orchestration will determine which step to execute based on the flags.
@@ -329,7 +329,7 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             //
             // At the boundary (reviewer_pass == total_reviewer_passes), we ALWAYS have work to do:
             // - If not started/incomplete: Run review pass steps
-            // - If complete: Process outcome and transition
+            // - If complete (archived == Some(pass)): ApplyReviewOutcome to process the result and transition to the next phase
             //
             // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
             // The orchestration will determine which step to execute based on the flags.
