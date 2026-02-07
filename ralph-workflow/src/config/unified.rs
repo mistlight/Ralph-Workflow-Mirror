@@ -453,6 +453,7 @@ impl UnifiedConfig {
     /// - Maps (agents, ccs_aliases): local entries merge with global (local wins on collision)
     /// - Arrays (agent_chain): local replaces global entirely (not appended)
     /// - Optional values: local Some(_) replaces global, local None preserves global
+    /// - CCS string values: empty string ("") in local does NOT override global (preserves global)
     ///
     /// This is a pure function - no I/O, cannot fail.
     pub fn merge_with(&self, local: &UnifiedConfig) -> UnifiedConfig {
@@ -501,15 +502,25 @@ impl UnifiedConfig {
             max_same_agent_retries: local.general.max_same_agent_retries,
         };
 
-        // Merge CCS config (scalar overrides)
+        // Merge CCS config with empty string semantics
+        // In CCS config, empty string explicitly means "disable this feature"
+        // So we preserve global value when local is empty string
+        fn merge_ccs_string(local: &str, global: &str) -> String {
+            if local.is_empty() {
+                global.to_string()
+            } else {
+                local.to_string()
+            }
+        }
+
         let ccs = CcsConfig {
-            output_flag: local.ccs.output_flag.clone(),
-            yolo_flag: local.ccs.yolo_flag.clone(),
-            verbose_flag: local.ccs.verbose_flag.clone(),
-            print_flag: local.ccs.print_flag.clone(),
-            streaming_flag: local.ccs.streaming_flag.clone(),
-            json_parser: local.ccs.json_parser.clone(),
-            session_flag: local.ccs.session_flag.clone(),
+            output_flag: merge_ccs_string(&local.ccs.output_flag, &self.ccs.output_flag),
+            yolo_flag: merge_ccs_string(&local.ccs.yolo_flag, &self.ccs.yolo_flag),
+            verbose_flag: merge_ccs_string(&local.ccs.verbose_flag, &self.ccs.verbose_flag),
+            print_flag: merge_ccs_string(&local.ccs.print_flag, &self.ccs.print_flag),
+            streaming_flag: merge_ccs_string(&local.ccs.streaming_flag, &self.ccs.streaming_flag),
+            json_parser: merge_ccs_string(&local.ccs.json_parser, &self.ccs.json_parser),
+            session_flag: merge_ccs_string(&local.ccs.session_flag, &self.ccs.session_flag),
             can_commit: local.ccs.can_commit,
         };
 

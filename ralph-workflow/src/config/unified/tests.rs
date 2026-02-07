@@ -366,3 +366,207 @@ fn test_merge_with_local_none_agent_chain_preserves_global() {
     assert_eq!(chain.developer, vec!["claude"]);
     assert_eq!(chain.reviewer, vec!["claude"]);
 }
+
+#[test]
+fn test_merge_with_nested_behavior_flags() {
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            behavior: GeneralBehaviorFlags {
+                interactive: true,
+                auto_detect_stack: true,
+                strict_validation: false,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        general: GeneralConfig {
+            behavior: GeneralBehaviorFlags {
+                interactive: false,
+                auto_detect_stack: true,
+                strict_validation: true,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    assert!(!merged.general.behavior.interactive);
+    assert!(merged.general.behavior.auto_detect_stack);
+    assert!(merged.general.behavior.strict_validation);
+}
+
+#[test]
+fn test_merge_with_ccs_aliases_map_merges() {
+    use std::collections::HashMap;
+
+    let mut global_aliases = HashMap::new();
+    global_aliases.insert(
+        "work".to_string(),
+        CcsAliasToml::Command("ccs work".to_string()),
+    );
+
+    let mut local_aliases = HashMap::new();
+    local_aliases.insert(
+        "personal".to_string(),
+        CcsAliasToml::Command("ccs personal".to_string()),
+    );
+
+    let global = UnifiedConfig {
+        ccs_aliases: global_aliases,
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        ccs_aliases: local_aliases,
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    assert_eq!(merged.ccs_aliases.len(), 2);
+    assert!(merged.ccs_aliases.contains_key("work"));
+    assert!(merged.ccs_aliases.contains_key("personal"));
+}
+
+#[test]
+fn test_merge_with_ccs_empty_string_preserves_global() {
+    // Test that empty string in local config does NOT override global
+    // This is important for CCS where empty string means "disable this feature"
+    let global = UnifiedConfig {
+        ccs: CcsConfig {
+            output_flag: "--output-format=stream-json".to_string(),
+            yolo_flag: "--dangerously-skip-permissions".to_string(),
+            verbose_flag: "--verbose".to_string(),
+            print_flag: "--print".to_string(),
+            streaming_flag: "--include-partial-messages".to_string(),
+            json_parser: "claude".to_string(),
+            session_flag: "--resume {}".to_string(),
+            can_commit: true,
+        },
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        ccs: CcsConfig {
+            // Empty string should preserve global value
+            output_flag: "".to_string(),
+            // Non-empty string should override
+            yolo_flag: "--yolo".to_string(),
+            // Empty string should preserve global value
+            verbose_flag: "".to_string(),
+            // Empty string should preserve global value
+            print_flag: "".to_string(),
+            streaming_flag: "".to_string(),
+            json_parser: "".to_string(),
+            session_flag: "".to_string(),
+            can_commit: false, // Boolean overrides normally
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    // Empty string in local should preserve global value
+    assert_eq!(merged.ccs.output_flag, "--output-format=stream-json");
+    // Non-empty string in local should override
+    assert_eq!(merged.ccs.yolo_flag, "--yolo");
+    // Empty string in local should preserve global value
+    assert_eq!(merged.ccs.verbose_flag, "--verbose");
+    assert_eq!(merged.ccs.print_flag, "--print");
+    assert_eq!(merged.ccs.streaming_flag, "--include-partial-messages");
+    assert_eq!(merged.ccs.json_parser, "claude");
+    assert_eq!(merged.ccs.session_flag, "--resume {}");
+    // Boolean overrides normally
+    assert!(!merged.ccs.can_commit);
+}
+
+#[test]
+fn test_merge_with_ccs_all_empty_preserves_all_global() {
+    let global = UnifiedConfig {
+        ccs: CcsConfig {
+            output_flag: "--output=json".to_string(),
+            yolo_flag: "--yes".to_string(),
+            verbose_flag: "-v".to_string(),
+            print_flag: "-p".to_string(),
+            streaming_flag: "-s".to_string(),
+            json_parser: "generic".to_string(),
+            session_flag: "--continue {}".to_string(),
+            can_commit: true,
+        },
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        ccs: CcsConfig {
+            output_flag: "".to_string(),
+            yolo_flag: "".to_string(),
+            verbose_flag: "".to_string(),
+            print_flag: "".to_string(),
+            streaming_flag: "".to_string(),
+            json_parser: "".to_string(),
+            session_flag: "".to_string(),
+            can_commit: true,
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    // All global values should be preserved
+    assert_eq!(merged.ccs.output_flag, "--output=json");
+    assert_eq!(merged.ccs.yolo_flag, "--yes");
+    assert_eq!(merged.ccs.verbose_flag, "-v");
+    assert_eq!(merged.ccs.print_flag, "-p");
+    assert_eq!(merged.ccs.streaming_flag, "-s");
+    assert_eq!(merged.ccs.json_parser, "generic");
+    assert_eq!(merged.ccs.session_flag, "--continue {}");
+    assert!(merged.ccs.can_commit);
+}
+
+#[test]
+fn test_merge_with_ccs_non_empty_overrides() {
+    let global = UnifiedConfig {
+        ccs: CcsConfig {
+            output_flag: "--output=json".to_string(),
+            yolo_flag: "--yes".to_string(),
+            verbose_flag: "-v".to_string(),
+            print_flag: "-p".to_string(),
+            streaming_flag: "-s".to_string(),
+            json_parser: "generic".to_string(),
+            session_flag: "--continue {}".to_string(),
+            can_commit: true,
+        },
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        ccs: CcsConfig {
+            output_flag: "--output=stream-json".to_string(),
+            yolo_flag: "--yolo".to_string(),
+            verbose_flag: "-vv".to_string(),
+            print_flag: "--print".to_string(),
+            streaming_flag: "--include-partial".to_string(),
+            json_parser: "claude".to_string(),
+            session_flag: "--resume {}".to_string(),
+            can_commit: false,
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    // All local values should override
+    assert_eq!(merged.ccs.output_flag, "--output=stream-json");
+    assert_eq!(merged.ccs.yolo_flag, "--yolo");
+    assert_eq!(merged.ccs.verbose_flag, "-vv");
+    assert_eq!(merged.ccs.print_flag, "--print");
+    assert_eq!(merged.ccs.streaming_flag, "--include-partial");
+    assert_eq!(merged.ccs.json_parser, "claude");
+    assert_eq!(merged.ccs.session_flag, "--resume {}");
+    assert!(!merged.ccs.can_commit);
+}

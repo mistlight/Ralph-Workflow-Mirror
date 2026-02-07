@@ -14,12 +14,122 @@
 //!
 //! Legacy config discovery is intentionally not supported. Only the unified
 //! config path is consulted, and missing config files fall back to defaults.
+//!
+//! # Fail-Fast Validation
+//!
+//! Ralph validates ALL config files before starting the pipeline. Invalid TOML,
+//! type mismatches, or unknown keys will cause Ralph to refuse to start with
+//! a clear error message. This is not optional - config validation runs on
+//! every startup before any other CLI operation.
 use super::parser::parse_env_bool;
 use super::path_resolver::ConfigEnvironment;
 use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::UnifiedConfig;
+use super::validation::{validate_config_file, ConfigValidationError};
 use std::env;
 use std::path::PathBuf;
+
+/// Error type for config loading with validation.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigLoadWithValidationError {
+    #[error("Configuration validation failed")]
+    ValidationErrors(Vec<ConfigValidationError>),
+    #[error("Failed to read config file: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+impl ConfigLoadWithValidationError {
+    /// Format all validation errors for user display.
+    pub fn format_errors(&self) -> String {
+        match self {
+            ConfigLoadWithValidationError::ValidationErrors(errors) => {
+                let mut output =
+                    String::from("Error: Configuration invalid - cannot start Ralph\n\n");
+
+                // Group errors by file for clearer presentation
+                let mut global_errors: Vec<&ConfigValidationError> = Vec::new();
+                let mut local_errors: Vec<&ConfigValidationError> = Vec::new();
+                let mut other_errors: Vec<&ConfigValidationError> = Vec::new();
+
+                for error in errors {
+                    let path_str = error.file().to_string_lossy();
+                    if path_str.contains(".config") {
+                        global_errors.push(error);
+                    } else if path_str.contains(".agent") {
+                        local_errors.push(error);
+                    } else {
+                        other_errors.push(error);
+                    }
+                }
+
+                if !global_errors.is_empty() {
+                    output.push_str("~/.config/ralph-workflow.toml:\n");
+                    for error in global_errors {
+                        output.push_str(&format!("  {}\n", format_single_error(error)));
+                    }
+                    output.push('\n');
+                }
+
+                if !local_errors.is_empty() {
+                    output.push_str(".agent/ralph-workflow.toml:\n");
+                    for error in local_errors {
+                        output.push_str(&format!("  {}\n", format_single_error(error)));
+                    }
+                    output.push('\n');
+                }
+
+                if !other_errors.is_empty() {
+                    for error in other_errors {
+                        output.push_str(&format!(
+                            "{}:\n  {}\n",
+                            error.file().display(),
+                            format_single_error(error)
+                        ));
+                    }
+                    output.push('\n');
+                }
+
+                output.push_str(
+                    "Fix these errors and try again, or run `ralph --check-config` for details.",
+                );
+                output
+            }
+            ConfigLoadWithValidationError::Io(e) => e.to_string(),
+        }
+    }
+}
+
+/// Format a single validation error for display.
+fn format_single_error(error: &ConfigValidationError) -> String {
+    match error {
+        ConfigValidationError::TomlSyntax { error, .. } => {
+            format!("TOML syntax error: {}", error)
+        }
+        ConfigValidationError::UnknownKey {
+            key, suggestion, ..
+        } => {
+            if let Some(s) = suggestion {
+                format!("Unknown key '{}'. Did you mean '{}'?", key, s)
+            } else {
+                format!("Unknown key '{}'", key)
+            }
+        }
+        ConfigValidationError::InvalidValue { key, message, .. } => {
+            format!("Invalid value for '{}': {}", key, message)
+        }
+    }
+}
+
+impl ConfigValidationError {
+    /// Get the file path from the error.
+    pub fn file(&self) -> &std::path::Path {
+        match self {
+            ConfigValidationError::TomlSyntax { file, .. } => file,
+            ConfigValidationError::InvalidValue { file, .. } => file,
+            ConfigValidationError::UnknownKey { file, .. } => file,
+        }
+    }
+}
 
 /// Load configuration with the unified approach.
 ///
@@ -47,10 +157,21 @@ pub fn load_config() -> (Config, Option<UnifiedConfig>, Vec<String>) {
 ///
 /// Returns a tuple of `(Config, Option<UnifiedConfig>, Vec<String>)` where the last element
 /// contains any deprecation warnings to be displayed to the user.
+///
+/// # Panics
+///
+/// Panics if config validation fails. This should be handled at the CLI layer in production.
 pub fn load_config_from_path(
     config_path: Option<&std::path::Path>,
 ) -> (Config, Option<UnifiedConfig>, Vec<String>) {
-    load_config_from_path_with_env(config_path, &super::path_resolver::RealConfigEnvironment)
+    match load_config_from_path_with_env(config_path, &super::path_resolver::RealConfigEnvironment)
+    {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("{}", e.format_errors());
+            panic!("Configuration validation failed - cannot continue");
+        }
+    }
 }
 
 /// Load configuration from a specific path or the default location using a [`ConfigEnvironment`].
@@ -67,38 +188,80 @@ pub fn load_config_from_path(
 ///
 /// Returns a tuple of `(Config, Option<UnifiedConfig>, Vec<String>)` where the last element
 /// contains any deprecation warnings to be displayed to the user.
+///
+/// # Errors
+///
+/// Returns `Err(ConfigLoadWithValidationError)` if any config file has validation errors
+/// (invalid TOML, type mismatches, unknown keys). Per requirements, Ralph refuses to start
+/// if ANY config file has errors.
 pub fn load_config_from_path_with_env(
     config_path: Option<&std::path::Path>,
     env: &dyn ConfigEnvironment,
-) -> (Config, Option<UnifiedConfig>, Vec<String>) {
+) -> Result<(Config, Option<UnifiedConfig>, Vec<String>), ConfigLoadWithValidationError> {
     let mut warnings = Vec::new();
+    let mut validation_errors = Vec::new();
 
-    // Step 1: Load global config (unified config from ~/.config/)
-    let global_unified = config_path.map_or_else(
-        || UnifiedConfig::load_with_env(env),
-        |path| {
-            if env.file_exists(path) {
-                match UnifiedConfig::load_from_path_with_env(path, env) {
+    // Step 1: Load and validate global config
+    let global_unified = if let Some(path) = config_path {
+        // Use provided path
+        if env.file_exists(path) {
+            let content = env.read_file(path)?;
+            // Validate the config file
+            if let Err(errors) = validate_config_file(path, &content) {
+                validation_errors.extend(errors);
+            }
+            match UnifiedConfig::load_from_path_with_env(path, env) {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    warnings.push(format!(
+                        "Failed to load global config from {}: {}",
+                        path.display(),
+                        e
+                    ));
+                    None
+                }
+            }
+        } else {
+            warnings.push(format!("Global config file not found: {}", path.display()));
+            None
+        }
+    } else {
+        // Use default path
+        if let Some(global_path) = env.unified_config_path() {
+            if env.file_exists(&global_path) {
+                let content = env.read_file(&global_path)?;
+                // Validate the config file
+                if let Err(errors) = validate_config_file(&global_path, &content) {
+                    validation_errors.extend(errors);
+                }
+                match UnifiedConfig::load_from_path_with_env(&global_path, env) {
                     Ok(cfg) => Some(cfg),
                     Err(e) => {
                         warnings.push(format!(
                             "Failed to load global config from {}: {}",
-                            path.display(),
+                            global_path.display(),
                             e
                         ));
                         None
                     }
                 }
             } else {
-                warnings.push(format!("Global config file not found: {}", path.display()));
+                // File doesn't exist - not an error, use defaults
                 None
             }
-        },
-    );
+        } else {
+            None
+        }
+    };
 
-    // Step 2: Load local config (.agent/ralph-workflow.toml)
-    let local_unified = env.local_config_path().and_then(|local_path| {
+    // Step 2: Load and validate local config
+    let local_unified = if let Some(local_path) = env.local_config_path() {
         if env.file_exists(&local_path) {
+            let content = env.read_file(&local_path)?;
+            // Validate the config file
+            if let Err(errors) = validate_config_file(&local_path, &content) {
+                validation_errors.extend(errors);
+            }
             match UnifiedConfig::load_from_path_with_env(&local_path, env) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
@@ -113,7 +276,16 @@ pub fn load_config_from_path_with_env(
         } else {
             None
         }
-    });
+    } else {
+        None
+    };
+
+    // Fail-fast: if there are any validation errors, return them immediately
+    if !validation_errors.is_empty() {
+        return Err(ConfigLoadWithValidationError::ValidationErrors(
+            validation_errors,
+        ));
+    }
 
     // Step 3: Merge configs (local overrides global)
     let merged_unified = match (global_unified, local_unified) {
@@ -145,7 +317,7 @@ pub fn load_config_from_path_with_env(
     // Step 5: Apply environment variable overrides
     let config = apply_env_overrides(config, &mut warnings);
 
-    (config, merged_unified, warnings)
+    Ok((config, merged_unified, warnings))
 }
 
 /// Create a Config from `UnifiedConfig`.

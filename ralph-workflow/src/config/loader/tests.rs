@@ -17,8 +17,11 @@ review_depth = "standard"
         .with_unified_config_path("/test/config/ralph-workflow.toml")
         .with_file("/custom/config.toml", toml_str);
 
-    let (config, unified, warnings) =
-        load_config_from_path_with_env(Some(Path::new("/custom/config.toml")), &env);
+    let Ok((config, unified, warnings)) =
+        load_config_from_path_with_env(Some(Path::new("/custom/config.toml")), &env)
+    else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert!(warnings.is_empty(), "Unexpected warnings: {:?}", warnings);
     assert!(unified.is_some());
@@ -32,8 +35,11 @@ fn test_load_config_with_env_missing_file() {
     let env =
         MemoryConfigEnvironment::new().with_unified_config_path("/test/config/ralph-workflow.toml");
 
-    let (config, unified, warnings) =
-        load_config_from_path_with_env(Some(Path::new("/missing/config.toml")), &env);
+    let Ok((config, unified, warnings)) =
+        load_config_from_path_with_env(Some(Path::new("/missing/config.toml")), &env)
+    else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert!(unified.is_none());
     assert_eq!(warnings.len(), 1);
@@ -55,7 +61,9 @@ review_depth = "standard"
         .with_unified_config_path("/test/config/ralph-workflow.toml")
         .with_file("/test/config/ralph-workflow.toml", toml_str);
 
-    let (config, unified, warnings) = load_config_from_path_with_env(None, &env);
+    let Ok((config, unified, warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert!(warnings.is_empty(), "Unexpected warnings: {:?}", warnings);
     assert!(unified.is_some());
@@ -133,13 +141,15 @@ max_dev_continuations = 0
         .with_unified_config_path("/test/config/ralph-workflow.toml")
         .with_file("/test/config/ralph-workflow.toml", toml_str);
 
-    let (config, _unified, warnings) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _unified, warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert_eq!(config.max_dev_continuations, Some(2));
     assert!(
         warnings
             .iter()
-            .any(|w| w.contains("max_dev_continuations") && w.contains(">= 1")),
+            .any(|w: &String| w.contains("max_dev_continuations") && w.contains(">= 1")),
         "Expected warning about invalid max_dev_continuations, got: {:?}",
         warnings
     );
@@ -161,12 +171,14 @@ max_xsd_retries = 0
         .with_unified_config_path("/test/config/ralph-workflow.toml")
         .with_file("/test/config/ralph-workflow.toml", toml_str);
 
-    let (config, _unified, warnings) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _unified, warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     // 0 should be accepted (not rejected with warning)
     assert_eq!(config.max_xsd_retries, Some(0));
     assert!(
-        !warnings.iter().any(|w| w.contains("max_xsd_retries")),
+        !warnings.iter().any(|w: &String| w.contains("max_xsd_retries")),
         "Should not warn about max_xsd_retries=0, got: {:?}",
         warnings
     );
@@ -188,13 +200,15 @@ max_same_agent_retries = 0
         .with_unified_config_path("/test/config/ralph-workflow.toml")
         .with_file("/test/config/ralph-workflow.toml", toml_str);
 
-    let (config, _unified, warnings) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _unified, warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert_eq!(config.max_same_agent_retries, Some(0));
     assert!(
         !warnings
             .iter()
-            .any(|w| w.contains("max_same_agent_retries")),
+            .any(|w: &String| w.contains("max_same_agent_retries")),
         "Should not warn about max_same_agent_retries=0, got: {:?}",
         warnings
     );
@@ -210,7 +224,9 @@ fn test_load_config_returns_defaults_without_file() {
     env::remove_var("RALPH_VERBOSITY");
 
     let env = MemoryConfigEnvironment::new();
-    let (config, _unified, _warnings) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _unified, _warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
     assert_eq!(config.developer_iters, 5);
     assert_eq!(config.verbosity, Verbosity::Verbose);
 }
@@ -236,7 +252,9 @@ reviewer_reviews = 3
         .with_file("/test/config/ralph-workflow.toml", global_toml)
         .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
 
-    let (config, _, _) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _, _)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     // Local overrides take effect
     assert_eq!(config.developer_iters, 10);
@@ -259,7 +277,9 @@ developer_iters = 8
         .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
     // Global config doesn't exist
 
-    let (config, _, _) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _, _)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert_eq!(config.verbosity as u8, 4);
     assert_eq!(config.developer_iters, 8);
@@ -279,7 +299,9 @@ developer_iters = 7
         .with_file("/test/config/ralph-workflow.toml", global_toml);
     // Local config doesn't exist
 
-    let (config, _, _) = load_config_from_path_with_env(None, &env);
+    let Ok((config, _, _)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     assert_eq!(config.verbosity as u8, 3);
     assert_eq!(config.developer_iters, 7);
@@ -307,7 +329,9 @@ developer_iters = 10
     // Set env var to override
     std::env::set_var("RALPH_DEVELOPER_ITERS", "15");
 
-    let (config, _, _) = load_config_from_path_with_env(None, &env_impl);
+    let Ok((config, _, _)) = load_config_from_path_with_env(None, &env_impl) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
 
     // Env var wins over local config
     assert_eq!(config.developer_iters, 15);

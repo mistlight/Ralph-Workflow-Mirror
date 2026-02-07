@@ -171,3 +171,127 @@ fn test_init_local_config_overwrites_with_force() {
         .unwrap();
     assert!(content.contains("Local Ralph configuration"));
 }
+
+#[test]
+fn test_check_config_with_both_files() {
+    let env = test_env()
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file(
+            "/test/config/ralph-workflow.toml",
+            "[general]\nverbosity = 2\ndeveloper_iters = 5",
+        )
+        .with_file(
+            "/test/project/.agent/ralph-workflow.toml",
+            "[general]\ndeveloper_iters = 10",
+        );
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    // Should succeed even with output (checking doesn't fail on valid config)
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_config_verbose_mode() {
+    let env = test_env().with_file(
+        "/test/config/ralph-workflow.toml",
+        "[general]\nverbosity = 2",
+    );
+
+    let result = handle_check_config_with(Colors::new(), &env, true);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_config_no_files() {
+    let env = test_env();
+    // No config files exist
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    // Should still succeed with defaults
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_config_only_global() {
+    let env = test_env().with_file(
+        "/test/config/ralph-workflow.toml",
+        "[general]\nverbosity = 3\ndeveloper_iters = 7",
+    );
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_config_only_local() {
+    let env = test_env()
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file(
+            "/test/project/.agent/ralph-workflow.toml",
+            "[general]\nverbosity = 4",
+        );
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_config_fails_on_invalid_toml() {
+    let env = test_env().with_file(
+        "/test/config/ralph-workflow.toml",
+        "[general\nverbosity = 2", // Invalid TOML - missing closing bracket
+    );
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    // Should fail on invalid TOML
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("Configuration validation failed") || err_msg.contains("TOML"),
+        "Error should mention validation failure: {}",
+        err_msg
+    );
+}
+
+// NOTE: Full unknown key detection is not yet implemented.
+// serde ignores unknown fields by default with #[serde(default)].
+// This would require using serde::deny_unknown_fields or custom validation.
+// The test below documents current behavior rather than desired behavior.
+#[test]
+fn test_check_config_unknown_key_ignored_currently() {
+    let env = test_env().with_file(
+        "/test/config/ralph-workflow.toml",
+        "[general]\ndevelper_iters = 5", // Typo: should be developer_iters
+    );
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    // Currently passes because unknown keys are silently ignored
+    // TODO: This should fail once full semantic validation is implemented
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_config_fails_on_invalid_type() {
+    let env = test_env().with_file(
+        "/test/config/ralph-workflow.toml",
+        "[general]\ndeveloper_iters = \"five\"", // String instead of int
+    );
+
+    let result = handle_check_config_with(Colors::new(), &env, false);
+
+    // Should fail on type mismatch
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("Configuration validation failed") || err_msg.contains("Invalid value") || err_msg.contains("expected"),
+        "Error should mention validation failure or type error: {}",
+        err_msg
+    );
+}

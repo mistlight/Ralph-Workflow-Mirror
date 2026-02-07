@@ -101,7 +101,15 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     // Load configuration from unified config file (with env overrides)
     // Uses the provided path_resolver for filesystem operations instead of std::fs directly
     let (mut config, unified, warnings) =
-        loader::load_config_from_path_with_env(args.config.as_deref(), path_resolver);
+        match loader::load_config_from_path_with_env(args.config.as_deref(), path_resolver) {
+            Ok(result) => result,
+            Err(e) => {
+                // Config validation failed - display error and exit
+                // Per requirements: Ralph refuses to start pipeline if ANY config file has errors
+                eprintln!("{}", e.format_errors());
+                return Err(anyhow::anyhow!("Configuration validation failed"));
+            }
+        };
 
     // Display any deprecation warnings from config loading
     for warning in warnings {
