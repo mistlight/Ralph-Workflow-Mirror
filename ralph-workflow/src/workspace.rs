@@ -348,19 +348,6 @@ pub trait Workspace: Send + Sync {
         self.root().join(AGENT_DIR)
     }
 
-    /// Path to the `.agent/logs` directory.
-    ///
-    /// # Deprecated
-    ///
-    /// This method is deprecated. New code should use [`RunLogContext`] for per-run
-    /// log directories instead. This method is kept for backward compatibility during
-    /// the migration to per-run logging.
-    #[deprecated(note = "Use RunLogContext for per-run log directories")]
-    #[allow(deprecated)]
-    fn agent_logs(&self) -> PathBuf {
-        self.root().join(AGENT_LOGS)
-    }
-
     /// Path to the `.agent/tmp` directory.
     fn agent_tmp(&self) -> PathBuf {
         self.root().join(AGENT_TMP)
@@ -424,19 +411,6 @@ pub trait Workspace: Send + Sync {
     /// Path to `.agent/agents.toml`.
     fn agents_toml(&self) -> PathBuf {
         self.root().join(AGENTS_TOML)
-    }
-
-    /// Path to `.agent/logs/pipeline.log`.
-    ///
-    /// # Deprecated
-    ///
-    /// This method is deprecated. New code should use [`RunLogContext::pipeline_log()`]
-    /// for per-run log paths instead. This method is kept for backward compatibility
-    /// during the migration to per-run logging.
-    #[deprecated(note = "Use RunLogContext::pipeline_log() for per-run log paths")]
-    #[allow(deprecated)]
-    fn pipeline_log(&self) -> PathBuf {
-        self.root().join(PIPELINE_LOG)
     }
 
     /// Path to an XSD schema file in `.agent/tmp/`.

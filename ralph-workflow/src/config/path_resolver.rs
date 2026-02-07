@@ -56,6 +56,16 @@ pub trait ConfigEnvironment: Send + Sync {
     /// Returns `None` if the path cannot be determined (e.g., no home directory).
     fn unified_config_path(&self) -> Option<PathBuf>;
 
+    /// Get the path to the local config file.
+    ///
+    /// In production, this returns `.agent/ralph-workflow.toml` relative to CWD.
+    /// Tests may override this to use a different path.
+    ///
+    /// Returns `None` if local config is not supported or path cannot be determined.
+    fn local_config_path(&self) -> Option<PathBuf> {
+        Some(PathBuf::from(".agent/ralph-workflow.toml"))
+    }
+
     /// Get the path to the PROMPT.md file.
     ///
     /// In production, this returns `./PROMPT.md` (relative to current directory).
@@ -137,6 +147,7 @@ impl ConfigEnvironment for RealConfigEnvironment {
 pub struct MemoryConfigEnvironment {
     unified_config_path: Option<PathBuf>,
     prompt_path: Option<PathBuf>,
+    local_config_path: Option<PathBuf>,
     /// In-memory file storage.
     files: Arc<RwLock<HashMap<PathBuf, String>>>,
     /// Directories that have been created.
@@ -153,6 +164,13 @@ impl MemoryConfigEnvironment {
     #[must_use]
     pub fn with_unified_config_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.unified_config_path = Some(path.into());
+        self
+    }
+
+    /// Set the local config path.
+    #[must_use]
+    pub fn with_local_config_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.local_config_path = Some(path.into());
         self
     }
 
@@ -185,6 +203,12 @@ impl MemoryConfigEnvironment {
 impl ConfigEnvironment for MemoryConfigEnvironment {
     fn unified_config_path(&self) -> Option<PathBuf> {
         self.unified_config_path.clone()
+    }
+
+    fn local_config_path(&self) -> Option<PathBuf> {
+        self.local_config_path
+            .clone()
+            .or_else(|| Some(PathBuf::from(".agent/ralph-workflow.toml")))
     }
 
     fn prompt_path(&self) -> PathBuf {
