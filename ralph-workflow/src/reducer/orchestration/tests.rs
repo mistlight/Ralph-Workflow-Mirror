@@ -37,3 +37,7 @@ mod pipeline_flow;
 // Retry safety tests (stale XML cleanup on agent failures)
 #[path = "tests/retry_cleans_xml.rs"]
 mod retry_cleans_xml;
+
+// Resume boundary condition tests
+#[path = "tests/resume_boundary.rs"]
+mod resume_boundary;

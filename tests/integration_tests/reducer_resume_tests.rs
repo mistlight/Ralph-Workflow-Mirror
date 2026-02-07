@@ -422,3 +422,128 @@ fn test_resume_mid_pipeline_continues_normally() {
         );
     });
 }
+
+// ============================================================================
+// Resume Boundary Condition Tests (Bug Fix Verification)
+// ============================================================================
+
+/// Verify that resume at final iteration boundary executes development work.
+///
+/// Bug: Previously, resuming at iteration == total_iterations would skip to
+/// SaveCheckpoint instead of running the iteration. The fix adds a boundary
+/// check: iteration_needs_work when (iteration < total) OR (iteration == total && total > 0).
+#[test]
+fn test_resume_at_final_iteration_boundary_runs_development() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::effect::Effect;
+        use ralph_workflow::reducer::orchestration::determine_next_effect;
+
+        // Given: Checkpoint at iteration=1, total_iterations=1 (final boundary)
+        let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 1, 0);
+        let state = PipelineState::from(checkpoint);
+
+        assert_eq!(state.iteration, 1);
+        assert_eq!(state.total_iterations, 1);
+        assert_eq!(state.phase, PipelinePhase::Development);
+
+        // When: Determine next effect
+        let effect = determine_next_effect(&state);
+
+        // Then: Should derive development work, NOT SaveCheckpoint
+        assert!(
+            !matches!(effect, Effect::SaveCheckpoint { .. }),
+            "Bug: At iteration boundary, should run development work, not skip to SaveCheckpoint. Got: {:?}",
+            effect
+        );
+
+        assert!(
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Developer
+                } | Effect::PrepareDevelopmentContext { .. }
+            ),
+            "Expected development effect at iteration=1, total=1. Got: {:?}",
+            effect
+        );
+    });
+}
+
+/// Verify that resume at final review pass boundary executes review work.
+///
+/// Same bug as development: previously would skip to SaveCheckpoint.
+/// The fix adds: review_pass_needs_work when (pass < total) OR (pass == total && total > 0).
+#[test]
+fn test_resume_at_final_review_pass_boundary_runs_review() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::effect::Effect;
+        use ralph_workflow::reducer::orchestration::determine_next_effect;
+
+        // Given: Checkpoint at reviewer_pass=2, total_reviewer_passes=2 (final boundary)
+        let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 3, 3, 2);
+        let mut state = PipelineState::from(checkpoint);
+        state.total_reviewer_passes = 2;
+
+        assert_eq!(state.reviewer_pass, 2);
+        assert_eq!(state.total_reviewer_passes, 2);
+        assert_eq!(state.phase, PipelinePhase::Review);
+
+        // When: Determine next effect
+        let effect = determine_next_effect(&state);
+
+        // Then: Should derive review work, NOT SaveCheckpoint
+        assert!(
+            !matches!(effect, Effect::SaveCheckpoint { .. }),
+            "Bug: At review pass boundary, should run review work, not skip to SaveCheckpoint. Got: {:?}",
+            effect
+        );
+
+        assert!(
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Reviewer
+                } | Effect::PrepareReviewContext { .. }
+            ),
+            "Expected review effect at reviewer_pass=2, total=2. Got: {:?}",
+            effect
+        );
+    });
+}
+
+/// Verify that zero-indexed iteration (iteration=0, total=1) works correctly.
+///
+/// This is a boundary case that should work regardless of the fix, but good to verify.
+#[test]
+fn test_resume_zero_indexed_iteration_boundary() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::effect::Effect;
+        use ralph_workflow::reducer::orchestration::determine_next_effect;
+
+        // Given: Checkpoint at iteration=0, total_iterations=1
+        let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 0, 1, 0);
+        let state = PipelineState::from(checkpoint);
+
+        assert_eq!(state.iteration, 0);
+        assert_eq!(state.total_iterations, 1);
+
+        // When: Determine next effect
+        let effect = determine_next_effect(&state);
+
+        // Then: Should derive development work (0 < 1 is true, so works without fix too)
+        let is_dev_effect = matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Developer
+            } | Effect::PrepareDevelopmentContext { .. }
+        );
+        assert!(
+            is_dev_effect,
+            "Expected development work at iteration=0, total=1. Got: {:?}",
+            effect
+        );
+    });
+}
