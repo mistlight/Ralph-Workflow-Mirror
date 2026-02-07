@@ -698,8 +698,8 @@ checkpoint_enabled = true
         "Deserialized config.general.workflow.checkpoint_enabled = {}",
         config.general.workflow.checkpoint_enabled
     );
-    assert_eq!(
-        config.general.workflow.checkpoint_enabled, true,
+    assert!(
+        config.general.workflow.checkpoint_enabled,
         "Should deserialize to true"
     );
 }

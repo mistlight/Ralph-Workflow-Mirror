@@ -824,3 +824,125 @@ fn test_invalid_type_detection() {
         );
     });
 }
+
+// ============================================================================
+// Git Worktree Config Tests
+// ============================================================================
+
+/// Test that local config is found when running from worktree subdirectory.
+///
+/// This verifies that when ralph is run from a subdirectory of a git worktree,
+/// the local config at the worktree root is discovered and used.
+#[test]
+fn test_worktree_config_discovery_from_subdirectory() {
+    with_default_timeout(|| {
+        let (mut app_handler, _effect_handler) = create_config_test_handlers();
+
+        // Simulate being in /test/worktree/src/components/
+        // with config at /test/worktree/.agent/ralph-workflow.toml
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_worktree_root("/test/worktree")
+            .with_prompt_path("/test/worktree/PROMPT.md")
+            .with_file(
+                "/test/worktree/.agent/ralph-workflow.toml",
+                "[general]\ndeveloper_iters = 3",
+            )
+            .with_file("/test/worktree/PROMPT.md", STANDARD_PROMPT);
+
+        let config = create_test_config_struct().with_developer_iters(3);
+        let executor = mock_executor_with_success();
+
+        let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
+
+        assert!(
+            result.is_ok(),
+            "Pipeline should succeed with worktree config from subdirectory"
+        );
+    });
+}
+
+/// Test that --init-local-config creates config at worktree root.
+///
+/// This verifies that when --init-local-config is run from a subdirectory,
+/// the config file is created at the worktree root, not in CWD.
+#[test]
+fn test_worktree_init_local_config_from_subdirectory() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/worktree/src"));
+
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_worktree_root("/test/worktree")
+            .with_prompt_path("/test/worktree/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\nverbosity = 2",
+            )
+            .with_file("/test/worktree/PROMPT.md", STANDARD_PROMPT);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        run_ralph_cli_with_env(
+            &["--init-local-config"],
+            executor,
+            config,
+            &mut handler,
+            &env,
+        )
+        .unwrap();
+
+        // Config should be created at worktree root, not in CWD
+        assert!(
+            env.was_written(std::path::Path::new(
+                "/test/worktree/.agent/ralph-workflow.toml"
+            )),
+            "Local config should be created at worktree root"
+        );
+        assert!(
+            !env.was_written(std::path::Path::new(
+                "/test/worktree/src/.agent/ralph-workflow.toml"
+            )),
+            "Local config should NOT be created in subdirectory"
+        );
+    });
+}
+
+/// Test that config discovery falls back gracefully outside git repos.
+///
+/// This verifies that when not in a git repository, the system falls back
+/// to the current CWD-relative behavior without errors.
+#[test]
+fn test_config_discovery_outside_git_repo() {
+    with_default_timeout(|| {
+        let (mut app_handler, _effect_handler) = create_config_test_handlers();
+
+        // No worktree_root set, simulating being outside a git repo
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path(".agent/ralph-workflow.toml")
+            .with_prompt_path("PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\nverbosity = 2",
+            )
+            .with_file(
+                ".agent/ralph-workflow.toml",
+                "[general]\ndeveloper_iters = 5",
+            )
+            .with_file("PROMPT.md", STANDARD_PROMPT);
+
+        let config = create_test_config_struct().with_developer_iters(5);
+        let executor = mock_executor_with_success();
+
+        let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
+
+        assert!(
+            result.is_ok(),
+            "Pipeline should work with CWD-relative path when not in git repo"
+        );
+    });
+}

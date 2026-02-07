@@ -154,11 +154,16 @@ pub fn handle_init_local_config_with<R: ConfigEnvironment>(
             )
         })?;
 
+    // Try to show absolute path, fall back to the path as-is if canonicalization fails
+    let display_path = local_path
+        .canonicalize()
+        .unwrap_or_else(|_| local_path.clone());
+
     println!(
         "{}Created{} {}",
         colors.green(),
         colors.reset(),
-        local_path.display()
+        display_path.display()
     );
     println!();
     println!(
@@ -185,9 +190,7 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
     env: &R,
     verbose: bool,
 ) -> anyhow::Result<bool> {
-    use crate::config::loader::{
-        load_config_from_path_with_env, ConfigLoadWithValidationError,
-    };
+    use crate::config::loader::{load_config_from_path_with_env, ConfigLoadWithValidationError};
 
     println!(
         "{}Checking configuration...{}",
@@ -221,7 +224,11 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
             }
 
             if !global_errors.is_empty() {
-                println!("{}~/.config/ralph-workflow.toml:{}", colors.yellow(), colors.reset());
+                println!(
+                    "{}~/.config/ralph-workflow.toml:{}",
+                    colors.yellow(),
+                    colors.reset()
+                );
                 for error in global_errors {
                     print_config_error(colors, error);
                 }
@@ -229,7 +236,11 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
             }
 
             if !local_errors.is_empty() {
-                println!("{}.agent/ralph-workflow.toml:{}", colors.yellow(), colors.reset());
+                println!(
+                    "{}.agent/ralph-workflow.toml:{}",
+                    colors.yellow(),
+                    colors.reset()
+                );
                 for error in local_errors {
                     print_config_error(colors, error);
                 }
@@ -238,7 +249,12 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
 
             if !other_errors.is_empty() {
                 for error in other_errors {
-                    println!("{}{}:{}", colors.yellow(), error.file().display(), colors.reset());
+                    println!(
+                        "{}{}:{}",
+                        colors.yellow(),
+                        error.file().display(),
+                        colors.reset()
+                    );
                     print_config_error(colors, error);
                     println!();
                 }
@@ -338,17 +354,25 @@ fn print_config_error(colors: Colors, error: &crate::config::validation::ConfigV
             println!("    {}", error);
         }
         ConfigValidationError::UnknownKey {
-            key,
-            suggestion,
-            ..
+            key, suggestion, ..
         } => {
             println!("  {}Unknown key '{}'{}", colors.red(), key, colors.reset());
             if let Some(s) = suggestion {
-                println!("    {}Did you mean '{}'?{}", colors.dim(), s, colors.reset());
+                println!(
+                    "    {}Did you mean '{}'?{}",
+                    colors.dim(),
+                    s,
+                    colors.reset()
+                );
             }
         }
         ConfigValidationError::InvalidValue { key, message, .. } => {
-            println!("  {}Invalid value for '{}'{}", colors.red(), key, colors.reset());
+            println!(
+                "  {}Invalid value for '{}'{}",
+                colors.red(),
+                key,
+                colors.reset()
+            );
             println!("    {}", message);
         }
     }
