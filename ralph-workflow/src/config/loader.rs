@@ -210,7 +210,7 @@ pub fn load_config_from_path_with_env(
             if let Err(errors) = validate_config_file(path, &content) {
                 validation_errors.extend(errors);
             }
-            match UnifiedConfig::load_from_path_with_env(path, env) {
+            match UnifiedConfig::load_from_content(&content) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
                     warnings.push(format!(
@@ -234,7 +234,7 @@ pub fn load_config_from_path_with_env(
                 if let Err(errors) = validate_config_file(&global_path, &content) {
                     validation_errors.extend(errors);
                 }
-                match UnifiedConfig::load_from_path_with_env(&global_path, env) {
+                match UnifiedConfig::load_from_content(&content) {
                     Ok(cfg) => Some(cfg),
                     Err(e) => {
                         warnings.push(format!(
@@ -262,7 +262,7 @@ pub fn load_config_from_path_with_env(
             if let Err(errors) = validate_config_file(&local_path, &content) {
                 validation_errors.extend(errors);
             }
-            match UnifiedConfig::load_from_path_with_env(&local_path, env) {
+            match UnifiedConfig::load_from_content(&content) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
                     warnings.push(format!(

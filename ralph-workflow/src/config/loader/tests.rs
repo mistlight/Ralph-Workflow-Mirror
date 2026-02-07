@@ -178,7 +178,9 @@ max_xsd_retries = 0
     // 0 should be accepted (not rejected with warning)
     assert_eq!(config.max_xsd_retries, Some(0));
     assert!(
-        !warnings.iter().any(|w: &String| w.contains("max_xsd_retries")),
+        !warnings
+            .iter()
+            .any(|w: &String| w.contains("max_xsd_retries")),
         "Should not warn about max_xsd_retries=0, got: {:?}",
         warnings
     );
@@ -264,6 +266,7 @@ reviewer_reviews = 3
 }
 
 #[test]
+#[serial]
 fn test_load_config_local_only() {
     let local_toml = r#"
 [general]
@@ -286,6 +289,7 @@ developer_iters = 8
 }
 
 #[test]
+#[serial]
 fn test_load_config_global_only_no_local() {
     let global_toml = r#"
 [general]

@@ -93,11 +93,9 @@ pub fn suggest_key(unknown_key: &str, valid_keys: &[&str]) -> Option<String> {
 pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> {
     let mut errors = Vec::new();
 
-    // Step 1: Validate TOML syntax
-    match toml::from_str::<toml::Value>(content) {
-        Ok(_parsed) => {
-            // Syntax is valid, proceed with schema validation
-        }
+    // Step 1: Validate TOML syntax and parse to generic Value for unknown key detection
+    let parsed_value: toml::Value = match toml::from_str(content) {
+        Ok(value) => value,
         Err(e) => {
             errors.push(ConfigValidationError::TomlSyntax {
                 file: path.to_path_buf(),
@@ -107,15 +105,29 @@ pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> 
         }
     };
 
-    // Step 2: Validate against UnifiedConfig schema for type checking and unknown keys
-    // First, try to deserialize as UnifiedConfig to catch type errors
+    // Step 2: Detect unknown keys by walking the TOML structure
+    // This is necessary because #[serde(default)] causes serde to silently ignore unknown fields
+    let unknown_keys = detect_unknown_keys(&parsed_value);
+    for (key, location) in unknown_keys {
+        let valid_keys = get_valid_config_keys();
+        let suggestion = suggest_key(&key, &valid_keys);
+        errors.push(ConfigValidationError::UnknownKey {
+            file: path.to_path_buf(),
+            key: format!("{}{}", location, key),
+            suggestion,
+        });
+    }
+
+    // Step 3: Validate against UnifiedConfig schema for type checking
+    // Unknown keys won't cause deserialization to fail due to #[serde(default)],
+    // but we've already detected them in Step 2
     match toml::from_str::<crate::config::unified::UnifiedConfig>(content) {
         Ok(_) => {
             // Successfully deserialized - types are valid
         }
         Err(e) => {
             // TOML is syntactically valid but doesn't match our schema
-            // This could be a type error or unknown key
+            // This could be a type error or missing required field
             let error_str = e.to_string();
 
             // Parse the error to extract useful information
@@ -125,17 +137,6 @@ pub fn validate_config_file(path: &Path, content: &str) -> ValidationResult<()> 
                     file: path.to_path_buf(),
                     key: extract_key_from_toml_error(&error_str),
                     message: format_invalid_type_message(&error_str),
-                });
-            } else if error_str.contains("unknown field") {
-                // Unknown key - extract the key name and provide suggestion
-                let unknown_key = extract_unknown_key(&error_str);
-                let valid_keys = get_valid_config_keys();
-                let suggestion = suggest_key(&unknown_key, &valid_keys);
-
-                errors.push(ConfigValidationError::UnknownKey {
-                    file: path.to_path_buf(),
-                    key: unknown_key,
-                    suggestion,
                 });
             } else {
                 // Other deserialization errors
@@ -167,18 +168,6 @@ fn extract_key_from_toml_error(error: &str) -> String {
     "unknown".to_string()
 }
 
-/// Extract the unknown key from a "unknown field" error.
-fn extract_unknown_key(error: &str) -> String {
-    // toml errors look like: "unknown field `bad_key`, expected one of..."
-    if let Some(start) = error.find("unknown field `") {
-        let rest = &error[start + 14..];
-        if let Some(end) = rest.find('`') {
-            return rest[..end].to_string();
-        }
-    }
-    extract_key_from_toml_error(error)
-}
-
 /// Format an invalid type error message.
 fn format_invalid_type_message(error: &str) -> String {
     // Parse the toml error to extract expected vs actual types
@@ -200,6 +189,179 @@ fn format_invalid_type_message(error: &str) -> String {
     }
     error.to_string()
 }
+
+/// Detect unknown keys in a parsed TOML value.
+///
+/// Returns a list of (key_name, location) pairs for keys that are not
+/// part of the valid configuration schema. The location helps identify
+/// which section the unknown key is in (e.g., "general.", "agents.claude.").
+fn detect_unknown_keys(value: &toml::Value) -> Vec<(String, String)> {
+    let mut unknown = Vec::new();
+
+    // Get the top-level table
+    if let Some(table) = value.as_table() {
+        for (key, value) in table {
+            match key.as_str() {
+                // Valid top-level sections
+                "general" | "ccs" | "agents" | "ccs_aliases" | "agent_chain" => {
+                    // Recursively check subsections
+                    unknown.extend(check_section(key.as_str(), value, &format!("{}.", key)));
+                }
+                // Unknown top-level section
+                _ => {
+                    unknown.push((key.clone(), String::new()));
+                }
+            }
+        }
+    }
+
+    unknown
+}
+
+/// Check a section for unknown keys.
+///
+/// Returns a list of (key_name, location) pairs for unknown keys within
+/// the section. The location includes the section prefix.
+fn check_section(section: &str, value: &toml::Value, prefix: &str) -> Vec<(String, String)> {
+    let mut unknown = Vec::new();
+
+    match section {
+        "general" => {
+            if let Some(table) = value.as_table() {
+                for key in table.keys() {
+                    if !VALID_GENERAL_KEYS.contains(&key.as_str()) {
+                        unknown.push((key.clone(), prefix.to_string()));
+                    }
+                }
+            }
+        }
+        "ccs" => {
+            if let Some(table) = value.as_table() {
+                for key in table.keys() {
+                    if !VALID_CCS_KEYS.contains(&key.as_str()) {
+                        unknown.push((key.clone(), prefix.to_string()));
+                    }
+                }
+            }
+        }
+        "agents" => {
+            // agents is a map of agent names to configs
+            // We don't validate agent names (they're user-defined)
+            // But we can validate the keys within each agent config
+            if let Some(table) = value.as_table() {
+                for (agent_name, agent_value) in table {
+                    if let Some(agent_table) = agent_value.as_table() {
+                        for key in agent_table.keys() {
+                            if !VALID_AGENT_CONFIG_KEYS.contains(&key.as_str()) {
+                                unknown.push((key.clone(), format!("{}{}.", prefix, agent_name)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "ccs_aliases" => {
+            // ccs_aliases is a map of alias names to configs
+            // We don't validate alias names (they're user-defined)
+            if let Some(table) = value.as_table() {
+                for (alias_name, alias_value) in table {
+                    if let Some(alias_table) = alias_value.as_table() {
+                        for key in alias_table.keys() {
+                            if !VALID_CCS_ALIAS_CONFIG_KEYS.contains(&key.as_str()) {
+                                unknown.push((key.clone(), format!("{}{}.", prefix, alias_name)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "agent_chain" => {
+            // agent_chain has developer and reviewer keys
+            if let Some(table) = value.as_table() {
+                for key in table.keys() {
+                    if !VALID_AGENT_CHAIN_KEYS.contains(&key.as_str()) {
+                        unknown.push((key.clone(), prefix.to_string()));
+                    }
+                }
+            }
+        }
+        _ => {
+            // Unknown section - should have been caught at top level
+        }
+    }
+
+    unknown
+}
+
+/// Valid keys for the [general] section.
+const VALID_GENERAL_KEYS: &[&str] = &[
+    "verbosity",
+    "interactive",
+    "auto_detect_stack",
+    "strict_validation",
+    "checkpoint_enabled",
+    "force_universal_prompt",
+    "isolation_mode",
+    "developer_iters",
+    "reviewer_reviews",
+    "developer_context",
+    "reviewer_context",
+    "review_depth",
+    "prompt_path",
+    "templates_dir",
+    "git_user_name",
+    "git_user_email",
+    "max_dev_continuations",
+    "max_xsd_retries",
+    "max_same_agent_retries",
+    "behavior",
+    "workflow",
+    "execution",
+];
+
+/// Valid keys for the [ccs] section.
+const VALID_CCS_KEYS: &[&str] = &[
+    "output_flag",
+    "yolo_flag",
+    "verbose_flag",
+    "print_flag",
+    "streaming_flag",
+    "json_parser",
+    "session_flag",
+    "can_commit",
+];
+
+/// Valid keys for agent configurations (within [agents.<name>]).
+const VALID_AGENT_CONFIG_KEYS: &[&str] = &[
+    "cmd",
+    "output_flag",
+    "yolo_flag",
+    "verbose_flag",
+    "print_flag",
+    "streaming_flag",
+    "session_flag",
+    "can_commit",
+    "json_parser",
+    "model_flag",
+    "display_name",
+];
+
+/// Valid keys for CCS alias configurations (within [ccs_aliases.<name>]).
+const VALID_CCS_ALIAS_CONFIG_KEYS: &[&str] = &[
+    "cmd",
+    "output_flag",
+    "yolo_flag",
+    "verbose_flag",
+    "print_flag",
+    "streaming_flag",
+    "json_parser",
+    "session_flag",
+    "can_commit",
+    "model_flag",
+];
+
+/// Valid keys for the [agent_chain] section.
+const VALID_AGENT_CHAIN_KEYS: &[&str] = &["developer", "reviewer"];
 
 /// Get all valid configuration keys for typo detection.
 fn get_valid_config_keys() -> Vec<&'static str> {
@@ -391,9 +553,21 @@ develper_iters = 5
 verbosity = 2
 "#;
         let result = validate_config_file(Path::new("test.toml"), content);
-        // Currently passes because serde ignores unknown fields by default
-        // This would require serde::deny_unknown_fields or custom validation
-        assert!(result.is_ok());
+        // Unknown keys are now detected via custom validation
+        assert!(result.is_err());
+
+        if let Err(errors) = result {
+            assert_eq!(errors.len(), 1);
+            match &errors[0] {
+                ConfigValidationError::UnknownKey {
+                    key, suggestion, ..
+                } => {
+                    assert!(key.contains("develper_iters"));
+                    assert_eq!(suggestion.as_ref().unwrap(), "developer_iters");
+                }
+                _ => panic!("Expected UnknownKey error"),
+            }
+        }
     }
 
     #[test]

@@ -446,6 +446,15 @@ impl UnifiedConfig {
         Ok(config)
     }
 
+    /// Load unified configuration from pre-read content.
+    ///
+    /// This avoids re-reading the file when content is already available.
+    /// The path is used only for error messages.
+    pub fn load_from_content(content: &str) -> Result<Self, ConfigLoadError> {
+        let config: Self = toml::from_str(content)?;
+        Ok(config)
+    }
+
     /// Merge local config into self (global), returning merged config.
     ///
     /// Local values override global values with these semantics:

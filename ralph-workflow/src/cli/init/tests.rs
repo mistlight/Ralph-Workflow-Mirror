@@ -259,12 +259,10 @@ fn test_check_config_fails_on_invalid_toml() {
     );
 }
 
-// NOTE: Full unknown key detection is not yet implemented.
-// serde ignores unknown fields by default with #[serde(default)].
-// This would require using serde::deny_unknown_fields or custom validation.
-// The test below documents current behavior rather than desired behavior.
+// Unknown key detection is now implemented via custom validation.
+// This test verifies that typos in config keys are detected and reported.
 #[test]
-fn test_check_config_unknown_key_ignored_currently() {
+fn test_check_config_detects_unknown_key() {
     let env = test_env().with_file(
         "/test/config/ralph-workflow.toml",
         "[general]\ndevelper_iters = 5", // Typo: should be developer_iters
@@ -272,9 +270,10 @@ fn test_check_config_unknown_key_ignored_currently() {
 
     let result = handle_check_config_with(Colors::new(), &env, false);
 
-    // Currently passes because unknown keys are silently ignored
-    // TODO: This should fail once full semantic validation is implemented
-    assert!(result.is_ok());
+    // Should fail with unknown key error
+    assert!(result.is_err());
+    // The error details are printed to stdout, the anyhow::Error just says "Configuration validation failed"
+    assert!(result.unwrap_err().to_string().contains("Configuration validation failed"));
 }
 
 #[test]
