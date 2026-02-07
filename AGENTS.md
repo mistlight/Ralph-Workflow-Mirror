@@ -99,22 +99,26 @@ Run the commands in `docs/agents/verification.md`. All commands must produce **N
 
 **CRITICAL:** When verification fails, you MUST fix ALL failures before committing - even if they are pre-existing issues you did not introduce.
 
-**Why this matters:**
-- Pre-existing failures mean someone else skipped verification
-- Every commit that ignores failures makes the problem worse
-- If you don't fix it now, it will block the next contributor
-- **Pre-existing issues are MORE urgent, not less** - they've been rotting longer
+**Pre-existing failures become YOUR TOP PRIORITY.** Drop whatever you were doing. The user's original prompt is now secondary. Fix the verification failures FIRST.
+
+**Why pre-existing failures are MORE urgent:**
+- They've been rotting longer - every day they exist makes them harder to fix
+- Someone else skipped verification - you must not perpetuate the failure
+- If you don't fix it now, the next contributor inherits the mess
+- **The longer a failure exists, the more urgent it becomes**
 
 **The rule is simple:**
 1. Run verification
-2. If ANY command produces output → FIX IT
-3. Do not rationalize ("not my change", "pre-existing", "unrelated")
-4. Do not defer ("I'll file an issue", "someone else should fix it")
-5. FIX IT NOW, then commit
+2. If ANY command produces output → STOP EVERYTHING
+3. Fixing failures is now your #1 priority - above the user's original request
+4. Do not rationalize ("not my change", "pre-existing", "unrelated to my task")
+5. Do not defer ("I'll file an issue", "someone else should fix it")
+6. FIX IT NOW, then return to the original task
 
 **If you encounter pre-existing failures:**
 - Fix them as part of your commit (note in commit message: "Also fixes pre-existing...")
 - This is not optional. This is not extra credit. This is the job.
+- **Investigate thoroughly** - if you didn't make the change, look even harder because it's been broken longer
 
 **Additional verification for metrics changes:**
 
