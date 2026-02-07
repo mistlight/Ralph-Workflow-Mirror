@@ -4,6 +4,7 @@
 // fix triggering, and pass counting.
 
 use super::*;
+use crate::reducer::state::ReviewValidatedOutcome;
 
 #[test]
 fn test_determine_effect_review_phase_empty_chain() {
@@ -90,7 +91,7 @@ fn test_determine_effect_review_phase_with_chain() {
 }
 
 #[test]
-fn test_determine_effect_review_complete() {
+fn test_resume_at_final_review_pass_runs_work() {
     // Test resume scenario: reviewer_pass == total_reviewer_passes with no progress flags.
     // Orchestration should re-run the review work (resume behavior),
     // not skip to SaveCheckpoint.
@@ -451,6 +452,66 @@ fn test_resume_at_review_pass_zero_with_total_one_runs_work() {
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
         "Expected PrepareReviewContext but got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_review_pass_completed_applies_outcome_not_reruns() {
+    // Verify that when reviewer_pass == total_reviewer_passes AND the work is
+    // actually complete (review_issues_xml_archived_pass is Some), orchestration
+    // should apply the review outcome (to transition to the next phase), not re-run the work.
+    //
+    // This is the "truly complete" scenario, distinct from the resume scenario
+    // where all progress flags are None.
+    //
+    // When the review pass is complete:
+    // - Orchestration derives ApplyReviewOutcome (to process the outcome)
+    // - The outcome handler may then trigger a phase transition
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 2,
+        total_reviewer_passes: 2,
+        review_issues_found: false,
+        agent_chain: PipelineState::initial(3, 2).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        // Work is complete - archived flag is set
+        review_issues_xml_archived_pass: Some(2),
+        // Other progress flags set to indicate completion
+        review_context_prepared_pass: Some(2),
+        review_prompt_prepared_pass: Some(2),
+        review_issues_xml_cleaned_pass: Some(2),
+        review_agent_invoked_pass: Some(2),
+        review_issues_xml_extracted_pass: Some(2),
+        review_validated_outcome: Some(ReviewValidatedOutcome {
+            pass: 2,
+            issues_found: false,
+            clean_no_issues: true,
+            issues: Vec::new(),
+            no_issues_found: Some("ok".to_string()),
+        }),
+        review_issues_markdown_written_pass: Some(2),
+        review_issue_snippets_extracted_pass: Some(2),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    // Should apply the outcome (which will trigger transition), NOT re-run the review work
+    assert!(
+        matches!(
+            effect,
+            Effect::ApplyReviewOutcome {
+                pass: 2,
+                issues_found: false,
+                clean_no_issues: true
+            }
+        ),
+        "Expected ApplyReviewOutcome for completed review, got {:?}",
         effect
     );
 }
