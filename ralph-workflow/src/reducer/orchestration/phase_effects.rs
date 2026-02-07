@@ -155,8 +155,7 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             //
             // The SaveCheckpoint path (iteration_needs_work = false) is only reached when
             // iteration > total_iterations, which should not happen in normal flow.
-            let iteration_needs_work = state.iteration < state.total_iterations
-                || (state.iteration == state.total_iterations && state.total_iterations > 0);
+            let iteration_needs_work = state.iteration <= state.total_iterations;
 
             if iteration_needs_work {
                 if state.development_context_prepared_iteration != Some(state.iteration) {
@@ -334,9 +333,7 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             //
             // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
             // The orchestration will determine which step to execute based on the flags.
-            let review_pass_needs_work = state.reviewer_pass < state.total_reviewer_passes
-                || (state.reviewer_pass == state.total_reviewer_passes
-                    && state.total_reviewer_passes > 0);
+            let review_pass_needs_work = state.reviewer_pass <= state.total_reviewer_passes;
 
             if review_pass_needs_work {
                 if state.review_context_prepared_pass != Some(state.reviewer_pass) {

@@ -91,9 +91,8 @@ fn test_determine_effect_review_phase_with_chain() {
 
 #[test]
 fn test_determine_effect_review_complete() {
-    // Updated test after checkpoint recovery bug fix:
-    // When reviewer_pass == total_reviewer_passes with no progress flags,
-    // orchestration should re-run the review work (resume behavior),
+    // Test resume scenario: reviewer_pass == total_reviewer_passes with no progress flags.
+    // Orchestration should re-run the review work (resume behavior),
     // not skip to SaveCheckpoint.
     let state = PipelineState {
         phase: PipelinePhase::Review,
@@ -104,6 +103,22 @@ fn test_determine_effect_review_complete() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
+        // Explicitly set all progress flags to None to simulate resume state
+        review_context_prepared_pass: None,
+        review_prompt_prepared_pass: None,
+        review_issues_xml_cleaned_pass: None,
+        review_agent_invoked_pass: None,
+        review_issues_xml_extracted_pass: None,
+        review_validated_outcome: None,
+        review_issues_markdown_written_pass: None,
+        review_issue_snippets_extracted_pass: None,
+        review_issues_xml_archived_pass: None,
+        fix_prompt_prepared_pass: None,
+        fix_result_xml_cleaned_pass: None,
+        fix_agent_invoked_pass: None,
+        fix_result_xml_extracted_pass: None,
+        fix_validated_outcome: None,
+        fix_result_xml_archived_pass: None,
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
