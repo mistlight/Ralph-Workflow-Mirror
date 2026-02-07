@@ -75,7 +75,9 @@ mod tests {
 
         assert!(!truncated.is_empty());
         assert!(
-            truncated.last().is_some_and(|l| l.ends_with("[truncated...]")),
+            truncated
+                .last()
+                .is_some_and(|l| l.ends_with("[truncated...]")),
             "expected last line to be marked as truncated"
         );
         let total_size: usize = truncated.iter().map(|l| l.len() + 1).sum();
@@ -122,7 +124,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let config = Config::default();
         let registry = AgentRegistry::new().unwrap();
         let template_context = TemplateContext::default();
@@ -134,7 +136,7 @@ mod tests {
         let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
 
         let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         let mut ctx = PhaseContext {
             config: &config,
             registry: &registry,
@@ -152,7 +154,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
-        run_log_context: &run_log_context,
+            run_log_context: &run_log_context,
         };
 
         let _ = run_commit_attempt(&mut ctx, 2, "diff --git a/a b/a\n+change\n", "claude")
@@ -178,7 +180,7 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let config = Config::default();
         let registry = AgentRegistry::new().unwrap();
         let template_context = TemplateContext::default();
@@ -190,7 +192,7 @@ mod tests {
         let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
 
         let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         let mut ctx = PhaseContext {
             config: &config,
             registry: &registry,
@@ -208,11 +210,10 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
-        run_log_context: &run_log_context,
+            run_log_context: &run_log_context,
         };
 
-        let model_safe_diff =
-            "diff --git a/a b/a\n+change\n\n[Truncated: 1 of 2 files shown]\n";
+        let model_safe_diff = "diff --git a/a b/a\n+change\n\n[Truncated: 1 of 2 files shown]\n";
         let _ = run_commit_attempt(&mut ctx, 1, model_safe_diff, "claude")
             .expect("run_commit_attempt should succeed");
 
@@ -259,7 +260,10 @@ mod tests {
     fn test_effective_budget_claude_only() {
         // Single Claude agent should return Claude budget
         let agents = vec!["claude".to_string()];
-        assert_eq!(effective_model_budget_bytes(&agents), CLAUDE_MAX_PROMPT_SIZE);
+        assert_eq!(
+            effective_model_budget_bytes(&agents),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
     }
 
     #[test]
@@ -371,7 +375,10 @@ mod tests {
 
     #[test]
     fn test_model_budget_for_glm_variants() {
-        assert_eq!(model_budget_bytes_for_agent_name("glm"), GLM_MAX_PROMPT_SIZE);
+        assert_eq!(
+            model_budget_bytes_for_agent_name("glm"),
+            GLM_MAX_PROMPT_SIZE
+        );
         assert_eq!(
             model_budget_bytes_for_agent_name("zhipuai"),
             GLM_MAX_PROMPT_SIZE
@@ -384,7 +391,10 @@ mod tests {
             model_budget_bytes_for_agent_name("deepseek"),
             GLM_MAX_PROMPT_SIZE
         );
-        assert_eq!(model_budget_bytes_for_agent_name("zai"), GLM_MAX_PROMPT_SIZE);
+        assert_eq!(
+            model_budget_bytes_for_agent_name("zai"),
+            GLM_MAX_PROMPT_SIZE
+        );
     }
 
     #[test]
@@ -400,6 +410,78 @@ mod tests {
         assert_eq!(
             model_budget_bytes_for_agent_name("custom-agent"),
             MAX_SAFE_PROMPT_SIZE
+        );
+    }
+
+    #[test]
+    fn test_generate_commit_message_with_chain_falls_back_on_failure() {
+        // First agent (ccs) fails (exit code 1), second agent (claude) succeeds
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(
+                xml_paths::COMMIT_MESSAGE_XML,
+                "<ralph-commit><ralph-subject>feat: fallback worked</ralph-subject></ralph-commit>",
+            )
+            .with_file(".agent/tmp/commit_message.xsd", "<xsd/>");
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+
+        // First agent (ccs) fails with exit code 1, second agent (claude) succeeds
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result(
+                    "ccs",
+                    Ok(crate::executor::AgentCommandResult::failure(
+                        1,
+                        "ccs failed",
+                    )),
+                )
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let mut runtime = PipelineRuntime {
+            timer: &mut timer,
+            logger: &logger,
+            colors: &colors,
+            config: &config,
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            workspace: &workspace,
+        };
+
+        // Call with a chain of agents - should try ccs, fail, then try claude
+        let agents = vec!["ccs".to_string(), "claude".to_string()];
+        let result = generate_commit_message_with_chain(
+            "diff --git a/a b/a\n+change\n",
+            &registry,
+            &mut runtime,
+            &agents,
+            &template_context,
+            &workspace,
+            &HashMap::new(),
+        );
+
+        // Should succeed because claude succeeded after ccs failed
+        assert!(
+            result.is_ok(),
+            "Expected success after fallback, got: {:?}",
+            result
+        );
+        let result = result.unwrap();
+        assert_eq!(result.message, "feat: fallback worked");
+
+        // Verify both agents were tried
+        let calls = executor.agent_calls();
+        assert_eq!(
+            calls.len(),
+            2,
+            "Expected exactly 2 agent calls (ccs failed, claude succeeded), got {}",
+            calls.len()
         );
     }
 }

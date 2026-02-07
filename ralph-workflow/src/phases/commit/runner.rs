@@ -1,4 +1,5 @@
 /// Result of commit message generation.
+#[derive(Debug)]
 pub struct CommitMessageResult {
     /// The generated commit message
     pub message: String,
@@ -324,4 +325,147 @@ pub fn generate_commit_message(
         _log_path: String::new(),
         generated_prompts,
     })
+}
+
+/// Generate a commit message with fallback chain support.
+///
+/// Tries each agent in the chain sequentially until one succeeds.
+/// Uses the minimum budget across all agents in the chain for truncation
+/// to ensure the diff fits all potential fallback agents.
+///
+/// # Arguments
+/// * `diff` - The diff to generate a commit message for
+/// * `registry` - Agent registry for resolving agent configs
+/// * `runtime` - Pipeline runtime for execution
+/// * `agents` - Chain of agents to try in order (first agent tried first)
+/// * `template_context` - Template context for prompt generation
+/// * `workspace` - Workspace for file operations
+/// * `prompt_history` - History of prompts for replay detection
+///
+/// # Returns
+/// * `Ok(CommitMessageResult)` - If any agent in the chain succeeds
+/// * `Err` - If all agents in the chain fail
+pub fn generate_commit_message_with_chain(
+    diff: &str,
+    registry: &AgentRegistry,
+    runtime: &mut PipelineRuntime,
+    agents: &[String],
+    template_context: &TemplateContext,
+    workspace: &dyn Workspace,
+    prompt_history: &HashMap<String, String>,
+) -> anyhow::Result<CommitMessageResult> {
+    if agents.is_empty() {
+        anyhow::bail!("No agents provided in commit chain");
+    }
+
+    // Use minimum budget across all agents in the chain
+    let model_budget = effective_model_budget_bytes(agents);
+    let (model_safe_diff, truncated) = truncate_diff_to_model_budget(diff, model_budget);
+    if truncated {
+        runtime.logger.warn(&format!(
+            "Diff size ({} KB) exceeds chain limit ({} KB). Truncated to {} KB.",
+            diff.len() / 1024,
+            model_budget / 1024,
+            model_safe_diff.len() / 1024
+        ));
+    }
+
+    let mut last_error: Option<anyhow::Error> = None;
+
+    for (agent_index, commit_agent) in agents.iter().enumerate() {
+        let prompt_key = format!("commit_message_chain_attempt_{}", agent_index + 1);
+        let (prompt, was_replayed) = build_commit_prompt(
+            &prompt_key,
+            template_context,
+            &model_safe_diff,
+            workspace,
+            prompt_history,
+        );
+
+        let mut generated_prompts = HashMap::new();
+        if !was_replayed {
+            generated_prompts.insert(prompt_key.clone(), prompt.clone());
+        }
+
+        let agent_config = match registry.resolve_config(commit_agent) {
+            Some(config) => config,
+            None => {
+                last_error = Some(anyhow::anyhow!("Agent not found: {}", commit_agent));
+                continue;
+            }
+        };
+        let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
+
+        let log_prefix = ".agent/logs/commit_generation/commit_generation";
+        let model_index = agent_index;
+        let attempt = 1u32;
+        let agent_for_log = commit_agent.to_lowercase();
+        let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+            log_prefix,
+            &agent_for_log,
+            model_index,
+            attempt,
+        );
+        let prompt_cmd = PromptCommand {
+            label: commit_agent,
+            display_name: commit_agent,
+            cmd_str: &cmd_str,
+            prompt: &prompt,
+            log_prefix,
+            model_index: Some(model_index),
+            attempt: Some(attempt),
+            logfile: &logfile,
+            parser_type: agent_config.json_parser,
+            env_vars: &agent_config.env_vars,
+        };
+
+        let result = match run_with_prompt(&prompt_cmd, runtime) {
+            Ok(r) => r,
+            Err(e) => {
+                last_error = Some(e.into());
+                continue;
+            }
+        };
+
+        let had_error = result.exit_code != 0;
+        let auth_failure = had_error && stderr_contains_auth_error(&result.stderr);
+
+        if auth_failure {
+            last_error = Some(anyhow::anyhow!("Authentication error detected"));
+            continue;
+        }
+
+        if had_error {
+            last_error = Some(anyhow::anyhow!(
+                "Agent {} failed with exit code {}",
+                commit_agent,
+                result.exit_code
+            ));
+            continue;
+        }
+
+        let extraction = extract_commit_message_from_file_with_workspace(workspace);
+        match extraction {
+            CommitExtractionOutcome::Valid(extracted) => {
+                archive_xml_file_with_workspace(
+                    workspace,
+                    Path::new(xml_paths::COMMIT_MESSAGE_XML),
+                );
+                return Ok(CommitMessageResult {
+                    message: extracted.into_message(),
+                    success: true,
+                    _log_path: String::new(),
+                    generated_prompts,
+                });
+            }
+            CommitExtractionOutcome::InvalidXml(detail)
+            | CommitExtractionOutcome::MissingFile(detail) => {
+                last_error = Some(anyhow::anyhow!(detail));
+                continue;
+            }
+        }
+    }
+
+    // All agents failed
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All agents in commit chain failed")))
 }

@@ -14,7 +14,7 @@
 //!
 //! Tests should use the workspace-aware variants with `MemoryWorkspace` for isolation.
 
-use crate::agents::AgentRegistry;
+use crate::agents::{AgentRegistry, AgentRole};
 use crate::app::effect::{AppEffect, AppEffectHandler, AppEffectResult};
 use crate::config::Config;
 use crate::executor::ProcessExecutor;
@@ -25,7 +25,7 @@ use crate::files::{
 use crate::git_helpers::git_diff;
 use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::phases::generate_commit_message;
+use crate::phases::generate_commit_message_with_chain;
 use crate::pipeline::PipelineRuntime;
 use crate::pipeline::Timer;
 use crate::prompts::TemplateContext;
@@ -206,12 +206,23 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         workspace: config.workspace,
     };
 
-    // Use the standard commit message generation from phases/commit.rs.
-    let result = generate_commit_message(
+    // Get the commit agent chain from the fallback config.
+    // If no commit chain is configured, fall back to using the developer agent.
+    let fallback_config = config.registry.fallback_config();
+    let commit_chain = fallback_config.get_fallbacks(AgentRole::Commit);
+    let agents: Vec<String> = if commit_chain.is_empty() {
+        // No commit chain configured, use developer agent as fallback
+        vec![config.developer_agent.to_string()]
+    } else {
+        commit_chain.to_vec()
+    };
+
+    // Use the chain-aware commit message generation from phases/commit.rs.
+    let result = generate_commit_message_with_chain(
         &diff,
         config.registry,
         &mut runtime,
-        config.developer_agent,
+        &agents,
         config.template_context,
         config.workspace,
         &std::collections::HashMap::new(), // Empty prompt history for plumbing command
