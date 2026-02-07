@@ -7,8 +7,24 @@ use crate::reducer::event::AgentErrorKind;
 use serde_json::Value;
 use std::io;
 
-/// Classify agent error from exit code and stderr.
-pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
+/// Classify agent error from exit code, stderr, and optional stdout content.
+///
+/// # Arguments
+///
+/// * `exit_code` - Process exit code
+/// * `stderr` - Standard error output
+/// * `stdout_error` - Optional error message extracted from stdout (e.g., from JSON logs)
+///
+/// # Stdout Error Detection
+///
+/// Some agents (like OpenCode) emit errors as JSON to stdout rather than stderr.
+/// When `stdout_error` is provided, it is examined for rate limit patterns alongside stderr.
+/// This ensures rate limit errors are properly detected regardless of output stream.
+pub fn classify_agent_error(
+    exit_code: i32,
+    stderr: &str,
+    stdout_error: Option<&str>,
+) -> AgentErrorKind {
     const SIGSEGV: i32 = 139;
     const SIGABRT: i32 = 134;
     const SIGTERM: i32 = 143;
@@ -21,7 +37,7 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
 
             if is_timeout_stderr(&stderr_lower) {
                 AgentErrorKind::Timeout
-            } else if is_rate_limit_stderr(&stderr_lower, stderr) {
+            } else if is_rate_limit_error_from_any_source(&stderr_lower, stderr, stdout_error) {
                 // Rate limit detection must run before broad auth heuristics.
                 // Some providers encode quota/rate-limit as 403 Forbidden, and we
                 // still want the "429 => rate-limit policy" semantics.
@@ -95,6 +111,35 @@ fn contains_timeout_phrase(text_lower: &str) -> bool {
     TIMEOUT_PHRASES
         .iter()
         .any(|timeout_phrase| text_lower.contains(timeout_phrase))
+}
+
+/// Check for rate limit errors from both stderr and stdout sources.
+///
+/// This function examines:
+/// 1. stderr (traditional error output)
+/// 2. stdout_error (extracted from JSON logs, e.g., OpenCode)
+///
+/// This dual-source approach ensures rate limit errors are detected
+/// regardless of which stream the agent uses for error reporting.
+fn is_rate_limit_error_from_any_source(
+    stderr_lower: &str,
+    stderr_raw: &str,
+    stdout_error: Option<&str>,
+) -> bool {
+    // Check stderr first (traditional path)
+    if is_rate_limit_stderr(stderr_lower, stderr_raw) {
+        return true;
+    }
+
+    // Check stdout error message if available (e.g., from OpenCode JSON logs)
+    if let Some(stdout_err) = stdout_error {
+        let stdout_lower = stdout_err.to_lowercase();
+        if is_rate_limit_stderr(&stdout_lower, stdout_err) {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
@@ -365,7 +410,7 @@ mod tests {
     fn classify_agent_error_does_not_treat_filename_timeout_rs_as_timeout() {
         // Regression test: naive `contains("timeout")` matching can incorrectly classify
         // compiler/file path diagnostics (e.g., `timeout.rs:1:1`) as a timeout error.
-        let error_kind = classify_agent_error(1, "timeout.rs:1:1: error: unexpected token");
+        let error_kind = classify_agent_error(1, "timeout.rs:1:1: error: unexpected token", None);
 
         assert_eq!(error_kind, AgentErrorKind::InternalError);
     }

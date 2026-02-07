@@ -1,6 +1,12 @@
 //! Tests for fault-tolerant agent execution.
 
 use super::*;
+
+/// Test helper that wraps classify_agent_error with None for stdout_error.
+/// This maintains backward compatibility for all existing tests.
+fn classify_agent_error_test_helper(exit_code: i32, stderr: &str) -> AgentErrorKind {
+    classify_agent_error(exit_code, stderr, None)
+}
 use crate::agents::JsonParserType;
 use crate::config::Config;
 use crate::logger::{Colors, Logger};
@@ -158,57 +164,58 @@ fn test_timeout_error_from_run_with_prompt_err_arm_triggers_timeout_fallback() {
 
 #[test]
 fn test_classify_agent_error_sigsegv() {
-    let error_kind = classify_agent_error(139, "");
+    let error_kind = classify_agent_error_test_helper(139, "");
     assert_eq!(error_kind, AgentErrorKind::InternalError);
 }
 
 #[test]
 fn test_classify_agent_error_sigabrt() {
-    let error_kind = classify_agent_error(134, "");
+    let error_kind = classify_agent_error_test_helper(134, "");
     assert_eq!(error_kind, AgentErrorKind::InternalError);
 }
 
 #[test]
 fn test_classify_agent_error_sigterm() {
-    let error_kind = classify_agent_error(143, "");
+    let error_kind = classify_agent_error_test_helper(143, "");
     assert_eq!(error_kind, AgentErrorKind::Timeout);
 }
 
 #[test]
 fn test_classify_agent_error_timeout_from_stderr() {
-    let error_kind = classify_agent_error(1, "Connection timeout");
+    let error_kind = classify_agent_error_test_helper(1, "Connection timeout");
     assert_eq!(error_kind, AgentErrorKind::Timeout);
 }
 
 #[test]
 fn test_classify_agent_error_network_connection_reset() {
-    let error_kind = classify_agent_error(1, "Connection reset by peer");
+    let error_kind = classify_agent_error_test_helper(1, "Connection reset by peer");
     assert_eq!(error_kind, AgentErrorKind::Network);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit() {
-    let error_kind = classify_agent_error(1, "Rate limit exceeded");
+    let error_kind = classify_agent_error_test_helper(1, "Rate limit exceeded");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit_matches_http_429() {
-    let error_kind = classify_agent_error(1, "HTTP 429: Rate limit reached for requests");
+    let error_kind =
+        classify_agent_error_test_helper(1, "HTTP 429: Rate limit reached for requests");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit_matches_bare_http_429() {
     // Providers sometimes emit a bare status without additional wording.
-    let error_kind = classify_agent_error(1, "HTTP 429");
+    let error_kind = classify_agent_error_test_helper(1, "HTTP 429");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit_matches_bare_status_429() {
     // Alternative "status" phrasing seen across SDKs.
-    let error_kind = classify_agent_error(1, "status 429");
+    let error_kind = classify_agent_error_test_helper(1, "status 429");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
@@ -216,45 +223,46 @@ fn test_classify_agent_error_rate_limit_matches_bare_status_429() {
 fn test_classify_agent_error_rate_limit_overrides_auth_for_403_forbidden_rate_limit() {
     // Some providers return 403 for quota/rate-limit conditions; in those cases we must
     // treat it as RateLimit to preserve the intended fallback semantics.
-    let error_kind = classify_agent_error(1, "HTTP 403 Forbidden: rate limit exceeded");
+    let error_kind = classify_agent_error_test_helper(1, "HTTP 403 Forbidden: rate limit exceeded");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit_overrides_auth_for_403_forbidden_quota_exceeded() {
     // Quota exhaustion can also surface as 403. It should be treated as RateLimit.
-    let error_kind = classify_agent_error(1, "HTTP 403 Forbidden: exceeded your current quota");
+    let error_kind =
+        classify_agent_error_test_helper(1, "HTTP 403 Forbidden: exceeded your current quota");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit_from_opencode_json_error() {
     let stderr = r#"✗ Error: {"type":"error","sequence_number":2,"error":{"type":"tokens","code":"rate_limit_exceeded","message":"Rate limit reached"}}"#;
-    let error_kind = classify_agent_error(1, stderr);
+    let error_kind = classify_agent_error_test_helper(1, stderr);
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_does_not_treat_429_token_count_as_rate_limit() {
-    let error_kind = classify_agent_error(1, "Parse error: expected 429 tokens");
+    let error_kind = classify_agent_error_test_helper(1, "Parse error: expected 429 tokens");
     assert_eq!(error_kind, AgentErrorKind::ParsingError);
 }
 
 #[test]
 fn test_classify_agent_error_does_not_treat_quota_word_as_rate_limit() {
-    let error_kind = classify_agent_error(1, "quota.rs:1:1: syntax error");
+    let error_kind = classify_agent_error_test_helper(1, "quota.rs:1:1: syntax error");
     assert_ne!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_authentication() {
-    let error_kind = classify_agent_error(1, "Invalid API key");
+    let error_kind = classify_agent_error_test_helper(1, "Invalid API key");
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
 #[test]
 fn test_classify_agent_error_model_unavailable() {
-    let error_kind = classify_agent_error(1, "Model not found");
+    let error_kind = classify_agent_error_test_helper(1, "Model not found");
     assert_eq!(error_kind, AgentErrorKind::ModelUnavailable);
 }
 
@@ -319,31 +327,32 @@ fn test_is_auth_error() {
 
 #[test]
 fn test_classify_agent_error_auth_401() {
-    let error_kind = classify_agent_error(1, "HTTP 401 Unauthorized");
+    let error_kind = classify_agent_error_test_helper(1, "HTTP 401 Unauthorized");
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
 #[test]
 fn test_classify_agent_error_auth_403_forbidden() {
-    let error_kind = classify_agent_error(1, "HTTP 403 Forbidden");
+    let error_kind = classify_agent_error_test_helper(1, "HTTP 403 Forbidden");
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
 #[test]
 fn test_classify_agent_error_auth_invalid_token() {
-    let error_kind = classify_agent_error(1, "Error: Invalid token provided");
+    let error_kind = classify_agent_error_test_helper(1, "Error: Invalid token provided");
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
 #[test]
 fn test_classify_agent_error_auth_credential() {
-    let error_kind = classify_agent_error(1, "Error: This credential is not authorized");
+    let error_kind =
+        classify_agent_error_test_helper(1, "Error: This credential is not authorized");
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
 #[test]
 fn test_classify_agent_error_auth_access_denied() {
-    let error_kind = classify_agent_error(1, "Access denied: insufficient permissions");
+    let error_kind = classify_agent_error_test_helper(1, "Access denied: insufficient permissions");
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
@@ -383,14 +392,17 @@ fn test_classify_io_error_network() {
 
 #[test]
 fn test_classify_agent_error_rate_limit_quota_exceeded() {
-    let error_kind = classify_agent_error(1, "API quota exceeded, please try again later");
+    let error_kind =
+        classify_agent_error_test_helper(1, "API quota exceeded, please try again later");
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
 #[test]
 fn test_classify_agent_error_rate_limit_anthropic_quota() {
-    let error_kind =
-        classify_agent_error(1, "You have exceeded your current quota for this API tier");
+    let error_kind = classify_agent_error_test_helper(
+        1,
+        "You have exceeded your current quota for this API tier",
+    );
     assert_eq!(error_kind, AgentErrorKind::RateLimit);
 }
 
@@ -413,7 +425,7 @@ fn test_auth_error_triggers_auth_fallback_classification() {
     ];
 
     for pattern in auth_patterns {
-        let error_kind = classify_agent_error(1, pattern);
+        let error_kind = classify_agent_error_test_helper(1, pattern);
         assert_eq!(
             error_kind,
             AgentErrorKind::Authentication,
@@ -442,7 +454,7 @@ fn test_rate_limit_error_triggers_rate_limit_fallback_classification() {
     ];
 
     for pattern in rate_limit_patterns {
-        let error_kind = classify_agent_error(1, pattern);
+        let error_kind = classify_agent_error_test_helper(1, pattern);
         assert_eq!(
             error_kind,
             AgentErrorKind::RateLimit,
@@ -465,7 +477,7 @@ fn test_rate_limit_error_triggers_rate_limit_fallback_classification() {
 fn test_classify_agent_error_auth_from_json_error() {
     // Auth error embedded in JSON structure (common for some providers)
     let stderr = r#"✗ Error: {"type":"error","error":{"type":"auth","code":"unauthorized","message":"Invalid API key provided"}}"#;
-    let error_kind = classify_agent_error(1, stderr);
+    let error_kind = classify_agent_error_test_helper(1, stderr);
     // The "unauthorized" keyword should still be detected via substring matching
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
@@ -473,7 +485,7 @@ fn test_classify_agent_error_auth_from_json_error() {
 #[test]
 fn test_classify_agent_error_403_from_json_error() {
     let stderr = r#"{"error":{"code":"403","message":"Forbidden: API key does not have access"}}"#;
-    let error_kind = classify_agent_error(1, stderr);
+    let error_kind = classify_agent_error_test_helper(1, stderr);
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }
 
@@ -487,7 +499,7 @@ fn test_non_special_errors_maintain_retry_semantics() {
     // Note: "Connection timeout" is now classified as Timeout (not Network) because timeout
     // patterns are checked before connection/network patterns - see is_timeout_stderr().
     // Use "Connection refused" or "Connection reset" for pure network errors.
-    let network_error = classify_agent_error(1, "Connection refused");
+    let network_error = classify_agent_error_test_helper(1, "Connection refused");
     assert_eq!(network_error, AgentErrorKind::Network);
     assert!(
         is_retriable_agent_error(&network_error),
@@ -504,34 +516,34 @@ fn test_non_special_errors_maintain_retry_semantics() {
 
     // Timeout errors via stderr (e.g., "Connection timeout" or "Request timeout")
     // are now classified as Timeout so the reducer can apply retry-first-then-fallback.
-    let connection_timeout = classify_agent_error(1, "Connection timeout");
+    let connection_timeout = classify_agent_error_test_helper(1, "Connection timeout");
     assert_eq!(connection_timeout, AgentErrorKind::Timeout);
     assert!(!is_retriable_agent_error(&connection_timeout));
     assert!(is_timeout_error(&connection_timeout));
 
     // Timeout errors via exit code (SIGTERM): emitted as TimedOut
-    let timeout_error = classify_agent_error(143, ""); // SIGTERM
+    let timeout_error = classify_agent_error_test_helper(143, ""); // SIGTERM
     assert_eq!(timeout_error, AgentErrorKind::Timeout);
     assert!(!is_retriable_agent_error(&timeout_error));
     assert!(is_timeout_error(&timeout_error));
 
     // Model unavailable: retriable
-    let model_error = classify_agent_error(1, "Model not found");
+    let model_error = classify_agent_error_test_helper(1, "Model not found");
     assert_eq!(model_error, AgentErrorKind::ModelUnavailable);
     assert!(is_retriable_agent_error(&model_error));
 
     // Internal errors: NOT retriable (agent fallback)
-    let internal_error = classify_agent_error(139, ""); // SIGSEGV
+    let internal_error = classify_agent_error_test_helper(139, ""); // SIGSEGV
     assert_eq!(internal_error, AgentErrorKind::InternalError);
     assert!(!is_retriable_agent_error(&internal_error));
 
     // Parsing errors: NOT retriable
-    let parse_error = classify_agent_error(1, "Parse error: invalid syntax");
+    let parse_error = classify_agent_error_test_helper(1, "Parse error: invalid syntax");
     assert_eq!(parse_error, AgentErrorKind::ParsingError);
     assert!(!is_retriable_agent_error(&parse_error));
 
     // Filesystem errors: NOT retriable
-    let fs_error = classify_agent_error(1, "Permission denied: /tmp/foo");
+    let fs_error = classify_agent_error_test_helper(1, "Permission denied: /tmp/foo");
     assert_eq!(fs_error, AgentErrorKind::FileSystem);
     assert!(!is_retriable_agent_error(&fs_error));
 }
@@ -605,7 +617,7 @@ mod rate_limit_patterns {
             //   agent fallback, not retry with the same agent.
 
             let stderr = "Error: The usage limit has been reached [retryin]";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -618,7 +630,7 @@ mod rate_limit_patterns {
             // Last Verified: 2026-02-06
 
             let stderr = "Error: usage limit reached";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -627,7 +639,7 @@ mod rate_limit_patterns {
         fn test_rate_limit_case_insensitive() {
             // Verify case-insensitive matching works for usage limit patterns
             let stderr = "ERROR: THE USAGE LIMIT HAS BEEN REACHED [RETRYIN]";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
         }
 
@@ -643,7 +655,7 @@ mod rate_limit_patterns {
             //   This test verifies the bare pattern is recognized with API error context.
 
             let stderr = "error: usage limit";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -659,7 +671,7 @@ mod rate_limit_patterns {
             //   error message, not part of a filename or other context.
 
             let stderr = "Error: usage limit.";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -675,7 +687,7 @@ mod rate_limit_patterns {
             //   not part of a filename or other context.
 
             let stderr = "usage limit!";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -691,7 +703,7 @@ mod rate_limit_patterns {
             //   not part of a filename or other context.
 
             let stderr = "Error: usage limit; please retry later";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -707,7 +719,7 @@ mod rate_limit_patterns {
             //   not part of a filename or other context.
 
             let stderr = "usage limit, please try again later";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -723,7 +735,7 @@ mod rate_limit_patterns {
             //   API rate limiting, not a filename or other context.
 
             let stderr = "HTTP 429: usage limit";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -738,7 +750,7 @@ mod rate_limit_patterns {
             //   Verify case-insensitive matching for bare "usage limit" pattern.
 
             let stderr = "ERROR: USAGE LIMIT";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -762,7 +774,7 @@ mod rate_limit_patterns {
             //   4. Update this test if message has changed
 
             let stderr = "Error: Rate limit reached for requests";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -776,7 +788,7 @@ mod rate_limit_patterns {
             // Last Verified: 2026-02-06
 
             let stderr = "Error: You exceeded your current quota, please check your plan and billing details";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -799,7 +811,7 @@ mod rate_limit_patterns {
             //   3. Verify HTTP codes and error types
 
             let stderr = "HTTP 429: rate_limit_error - Too many requests";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -818,7 +830,7 @@ mod rate_limit_patterns {
             //   4. Confirm this is distinct from 429 rate limiting
 
             let stderr = "HTTP 529: overloaded_error - The API is temporarily overloaded";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -834,7 +846,7 @@ mod rate_limit_patterns {
             //   but still indicate server overload via "overloaded" keyword
 
             let stderr = "Error: The API is temporarily overloaded, please retry after some time";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -848,7 +860,7 @@ mod rate_limit_patterns {
             // Last Verified: 2026-02-06
 
             let stderr = r#"{"error": {"type": "rate_limit_error", "code": "rate_limit_exceeded", "message": "Rate limit exceeded"}}"#;
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -871,7 +883,7 @@ mod rate_limit_patterns {
             //   3. Verify status codes in error table
 
             let stderr = "Error: RESOURCE_EXHAUSTED: You've exceeded the rate limit";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -891,7 +903,7 @@ mod rate_limit_patterns {
             // Note: Azure OpenAI uses similar error messages to OpenAI API
 
             let stderr = "Error: Rate limit reached for requests. Please retry after some time.";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -909,7 +921,7 @@ mod rate_limit_patterns {
             // Last Verified: 2026-02-06
 
             let stderr = "Error: too many requests, please slow down";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -922,7 +934,7 @@ mod rate_limit_patterns {
             // Last Verified: 2026-02-06
 
             let stderr = "HTTP 429 - Too Many Requests";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
             assert!(is_rate_limit_error(&error_kind));
         }
@@ -944,7 +956,7 @@ mod rate_limit_patterns {
             // Classification Priority: Authentication > RateLimit
             // Expected: AgentErrorKind::Authentication
             let stderr = "HTTP 401 Unauthorized: API key quota information unavailable";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::Authentication);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -959,7 +971,7 @@ mod rate_limit_patterns {
             //
             // Expected: ParsingError or InternalError, NOT RateLimit
             let stderr = "rate_limit.rs:123:1: syntax error: unexpected token";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as ParsingError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -978,7 +990,7 @@ mod rate_limit_patterns {
             //
             // Expected: ParsingError or InternalError, NOT RateLimit
             let stderr = "usage_limit.rs:123:1: syntax error: unexpected token";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as ParsingError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -995,7 +1007,7 @@ mod rate_limit_patterns {
             //
             // Expected: Network or InternalError, NOT RateLimit
             let stderr = "Connection pool limit reached: max 100 connections";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as Network or InternalError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1011,7 +1023,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "File size limit exceeded: maximum 10MB";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1026,7 +1038,7 @@ mod rate_limit_patterns {
             //
             // Expected: InternalError, NOT RateLimit
             let stderr = "Error: System CPU overload detected, process throttled";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as InternalError or other, NOT RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1042,7 +1054,7 @@ mod rate_limit_patterns {
             //
             // Expected: InternalError or other, NOT RateLimit
             let stderr = "usage limit";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as InternalError or other, NOT RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1058,7 +1070,7 @@ mod rate_limit_patterns {
             //
             // Expected: ParsingError or InternalError, NOT RateLimit
             let stderr = "usage limit.rs:123:1: syntax error: unexpected token";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as ParsingError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1073,7 +1085,7 @@ mod rate_limit_patterns {
             //
             // Expected: InternalError, NOT RateLimit
             let stderr = "// TODO: Handle usage limit gracefully\nerror: internal error";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as InternalError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1096,7 +1108,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.rs file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as FileSystem or InternalError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1111,7 +1123,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.py file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as FileSystem or InternalError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1126,7 +1138,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage_limit.js file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             // Should classify as FileSystem or InternalError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
@@ -1141,7 +1153,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.go file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1155,7 +1167,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage_limit.rb file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1169,7 +1181,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.java file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1183,7 +1195,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.cpp file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1204,7 +1216,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.c file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1218,7 +1230,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.php file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1232,7 +1244,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage_limit.cs file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1246,7 +1258,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.swift file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1260,7 +1272,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage_limit.kt file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1275,7 +1287,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.scala file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1289,7 +1301,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage_limit.sh file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1303,7 +1315,7 @@ mod rate_limit_patterns {
             //
             // Expected: FileSystem or InternalError, NOT RateLimit
             let stderr = "error: usage limit.bash file not found";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
@@ -1317,10 +1329,135 @@ mod rate_limit_patterns {
             //
             // Expected: ParsingError, NOT RateLimit
             let stderr = "usage_limit.go:123:1: syntax error: unexpected token";
-            let error_kind = classify_agent_error(1, stderr);
+            let error_kind = classify_agent_error_test_helper(1, stderr);
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
+    }
+}
+
+/// Tests for stdout error detection
+///
+/// These tests verify that rate limit errors in stdout (e.g., from OpenCode JSON logs)
+/// are properly detected and classified, fixing the bug where usage limit errors
+/// from OpenCode were not triggering agent fallback.
+mod stdout_error_detection {
+    use super::*;
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_usage_limit_reached() {
+        // OpenCode emits rate limit errors to stdout as JSON, not stderr
+        // Stderr is empty, but stdout contains the error
+        let stdout_error = Some("usage limit reached");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_rate_limit_exceeded() {
+        // OpenCode JSON error format
+        let stdout_error = Some("Rate limit exceeded");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_with_empty_stderr() {
+        // Regression test: demonstrate the bug fix
+        // Before fix: empty stderr + stdout error = InternalError (BUG)
+        // After fix: empty stderr + stdout error with rate limit = RateLimit (FIXED)
+        let stdout_error = Some("Error: usage limit has been reached [retryin]");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_stderr_takes_precedence_over_stdout() {
+        // When both stderr and stdout have errors, stderr patterns should be detected
+        let stdout_error = Some("Some other error");
+        let error_kind = classify_agent_error(1, "Rate limit exceeded", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_stdout_error_none_behaves_as_before() {
+        // Passing None for stdout_error should behave exactly as before the change
+        let error_kind = classify_agent_error(1, "", None);
+        assert_eq!(error_kind, AgentErrorKind::InternalError);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_http_429() {
+        // HTTP 429 in stdout should trigger rate limit detection
+        let stdout_error = Some("HTTP 429: Too Many Requests");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_quota_exceeded() {
+        // Quota exceeded in stdout should trigger rate limit detection
+        let stdout_error = Some("You have exceeded your current quota");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_too_many_requests() {
+        // "too many requests" in stdout should trigger rate limit detection
+        let stdout_error = Some("Error: too many requests, please slow down");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_opencode_structured_json() {
+        // OpenCode structured JSON error with rate_limit_exceeded code
+        let stdout_error =
+            Some(r#"{"error": {"code": "rate_limit_exceeded", "message": "Rate limit reached"}}"#);
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_non_rate_limit_stdout_error() {
+        // Non-rate-limit errors in stdout should not be classified as RateLimit
+        // NOTE: Currently, stdout error detection only applies to rate limit patterns.
+        // Other error types (Network, Auth, etc.) are only detected from stderr.
+        // This is by design for the initial bug fix - we're specifically fixing
+        // OpenCode rate limit detection, not adding general stdout error parsing.
+        let stdout_error = Some("Connection refused");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        // Since stdout_error detection only handles rate limits, this should be InternalError
+        assert_eq!(error_kind, AgentErrorKind::InternalError);
+    }
+
+    #[test]
+    fn test_classify_agent_error_auth_error_in_stdout() {
+        // Authentication errors in stdout should not be detected (stderr only for now)
+        // NOTE: Currently, stdout error detection only applies to rate limit patterns.
+        // This is by design for the initial bug fix - we're specifically fixing
+        // OpenCode rate limit detection, not adding general stdout error parsing.
+        let stdout_error = Some("Invalid API key provided");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        // Since stdout_error detection only handles rate limits, this should be InternalError
+        assert_eq!(error_kind, AgentErrorKind::InternalError);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_overloaded_api() {
+        // API overload errors (HTTP 529) in stdout should trigger rate limit detection
+        let stdout_error = Some("HTTP 529: The API is temporarily overloaded");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_stdout_resource_exhausted() {
+        // Google Gemini RESOURCE_EXHAUSTED in stdout should trigger rate limit detection
+        let stdout_error = Some("Error: RESOURCE_EXHAUSTED: You've exceeded the rate limit");
+        let error_kind = classify_agent_error(1, "", stdout_error);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
     }
 }
 
