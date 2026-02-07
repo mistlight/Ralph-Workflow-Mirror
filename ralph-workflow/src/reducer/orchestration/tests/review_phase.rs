@@ -377,3 +377,65 @@ fn test_resume_at_final_review_pass_should_run_review_not_skip() {
         effect
     );
 }
+
+#[test]
+fn test_resume_at_final_review_pass_with_no_progress_should_run_review() {
+    // Bug scenario: checkpoint saved at reviewer_pass=2, total=2
+    // On resume, all progress flags are None (reset)
+    // Expected: Should re-run review pass
+    // Actual (bug): Skips to SaveCheckpoint, then transitions to next phase
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 2,
+        total_reviewer_passes: 2,
+        review_issues_found: false,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        // All progress flags are None (simulating resume state)
+        review_context_prepared_pass: None,
+        review_prompt_prepared_pass: None,
+        review_agent_invoked_pass: None,
+        review_issues_xml_archived_pass: None,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    // Should prepare review context (start pass), NOT save checkpoint
+    assert!(
+        matches!(effect, Effect::PrepareReviewContext { pass: 2 }),
+        "Expected PrepareReviewContext but got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_resume_at_review_pass_zero_with_total_one_runs_work() {
+    // Boundary case: reviewer_pass=0, total_reviewer_passes=1
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 1,
+        review_issues_found: false,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        review_agent_invoked_pass: None,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    assert!(
+        matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
+        "Expected PrepareReviewContext but got {:?}",
+        effect
+    );
+}

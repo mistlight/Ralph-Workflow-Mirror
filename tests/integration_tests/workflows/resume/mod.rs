@@ -290,3 +290,82 @@ pub(crate) fn make_checkpoint_with_prompt_history(
         phase, working_dir, STANDARD_PROMPT_CHECKSUM, prompt_history_json
     )
 }
+
+/// Helper function to create a detailed v3 checkpoint JSON for boundary condition testing.
+/// Unlike make_checkpoint_json, this preserves developer_iters and reviewer_reviews values
+/// to allow testing full pipeline execution on resume.
+pub(crate) fn make_checkpoint_json_detailed(
+    working_dir: &str,
+    phase: &str,
+    iteration: u32,
+    total_iterations: u32,
+    reviewer_pass: u32,
+    total_reviewer_passes: u32,
+) -> String {
+    format!(
+        r#"{{
+            "version": 3,
+            "phase": "{}",
+            "iteration": {},
+            "total_iterations": {},
+            "reviewer_pass": {},
+            "total_reviewer_passes": {},
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": {},
+                "reviewer_reviews": {},
+                "commit_msg": "",
+                "review_depth": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": "{}",
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-run-id-boundary-{}",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": {},
+            "actual_reviewer_runs": {},
+            "execution_history": null,
+            "file_system_state": null,
+            "prompt_history": null
+        }}"#,
+        phase,
+        iteration,
+        total_iterations,
+        reviewer_pass,
+        total_reviewer_passes,
+        total_iterations,
+        total_reviewer_passes,
+        working_dir,
+        STANDARD_PROMPT_CHECKSUM,
+        iteration,
+        iteration,
+        reviewer_pass
+    )
+}

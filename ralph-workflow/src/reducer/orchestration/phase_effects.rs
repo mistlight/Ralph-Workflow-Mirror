@@ -138,15 +138,25 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
-            // Design principle: Resume should assume current work is NOT done.
-            // If iteration == total_iterations but progress flags are None (reset on resume),
-            // we should re-run the iteration rather than skip it.
-            // However, if work is in progress or complete, we need to process it.
+            // Design principle: Resume should assume current work is NOT done and err on the side
+            // of needing to do more work. It's better to re-do a partially completed iteration
+            // than to skip work that wasn't completed.
+            //
+            // Iteration boundary logic:
+            // - iteration < total_iterations: Clearly more work to do
+            // - iteration == total_iterations: Still need to process current iteration
+            //
+            // At the boundary (iteration == total_iterations), we ALWAYS have work to do:
+            // - If not started/incomplete: Run iteration steps
+            // - If complete (archived == Some(iteration)): ApplyDevelopmentOutcome (line 241)
+            //
+            // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
+            // The orchestration will determine which step to execute based on the flags.
+            //
+            // The SaveCheckpoint path (iteration_needs_work = false) is only reached when
+            // iteration > total_iterations, which should not happen in normal flow.
             let iteration_needs_work = state.iteration < state.total_iterations
-                || (state.iteration == state.total_iterations
-                    && state.total_iterations > 0
-                    && (state.development_agent_invoked_iteration.is_none()
-                        || state.development_xml_archived_iteration == Some(state.iteration)));
+                || (state.iteration == state.total_iterations && state.total_iterations > 0);
 
             if iteration_needs_work {
                 if state.development_context_prepared_iteration != Some(state.iteration) {
@@ -310,15 +320,23 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
             // Otherwise, run next review pass or complete phase
-            // Design principle: Resume should assume current work is NOT done.
-            // If reviewer_pass == total_reviewer_passes but progress flags are None (reset on resume),
-            // we should re-run the pass rather than skip it.
-            // However, if work is in progress or complete, we need to process it.
+            // Design principle: Resume should assume current work is NOT done and err on the side
+            // of needing to do more work. It's better to re-do a partially completed pass
+            // than to skip work that wasn't completed.
+            //
+            // Review pass boundary logic:
+            // - reviewer_pass < total_reviewer_passes: Clearly more work to do
+            // - reviewer_pass == total_reviewer_passes: Still need to process current pass
+            //
+            // At the boundary (reviewer_pass == total_reviewer_passes), we ALWAYS have work to do:
+            // - If not started/incomplete: Run review pass steps
+            // - If complete: Process outcome and transition
+            //
+            // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
+            // The orchestration will determine which step to execute based on the flags.
             let review_pass_needs_work = state.reviewer_pass < state.total_reviewer_passes
                 || (state.reviewer_pass == state.total_reviewer_passes
-                    && state.total_reviewer_passes > 0
-                    && (state.review_agent_invoked_pass.is_none()
-                        || state.review_issues_xml_archived_pass == Some(state.reviewer_pass)));
+                    && state.total_reviewer_passes > 0);
 
             if review_pass_needs_work {
                 if state.review_context_prepared_pass != Some(state.reviewer_pass) {
