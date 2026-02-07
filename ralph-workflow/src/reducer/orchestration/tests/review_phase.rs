@@ -386,7 +386,7 @@ fn test_resume_at_final_review_pass_should_run_review_not_skip() {
     let effect = determine_next_effect(&state);
 
     // CRITICAL: Should derive review work, NOT phase transition
-    // This test WILL FAIL with current code (bug reproduction)
+    // This test verifies the fix: previously would fail, now passes
     assert!(
         matches!(effect, Effect::PrepareReviewContext { .. }),
         "Expected PrepareReviewContext, got {:?}",

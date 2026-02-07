@@ -472,7 +472,7 @@ fn test_resume_at_final_iteration_should_run_development_not_skip() {
     let effect = determine_next_effect(&state);
 
     // CRITICAL: Should derive development work, NOT phase transition
-    // This test WILL FAIL with current code (bug reproduction)
+    // This test verifies the fix: previously would fail, now passes
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { .. }),
         "Expected PrepareDevelopmentContext, got {:?}",

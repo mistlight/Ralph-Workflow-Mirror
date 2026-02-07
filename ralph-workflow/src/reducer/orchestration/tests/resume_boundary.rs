@@ -188,24 +188,27 @@ fn test_resume_mid_pipeline_continues_normally() {
 
 #[test]
 fn test_resume_at_boundary_with_zero_total_iterations() {
-    // Given: Edge case - total_iterations=0 (should not happen in practice, but test boundary)
-    let state = create_resume_state(PipelinePhase::Development, 0, 0, 0, 0);
+    // Given: Edge case - total_iterations=0 in Development phase
+    // This is an abnormal state (should start at CommitMessage phase), but we handle it gracefully
+    let mut state = create_resume_state(PipelinePhase::Development, 0, 0, 0, 0);
+
+    // Initialize agent chain to get past the chain initialization check
+    state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
 
     // When: Determine next effect
     let effect = determine_next_effect(&state);
 
-    // Then: InitializeAgentChain is returned first (before boundary check)
-    // This is expected: agent chain initialization always happens before iteration checks
-    // In normal flow, total_iterations=0 would start at CommitMessage phase, not Development
+    // Then: Should transition to next phase (SaveCheckpoint with PhaseTransition)
+    // With total_iterations=0, iteration_needs_work = (0 < 0) || (0 == 0 && 0 > 0) = false
+    // So we derive SaveCheckpoint to trigger phase transition
     assert!(
-        matches!(
-            effect,
-            Effect::InitializeAgentChain {
-                role: AgentRole::Developer
-            }
-        ),
+        matches!(effect, Effect::SaveCheckpoint { .. }),
         "With total_iterations=0 in Development phase (abnormal state), \
-         agent chain initialization happens before boundary check. Got: {:?}",
+         should transition to next phase. Got: {:?}",
         effect
     );
 }
