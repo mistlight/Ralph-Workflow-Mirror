@@ -138,31 +138,12 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
-            // Design principle: Resume should assume current work is NOT done and err on the side
-            // of needing to do more work. It's better to re-do a partially completed iteration
-            // than to skip work that wasn't completed.
-            //
-            // Iteration boundary logic:
-            // - iteration < total_iterations: Clearly more work to do
-            // - iteration == total_iterations: Still need to process current iteration
-            //
-            // At the boundary (iteration == total_iterations), we ALWAYS have work to do:
-            // - If not started/incomplete: Run iteration steps
-            // - If complete (archived == Some(iteration)): ApplyDevelopmentOutcome to process the result and transition to the next phase
-            //
-            // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
-            // The orchestration will determine which step to execute based on the flags.
-            //
-            // The SaveCheckpoint path (iteration_needs_work = false) is reached when:
-            // 1. iteration > total_iterations (abnormal: exceeds configured iterations)
-            // 2. total_iterations == 0 (abnormal: zero iterations configured, causing transition)
-            //
-            // Note: iteration == total_iterations with total_iterations > 0 means iteration_needs_work = true
-            // (we still need to process the current iteration - either run it if not started,
-            // or apply its outcome if complete).
-            //
-            // When total_iterations == 0, both conditions (iteration < total) and (iteration == total && total > 0)
-            // are false, so iteration_needs_work = false regardless of iteration value, causing transition.
+            // Iteration boundary check: At iteration == total_iterations, still need to process
+            // the current iteration (either run it if not started, or apply its outcome if complete).
+            // On resume, progress flags are reset to None (pipeline.rs:453-532), so orchestration
+            // will derive the appropriate step. Only skip to SaveCheckpoint when:
+            // - iteration > total_iterations (abnormal: exceeds configured iterations), or
+            // - total_iterations == 0 (no iterations configured, transition immediately)
             let iteration_needs_work = state.iteration < state.total_iterations
                 || (state.iteration == state.total_iterations && state.total_iterations > 0);
 
@@ -327,25 +308,13 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
-            // Otherwise, run next review pass or complete phase
-            // Design principle: Resume should assume current work is NOT done and err on the side
-            // of needing to do more work. It's better to re-do a partially completed pass
-            // than to skip work that wasn't completed.
-            //
-            // Review pass boundary logic:
-            // - reviewer_pass < total_reviewer_passes: Clearly more work to do
-            // - reviewer_pass == total_reviewer_passes: Still need to process current pass
-            //
-            // At the boundary (reviewer_pass == total_reviewer_passes), we ALWAYS have work to do:
-            // - If not started/incomplete: Run review pass steps
-            // - If complete (archived == Some(pass)): ApplyReviewOutcome to process the result and transition to the next phase
-            //
-            // On resume, all progress flags are reset to None (see pipeline.rs:453-532).
-            // The orchestration will determine which step to execute based on the flags.
-            //
-            // The SaveCheckpoint path (review_pass_needs_work = false) is reached when:
-            // 1. reviewer_pass > total_reviewer_passes (should not happen in normal flow)
-            // 2. total_reviewer_passes == 0 (no review passes configured, skip to next phase)
+            // Otherwise, run next review pass or complete phase.
+            // Review pass boundary check: At reviewer_pass == total_reviewer_passes, still need to
+            // process the current pass (either run it if not started, or apply its outcome if complete).
+            // On resume, progress flags are reset to None (pipeline.rs:453-532), so orchestration
+            // will derive the appropriate step. Only skip to SaveCheckpoint when:
+            // - reviewer_pass > total_reviewer_passes (should not happen in normal flow), or
+            // - total_reviewer_passes == 0 (no review passes configured, transition immediately)
             let review_pass_needs_work = state.reviewer_pass < state.total_reviewer_passes
                 || (state.reviewer_pass == state.total_reviewer_passes
                     && state.total_reviewer_passes > 0);

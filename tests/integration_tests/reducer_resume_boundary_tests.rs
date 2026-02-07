@@ -251,29 +251,31 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
             PipelineEvent::development_iteration_completed(1, true),
         );
 
-        // After all development iterations complete, the phase transition depends on
-        // whether review passes are configured:
-        // - If total_reviewer_passes > 0: transitions to Review
-        // - If total_reviewer_passes == 0: transitions to CommitMessage
+        // After development iteration completes, the reducer transitions to CommitMessage
+        // phase first (not directly to Review). The post-commit transition logic in
+        // compute_post_commit_transition() then determines the next phase:
+        // - If total_iterations done AND total_reviewer_passes > 0: Review
+        // - If total_iterations done AND total_reviewer_passes == 0: FinalValidation
+        // - If more iterations remain: Planning (for next iteration)
         //
-        // When using development_iteration_completed with last_of_phase=true,
-        // the reducer transitions to CommitMessage first. From there, if review
-        // passes are configured, it would transition to Review.
-        //
-        // With total_reviewer_passes=1 (configured in this test), we should
-        // transition to Review phase after development completes.
+        // With total_reviewer_passes=1 (configured in this test), the full transition
+        // sequence would be: Development → CommitMessage → Review.
+        // This assertion checks the first step of that transition.
         assert_eq!(
             state.phase,
-            PipelinePhase::Review,
-            "Should transition to Review phase after development completes when reviewer_passes > 0. Got: {:?}",
+            PipelinePhase::CommitMessage,
+            "Should transition to CommitMessage phase immediately after development iteration completes. Got: {:?}",
             state.phase
         );
 
-        // Verify orchestration derives next work (not immediate SaveCheckpoint for exit)
+        // Verify orchestration derives next work (not immediate SaveCheckpoint for exit).
+        // After development completes, the reducer sets context_cleanup_pending=true,
+        // so orchestration derives CleanupContinuationContext first before commit work.
         let next_effect = determine_next_effect(&state);
 
         // The key assertion: we should NOT immediately derive SaveCheckpoint with Interrupt trigger
-        // (which would indicate the pipeline is exiting)
+        // (which would indicate the pipeline is exiting). Instead, we should get continuation
+        // cleanup or commit work effects.
         let is_exit_checkpoint = matches!(
             next_effect,
             Effect::SaveCheckpoint {
@@ -282,11 +284,24 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         );
         assert!(
             !is_exit_checkpoint,
-            "Pipeline should continue work, not exit via SaveCheckpoint. Got: {:?}",
+            "Pipeline should continue work (cleanup or commit), not exit via SaveCheckpoint. Got: {:?}",
+            next_effect
+        );
+
+        // Verify we get a continuation effect (CleanupContinuationContext or InitializeAgentChain),
+        // not an immediate exit. The exact effect depends on continuation state:
+        // - If context_cleanup_pending=true (set by reducer on success): CleanupContinuationContext
+        // - Then InitializeAgentChain (for Commit role)
+        // - Then CheckCommitDiff and other commit work
+        assert!(
+            matches!(next_effect, Effect::CleanupContinuationContext { .. })
+                || matches!(next_effect, Effect::InitializeAgentChain { .. })
+                || matches!(next_effect, Effect::CheckCommitDiff { .. }),
+            "Should derive continuation/commit effect in CommitMessage phase. Got: {:?}",
             next_effect
         );
 
         // This proves the bug is fixed: after resuming at iteration boundary,
-        // the pipeline continues through remaining phases instead of exiting
+        // the pipeline continues through remaining phases (CommitMessage → Review) instead of exiting
     });
 }
