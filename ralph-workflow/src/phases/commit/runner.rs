@@ -371,6 +371,7 @@ pub fn generate_commit_message_with_chain(
     }
 
     let mut last_error: Option<anyhow::Error> = None;
+    let mut generated_prompts = HashMap::new();
 
     for (agent_index, commit_agent) in agents.iter().enumerate() {
         let prompt_key = format!("commit_message_chain_attempt_{}", agent_index + 1);
@@ -382,7 +383,6 @@ pub fn generate_commit_message_with_chain(
             prompt_history,
         );
 
-        let mut generated_prompts = HashMap::new();
         if !was_replayed {
             generated_prompts.insert(prompt_key.clone(), prompt.clone());
         }
