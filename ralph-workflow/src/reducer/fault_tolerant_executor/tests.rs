@@ -1333,6 +1333,38 @@ mod rate_limit_patterns {
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }
+
+        #[test]
+        fn test_usage_limit_filename_with_whitespace_before_extension_not_rate_limit() {
+            // "error: usage limit .rs file not found" - Edge case with whitespace.
+            //
+            // Context: Verify that the file extension detection correctly handles
+            // the edge case where there's whitespace between "usage limit" and
+            // the file extension (.rs, .py, etc.).
+            //
+            // This is a rare edge case but demonstrates the robustness of the
+            // file extension detection logic.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit .rs file not found";
+            let error_kind = classify_agent_error_test_helper(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_filename_with_multiple_spaces_before_extension_not_rate_limit() {
+            // "error: usage limit  .py file not found" - Edge case with multiple spaces.
+            //
+            // Context: Verify that the file extension detection correctly handles
+            // multiple whitespace characters between "usage limit" and the extension.
+            //
+            // Expected: FileSystem or InternalError, NOT RateLimit
+            let stderr = "error: usage limit  .py file not found";
+            let error_kind = classify_agent_error_test_helper(1, stderr);
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
     }
 }
 

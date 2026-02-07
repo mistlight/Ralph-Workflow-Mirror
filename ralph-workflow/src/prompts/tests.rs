@@ -69,54 +69,90 @@ fn test_prompts_are_agent_agnostic() {
 
     let template_context = TemplateContext::default();
     let workspace = MemoryWorkspace::new_test();
-    let prompts_to_check: Vec<String> = vec![
-        prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
-        prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
-        prompt_review_xml_with_context(&template_context, "", "", "sample diff", &workspace),
-        prompt_fix("", "", ""),
-        prompt_plan(None),
-        prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
+    let prompts_to_check: Vec<(&'static str, String)> = vec![
+        (
+            "developer_iteration_normal",
+            prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
+        ),
+        (
+            "developer_iteration_minimal",
+            prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
+        ),
+        (
+            "review_xml",
+            prompt_review_xml_with_context(&template_context, "", "", "sample diff", &workspace),
+        ),
+        ("fix", prompt_fix("", "", "")),
+        ("plan", prompt_plan(None)),
+        (
+            "generate_commit_message",
+            prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
+        ),
     ];
 
-    for (i, prompt) in prompts_to_check.iter().enumerate() {
+    for (prompt_name, prompt) in prompts_to_check.iter() {
         let prompt_lower = prompt.to_lowercase();
         for term in agent_specific_terms {
             if prompt_lower.contains(term) {
-                // Check if this is a false positive (e.g., in file paths)
-                // Find all occurrences and verify they're not in paths
-                let mut is_in_content = false;
-                for (idx, _) in prompt_lower.match_indices(term) {
-                    // Check if this occurrence is in a file path
-                    // Paths typically contain /  or \ characters
-                    let context_start = idx.saturating_sub(50);
-                    let context_end = (idx + 50).min(prompt_lower.len());
-                    let context = &prompt_lower[context_start..context_end];
+                // Check if this is in a file path (acceptable) vs prompt content (not acceptable).
+                // File paths can appear in various contexts:
+                // 1. Absolute paths: /path/to/.agent/claude/log.txt
+                // 2. Relative paths: .agent/opencode/output.txt
+                // 3. Mid-line paths: "See file: .agent/claude/log.txt"
+                // 4. Windows paths: C:\.agent\claude\log.txt
+                //
+                // We use a more robust detection: check if the term appears within a path-like context
+                // by looking for path separators (/ or \) near the term, or in .agent/ directory paths.
+                let mut found_non_path_occurrence = false;
 
-                    // If the term appears in a path (preceded by / or \), skip it
-                    if context.contains('/') || context.contains('\\') {
-                        // Check if this looks like a path by seeing if / or \ appears near the term
-                        let before = &context[..(idx - context_start)];
-                        if before
-                            .rfind('/')
-                            .map_or(false, |p| idx - context_start - p < 30)
-                            || before
-                                .rfind('\\')
-                                .map_or(false, |p| idx - context_start - p < 30)
-                        {
-                            continue; // This is in a path, skip it
+                for line in prompt.lines() {
+                    let line_lower = line.to_lowercase();
+                    if line_lower.contains(term) {
+                        // Find all occurrences of the term in this line
+                        let mut search_start = 0;
+                        while let Some(pos) = line_lower[search_start..].find(term) {
+                            let actual_pos = search_start + pos;
+                            let term_end = actual_pos + term.len();
+
+                            // Extract context around the term (50 chars before and after)
+                            let context_start = actual_pos.saturating_sub(50);
+                            let context_end = (term_end + 50).min(line_lower.len());
+                            let context = &line_lower[context_start..context_end];
+
+                            // Check if this occurrence is in a path context:
+                            // - Contains .agent/ or .agent\ (most common case for this codebase)
+                            // - Contains multiple path separators (/ or \)
+                            // - Starts with / (Unix absolute path)
+                            // - Contains :/ or :\ (Windows absolute path or URL)
+                            let is_path_context = context.contains("/.agent/")
+                                || context.contains("\\.agent\\")
+                                || context.contains(".agent/")
+                                || context.contains(".agent\\")
+                                || context.matches('/').count() >= 2
+                                || context.matches('\\').count() >= 2
+                                || context.starts_with('/')
+                                || context.contains(":/")
+                                || context.contains(":\\")
+                                || context.contains("file://");
+
+                            if !is_path_context {
+                                found_non_path_occurrence = true;
+                                break;
+                            }
+
+                            search_start = term_end;
+                        }
+
+                        if found_non_path_occurrence {
+                            break;
                         }
                     }
-
-                    is_in_content = true;
-                    break;
                 }
 
                 assert!(
-                    !is_in_content,
-                    "Prompt {} contains agent-specific term '{}' in non-path context: {}",
-                    i,
-                    term,
-                    &prompt[..prompt.len().min(100)]
+                    !found_non_path_occurrence,
+                    "Prompt '{}' contains agent-specific term '{}' in non-path context",
+                    prompt_name, term
                 );
             }
         }

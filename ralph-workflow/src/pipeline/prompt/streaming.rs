@@ -417,6 +417,7 @@ pub(super) fn stream_agent_output_from_handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::Workspace;
 
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -517,5 +518,163 @@ mod tests {
         let line = "This is not JSON";
         let result = extract_error_from_json_line(line);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_opencode_usage_limit() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        // Create a test workspace with a logfile containing OpenCode JSON output
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        // Simulate OpenCode JSON output with multiple events including error
+        let log_content = r#"{"type":"init","timestamp":1768191346000,"sessionID":"ses_123","model":"claude-3.5-sonnet"}
+{"type":"message","timestamp":1768191346100,"content":"Processing request..."}
+{"type":"message","timestamp":1768191346200,"content":"Analyzing code..."}
+{"type":"error","timestamp":1768191346712,"sessionID":"ses_123","error":{"message":"usage limit reached"}}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        // Extract error message from logfile
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("usage limit reached".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_no_error() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        // Logfile with no error events
+        let log_content = r#"{"type":"init","timestamp":1768191346000,"sessionID":"ses_123"}
+{"type":"message","timestamp":1768191346100,"content":"All good"}
+{"type":"completion","timestamp":1768191346200,"status":"success"}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_file_not_found() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+
+        // Try to extract from non-existent file
+        let result = extract_error_message_from_logfile(".agent/tmp/nonexistent.log", &workspace);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_empty_file() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/empty.log");
+
+        workspace.write(logfile_path, "").unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_error_on_first_line() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        // Error on first line
+        let log_content = r#"{"type":"error","error":{"message":"Invalid API key"}}
+{"type":"init","timestamp":1768191346000,"sessionID":"ses_123"}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("Invalid API key".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_multiple_errors() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        // Multiple error events - should return the LAST one (most recent)
+        let log_content = r#"{"type":"error","error":{"message":"First error"}}
+{"type":"message","timestamp":1768191346100,"content":"Retrying..."}
+{"type":"error","error":{"message":"Second error"}}
+{"type":"message","timestamp":1768191346200,"content":"Retrying again..."}
+{"type":"error","error":{"message":"Final error"}}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        // Should return the last error (searched in reverse, take last 50 lines)
+        assert_eq!(result, Some("Final error".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_claude_format() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/claude.log");
+
+        // Claude error format
+        let log_content = r#"{"type":"init","session_id":"abc123"}
+{"type":"message","content":"Working..."}
+{"type":"error","message":"Rate limit exceeded"}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("Rate limit exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_opencode_data_format() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        // OpenCode nested data format
+        let log_content = r#"{"type":"init","sessionID":"ses_123"}
+{"type":"error","error":{"data":{"message":"Nested error message"}}}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("Nested error message".to_string()));
     }
 }

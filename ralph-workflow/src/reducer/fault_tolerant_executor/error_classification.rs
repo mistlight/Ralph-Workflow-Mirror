@@ -376,13 +376,16 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Authentication)
 }
 
-/// Check if a pattern is immediately followed by a file extension.
+/// Check if a pattern is followed by a file extension (with optional whitespace).
 ///
 /// This prevents false positives where "usage limit" appears as part of a filename
-/// (e.g., "error: usage limit.rs file not found") rather than as an API error message.
+/// (e.g., "error: usage limit.rs file not found" or "error: usage limit .rs file not found")
+/// rather than as an API error message.
 ///
 /// Uses a regex pattern to match any file extension (dot followed by 1-5 alphanumeric chars).
 /// This covers all common programming language file extensions and is future-proof.
+///
+/// The regex is compiled once at startup using LazyLock for efficiency.
 ///
 /// # Arguments
 /// * `text` - The full text to search in (lowercase)
@@ -391,21 +394,32 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
 /// # Returns
 /// `true` if the pattern is found and is followed by a file extension pattern
 fn is_followed_by_file_extension_generic(text: &str, pattern: &str) -> bool {
+    /// LazyLock for one-time regex initialization (compiled on first use, then cached).
+    /// Pattern matches: optional whitespace + dot + 1-10 alphanumeric chars + non-alphanumeric or end.
+    /// Matches common file extensions: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, .properties, .markdown, .terraform, etc.
+    /// Handles edge case of whitespace between pattern and extension: "usage limit .rs"
+    /// Updated from 1-5 to 1-10 to support longer extensions like .properties, .markdown
+    static EXTENSION_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^\s*\.[a-z0-9]{1,10}([^a-z0-9]|$)").unwrap()
+    });
+
     let Some(pos) = text.find(pattern) else {
         return false;
     };
 
-    // Check if the character after the pattern is a dot followed by 1-5 alphanumeric chars
+    // Check if the character after the pattern (with optional whitespace) is a dot
+    // followed by 1-5 alphanumeric chars.
     // This matches common file extensions like: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, etc.
+    // Also handles the edge case where there's whitespace between the pattern and the extension
+    // (e.g., "usage limit .rs file not found")
     let after_pattern = text.get(pos + pattern.len()..);
     match after_pattern {
         None | Some("") => false, // Pattern is at end of string, no extension
         Some(rest) => {
-            // Check if it starts with a dot followed by 1-5 alphanumeric characters
-            // The pattern is: "." + [a-z0-9]{1,5}
+            // Check if it starts with optional whitespace, then a dot followed by 1-5 alphanumeric characters
+            // The pattern is: optional whitespace + "." + [a-z0-9]{1,5}
             // After the extension, there should be a non-alphanumeric character or end of string
-            let extension_regex = regex::Regex::new(r"^\.[a-z0-9]{1,5}([^a-z0-9]|$)").unwrap();
-            extension_regex.is_match(rest)
+            EXTENSION_REGEX.is_match(rest)
         }
     }
 }
