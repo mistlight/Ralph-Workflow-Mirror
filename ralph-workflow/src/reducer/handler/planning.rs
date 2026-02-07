@@ -137,11 +137,11 @@ impl MainEffectHandler {
                         if err.kind() == std::io::ErrorKind::NotFound {
                             // Try reading from the archived .processed file as a fallback
                             let processed_path = Path::new(".agent/tmp/plan.xml.processed");
-                            ctx.workspace.read(processed_path).map(|output| {
+                            ctx.workspace.read(processed_path).inspect(|output| {
                                 ctx.logger.info(
                                     "XSD retry: using archived .processed file as last output",
                                 );
-                                output
+                                let _ = output;
                             })
                         } else {
                             Err(err)
