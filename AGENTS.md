@@ -54,13 +54,14 @@ Never assume API behavior. Research order:
 
 ## YOLO Mode (CRITICAL)
 
-All agents MUST run with YOLO mode enabled (`--dangerously-skip-permissions` for Claude CLI, `--yes` for Aider).
+All agents MUST run with YOLO mode enabled to allow automated file operations.
 
 **Why:** Ralph is a fully automated pipeline. All roles (Developer, Reviewer, Commit) write XML to `.agent/tmp/`. Without write permissions, the XSD retry mechanism fails.
 
 **Configuration:** Every agent needs `yolo_flag` in `agents.toml`:
 - Claude CLI: `--dangerously-skip-permissions`
 - Aider: `--yes`
+- OpenCode: No CLI flag (uses `OPENCODE_PERMISSION` env var instead)
 - Claude Code: Usually no flag needed
 
 ---
