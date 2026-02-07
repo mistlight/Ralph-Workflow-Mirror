@@ -235,30 +235,45 @@ fn test_collision_handling_impl() -> Result<()> {
     let tempdir = tempfile::tempdir()?;
     let workspace = MemoryWorkspace::new(tempdir.path().to_path_buf());
 
-    // Create a run log context manually to get a base run_id
-    let _ctx1 = RunLogContext::new(&workspace)?;
+    // Create a fixed run_id that we can use to simulate collision
+    let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
 
-    // Manually create a directory with a collision suffix to test collision handling
-    // Since RunLogContext::new() will detect the existing directory and add a suffix,
-    // we need to use a fixed timestamp
-    let fixed_run_id = RunId::from_checkpoint("2026-02-06_14-03-27.123Z");
-    let base_dir = std::path::PathBuf::from(format!(".agent/logs-{}", fixed_run_id));
+    // Create the base directory to simulate a collision
+    let base_dir = std::path::PathBuf::from(format!(".agent/logs-{}", fixed_id));
     workspace
         .create_dir_all(&base_dir)
-        .expect("Should create base directory");
+        .expect("Failed to create base directory for collision test");
 
-    // Now create a new RunLogContext with the same timestamp format
-    // This should detect the collision and add a suffix
-    // However, since RunId::new() generates current timestamp, we can't easily
-    // force a collision in this test without more complex mocking.
-    // Instead, let's verify that the from_checkpoint method works correctly
-    // and that collision handling exists in the code.
+    // Also create collision variants 1-5 to test proper collision handling
+    for i in 1..=5 {
+        let collision_dir = std::path::PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i));
+        workspace
+            .create_dir_all(&collision_dir)
+            .expect("Failed to create collision directory");
+    }
 
-    // Verify that if we try to create with a specific run_id that already exists,
-    // the collision counter is applied
-    let ctx2 = RunLogContext::from_checkpoint("2026-02-06_14-03-27.123Z", &workspace)?;
-    assert_eq!(ctx2.run_id().to_string(), "2026-02-06_14-03-27.123Z");
-    assert!(workspace.exists(ctx2.run_dir()));
+    // Now create a RunLogContext with the fixed base run_id
+    // It should skip base and collisions 1-5 and create collision variant 06
+    let ctx = RunLogContext::for_testing(fixed_id.clone(), &workspace)?;
+
+    // Verify the run_id has a collision suffix -06
+    let run_id_str = ctx.run_id().as_str();
+    assert!(
+        run_id_str.ends_with("-06"),
+        "Run ID should have collision suffix -06, got: {}",
+        run_id_str
+    );
+
+    // Verify the directory exists
+    assert!(workspace.exists(ctx.run_dir()));
+
+    // Verify the directory name matches
+    let expected_dir = std::path::PathBuf::from(format!(".agent/logs-{}", run_id_str));
+    assert_eq!(
+        ctx.run_dir(),
+        &expected_dir,
+        "Run directory should match the collision suffix path"
+    );
 
     Ok(())
 }

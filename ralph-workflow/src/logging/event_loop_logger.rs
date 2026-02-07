@@ -52,7 +52,17 @@ impl EventLoopLogger {
     /// 1 ts=2026-02-06T14:03:27.123Z phase=Development effect=InvokePrompt event=PromptCompleted ms=1234
     /// 2 ts=2026-02-06T14:03:28.456Z phase=Development effect=WriteFile event=FileWritten ctx=file=PLAN.md ms=12
     /// ```
-    pub fn log_effect(&mut self, params: LogEffectParams) {
+    ///
+    /// # Best-Effort Logging
+    ///
+    /// Write failures are returned but do not affect pipeline correctness.
+    /// This is intentional: event loop logging is observability-only and must not
+    /// affect pipeline correctness. If logging fails (e.g., disk full, permissions),
+    /// the pipeline continues execution.
+    ///
+    /// Callers who want visibility into logging failures should check the return value
+    /// and log to the pipeline logger if desired.
+    pub fn log_effect(&mut self, params: LogEffectParams) -> Result<(), std::io::Error> {
         let ts = Utc::now().to_rfc3339();
 
         // Format extra events (if any)
@@ -86,12 +96,12 @@ impl EventLoopLogger {
             params.duration_ms
         );
 
-        // Best-effort append (failures are silently ignored)
-        let _ = params
+        params
             .workspace
-            .append_bytes(params.log_path, line.as_bytes());
+            .append_bytes(params.log_path, line.as_bytes())?;
 
         self.seq += 1;
+        Ok(())
     }
 }
 
@@ -115,27 +125,31 @@ mod tests {
         let mut logger = EventLoopLogger::new();
 
         // Log a few effects
-        logger.log_effect(LogEffectParams {
-            workspace: &workspace,
-            log_path,
-            phase: PipelinePhase::Development,
-            effect: "InvokePrompt",
-            primary_event: "PromptCompleted",
-            extra_events: &[],
-            duration_ms: 1234,
-            context: &[("iteration", "1")],
-        });
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::Development,
+                effect: "InvokePrompt",
+                primary_event: "PromptCompleted",
+                extra_events: &[],
+                duration_ms: 1234,
+                context: &[("iteration", "1")],
+            })
+            .unwrap();
 
-        logger.log_effect(LogEffectParams {
-            workspace: &workspace,
-            log_path,
-            phase: PipelinePhase::Development,
-            effect: "WriteFile",
-            primary_event: "FileWritten",
-            extra_events: &["CheckpointSaved".to_string()],
-            duration_ms: 12,
-            context: &[],
-        });
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::Development,
+                effect: "WriteFile",
+                primary_event: "FileWritten",
+                extra_events: &["CheckpointSaved".to_string()],
+                duration_ms: 12,
+                context: &[],
+            })
+            .unwrap();
 
         // Verify log file exists
         assert!(workspace.exists(log_path));
@@ -166,16 +180,18 @@ mod tests {
 
         // Log several effects
         for i in 0..5 {
-            logger.log_effect(LogEffectParams {
-                workspace: &workspace,
-                log_path,
-                phase: PipelinePhase::Planning,
-                effect: "TestEffect",
-                primary_event: "TestEvent",
-                extra_events: &[],
-                duration_ms: 10 * i,
-                context: &[],
-            });
+            logger
+                .log_effect(LogEffectParams {
+                    workspace: &workspace,
+                    log_path,
+                    phase: PipelinePhase::Planning,
+                    effect: "TestEffect",
+                    primary_event: "TestEvent",
+                    extra_events: &[],
+                    duration_ms: 10 * i,
+                    context: &[],
+                })
+                .unwrap();
         }
 
         // Verify sequence numbers
@@ -197,20 +213,22 @@ mod tests {
         let log_path = std::path::Path::new("event_loop.log");
         let mut logger = EventLoopLogger::new();
 
-        logger.log_effect(LogEffectParams {
-            workspace: &workspace,
-            log_path,
-            phase: PipelinePhase::Review,
-            effect: "InvokeReviewer",
-            primary_event: "ReviewCompleted",
-            extra_events: &[],
-            duration_ms: 5000,
-            context: &[
-                ("reviewer_pass", "2"),
-                ("agent_index", "3"),
-                ("retry_cycle", "1"),
-            ],
-        });
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::Review,
+                effect: "InvokeReviewer",
+                primary_event: "ReviewCompleted",
+                extra_events: &[],
+                duration_ms: 5000,
+                context: &[
+                    ("reviewer_pass", "2"),
+                    ("agent_index", "3"),
+                    ("retry_cycle", "1"),
+                ],
+            })
+            .unwrap();
 
         let content = workspace.read(log_path).unwrap();
         assert!(content.contains("ctx=reviewer_pass=2,agent_index=3,retry_cycle=1"));
@@ -224,16 +242,18 @@ mod tests {
         let log_path = std::path::Path::new("event_loop.log");
         let mut logger = EventLoopLogger::new();
 
-        logger.log_effect(LogEffectParams {
-            workspace: &workspace,
-            log_path,
-            phase: PipelinePhase::CommitMessage,
-            effect: "GenerateCommit",
-            primary_event: "CommitGenerated",
-            extra_events: &[],
-            duration_ms: 100,
-            context: &[],
-        });
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::CommitMessage,
+                effect: "GenerateCommit",
+                primary_event: "CommitGenerated",
+                extra_events: &[],
+                duration_ms: 100,
+                context: &[],
+            })
+            .unwrap();
 
         let content = workspace.read(log_path).unwrap();
         // Should not contain "ctx=" when context is empty

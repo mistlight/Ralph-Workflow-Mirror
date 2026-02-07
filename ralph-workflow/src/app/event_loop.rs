@@ -429,13 +429,13 @@ where
                 let context_pairs: Vec<(&str, String)> = vec![
                     ("iteration", new_state.iteration.to_string()),
                     ("reviewer_pass", new_state.reviewer_pass.to_string()),
-                    ("error", "unrecoverable".to_string()),
+                    ("error_kind", "unrecoverable_failure".to_string()),
                 ];
                 let context_refs: Vec<(&str, &str)> = context_pairs
                     .iter()
                     .map(|(k, v)| (*k, v.as_str()))
                     .collect();
-                event_loop_logger.log_effect(crate::logging::LogEffectParams {
+                if let Err(e) = event_loop_logger.log_effect(crate::logging::LogEffectParams {
                     workspace: ctx.workspace,
                     log_path: &ctx.run_log_context.event_loop_log(),
                     phase: new_state.phase,
@@ -444,7 +444,10 @@ where
                     extra_events: &[],
                     duration_ms,
                     context: &context_refs,
-                });
+                }) {
+                    ctx.logger
+                        .warn(&format!("Failed to write to event loop log: {}", e));
+                }
 
                 trace.push(build_trace_entry(
                     events_processed,
@@ -508,13 +511,13 @@ where
                 let context_pairs: Vec<(&str, String)> = vec![
                     ("iteration", new_state.iteration.to_string()),
                     ("reviewer_pass", new_state.reviewer_pass.to_string()),
-                    ("error", "panic".to_string()),
+                    ("error_kind", "handler_panic".to_string()),
                 ];
                 let context_refs: Vec<(&str, &str)> = context_pairs
                     .iter()
                     .map(|(k, v)| (*k, v.as_str()))
                     .collect();
-                event_loop_logger.log_effect(crate::logging::LogEffectParams {
+                if let Err(e) = event_loop_logger.log_effect(crate::logging::LogEffectParams {
                     workspace: ctx.workspace,
                     log_path: &ctx.run_log_context.event_loop_log(),
                     phase: new_state.phase,
@@ -523,7 +526,10 @@ where
                     extra_events: &[],
                     duration_ms,
                     context: &context_refs,
-                });
+                }) {
+                    ctx.logger
+                        .warn(&format!("Failed to write to event loop log: {}", e));
+                }
 
                 trace.push(build_trace_entry(
                     events_processed,
@@ -565,7 +571,7 @@ where
             .iter()
             .map(|(k, v)| (*k, v.as_str()))
             .collect();
-        event_loop_logger.log_effect(crate::logging::LogEffectParams {
+        if let Err(e) = event_loop_logger.log_effect(crate::logging::LogEffectParams {
             workspace: ctx.workspace,
             log_path: &ctx.run_log_context.event_loop_log(),
             phase: new_state.phase,
@@ -574,7 +580,10 @@ where
             extra_events: &extra_events,
             duration_ms,
             context: &context_refs,
-        });
+        }) {
+            ctx.logger
+                .warn(&format!("Failed to write to event loop log: {}", e));
+        }
 
         trace.push(build_trace_entry(
             events_processed,

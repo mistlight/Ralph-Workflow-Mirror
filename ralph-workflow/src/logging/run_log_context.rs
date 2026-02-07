@@ -95,6 +95,17 @@ impl RunLogContext {
     /// - `.agent/logs-<run_id>/agents/` for per-agent logs
     /// - `.agent/logs-<run_id>/provider/` for provider streaming logs
     /// - `.agent/logs-<run_id>/debug/` for future debug artifacts
+    ///
+    /// # Collision Handling
+    ///
+    /// The collision handling loop tries counter values 0-99:
+    /// - Counter 0: Uses the base run_id (no suffix)
+    /// - Counter 1-99: Appends `-01` through `-99` suffixes
+    ///
+    /// Note: If a base directory exists that was actually created as a collision
+    /// directory (e.g., due to a bug), the system will still work correctly by
+    /// creating the next collision variant. This is acceptable because the directory
+    /// naming format is deterministic and we always check for existence before creating.
     pub fn new(workspace: &dyn Workspace) -> Result<Self> {
         let base_run_id = RunId::new();
 
@@ -173,12 +184,27 @@ impl RunLogContext {
         Ok(Self { run_id, run_dir })
     }
 
-    /// Test-only helper to create a RunLogContext with a fixed base run_id.
+    /// Test-only helper to create a RunLogContext with a fixed run_id.
     ///
     /// This allows testing the collision handling logic by providing a predictable
     /// run_id that can be pre-created on the filesystem to simulate collisions.
-    #[cfg(test)]
-    fn with_base_run_id_for_test(base_run_id: RunId, workspace: &dyn Workspace) -> Result<Self> {
+    ///
+    /// # Warning
+    ///
+    /// This is intended for testing only. Using a fixed run_id in production
+    /// could lead to directory collisions. Always use [`RunLogContext::new`]
+    /// or [`RunLogContext::from_checkpoint`] in production code.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use ralph_workflow::logging::{RunId, RunLogContext};
+    ///
+    /// // Create a fixed run_id for testing
+    /// let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
+    /// let ctx = RunLogContext::for_testing(fixed_id, &workspace)?;
+    /// ```
+    pub fn for_testing(base_run_id: RunId, workspace: &dyn Workspace) -> Result<Self> {
         // Try base run_id first, then collision variants 1-99
         for counter in 0..=99 {
             let run_id = if counter == 0 {
@@ -302,14 +328,12 @@ impl RunLogContext {
                 self.run_id
             )
         })?;
-        workspace
-            .write(&path, &json)
-            .with_context(|| {
-                format!(
-                    "Failed to write run.json to '{}'. Check filesystem permissions and disk space.",
-                    path.display()
-                )
-            })
+        workspace.write(&path, &json).with_context(|| {
+            format!(
+                "Failed to write run.json to '{}'. Check filesystem permissions and disk space.",
+                path.display()
+            )
+        })
     }
 }
 
@@ -514,7 +538,7 @@ mod tests {
 
         // Now create a RunLogContext with the fixed base run_id
         // It should skip base and collisions 1-5 and create collision variant 06
-        let ctx = RunLogContext::with_base_run_id_for_test(fixed_id, &workspace).unwrap();
+        let ctx = RunLogContext::for_testing(fixed_id, &workspace).unwrap();
 
         // Verify the run_id has a collision suffix -06
         let run_id_str = ctx.run_id().as_str();
@@ -550,15 +574,12 @@ mod tests {
             .unwrap();
         for i in 1..=99 {
             workspace
-                .create_dir_all(&PathBuf::from(format!(
-                    ".agent/logs-{}-{:02}",
-                    fixed_id, i
-                )))
+                .create_dir_all(&PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i)))
                 .unwrap();
         }
 
         // Now try to create a RunLogContext with the fixed base run_id - it should fail
-        let result = RunLogContext::with_base_run_id_for_test(fixed_id, &workspace);
+        let result = RunLogContext::for_testing(fixed_id, &workspace);
         assert!(
             result.is_err(),
             "Should fail when all collision variants are exhausted"

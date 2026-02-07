@@ -28,7 +28,12 @@ impl RunId {
     ///
     /// This is a test-only constructor that allows creating a RunId with
     /// a fixed timestamp value for deterministic testing of collision handling.
-    #[cfg(test)]
+    ///
+    /// # Warning
+    ///
+    /// This is intended for testing only. Using a fixed run_id in production
+    /// could lead to directory collisions. Always use [`RunId::new`]
+    /// or [`RunId::from_checkpoint`] in production code.
     pub fn for_test(id: &str) -> Self {
         Self(id.to_string())
     }
