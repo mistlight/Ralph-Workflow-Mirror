@@ -257,7 +257,11 @@ fn detect_unknown_and_deprecated_keys(value: &toml::Value) -> (KeyLocationList, 
 /// - KeyLocationList for deprecated keys
 ///
 /// The location includes the section prefix.
-fn check_section(section: &str, value: &toml::Value, prefix: &str) -> (KeyLocationList, KeyLocationList) {
+fn check_section(
+    section: &str,
+    value: &toml::Value,
+    prefix: &str,
+) -> (KeyLocationList, KeyLocationList) {
     let mut unknown = Vec::new();
     let mut deprecated = Vec::new();
 

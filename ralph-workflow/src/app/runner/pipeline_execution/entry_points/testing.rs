@@ -73,8 +73,8 @@ pub fn run_with_config_and_resolver<
     workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
 ) -> anyhow::Result<()> {
     use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_list_work_guides,
-        handle_smart_init_with,
+        handle_extended_help, handle_init_global_with, handle_init_local_config_with,
+        handle_list_work_guides, handle_smart_init_with,
     };
 
     let colors = Colors::new();
@@ -83,6 +83,17 @@ pub fn run_with_config_and_resolver<
     // Set working directory first if override is provided
     if let Some(ref override_dir) = args.working_dir_override {
         std::env::set_current_dir(override_dir)?;
+    }
+
+    // CRITICAL: Validate config files before any operations (fail-fast)
+    // This ensures tests match production behavior where invalid config prevents startup
+    // Per requirements: Ralph refuses to start pipeline if ANY config file has errors
+    if let Err(e) = crate::config::loader::load_config_from_path_with_env(
+        args.config.as_deref(),
+        path_resolver,
+    ) {
+        eprintln!("{}", e.format_errors());
+        return Err(anyhow::anyhow!("Configuration validation failed"));
     }
 
     // Handle --extended-help / --man flag: display extended help and exit.
@@ -119,6 +130,13 @@ pub fn run_with_config_and_resolver<
 
     // Handle --init-global flag: create unified config if it doesn't exist and exit
     if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
+        return Ok(());
+    }
+
+    // Handle --init-local-config flag: create local project config and exit
+    if args.unified_init.init_local_config
+        && handle_init_local_config_with(colors, path_resolver, args.unified_init.force_init)?
+    {
         return Ok(());
     }
 
@@ -275,8 +293,8 @@ where
         ..
     } = params;
     use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_list_work_guides,
-        handle_smart_init_with,
+        handle_extended_help, handle_init_global_with, handle_init_local_config_with,
+        handle_list_work_guides, handle_smart_init_with,
     };
 
     let colors = Colors::new();
@@ -285,6 +303,17 @@ where
     // Set working directory first if override is provided
     if let Some(ref override_dir) = args.working_dir_override {
         std::env::set_current_dir(override_dir)?;
+    }
+
+    // CRITICAL: Validate config files before any operations (fail-fast)
+    // This ensures tests match production behavior where invalid config prevents startup
+    // Per requirements: Ralph refuses to start pipeline if ANY config file has errors
+    if let Err(e) = crate::config::loader::load_config_from_path_with_env(
+        args.config.as_deref(),
+        path_resolver,
+    ) {
+        eprintln!("{}", e.format_errors());
+        return Err(anyhow::anyhow!("Configuration validation failed"));
     }
 
     // Handle --extended-help / --man flag
@@ -321,6 +350,13 @@ where
 
     // Handle --init-global flag
     if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
+        return Ok(());
+    }
+
+    // Handle --init-local-config flag: create local project config and exit
+    if args.unified_init.init_local_config
+        && handle_init_local_config_with(colors, path_resolver, args.unified_init.force_init)?
+    {
         return Ok(());
     }
 

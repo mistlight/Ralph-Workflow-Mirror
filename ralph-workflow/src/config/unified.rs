@@ -458,21 +458,23 @@ impl UnifiedConfig {
     /// Merge local config into self (global), returning merged config.
     ///
     /// Local values override global values with these semantics:
-    /// - Scalar values: local replaces global ONLY if local differs from default
+    /// - Scalar values: local replaces global when explicitly present in TOML
     /// - Maps (agents, ccs_aliases): local entries merge with global (local wins on collision)
     /// - Arrays (agent_chain): local replaces global entirely (not appended)
     /// - Optional values: local Some(_) replaces global, local None preserves global
-    /// - CCS string values: empty string ("") in local does NOT override global (preserves global)
+    /// - CCS string values: empty string ("") means disabled, missing means use global
     ///
     /// This is a pure function - no I/O, cannot fail.
     ///
-    /// IMPORTANT: This function compares local values against defaults to determine
-    /// if they were explicitly set. Only explicitly-set values override global.
+    /// IMPORTANT: This uses default-comparison heuristic and is primarily for tests.
+    /// For real TOML-based configs, use `merge_with_content` for proper presence tracking.
     pub fn merge_with(&self, local: &UnifiedConfig) -> UnifiedConfig {
+        // For programmatically-constructed configs, we use default comparison
+        // NOTE: This has known issues with booleans and default-valued fields (Issue #2)
+        // but is kept for backward compatibility with tests
         let defaults = GeneralConfig::default();
 
-        // Merge general config with smart override detection
-        // Only override if local value differs from default (indicating explicit setting)
+        // Merge general config - override if local differs from default
         let general = GeneralConfig {
             verbosity: if local.general.verbosity != defaults.verbosity {
                 local.general.verbosity
@@ -592,10 +594,7 @@ impl UnifiedConfig {
             },
         };
 
-        // Merge CCS config with empty string semantics
-        // In CCS config, empty string in local means "not explicitly set, use global"
-        // Non-empty string in local means "override global with this value"
-        // To explicitly disable a CCS feature, set it to empty in BOTH global and local
+        // Merge CCS config - empty string means use global
         fn merge_ccs_string(local: &str, global: &str) -> String {
             if local.is_empty() {
                 global.to_string()
@@ -634,6 +633,214 @@ impl UnifiedConfig {
         // Agent chain: local replaces global entirely (not merged)
         let agent_chain = if local.agent_chain.is_some() {
             local.agent_chain.clone()
+        } else {
+            self.agent_chain.clone()
+        };
+
+        UnifiedConfig {
+            general,
+            ccs,
+            agents,
+            ccs_aliases,
+            agent_chain,
+        }
+    }
+
+    /// Merge local config content (TOML string) into self (global).
+    ///
+    /// This version tracks which fields are actually present in the TOML source
+    /// to distinguish "not set" from "set to default value".
+    ///
+    /// # Arguments
+    ///
+    /// * `local_content` - The raw TOML content of the local config
+    /// * `local_parsed` - The parsed local config (already deserialized)
+    pub fn merge_with_content(
+        &self,
+        local_content: &str,
+        local_parsed: &UnifiedConfig,
+    ) -> UnifiedConfig {
+        // Parse raw TOML to check field presence
+        let local_toml: toml::Value =
+            toml::from_str(local_content).unwrap_or(toml::Value::Table(Default::default()));
+
+        // Helper to check if a field is present in the TOML
+        let general_table = local_toml.get("general");
+        let behavior_table = general_table.and_then(|g| g.get("behavior"));
+
+        let has_field = |key: &str| -> bool { general_table.and_then(|g| g.get(key)).is_some() };
+        let has_behavior_field =
+            |key: &str| -> bool { behavior_table.and_then(|b| b.get(key)).is_some() };
+
+        // Merge general config with presence-based override detection
+        // Only override if field was explicitly present in local TOML
+        let general = GeneralConfig {
+            verbosity: if has_field("verbosity") {
+                local_parsed.general.verbosity
+            } else {
+                self.general.verbosity
+            },
+            behavior: GeneralBehaviorFlags {
+                interactive: if has_behavior_field("interactive") {
+                    local_parsed.general.behavior.interactive
+                } else {
+                    self.general.behavior.interactive
+                },
+                auto_detect_stack: if has_behavior_field("auto_detect_stack") {
+                    local_parsed.general.behavior.auto_detect_stack
+                } else {
+                    self.general.behavior.auto_detect_stack
+                },
+                strict_validation: if has_behavior_field("strict_validation") {
+                    local_parsed.general.behavior.strict_validation
+                } else {
+                    self.general.behavior.strict_validation
+                },
+            },
+            workflow: GeneralWorkflowFlags {
+                checkpoint_enabled: if has_field("checkpoint_enabled") {
+                    local_parsed.general.workflow.checkpoint_enabled
+                } else {
+                    self.general.workflow.checkpoint_enabled
+                },
+            },
+            execution: GeneralExecutionFlags {
+                force_universal_prompt: if has_field("force_universal_prompt") {
+                    local_parsed.general.execution.force_universal_prompt
+                } else {
+                    self.general.execution.force_universal_prompt
+                },
+                isolation_mode: if has_field("isolation_mode") {
+                    local_parsed.general.execution.isolation_mode
+                } else {
+                    self.general.execution.isolation_mode
+                },
+            },
+            developer_iters: if has_field("developer_iters") {
+                local_parsed.general.developer_iters
+            } else {
+                self.general.developer_iters
+            },
+            reviewer_reviews: if has_field("reviewer_reviews") {
+                local_parsed.general.reviewer_reviews
+            } else {
+                self.general.reviewer_reviews
+            },
+            developer_context: if has_field("developer_context") {
+                local_parsed.general.developer_context
+            } else {
+                self.general.developer_context
+            },
+            reviewer_context: if has_field("reviewer_context") {
+                local_parsed.general.reviewer_context
+            } else {
+                self.general.reviewer_context
+            },
+            review_depth: if has_field("review_depth") {
+                local_parsed.general.review_depth.clone()
+            } else {
+                self.general.review_depth.clone()
+            },
+            prompt_path: local_parsed
+                .general
+                .prompt_path
+                .clone()
+                .or_else(|| self.general.prompt_path.clone()),
+            templates_dir: local_parsed
+                .general
+                .templates_dir
+                .clone()
+                .or_else(|| self.general.templates_dir.clone()),
+            git_user_name: local_parsed
+                .general
+                .git_user_name
+                .clone()
+                .or_else(|| self.general.git_user_name.clone()),
+            git_user_email: local_parsed
+                .general
+                .git_user_email
+                .clone()
+                .or_else(|| self.general.git_user_email.clone()),
+            max_dev_continuations: if has_field("max_dev_continuations") {
+                local_parsed.general.max_dev_continuations
+            } else {
+                self.general.max_dev_continuations
+            },
+            max_xsd_retries: if has_field("max_xsd_retries") {
+                local_parsed.general.max_xsd_retries
+            } else {
+                self.general.max_xsd_retries
+            },
+            max_same_agent_retries: if has_field("max_same_agent_retries") {
+                local_parsed.general.max_same_agent_retries
+            } else {
+                self.general.max_same_agent_retries
+            },
+        };
+
+        // Merge CCS config with presence-based semantics
+        // Check if CCS fields are present in local TOML
+        let ccs_table = local_toml.get("ccs");
+        let has_ccs_field = |key: &str| -> bool { ccs_table.and_then(|c| c.get(key)).is_some() };
+
+        let ccs = CcsConfig {
+            output_flag: if has_ccs_field("output_flag") {
+                local_parsed.ccs.output_flag.clone()
+            } else {
+                self.ccs.output_flag.clone()
+            },
+            yolo_flag: if has_ccs_field("yolo_flag") {
+                local_parsed.ccs.yolo_flag.clone()
+            } else {
+                self.ccs.yolo_flag.clone()
+            },
+            verbose_flag: if has_ccs_field("verbose_flag") {
+                local_parsed.ccs.verbose_flag.clone()
+            } else {
+                self.ccs.verbose_flag.clone()
+            },
+            print_flag: if has_ccs_field("print_flag") {
+                local_parsed.ccs.print_flag.clone()
+            } else {
+                self.ccs.print_flag.clone()
+            },
+            streaming_flag: if has_ccs_field("streaming_flag") {
+                local_parsed.ccs.streaming_flag.clone()
+            } else {
+                self.ccs.streaming_flag.clone()
+            },
+            json_parser: if has_ccs_field("json_parser") {
+                local_parsed.ccs.json_parser.clone()
+            } else {
+                self.ccs.json_parser.clone()
+            },
+            session_flag: if has_ccs_field("session_flag") {
+                local_parsed.ccs.session_flag.clone()
+            } else {
+                self.ccs.session_flag.clone()
+            },
+            can_commit: if has_ccs_field("can_commit") {
+                local_parsed.ccs.can_commit
+            } else {
+                self.ccs.can_commit
+            },
+        };
+
+        // Merge agents map (local entries override global entries)
+        let mut agents = self.agents.clone();
+        for (key, value) in &local_parsed.agents {
+            agents.insert(key.clone(), value.clone());
+        }
+
+        // Merge CCS aliases map (local entries override global entries)
+        let mut ccs_aliases = self.ccs_aliases.clone();
+        for (key, value) in &local_parsed.ccs_aliases {
+            ccs_aliases.insert(key.clone(), value.clone());
+        }
+
+        // Agent chain: local replaces global entirely (not merged)
+        let agent_chain = if local_parsed.agent_chain.is_some() {
+            local_parsed.agent_chain.clone()
         } else {
             self.agent_chain.clone()
         };

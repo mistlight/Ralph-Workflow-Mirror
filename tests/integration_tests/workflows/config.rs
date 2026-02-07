@@ -748,12 +748,9 @@ fn test_check_config_succeeds_with_valid_config() {
 
 /// Test that unknown key detection works with typo suggestions.
 ///
-/// NOTE: Full unknown key detection is not yet implemented - serde ignores
-/// unknown fields by default. This test documents current behavior.
-///
 /// This verifies that validation catches typos and suggests corrections.
 #[test]
-fn test_unknown_key_detection_not_yet_implemented() {
+fn test_unknown_key_detection_with_suggestions() {
     with_default_timeout(|| {
         let (mut app_handler, _effect_handler) = create_config_test_handlers();
 
@@ -772,11 +769,19 @@ fn test_unknown_key_detection_not_yet_implemented() {
 
         let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
 
-        // Currently passes because unknown keys are silently ignored
-        // TODO: This should fail once full semantic validation is implemented
+        // Validation should now catch unknown keys and fail
         assert!(
-            result.is_ok(),
-            "Currently unknown keys are ignored - this should change in the future"
+            result.is_err(),
+            "Unknown keys should be caught by validation"
+        );
+
+        // The detailed error message is printed to stderr during validation,
+        // but the Error returned just says "Configuration validation failed"
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Configuration validation failed") || err_msg.contains("validation"),
+            "Error should mention configuration validation: {}",
+            err_msg
         );
     });
 }

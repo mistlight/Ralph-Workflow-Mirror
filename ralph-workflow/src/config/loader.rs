@@ -265,7 +265,7 @@ pub fn load_config_from_path_with_env(
     };
 
     // Step 2: Load and validate local config
-    let local_unified = if let Some(local_path) = env.local_config_path() {
+    let (local_unified, local_content) = if let Some(local_path) = env.local_config_path() {
         if env.file_exists(&local_path) {
             let content = env.read_file(&local_path)?;
             // Validate the config file
@@ -278,21 +278,21 @@ pub fn load_config_from_path_with_env(
                 }
             }
             match UnifiedConfig::load_from_content(&content) {
-                Ok(cfg) => Some(cfg),
+                Ok(cfg) => (Some(cfg), Some(content)),
                 Err(e) => {
                     validation_errors.push(ConfigValidationError::InvalidValue {
                         file: local_path.to_path_buf(),
                         key: "config".to_string(),
                         message: format!("Failed to parse config: {}", e),
                     });
-                    None
+                    (None, None)
                 }
             }
         } else {
-            None
+            (None, None)
         }
     } else {
-        None
+        (None, None)
     };
 
     // Fail-fast: if there are any validation errors, return them immediately
@@ -303,20 +303,25 @@ pub fn load_config_from_path_with_env(
     }
 
     // Step 3: Merge configs (local overrides global)
-    let merged_unified = match (global_unified, local_unified) {
-        (Some(global), Some(local)) => {
+    let merged_unified = match (global_unified, local_unified, local_content) {
+        (Some(global), Some(local), Some(content)) => {
             // Both exist: merge with local overriding global
+            // Pass raw TOML content for presence tracking
+            Some(global.merge_with_content(&content, &local))
+        }
+        (Some(global), Some(local), None) => {
+            // Local config exists but no content (shouldn't happen, but fallback)
             Some(global.merge_with(&local))
         }
-        (Some(global), None) => {
+        (Some(global), None, _) => {
             // Only global exists
             Some(global)
         }
-        (None, Some(local)) => {
+        (None, Some(local), _) => {
             // Only local exists (unusual but valid)
             Some(local)
         }
-        (None, None) => {
+        (None, None, _) => {
             // Neither exists: use defaults
             None
         }
