@@ -630,6 +630,118 @@ mod rate_limit_patterns {
             let error_kind = classify_agent_error(1, stderr);
             assert_eq!(error_kind, AgentErrorKind::RateLimit);
         }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_with_error_prefix() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "usage limit" with "error:" prefix
+            // Documentation: No official docs - observed in production
+            // Last Verified: 2026-02-06
+            // Context:
+            //   Some providers emit a concise "error: usage limit" message
+            //   without additional qualifying words like "reached" or "exceeded".
+            //   This test verifies the bare pattern is recognized with API error context.
+
+            let stderr = "error: usage limit";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_with_period() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "usage limit." with sentence-ending punctuation
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+            // Context:
+            //   Sentence-ending punctuation indicates this is a standalone
+            //   error message, not part of a filename or other context.
+
+            let stderr = "Error: usage limit.";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_with_exclamation() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "usage limit!" with exclamation mark
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+            // Context:
+            //   Exclamation mark indicates this is an error message,
+            //   not part of a filename or other context.
+
+            let stderr = "usage limit!";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_with_semicolon() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "usage limit;" with semicolon
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+            // Context:
+            //   Semicolon indicates this is part of an error message,
+            //   not part of a filename or other context.
+
+            let stderr = "Error: usage limit; please retry later";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_with_comma() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "usage limit," with comma
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+            // Context:
+            //   Comma indicates this is part of an error message,
+            //   not part of a filename or other context.
+
+            let stderr = "usage limit, please try again later";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_with_http_429() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "usage limit" with HTTP 429 status
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+            // Context:
+            //   HTTP 429 status code combined with "usage limit" indicates
+            //   API rate limiting, not a filename or other context.
+
+            let stderr = "HTTP 429: usage limit";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_rate_limit_bare_usage_limit_case_insensitive() {
+            // Provider: OpenCode (Multi-Provider Gateway)
+            // Error Pattern: Bare "USAGE LIMIT" (uppercase)
+            // Documentation: No official docs - observed variant
+            // Last Verified: 2026-02-06
+            // Context:
+            //   Verify case-insensitive matching for bare "usage limit" pattern.
+
+            let stderr = "ERROR: USAGE LIMIT";
+            let error_kind = classify_agent_error(1, stderr);
+            assert_eq!(error_kind, AgentErrorKind::RateLimit);
+            assert!(is_rate_limit_error(&error_kind));
+        }
     }
 
     /// OpenAI API rate limit patterns
@@ -916,6 +1028,53 @@ mod rate_limit_patterns {
             let stderr = "Error: System CPU overload detected, process throttled";
             let error_kind = classify_agent_error(1, stderr);
             // Should classify as InternalError or other, NOT RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_bare_usage_limit_without_context_not_rate_limit() {
+            // Bare "usage limit" without API error context should NOT match.
+            //
+            // Context: The bare "usage limit" pattern requires API error context
+            // (error prefix, punctuation, HTTP status) to avoid false positives.
+            // Without such context, it should NOT be classified as RateLimit.
+            //
+            // Expected: InternalError or other, NOT RateLimit
+            let stderr = "usage limit";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as InternalError or other, NOT RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_in_filename_not_rate_limit() {
+            // "usage limit" appearing in a filename context should NOT match.
+            //
+            // Context: Even though the test uses "usage limit" with space (not underscore),
+            // it should NOT match because it appears in a filename/source location context,
+            // not an API error context.
+            //
+            // Expected: ParsingError or InternalError, NOT RateLimit
+            let stderr = "usage limit.rs:123:1: syntax error: unexpected token";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as ParsingError, not RateLimit
+            assert_ne!(error_kind, AgentErrorKind::RateLimit);
+            assert!(!is_rate_limit_error(&error_kind));
+        }
+
+        #[test]
+        fn test_usage_limit_in_comment_not_rate_limit() {
+            // "usage limit" appearing in code comments or documentation should NOT match.
+            //
+            // Context: Comments, documentation, or log messages that mention "usage limit"
+            // but are not actual API error responses should NOT trigger rate limit detection.
+            //
+            // Expected: InternalError, NOT RateLimit
+            let stderr = "// TODO: Handle usage limit gracefully\nerror: internal error";
+            let error_kind = classify_agent_error(1, stderr);
+            // Should classify as InternalError, not RateLimit
             assert_ne!(error_kind, AgentErrorKind::RateLimit);
             assert!(!is_rate_limit_error(&error_kind));
         }

@@ -145,8 +145,14 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // The "[retryin]" suffix is misleading - the agent is actually unavailable
     // due to quota exhaustion and should trigger immediate agent fallback, not retry.
     //
-    // Detection: Match "usage limit has been reached" or "usage limit reached"
-    // to trigger AgentEvent::RateLimited for immediate fallback.
+    // Detection: Match three patterns:
+    // 1. "usage limit has been reached" - Full phrase with timeout suffix
+    // 2. "usage limit reached" - Shorter variant
+    // 3. Bare "usage limit" - With API error context to avoid false positives
+    //
+    // For the bare "usage limit" pattern, we require API error context to avoid
+    // false positives from filenames (e.g., "usage_limit.rs") or non-error text.
+    // Context markers: "error:" prefix, sentence punctuation, or HTTP status codes.
     //
     // Providers affected: OpenCode (multi-provider), Claude API wrappers
     // Related patterns: "quota exceeded", "rate limit exceeded"
@@ -154,6 +160,38 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
         || stderr_lower.contains("usage limit reached")
     {
         return true;
+    }
+
+    // Bare "usage limit" pattern with context requirements
+    // Match only when in API error context to avoid false positives
+    if stderr_lower.contains("usage limit") {
+        // First, exclude filename patterns to avoid false positives
+        // File patterns like "usage_limit.rs" or "usage limit.rs" should NOT match
+        if stderr_lower.contains("usage_limit.rs:")
+            || stderr_lower.contains("usage limit.rs:")
+            || stderr_lower.contains("usage_limit.py:")
+            || stderr_lower.contains("usage limit.py:")
+            || stderr_lower.contains("usage_limit.js:")
+            || stderr_lower.contains("usage limit.js:")
+        {
+            return false;
+        }
+
+        // Check for API error context markers:
+        // - Preceded by "error:" or similar error indicators
+        // - Followed by sentence-ending punctuation (., !, ;) but NOT file extension
+        // - Preceded by HTTP status markers (already partially covered above)
+        let has_error_prefix = stderr_lower.contains("error: usage limit")
+            || stderr_lower.contains("usage limit.")
+            || stderr_lower.contains("usage limit!")
+            || stderr_lower.contains("usage limit;")
+            || stderr_lower.contains("usage limit,")
+            || (stderr_lower.contains("http 429") && stderr_lower.contains("usage limit"))
+            || (stderr_lower.contains("status 429") && stderr_lower.contains("usage limit"));
+
+        if has_error_prefix {
+            return true;
+        }
     }
 
     // Google Gemini API patterns - RESOURCE_EXHAUSTED status (HTTP 429)
