@@ -14,12 +14,38 @@ pub struct PipelineCheckpoint {
     // === Core pipeline state ===
     /// Current pipeline phase
     pub phase: PipelinePhase,
-    /// Current iteration number (for developer iterations)
+
+    /// Current iteration number (for developer iterations).
+    ///
+    /// **Semantics:** This represents the iteration currently being worked on,
+    /// NOT the number of completed iterations. On resume, the orchestration
+    /// will re-execute this iteration from the beginning (all progress flags
+    /// are reset to None during checkpoint-to-state conversion).
+    ///
+    /// **Example:** If `iteration=1, total_iterations=1`, this means we're working
+    /// on the first (and only) iteration, which may or may not be complete.
+    /// The orchestration boundary check uses inclusive comparison
+    /// (`iteration <= total_iterations` when `total_iterations > 0`) to ensure
+    /// work is re-run at boundaries rather than skipped.
     pub iteration: u32,
+
     /// Total iterations configured
     pub total_iterations: u32,
-    /// Current reviewer pass number
+
+    /// Current reviewer pass number.
+    ///
+    /// **Semantics:** This represents the review pass currently being worked on,
+    /// NOT the number of completed passes. On resume, the orchestration will
+    /// re-execute this pass from the beginning (all progress flags are reset
+    /// to None during checkpoint-to-state conversion).
+    ///
+    /// **Example:** If `reviewer_pass=2, total_reviewer_passes=2`, this means
+    /// we're working on the second (and final) pass, which may or may not be
+    /// complete. The orchestration boundary check uses inclusive comparison
+    /// (`reviewer_pass <= total_reviewer_passes` when `total_reviewer_passes > 0`)
+    /// to ensure work is re-run at boundaries rather than skipped.
     pub reviewer_pass: u32,
+
     /// Total reviewer passes configured
     pub total_reviewer_passes: u32,
 
