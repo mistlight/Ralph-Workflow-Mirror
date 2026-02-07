@@ -158,7 +158,7 @@ fn test_event_loop_log_redaction_impl() -> Result<()> {
         .with_cwd(PathBuf::from("/mock/repo"))
         .with_file(
             "PROMPT.md",
-            &format!(
+            format!(
                 "# Task: test\n## Goal\n{}\n## Acceptance\n- Pass\n\n{}",
                 sentinel_prompt, sentinel_secret
             ),
@@ -238,17 +238,18 @@ fn test_collision_handling_impl() -> Result<()> {
     // Create a fixed run_id that we can use to simulate collision
     let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
 
-    // Create the base directory to simulate a collision
+    // Create the base directory with agents subdirectory to simulate a collision
+    // The collision detection checks for the agents subdirectory, not just the parent
     let base_dir = std::path::PathBuf::from(format!(".agent/logs-{}", fixed_id));
     workspace
-        .create_dir_all(&base_dir)
+        .create_dir_all(&base_dir.join("agents"))
         .expect("Failed to create base directory for collision test");
 
-    // Also create collision variants 1-5 to test proper collision handling
+    // Also create collision variants 1-5 with agents subdirectories to test proper collision handling
     for i in 1..=5 {
         let collision_dir = std::path::PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i));
         workspace
-            .create_dir_all(&collision_dir)
+            .create_dir_all(&collision_dir.join("agents"))
             .expect("Failed to create collision directory");
     }
 

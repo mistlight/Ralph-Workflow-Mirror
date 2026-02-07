@@ -601,7 +601,9 @@ mod tests {
             .unwrap();
         for i in 1..=99 {
             workspace
-                .create_dir_all(&PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i)).join("agents"))
+                .create_dir_all(
+                    &PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i)).join("agents"),
+                )
                 .unwrap();
         }
 

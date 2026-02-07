@@ -346,17 +346,18 @@ where
 
     // Create event loop logger, continuing from existing log if present (resume case)
     let event_loop_log_path = ctx.run_log_context.event_loop_log();
-    let mut event_loop_logger = match EventLoopLogger::from_existing_log(ctx.workspace, &event_loop_log_path) {
-        Ok(logger) => logger,
-        Err(e) => {
-            // If reading existing log fails, log a warning and start fresh
-            ctx.logger.warn(&format!(
-                "Failed to read existing event loop log, starting fresh: {}",
-                e
-            ));
-            EventLoopLogger::new()
-        }
-    };
+    let mut event_loop_logger =
+        match EventLoopLogger::from_existing_log(ctx.workspace, &event_loop_log_path) {
+            Ok(logger) => logger,
+            Err(e) => {
+                // If reading existing log fails, log a warning and start fresh
+                ctx.logger.warn(&format!(
+                    "Failed to read existing event loop log, starting fresh: {}",
+                    e
+                ));
+                EventLoopLogger::new()
+            }
+        };
 
     ctx.logger.info("Starting reducer-based event loop");
 
