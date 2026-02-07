@@ -668,3 +668,268 @@ fn test_merge_with_partial_override_preserves_rest() {
     // This should be from global, not default
     assert_eq!(merged.general.reviewer_reviews, 3);
 }
+
+// Tests for merge_with_content - verifying proper presence tracking for nested fields
+
+#[test]
+fn test_workflow_flags_default() {
+    let flags = GeneralWorkflowFlags::default();
+    println!(
+        "GeneralWorkflowFlags::default().checkpoint_enabled = {}",
+        flags.checkpoint_enabled
+    );
+    let config = GeneralConfig::default();
+    println!(
+        "GeneralConfig::default().workflow.checkpoint_enabled = {}",
+        config.workflow.checkpoint_enabled
+    );
+}
+
+#[test]
+fn test_toml_deserialization_with_workflow() {
+    // NOTE: workflow and execution fields are FLATTENED into [general], not separate tables.
+    // So the correct TOML structure is [general] with checkpoint_enabled, not [general.workflow].
+    let toml = r#"
+[general]
+checkpoint_enabled = true
+"#;
+    let config: UnifiedConfig = toml::from_str(toml).unwrap();
+    println!(
+        "Deserialized config.general.workflow.checkpoint_enabled = {}",
+        config.general.workflow.checkpoint_enabled
+    );
+    assert_eq!(
+        config.general.workflow.checkpoint_enabled, true,
+        "Should deserialize to true"
+    );
+}
+
+#[test]
+fn test_merge_with_content_workflow_checkpoint_enabled_at_default() {
+    // Test that when local config sets checkpoint_enabled = true (which is the default),
+    // it correctly overrides global config's checkpoint_enabled = false.
+    // NOTE: workflow fields are flattened into [general], not in [general.workflow].
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            workflow: GeneralWorkflowFlags {
+                checkpoint_enabled: false,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local_toml = r#"
+[general]
+checkpoint_enabled = true
+"#;
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    // Should use local value (true), not global (false)
+    assert!(
+        merged.general.workflow.checkpoint_enabled,
+        "checkpoint_enabled should be from local (true), not global (false)"
+    );
+}
+
+#[test]
+fn test_merge_with_content_execution_isolation_mode_at_default() {
+    // Test that when local config sets isolation_mode = true (which is the default),
+    // it correctly overrides global config's isolation_mode = false.
+    // NOTE: execution fields are flattened into [general], not in [general.execution].
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            execution: GeneralExecutionFlags {
+                isolation_mode: false,
+                force_universal_prompt: false,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local_toml = r#"
+[general]
+isolation_mode = true
+"#;
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    // Should use local value (true), not global (false)
+    assert!(
+        merged.general.execution.isolation_mode,
+        "isolation_mode should be from local (true), not global (false)"
+    );
+}
+
+#[test]
+fn test_merge_with_content_execution_force_universal_prompt_preserves_global() {
+    // Test that when local config does NOT set force_universal_prompt,
+    // the global value is preserved.
+    // NOTE: execution fields are flattened into [general], not in [general.execution].
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            execution: GeneralExecutionFlags {
+                isolation_mode: true,
+                force_universal_prompt: true,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local_toml = r#"
+[general]
+isolation_mode = false
+"#;
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    // isolation_mode should be from local (false)
+    assert!(
+        !merged.general.execution.isolation_mode,
+        "isolation_mode should be from local (false)"
+    );
+    // force_universal_prompt should be from global (true)
+    assert!(
+        merged.general.execution.force_universal_prompt,
+        "force_universal_prompt should be from global (true)"
+    );
+}
+
+#[test]
+fn test_merge_with_content_nested_fields_independent() {
+    // Test that fields in different sections are tracked independently.
+    // NOTE: workflow and execution fields are flattened into [general], not separate tables.
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            behavior: GeneralBehaviorFlags {
+                interactive: false,
+                auto_detect_stack: false,
+                strict_validation: false,
+            },
+            workflow: GeneralWorkflowFlags {
+                checkpoint_enabled: false,
+            },
+            execution: GeneralExecutionFlags {
+                isolation_mode: false,
+                force_universal_prompt: false,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local_toml = r#"
+[general.behavior]
+interactive = true
+
+[general]
+isolation_mode = true
+"#;
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    // Fields from [general.behavior] that are set should be from local
+    assert!(
+        merged.general.behavior.interactive,
+        "interactive should be from local (true)"
+    );
+    // Fields from [general.behavior] that are NOT set should be from global
+    assert!(
+        !merged.general.behavior.auto_detect_stack,
+        "auto_detect_stack should be from global (false)"
+    );
+    assert!(
+        !merged.general.behavior.strict_validation,
+        "strict_validation should be from global (false)"
+    );
+
+    // Fields from workflow that are NOT set should be from global
+    assert!(
+        !merged.general.workflow.checkpoint_enabled,
+        "checkpoint_enabled should be from global (false)"
+    );
+
+    // Fields from execution that are set should be from local
+    assert!(
+        merged.general.execution.isolation_mode,
+        "isolation_mode should be from local (true)"
+    );
+    // Fields from execution that are NOT set should be from global
+    assert!(
+        !merged.general.execution.force_universal_prompt,
+        "force_universal_prompt should be from global (false)"
+    );
+}
+
+#[test]
+fn test_merge_with_content_all_nested_sections_with_defaults() {
+    // Comprehensive test: local config sets all fields to their default values,
+    // global config has all non-default values. Local should win on all fields.
+    // NOTE: workflow and execution fields are flattened into [general], not separate tables.
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            behavior: GeneralBehaviorFlags {
+                interactive: false,       // default is true
+                auto_detect_stack: false, // default is true
+                strict_validation: true,  // default is false
+            },
+            workflow: GeneralWorkflowFlags {
+                checkpoint_enabled: false, // default is true
+            },
+            execution: GeneralExecutionFlags {
+                isolation_mode: false,        // default is true
+                force_universal_prompt: true, // default is false
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local_toml = r#"
+[general.behavior]
+interactive = true
+auto_detect_stack = true
+strict_validation = false
+
+[general]
+checkpoint_enabled = true
+isolation_mode = true
+force_universal_prompt = false
+"#;
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    // All fields should be from local (which happens to be default values)
+    assert!(
+        merged.general.behavior.interactive,
+        "interactive should be from local (true)"
+    );
+    assert!(
+        merged.general.behavior.auto_detect_stack,
+        "auto_detect_stack should be from local (true)"
+    );
+    assert!(
+        !merged.general.behavior.strict_validation,
+        "strict_validation should be from local (false)"
+    );
+    assert!(
+        merged.general.workflow.checkpoint_enabled,
+        "checkpoint_enabled should be from local (true)"
+    );
+    assert!(
+        merged.general.execution.isolation_mode,
+        "isolation_mode should be from local (true)"
+    );
+    assert!(
+        !merged.general.execution.force_universal_prompt,
+        "force_universal_prompt should be from local (false)"
+    );
+}

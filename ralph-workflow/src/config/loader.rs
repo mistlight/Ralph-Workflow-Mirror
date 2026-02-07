@@ -309,9 +309,14 @@ pub fn load_config_from_path_with_env(
             // Pass raw TOML content for presence tracking
             Some(global.merge_with_content(&content, &local))
         }
-        (Some(global), Some(local), None) => {
-            // Local config exists but no content (shouldn't happen, but fallback)
-            Some(global.merge_with(&local))
+        (Some(_global), Some(_local), None) => {
+            // SAFETY: This case is impossible in production. If local_unified is Some,
+            // then local_content must also be Some (they're set together at line 281).
+            // If we reach here, there's a bug in the config loading logic.
+            unreachable!(
+                "BUG: local_unified is Some but local_content is None. \
+                 This indicates a logic error in config loading - they should always be set together."
+            )
         }
         (Some(global), None, _) => {
             // Only global exists

@@ -367,7 +367,8 @@ const VALID_GENERAL_KEYS: &[&str] = &[
     "behavior",
     "workflow",
     "execution",
-    // Deprecated keys are still technically valid to avoid breaking existing configs
+    // Note: Deprecated keys (auto_rebase, max_recovery_attempts) are included here
+    // to avoid breaking existing configs. They trigger warnings, not errors.
     "auto_rebase",
     "max_recovery_attempts",
 ];

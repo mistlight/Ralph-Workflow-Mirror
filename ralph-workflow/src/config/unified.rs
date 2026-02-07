@@ -668,6 +668,8 @@ impl UnifiedConfig {
         let general_table = local_toml.get("general");
         let behavior_table = general_table.and_then(|g| g.get("behavior"));
 
+        // NOTE: workflow and execution fields are flattened into [general], not separate tables.
+        // So we check for them at the [general] level, not [general.workflow] or [general.execution].
         let has_field = |key: &str| -> bool { general_table.and_then(|g| g.get(key)).is_some() };
         let has_behavior_field =
             |key: &str| -> bool { behavior_table.and_then(|b| b.get(key)).is_some() };
