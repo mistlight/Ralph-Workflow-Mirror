@@ -24,9 +24,9 @@ pub struct PipelineCheckpoint {
     ///
     /// **Example:** If `iteration=1, total_iterations=1`, this means we're working
     /// on the first (and only) iteration, which may or may not be complete.
-    /// The orchestration boundary check uses inclusive comparison
-    /// (`iteration <= total_iterations` when `total_iterations > 0`) to ensure
-    /// work is re-run at boundaries rather than skipped.
+    /// The orchestration boundary check uses inclusive comparison:
+    /// `iteration < total_iterations || (iteration == total_iterations && total_iterations > 0)`
+    /// This ensures work is re-run at boundaries rather than skipped.
     pub iteration: u32,
 
     /// Total iterations configured
@@ -41,9 +41,9 @@ pub struct PipelineCheckpoint {
     ///
     /// **Example:** If `reviewer_pass=2, total_reviewer_passes=2`, this means
     /// we're working on the second (and final) pass, which may or may not be
-    /// complete. The orchestration boundary check uses inclusive comparison
-    /// (`reviewer_pass <= total_reviewer_passes` when `total_reviewer_passes > 0`)
-    /// to ensure work is re-run at boundaries rather than skipped.
+    /// complete. The orchestration boundary check uses inclusive comparison:
+    /// `reviewer_pass < total_reviewer_passes || (reviewer_pass == total_reviewer_passes && total_reviewer_passes > 0)`
+    /// This ensures work is re-run at boundaries rather than skipped.
     pub reviewer_pass: u32,
 
     /// Total reviewer passes configured

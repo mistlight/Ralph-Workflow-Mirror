@@ -61,11 +61,17 @@ fn create_test_checkpoint(
 /// Test that resuming at the final development iteration (iteration=1, total=1)
 /// derives development work effects instead of immediately skipping to SaveCheckpoint.
 ///
+/// This test focuses specifically on the first orchestration decision at the boundary.
+/// Note: total_reviewer_passes=0 means no review phase is configured, so the pipeline
+/// would skip to FinalValidation after development completes. For full phase continuation
+/// testing, see test_resume_at_boundary_continues_through_remaining_phases.
+///
 /// This test MUST FAIL before the fix is implemented.
 #[test]
 fn test_resume_at_final_iteration_should_rerun_development() {
     with_default_timeout(|| {
         // Create checkpoint at boundary: iteration=1, total_iterations=1
+        // Note: total_reviewer_passes=0 (no review phase configured)
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 1, 0, 0);
 
         // Convert to PipelineState (this resets all progress flags to None)

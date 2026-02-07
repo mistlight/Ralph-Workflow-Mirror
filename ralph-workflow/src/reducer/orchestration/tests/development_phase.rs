@@ -556,40 +556,6 @@ fn test_completed_final_iteration_should_transition_not_rerun() {
 }
 
 #[test]
-fn test_resume_at_final_iteration_with_no_progress_should_run_development() {
-    // Bug scenario: checkpoint saved at iteration=1, total=1
-    // On resume, all progress flags are None (reset)
-    // Expected: Should re-run development iteration
-    // Actual (bug): Skips to SaveCheckpoint, then transitions to Review
-
-    let state = PipelineState {
-        phase: PipelinePhase::Development,
-        iteration: 1,
-        total_iterations: 1,
-        agent_chain: AgentChainState::initial().with_agents(
-            vec!["claude".to_string()],
-            vec![vec![]],
-            AgentRole::Developer,
-        ),
-        // All progress flags are None (simulating resume state)
-        development_context_prepared_iteration: None,
-        development_prompt_prepared_iteration: None,
-        development_agent_invoked_iteration: None,
-        development_xml_archived_iteration: None,
-        ..create_test_state()
-    };
-
-    let effect = determine_next_effect(&state);
-
-    // Should prepare development context (start iteration), NOT save checkpoint
-    assert!(
-        matches!(effect, Effect::PrepareDevelopmentContext { iteration: 1 }),
-        "Expected PrepareDevelopmentContext but got {:?}",
-        effect
-    );
-}
-
-#[test]
 fn test_resume_at_final_iteration_with_partial_progress_continues() {
     // Edge case: agent was invoked but iteration not fully archived
     // This simulates a crash after agent invocation but before XML archival

@@ -460,7 +460,8 @@ impl From<PipelineCheckpoint> for PipelineState {
             previous_phase: None,
             // Restore iteration/pass counters from checkpoint.
             // Note: All progress flags are reset to None below.
-            // Orchestration uses inclusive boundary checks (iteration <= total)
+            // Orchestration uses inclusive boundary checks:
+            // `iteration < total || (iteration == total && total > 0)`
             // to ensure work is re-run at boundaries when flags are None.
             // See phase_effects.rs for the boundary logic.
             iteration: checkpoint.iteration,
