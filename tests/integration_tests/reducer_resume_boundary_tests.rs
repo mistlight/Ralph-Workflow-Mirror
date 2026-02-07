@@ -61,10 +61,14 @@ fn create_test_checkpoint(
 /// Test that resuming at the final development iteration (iteration=1, total=1)
 /// derives development work effects instead of immediately skipping to SaveCheckpoint.
 ///
-/// This test focuses specifically on the first orchestration decision at the boundary.
-/// Note: total_reviewer_passes=0 means no review phase is configured, so the pipeline
-/// would skip to FinalValidation after development completes. For full phase continuation
-/// testing, see test_resume_at_boundary_continues_through_remaining_phases.
+/// This test focuses specifically on the FIRST orchestration decision at the boundary.
+/// It does NOT verify full phase continuation through the remaining pipeline.
+///
+/// Note: total_reviewer_passes=0 means no review phase is configured. With this configuration,
+/// after development completes the pipeline would skip directly to FinalValidation (not Review).
+/// This test only verifies that development work is derived, not the subsequent phase transitions.
+/// For full phase continuation testing (including Review phase), see
+/// test_resume_at_boundary_continues_through_remaining_phases which uses total_reviewer_passes=1.
 ///
 /// This test MUST FAIL before the fix is implemented.
 #[test]
@@ -254,14 +258,14 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         //
         // When using development_iteration_completed with last_of_phase=true,
         // the reducer transitions to CommitMessage first. From there, if review
-        // passes are configured, it would transition to Review. The key assertion
-        // is that the pipeline doesn't exit/complete immediately.
-        assert!(
-            !matches!(
-                state.phase,
-                PipelinePhase::Complete | PipelinePhase::Interrupted
-            ),
-            "Pipeline should continue to next phase, not exit. Phase: {:?}",
+        // passes are configured, it would transition to Review.
+        //
+        // With total_reviewer_passes=1 (configured in this test), we should
+        // transition to Review phase after development completes.
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Review,
+            "Should transition to Review phase after development completes when reviewer_passes > 0. Got: {:?}",
             state.phase
         );
 

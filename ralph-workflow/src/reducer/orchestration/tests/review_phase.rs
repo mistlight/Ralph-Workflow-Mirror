@@ -91,10 +91,15 @@ fn test_determine_effect_review_phase_with_chain() {
 }
 
 #[test]
-fn test_resume_at_final_review_pass_runs_work() {
-    // Test resume scenario: reviewer_pass == total_reviewer_passes with no progress flags.
+fn test_resume_scenario_at_final_review_pass_runs_work() {
+    // Test RESUME-ONLY scenario: reviewer_pass == total_reviewer_passes with no progress flags.
+    // This simulates resuming from a checkpoint saved at the final review pass.
     // Orchestration should re-run the review work (resume behavior),
     // not skip to SaveCheckpoint.
+    //
+    // This is distinct from fresh-run behavior where if all progress flags indicate
+    // completion (archived == Some(pass)), orchestration should ApplyReviewOutcome
+    // instead of re-running the work.
     let state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: 2,
