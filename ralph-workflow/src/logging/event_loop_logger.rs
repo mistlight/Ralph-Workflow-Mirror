@@ -40,6 +40,60 @@ impl EventLoopLogger {
         Self { seq: 1 }
     }
 
+    /// Create a new EventLoopLogger that continues from an existing log file.
+    ///
+    /// This reads the last sequence number from the existing log file
+    /// and starts the counter from `last_seq + 1`. This is important
+    /// for resume scenarios to maintain monotonically increasing sequence
+    /// numbers within a run.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace` - Workspace implementation for reading the log file
+    /// * `log_path` - Path to the existing event loop log file
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(EventLoopLogger)` - Logger initialized with next sequence number
+    /// * `Err(std::io::Error)` - If reading the log file fails
+    ///
+    /// # Behavior
+    ///
+    /// - If the log file doesn't exist or is empty, starts at seq=1
+    /// - If the log file exists, reads the last line to extract the sequence number
+    /// - If the last line doesn't match the expected format, starts at seq=1
+    /// - The sequence counter is set to `last_seq + 1` to continue the sequence
+    pub fn from_existing_log(
+        workspace: &dyn crate::workspace::Workspace,
+        log_path: &Path,
+    ) -> Result<Self, std::io::Error> {
+        if !workspace.exists(log_path) {
+            // Log file doesn't exist, start fresh
+            return Ok(Self { seq: 1 });
+        }
+
+        let content = workspace.read(log_path)?;
+        if content.is_empty() {
+            // Empty file, start fresh
+            return Ok(Self { seq: 1 });
+        }
+
+        // Find the last non-empty line and extract sequence number
+        let last_seq = content
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .and_then(|line| {
+                // Log format: "<seq> ts=<rfc3339> phase=<Phase> ..."
+                // Extract the first number (sequence number)
+                line.split_whitespace().next()?.parse::<u64>().ok()
+            })
+            .unwrap_or(0); // If we can't parse, start fresh
+
+        // Next sequence is last_seq + 1
+        Ok(Self { seq: last_seq + 1 })
+    }
+
     /// Log an effect execution.
     ///
     /// This writes a single line to the event loop log with the following format:
@@ -85,7 +139,7 @@ impl EventLoopLogger {
         };
 
         let line = format!(
-            "{} ts={} phase={:?} effect={} event={}{}{} ms={}\n",
+            "{} ts={} phase={} effect={} event={}{}{} ms={}\n",
             self.seq,
             ts,
             params.phase,
@@ -260,5 +314,119 @@ mod tests {
         assert!(!content.contains("ctx="));
         // Should not contain "extra=" when no extra events
         assert!(!content.contains("extra="));
+    }
+
+    #[test]
+    fn test_event_loop_logger_from_existing_log() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let workspace = WorkspaceFs::new(tempdir.path().to_path_buf());
+
+        let log_path = std::path::Path::new("event_loop.log");
+
+        // Write some initial log entries
+        {
+            let mut logger = EventLoopLogger::new();
+            for i in 0..3 {
+                logger
+                    .log_effect(LogEffectParams {
+                        workspace: &workspace,
+                        log_path,
+                        phase: PipelinePhase::Development,
+                        effect: "TestEffect",
+                        primary_event: "TestEvent",
+                        extra_events: &[],
+                        duration_ms: 10 * i,
+                        context: &[],
+                    })
+                    .unwrap();
+            }
+        }
+
+        // Create a new logger from the existing log
+        let mut logger = EventLoopLogger::from_existing_log(&workspace, log_path).unwrap();
+
+        // The next log entry should have seq=4
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::Review,
+                effect: "ResumeEffect",
+                primary_event: "ResumeEvent",
+                extra_events: &[],
+                duration_ms: 100,
+                context: &[],
+            })
+            .unwrap();
+
+        let content = workspace.read(log_path).unwrap();
+        // Should contain sequence 1-3 from initial writes
+        assert!(content.contains("1 ts="));
+        assert!(content.contains("2 ts="));
+        assert!(content.contains("3 ts="));
+        // Should contain sequence 4 from the resumed logger
+        assert!(content.contains("4 ts="));
+        // Should NOT contain another sequence 1
+        let seq1_count = content.matches("1 ts=").count();
+        assert_eq!(seq1_count, 1, "Should only have one '1 ts=' entry");
+    }
+
+    #[test]
+    fn test_event_loop_logger_from_nonexistent_log() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let workspace = WorkspaceFs::new(tempdir.path().to_path_buf());
+
+        let log_path = std::path::Path::new("event_loop.log");
+
+        // Create a logger from a nonexistent log file
+        let mut logger = EventLoopLogger::from_existing_log(&workspace, log_path).unwrap();
+
+        // Should start at seq=1
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::Development,
+                effect: "TestEffect",
+                primary_event: "TestEvent",
+                extra_events: &[],
+                duration_ms: 10,
+                context: &[],
+            })
+            .unwrap();
+
+        let content = workspace.read(log_path).unwrap();
+        assert!(content.contains("1 ts="));
+    }
+
+    #[test]
+    fn test_event_loop_logger_from_empty_log() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let workspace = WorkspaceFs::new(tempdir.path().to_path_buf());
+
+        let log_path = std::path::Path::new("event_loop.log");
+
+        // Create an empty log file
+        workspace.write(log_path, "").unwrap();
+
+        // Create a logger from an empty log file
+        let mut logger = EventLoopLogger::from_existing_log(&workspace, log_path).unwrap();
+
+        // Should start at seq=1
+        logger
+            .log_effect(LogEffectParams {
+                workspace: &workspace,
+                log_path,
+                phase: PipelinePhase::Development,
+                effect: "TestEffect",
+                primary_event: "TestEvent",
+                extra_events: &[],
+                duration_ms: 10,
+                context: &[],
+            })
+            .unwrap();
+
+        let content = workspace.read(log_path).unwrap();
+        assert!(content.contains("1 ts="));
     }
 }

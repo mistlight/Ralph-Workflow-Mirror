@@ -102,6 +102,15 @@ impl RunLogContext {
     /// - Counter 0: Uses the base run_id (no suffix)
     /// - Counter 1-99: Appends `-01` through `-99` suffixes
     ///
+    /// # TOCTOU Race Condition Handling
+    ///
+    /// To avoid the time-of-check-to-time-of-use race condition, we:
+    /// 1. First check if the directory exists (fast path for common case)
+    /// 2. If it doesn't exist, try to create it
+    /// 3. If creation succeeds but the directory still doesn't exist afterward,
+    ///    another process may have created it, so we try the next collision variant
+    /// 4. We use the presence of the "agents" subdirectory as our "created" marker
+    ///
     /// Note: If a base directory exists that was actually created as a collision
     /// directory (e.g., due to a bug), the system will still work correctly by
     /// creating the next collision variant. This is acceptable because the directory
@@ -118,25 +127,34 @@ impl RunLogContext {
             };
 
             let run_dir = PathBuf::from(format!(".agent/logs-{}", run_id));
+            let agents_dir = run_dir.join("agents");
 
-            if !workspace.exists(&run_dir) {
-                // Create run directory and subdirectories
-                workspace
-                    .create_dir_all(&run_dir)
-                    .context("Failed to create run log directory")?;
+            // Fast path: if agents subdirectory exists, this run_id is taken
+            if workspace.exists(&agents_dir) {
+                continue;
+            }
 
-                workspace
-                    .create_dir_all(&run_dir.join("agents"))
-                    .context("Failed to create agents log subdirectory")?;
+            // Try to create the run directory and subdirectories
+            // create_dir_all is idempotent (Ok if directory exists)
+            workspace
+                .create_dir_all(&run_dir)
+                .context("Failed to create run log directory")?;
 
-                workspace
-                    .create_dir_all(&run_dir.join("provider"))
-                    .context("Failed to create provider log subdirectory")?;
+            workspace
+                .create_dir_all(&agents_dir)
+                .context("Failed to create agents log subdirectory")?;
 
-                workspace
-                    .create_dir_all(&run_dir.join("debug"))
-                    .context("Failed to create debug log subdirectory")?;
+            workspace
+                .create_dir_all(&run_dir.join("provider"))
+                .context("Failed to create provider log subdirectory")?;
 
+            workspace
+                .create_dir_all(&run_dir.join("debug"))
+                .context("Failed to create debug log subdirectory")?;
+
+            // Verify we're the ones who created it (agents_dir should exist now)
+            // If it doesn't, another process might have raced us, try next variant
+            if workspace.exists(&agents_dir) {
                 return Ok(Self { run_id, run_dir });
             }
         }
@@ -214,25 +232,34 @@ impl RunLogContext {
             };
 
             let run_dir = PathBuf::from(format!(".agent/logs-{}", run_id));
+            let agents_dir = run_dir.join("agents");
 
-            if !workspace.exists(&run_dir) {
-                // Create run directory and subdirectories
-                workspace
-                    .create_dir_all(&run_dir)
-                    .context("Failed to create run log directory")?;
+            // Fast path: if agents subdirectory exists, this run_id is taken
+            if workspace.exists(&agents_dir) {
+                continue;
+            }
 
-                workspace
-                    .create_dir_all(&run_dir.join("agents"))
-                    .context("Failed to create agents log subdirectory")?;
+            // Try to create the run directory and subdirectories
+            // create_dir_all is idempotent (Ok if directory exists)
+            workspace
+                .create_dir_all(&run_dir)
+                .context("Failed to create run log directory")?;
 
-                workspace
-                    .create_dir_all(&run_dir.join("provider"))
-                    .context("Failed to create provider log subdirectory")?;
+            workspace
+                .create_dir_all(&agents_dir)
+                .context("Failed to create agents log subdirectory")?;
 
-                workspace
-                    .create_dir_all(&run_dir.join("debug"))
-                    .context("Failed to create debug log subdirectory")?;
+            workspace
+                .create_dir_all(&run_dir.join("provider"))
+                .context("Failed to create provider log subdirectory")?;
 
+            workspace
+                .create_dir_all(&run_dir.join("debug"))
+                .context("Failed to create debug log subdirectory")?;
+
+            // Verify we're the ones who created it (agents_dir should exist now)
+            // If it doesn't, another process might have raced us, try next variant
+            if workspace.exists(&agents_dir) {
                 return Ok(Self { run_id, run_dir });
             }
         }
@@ -522,17 +549,17 @@ mod tests {
         // Create a fixed run_id that we can use to simulate collision
         let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
 
-        // Create the base directory to simulate a collision
+        // Create the base directory with agents subdirectory to simulate a complete collision
         let base_dir = PathBuf::from(format!(".agent/logs-{}", fixed_id));
         workspace
-            .create_dir_all(&base_dir)
+            .create_dir_all(&base_dir.join("agents"))
             .expect("Failed to create base directory for collision test");
 
-        // Also create collision variants 1-5
+        // Also create collision variants 1-5 with agents subdirectory
         for i in 1..=5 {
             let collision_dir = PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i));
             workspace
-                .create_dir_all(&collision_dir)
+                .create_dir_all(&collision_dir.join("agents"))
                 .expect("Failed to create collision directory");
         }
 
@@ -568,13 +595,13 @@ mod tests {
         // Create a fixed run_id
         let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
 
-        // Create the base directory and all 99 collision variants
+        // Create the base directory and all 99 collision variants with agents subdirectory
         workspace
-            .create_dir_all(&PathBuf::from(format!(".agent/logs-{}", fixed_id)))
+            .create_dir_all(&PathBuf::from(format!(".agent/logs-{}", fixed_id)).join("agents"))
             .unwrap();
         for i in 1..=99 {
             workspace
-                .create_dir_all(&PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i)))
+                .create_dir_all(&PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i)).join("agents"))
                 .unwrap();
         }
 

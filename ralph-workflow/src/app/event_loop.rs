@@ -343,7 +343,20 @@ where
     handler.update_state(state.clone());
     let mut events_processed = 0;
     let mut trace = EventTraceBuffer::new(DEFAULT_EVENT_LOOP_TRACE_CAPACITY);
-    let mut event_loop_logger = EventLoopLogger::new();
+
+    // Create event loop logger, continuing from existing log if present (resume case)
+    let event_loop_log_path = ctx.run_log_context.event_loop_log();
+    let mut event_loop_logger = match EventLoopLogger::from_existing_log(ctx.workspace, &event_loop_log_path) {
+        Ok(logger) => logger,
+        Err(e) => {
+            // If reading existing log fails, log a warning and start fresh
+            ctx.logger.warn(&format!(
+                "Failed to read existing event loop log, starting fresh: {}",
+                e
+            ));
+            EventLoopLogger::new()
+        }
+    };
 
     ctx.logger.info("Starting reducer-based event loop");
 
@@ -430,6 +443,7 @@ where
                     ("iteration", new_state.iteration.to_string()),
                     ("reviewer_pass", new_state.reviewer_pass.to_string()),
                     ("error_kind", "unrecoverable_failure".to_string()),
+                    ("effect", effect_str.clone()),
                 ];
                 let context_refs: Vec<(&str, &str)> = context_pairs
                     .iter()
@@ -512,6 +526,7 @@ where
                     ("iteration", new_state.iteration.to_string()),
                     ("reviewer_pass", new_state.reviewer_pass.to_string()),
                     ("error_kind", "handler_panic".to_string()),
+                    ("effect", effect_str.clone()),
                 ];
                 let context_refs: Vec<(&str, &str)> = context_pairs
                     .iter()

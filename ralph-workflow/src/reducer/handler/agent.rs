@@ -135,6 +135,12 @@ impl MainEffectHandler {
 
         // Write log file header with agent metadata
         // Use append_bytes to avoid overwriting if file exists (defense-in-depth)
+        let is_resume = ctx.run_context.parent_run_id.is_some();
+        let resume_indicator = if is_resume {
+            format!("# Resume: true (Original Run ID: {})\n", ctx.run_context.parent_run_id.as_ref().unwrap_or(&"(unknown)".to_string()))
+        } else {
+            "# Resume: false\n".to_string()
+        };
         let log_header = format!(
             "# Ralph Agent Invocation Log\n\
              # Role: {:?}\n\
@@ -142,13 +148,15 @@ impl MainEffectHandler {
              # Model Index: {}\n\
              # Attempt: {}\n\
              # Phase: {:?}\n\
-             # Timestamp: {}\n\n",
+             # Timestamp: {}\n\
+             {}\n",
             role,
             effective_agent,
             self.state.agent_chain.current_model_index,
             attempt,
             self.state.phase,
-            chrono::Utc::now().to_rfc3339()
+            chrono::Utc::now().to_rfc3339(),
+            resume_indicator
         );
         ctx.workspace
             .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())

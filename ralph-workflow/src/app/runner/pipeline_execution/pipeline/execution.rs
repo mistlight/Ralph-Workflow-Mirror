@@ -82,14 +82,14 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
                     RunLogContext::new(&*workspace).context("Failed to create run log context")?;
 
                 // Update checkpoint with new log_run_id to ensure subsequent resumes continue with the same directory
+                // This save MUST succeed for resume log continuity. If it fails, we error out rather than
+                // proceeding with logs that will be fragmented on the next resume.
                 checkpoint.log_run_id = Some(run_log_context.run_id().to_string());
                 use crate::checkpoint::save_checkpoint_with_workspace;
-                if let Err(e) = save_checkpoint_with_workspace(&*workspace, &checkpoint) {
-                    logger.warn(&format!(
-                        "Failed to update checkpoint with log_run_id: {}",
-                        e
-                    ));
-                }
+                save_checkpoint_with_workspace(&*workspace, &checkpoint).context(
+                    "Failed to update checkpoint with log_run_id. Log continuity requires this update to succeed. \
+                     Please check filesystem permissions and disk space, then retry.",
+                )?;
 
                 run_log_context
             }
