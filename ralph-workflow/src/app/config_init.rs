@@ -16,8 +16,9 @@
 use crate::agents::opencode_api::{CatalogLoader, RealCatalogLoader};
 use crate::agents::{validation as agent_validation, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
-    apply_args_to_config, handle_extended_help, handle_generate_completion,
-    handle_init_global_with, handle_list_work_guides, handle_smart_init_with, Args,
+    apply_args_to_config, handle_check_config_with, handle_extended_help,
+    handle_generate_completion, handle_init_global_with, handle_init_local_config_with,
+    handle_list_work_guides, handle_smart_init_with, Args,
 };
 use crate::config::{
     loader, unified_config_path, Config, ConfigEnvironment, RealConfigEnvironment, UnifiedConfig,
@@ -158,6 +159,20 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
 
     // Handle --init-global flag: create unified config if it doesn't exist and exit
     if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
+        return Ok(None);
+    }
+
+    // Handle --init-local-config flag: create local project config and exit
+    if args.unified_init.init_local_config
+        && handle_init_local_config_with(colors, path_resolver, args.unified_init.force_init)?
+    {
+        return Ok(None);
+    }
+
+    // Handle --check-config flag: validate and display effective settings
+    if args.unified_init.check_config
+        && handle_check_config_with(colors, path_resolver, args.debug_verbosity.debug)?
+    {
         return Ok(None);
     }
 

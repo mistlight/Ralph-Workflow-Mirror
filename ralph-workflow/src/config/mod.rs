@@ -13,9 +13,10 @@
 //!
 //! Ralph configuration is loaded from (in order of priority):
 //!
-//! 1. `~/.config/ralph-workflow.toml` (primary, unified config)
-//! 2. Environment variables (`RALPH_*`) as overrides
-//! 3. CLI arguments (final override)
+//! 1. `~/.config/ralph-workflow.toml` (global config)
+//! 2. `.agent/ralph-workflow.toml` (local config, overrides global)
+//! 3. Environment variables (`RALPH_*`) as overrides
+//! 4. CLI arguments (final override)
 //!
 //! # Module Structure
 //!
@@ -32,6 +33,7 @@ pub mod path_resolver;
 pub mod truncation;
 pub mod types;
 pub mod unified;
+pub mod validation;
 
 // Re-export main types at module level for convenience
 pub use types::{Config, ReviewDepth, Verbosity};

@@ -65,7 +65,7 @@ pub fn unified_config_path() -> Option<PathBuf> {
 /// General configuration behavioral flags.
 ///
 /// Groups user interaction and validation-related boolean settings for `GeneralConfig`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct GeneralBehaviorFlags {
     /// Interactive mode (keep agent in foreground).
@@ -79,7 +79,7 @@ pub struct GeneralBehaviorFlags {
 /// General configuration workflow automation flags.
 ///
 /// Groups workflow automation features for `GeneralConfig`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct GeneralWorkflowFlags {
     /// Enable checkpoint/resume functionality.
@@ -89,7 +89,7 @@ pub struct GeneralWorkflowFlags {
 /// General configuration execution behavior flags.
 ///
 /// Groups execution behavior settings for `GeneralConfig`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct GeneralExecutionFlags {
     /// Force universal review prompt for all agents.
@@ -99,7 +99,7 @@ pub struct GeneralExecutionFlags {
 }
 
 /// General configuration section.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default)]
 // Configuration options naturally use many boolean flags. These represent
 // independent feature toggles, not a state machine, so bools are appropriate.
@@ -225,7 +225,7 @@ impl Default for GeneralConfig {
 pub type CcsAliases = HashMap<String, CcsAliasToml>;
 
 /// CCS defaults applied to all CCS aliases unless overridden per-alias.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct CcsConfig {
     /// Output-format flag for CCS (often Claude-compatible stream JSON).
@@ -275,7 +275,7 @@ impl Default for CcsConfig {
 }
 
 /// Per-alias CCS configuration (table form).
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct CcsAliasConfig {
     /// Base CCS command to run (e.g., "ccs work", "ccs gemini").
@@ -302,7 +302,7 @@ pub struct CcsAliasConfig {
 }
 
 /// CCS alias entry supports both shorthand string and table form.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum CcsAliasToml {
     Command(String),
@@ -324,7 +324,7 @@ impl CcsAliasToml {
 /// Agent TOML configuration (compatible with `examples/agents.toml`).
 ///
 /// Fields are used via serde deserialization.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct AgentConfigToml {
     /// Base command to run the agent.
@@ -379,7 +379,7 @@ pub struct AgentConfigToml {
 ///
 /// This is the sole source of truth for Ralph configuration,
 /// located at `~/.config/ralph-workflow.toml`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct UnifiedConfig {
     /// General settings.
@@ -444,6 +444,101 @@ impl UnifiedConfig {
         let contents = env.read_file(path)?;
         let config: Self = toml::from_str(&contents)?;
         Ok(config)
+    }
+
+    /// Merge local config into self (global), returning merged config.
+    ///
+    /// Local values override global values with these semantics:
+    /// - Scalar values: local replaces global
+    /// - Maps (agents, ccs_aliases): local entries merge with global (local wins on collision)
+    /// - Arrays (agent_chain): local replaces global entirely (not appended)
+    /// - Optional values: local Some(_) replaces global, local None preserves global
+    ///
+    /// This is a pure function - no I/O, cannot fail.
+    pub fn merge_with(&self, local: &UnifiedConfig) -> UnifiedConfig {
+        // Merge general config (scalar overrides)
+        let general = GeneralConfig {
+            verbosity: local.general.verbosity,
+            behavior: GeneralBehaviorFlags {
+                interactive: local.general.behavior.interactive,
+                auto_detect_stack: local.general.behavior.auto_detect_stack,
+                strict_validation: local.general.behavior.strict_validation,
+            },
+            workflow: GeneralWorkflowFlags {
+                checkpoint_enabled: local.general.workflow.checkpoint_enabled,
+            },
+            execution: GeneralExecutionFlags {
+                force_universal_prompt: local.general.execution.force_universal_prompt,
+                isolation_mode: local.general.execution.isolation_mode,
+            },
+            developer_iters: local.general.developer_iters,
+            reviewer_reviews: local.general.reviewer_reviews,
+            developer_context: local.general.developer_context,
+            reviewer_context: local.general.reviewer_context,
+            review_depth: local.general.review_depth.clone(),
+            prompt_path: local
+                .general
+                .prompt_path
+                .clone()
+                .or_else(|| self.general.prompt_path.clone()),
+            templates_dir: local
+                .general
+                .templates_dir
+                .clone()
+                .or_else(|| self.general.templates_dir.clone()),
+            git_user_name: local
+                .general
+                .git_user_name
+                .clone()
+                .or_else(|| self.general.git_user_name.clone()),
+            git_user_email: local
+                .general
+                .git_user_email
+                .clone()
+                .or_else(|| self.general.git_user_email.clone()),
+            max_dev_continuations: local.general.max_dev_continuations,
+            max_xsd_retries: local.general.max_xsd_retries,
+            max_same_agent_retries: local.general.max_same_agent_retries,
+        };
+
+        // Merge CCS config (scalar overrides)
+        let ccs = CcsConfig {
+            output_flag: local.ccs.output_flag.clone(),
+            yolo_flag: local.ccs.yolo_flag.clone(),
+            verbose_flag: local.ccs.verbose_flag.clone(),
+            print_flag: local.ccs.print_flag.clone(),
+            streaming_flag: local.ccs.streaming_flag.clone(),
+            json_parser: local.ccs.json_parser.clone(),
+            session_flag: local.ccs.session_flag.clone(),
+            can_commit: local.ccs.can_commit,
+        };
+
+        // Merge agents map (local entries override global entries)
+        let mut agents = self.agents.clone();
+        for (key, value) in &local.agents {
+            agents.insert(key.clone(), value.clone());
+        }
+
+        // Merge CCS aliases map (local entries override global entries)
+        let mut ccs_aliases = self.ccs_aliases.clone();
+        for (key, value) in &local.ccs_aliases {
+            ccs_aliases.insert(key.clone(), value.clone());
+        }
+
+        // Agent chain: local replaces global entirely (not merged)
+        let agent_chain = if local.agent_chain.is_some() {
+            local.agent_chain.clone()
+        } else {
+            self.agent_chain.clone()
+        };
+
+        UnifiedConfig {
+            general,
+            ccs,
+            agents,
+            ccs_aliases,
+            agent_chain,
+        }
     }
 
     /// Ensure unified config file exists, creating it from template if needed.

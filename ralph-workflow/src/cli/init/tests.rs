@@ -34,8 +34,7 @@ fn test_handle_smart_init_with_invalid_template_does_not_create_prompt_md() {
     let env = test_env();
     let colors = Colors::new();
 
-    let result =
-        handle_smart_init_with(Some("nonexistent-template"), false, colors, &env).unwrap();
+    let result = handle_smart_init_with(Some("nonexistent-template"), false, colors, &env).unwrap();
     assert!(result);
 
     // Prompt should not be created for invalid template
@@ -110,4 +109,65 @@ fn test_find_similar_templates() {
     let similar = find_similar_templates("xyzabc");
     // Either empty or all matches have low similarity
     assert!(similar.is_empty() || similar.iter().all(|(_, sim)| *sim < 50));
+}
+
+#[test]
+fn test_init_local_config_creates_file() {
+    let env = test_env().with_local_config_path("/test/project/.agent/ralph-workflow.toml");
+
+    let result = handle_init_local_config_with(Colors::new(), &env, false);
+
+    assert!(result.is_ok());
+    assert!(env.was_written(std::path::Path::new(
+        "/test/project/.agent/ralph-workflow.toml"
+    )));
+
+    let content = env
+        .get_file(std::path::Path::new(
+            "/test/project/.agent/ralph-workflow.toml",
+        ))
+        .unwrap();
+    assert!(content.contains("Local Ralph configuration"));
+    assert!(content.contains("developer_iters"));
+}
+
+#[test]
+fn test_init_local_config_refuses_overwrite_without_force() {
+    let env = test_env()
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file(
+            "/test/project/.agent/ralph-workflow.toml",
+            "existing content",
+        );
+
+    let result = handle_init_local_config_with(Colors::new(), &env, false);
+
+    assert!(result.is_ok());
+    // Content should be unchanged
+    assert_eq!(
+        env.get_file(std::path::Path::new(
+            "/test/project/.agent/ralph-workflow.toml"
+        )),
+        Some("existing content".to_string())
+    );
+}
+
+#[test]
+fn test_init_local_config_overwrites_with_force() {
+    let env = test_env()
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file(
+            "/test/project/.agent/ralph-workflow.toml",
+            "existing content",
+        );
+
+    let result = handle_init_local_config_with(Colors::new(), &env, true);
+
+    assert!(result.is_ok());
+    let content = env
+        .get_file(std::path::Path::new(
+            "/test/project/.agent/ralph-workflow.toml",
+        ))
+        .unwrap();
+    assert!(content.contains("Local Ralph configuration"));
 }

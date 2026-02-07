@@ -214,3 +214,103 @@ fn test_load_config_returns_defaults_without_file() {
     assert_eq!(config.developer_iters, 5);
     assert_eq!(config.verbosity, Verbosity::Verbose);
 }
+
+#[test]
+fn test_load_config_with_local_override() {
+    let global_toml = r#"
+[general]
+verbosity = 2
+developer_iters = 5
+reviewer_reviews = 2
+"#;
+
+    let local_toml = r#"
+[general]
+developer_iters = 10
+reviewer_reviews = 3
+"#;
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/test/config/ralph-workflow.toml", global_toml)
+        .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
+
+    let (config, _, _) = load_config_from_path_with_env(None, &env);
+
+    // Local overrides take effect
+    assert_eq!(config.developer_iters, 10);
+    assert_eq!(config.reviewer_reviews, 3);
+    // Global value preserved (not overridden)
+    assert_eq!(config.verbosity as u8, 2);
+}
+
+#[test]
+fn test_load_config_local_only() {
+    let local_toml = r#"
+[general]
+verbosity = 4
+developer_iters = 8
+"#;
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
+    // Global config doesn't exist
+
+    let (config, _, _) = load_config_from_path_with_env(None, &env);
+
+    assert_eq!(config.verbosity as u8, 4);
+    assert_eq!(config.developer_iters, 8);
+}
+
+#[test]
+fn test_load_config_global_only_no_local() {
+    let global_toml = r#"
+[general]
+verbosity = 3
+developer_iters = 7
+"#;
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/test/config/ralph-workflow.toml", global_toml);
+    // Local config doesn't exist
+
+    let (config, _, _) = load_config_from_path_with_env(None, &env);
+
+    assert_eq!(config.verbosity as u8, 3);
+    assert_eq!(config.developer_iters, 7);
+}
+
+#[test]
+#[serial]
+fn test_load_config_precedence_env_vars_override_local() {
+    let global_toml = r#"
+[general]
+developer_iters = 5
+"#;
+
+    let local_toml = r#"
+[general]
+developer_iters = 10
+"#;
+
+    let env_impl = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/test/config/ralph-workflow.toml", global_toml)
+        .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
+
+    // Set env var to override
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "15");
+
+    let (config, _, _) = load_config_from_path_with_env(None, &env_impl);
+
+    // Env var wins over local config
+    assert_eq!(config.developer_iters, 15);
+
+    std::env::remove_var("RALPH_DEVELOPER_ITERS");
+}

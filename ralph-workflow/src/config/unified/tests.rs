@@ -194,3 +194,175 @@ fn test_unified_config_path() {
         assert!(p.to_string_lossy().contains("ralph-workflow.toml"));
     }
 }
+
+#[test]
+fn test_merge_with_scalar_override() {
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            verbosity: 2,
+            developer_iters: 5,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        general: GeneralConfig {
+            verbosity: 4,
+            developer_iters: 10,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    assert_eq!(merged.general.verbosity, 4);
+    assert_eq!(merged.general.developer_iters, 10);
+}
+
+#[test]
+fn test_merge_with_preserves_global_when_local_optional_is_none() {
+    let global = UnifiedConfig {
+        general: GeneralConfig {
+            git_user_name: Some("Global User".to_string()),
+            git_user_email: Some("global@example.com".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        general: GeneralConfig {
+            git_user_name: None,
+            git_user_email: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    assert_eq!(
+        merged.general.git_user_name,
+        Some("Global User".to_string())
+    );
+    assert_eq!(
+        merged.general.git_user_email,
+        Some("global@example.com".to_string())
+    );
+}
+
+#[test]
+fn test_merge_with_agents_map_merges_entries() {
+    use std::collections::HashMap;
+
+    let mut global_agents = HashMap::new();
+    global_agents.insert(
+        "claude".to_string(),
+        AgentConfigToml {
+            cmd: Some("claude".to_string()),
+            ..Default::default()
+        },
+    );
+
+    let mut local_agents = HashMap::new();
+    local_agents.insert(
+        "codex".to_string(),
+        AgentConfigToml {
+            cmd: Some("codex".to_string()),
+            ..Default::default()
+        },
+    );
+
+    let global = UnifiedConfig {
+        agents: global_agents,
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        agents: local_agents,
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    assert_eq!(merged.agents.len(), 2);
+    assert!(merged.agents.contains_key("claude"));
+    assert!(merged.agents.contains_key("codex"));
+}
+
+#[test]
+fn test_merge_with_agent_chain_local_replaces_global() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            commit: vec!["claude".to_string()],
+            analysis: vec![],
+            provider_fallback: Default::default(),
+            max_retries: 3,
+            retry_delay_ms: 1000,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 60000,
+            max_cycles: 3,
+        }),
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["codex".to_string()],
+            reviewer: vec!["codex".to_string()],
+            commit: vec!["codex".to_string()],
+            analysis: vec![],
+            provider_fallback: Default::default(),
+            max_retries: 3,
+            retry_delay_ms: 1000,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 60000,
+            max_cycles: 3,
+        }),
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    let chain = merged.agent_chain.unwrap();
+    assert_eq!(chain.developer, vec!["codex"]);
+    assert_eq!(chain.reviewer, vec!["codex"]);
+}
+
+#[test]
+fn test_merge_with_local_none_agent_chain_preserves_global() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            commit: vec!["claude".to_string()],
+            analysis: vec![],
+            provider_fallback: Default::default(),
+            max_retries: 3,
+            retry_delay_ms: 1000,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 60000,
+            max_cycles: 3,
+        }),
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        agent_chain: None,
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    let chain = merged.agent_chain.unwrap();
+    assert_eq!(chain.developer, vec!["claude"]);
+    assert_eq!(chain.reviewer, vec!["claude"]);
+}

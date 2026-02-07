@@ -5,9 +5,10 @@
 //!
 //! # Configuration Priority
 //!
-//! 1. **Primary source**: `~/.config/ralph-workflow.toml`
-//! 2. **Override layer**: Environment variables (RALPH_*)
-//! 3. **CLI arguments**: Final override (handled at CLI layer)
+//! 1. **Global config**: `~/.config/ralph-workflow.toml`
+//! 2. **Local config**: `.agent/ralph-workflow.toml` (overrides global)
+//! 3. **Override layer**: Environment variables (RALPH_*)
+//! 4. **CLI arguments**: Final override (handled at CLI layer)
 //!
 //! # Legacy Configs
 //!
@@ -72,8 +73,8 @@ pub fn load_config_from_path_with_env(
 ) -> (Config, Option<UnifiedConfig>, Vec<String>) {
     let mut warnings = Vec::new();
 
-    // Try to load unified config from specified path or default
-    let unified = config_path.map_or_else(
+    // Step 1: Load global config (unified config from ~/.config/)
+    let global_unified = config_path.map_or_else(
         || UnifiedConfig::load_with_env(env),
         |path| {
             if env.file_exists(path) {
@@ -81,7 +82,7 @@ pub fn load_config_from_path_with_env(
                     Ok(cfg) => Some(cfg),
                     Err(e) => {
                         warnings.push(format!(
-                            "Failed to load config from {}: {}",
+                            "Failed to load global config from {}: {}",
                             path.display(),
                             e
                         ));
@@ -89,24 +90,62 @@ pub fn load_config_from_path_with_env(
                     }
                 }
             } else {
-                warnings.push(format!("Config file not found: {}", path.display()));
+                warnings.push(format!("Global config file not found: {}", path.display()));
                 None
             }
         },
     );
 
-    // Start with defaults, then apply unified config if found
-    let config = if let Some(ref unified_cfg) = unified {
+    // Step 2: Load local config (.agent/ralph-workflow.toml)
+    let local_unified = env.local_config_path().and_then(|local_path| {
+        if env.file_exists(&local_path) {
+            match UnifiedConfig::load_from_path_with_env(&local_path, env) {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    warnings.push(format!(
+                        "Failed to load local config from {}: {}",
+                        local_path.display(),
+                        e
+                    ));
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    });
+
+    // Step 3: Merge configs (local overrides global)
+    let merged_unified = match (global_unified, local_unified) {
+        (Some(global), Some(local)) => {
+            // Both exist: merge with local overriding global
+            Some(global.merge_with(&local))
+        }
+        (Some(global), None) => {
+            // Only global exists
+            Some(global)
+        }
+        (None, Some(local)) => {
+            // Only local exists (unusual but valid)
+            Some(local)
+        }
+        (None, None) => {
+            // Neither exists: use defaults
+            None
+        }
+    };
+
+    // Step 4: Convert to Config
+    let config = if let Some(ref unified_cfg) = merged_unified {
         config_from_unified(unified_cfg, &mut warnings)
     } else {
-        // No unified config - use defaults (legacy config discovery removed)
         default_config()
     };
 
-    // Apply environment variable overrides
+    // Step 5: Apply environment variable overrides
     let config = apply_env_overrides(config, &mut warnings);
 
-    (config, unified, warnings)
+    (config, merged_unified, warnings)
 }
 
 /// Create a Config from `UnifiedConfig`.
