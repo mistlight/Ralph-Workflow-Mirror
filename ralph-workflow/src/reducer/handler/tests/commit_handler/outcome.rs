@@ -30,6 +30,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
     let repo_root = PathBuf::from("/mock/repo");
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -47,6 +48,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

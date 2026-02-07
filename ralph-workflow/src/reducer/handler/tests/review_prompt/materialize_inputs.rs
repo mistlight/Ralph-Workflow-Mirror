@@ -251,6 +251,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -268,6 +269,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -315,6 +317,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -332,6 +335,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -368,6 +372,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -385,6 +390,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -431,6 +437,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -448,6 +455,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -493,6 +501,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -510,6 +519,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -550,6 +560,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -567,6 +578,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -612,6 +624,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -629,6 +642,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -669,6 +683,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -686,6 +701,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

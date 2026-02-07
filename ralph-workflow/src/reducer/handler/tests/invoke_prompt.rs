@@ -4,6 +4,7 @@ use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
+use crate::logging::RunLogContext;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
@@ -122,6 +123,7 @@ impl crate::workspace::Workspace for ReadFailingWorkspace {
 #[test]
 fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -132,6 +134,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -151,6 +154,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -183,6 +187,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -202,6 +207,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -241,6 +247,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
     ));
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -260,6 +267,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -315,6 +323,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -334,6 +343,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -360,15 +370,19 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].logfile, ".agent/logs/planning_1_claude_0_a0.log",
-        "logfile should include phase, model index, and attempt suffix"
+    // New per-run log format: .agent/logs-<run_id>/agents/planning_1.log
+    // Agent identity is in the log file header, not the filename
+    assert!(
+        calls[0].logfile.contains("/agents/planning_1.log"),
+        "logfile should use per-run format with phase_index naming: {}",
+        calls[0].logfile
     );
 }
 
 #[test]
 fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuation_prompt() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -382,6 +396,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -401,6 +416,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -457,6 +473,7 @@ RETRY PROMPT MARKER"
 #[test]
 fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_prompt() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -470,6 +487,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -489,6 +507,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -542,6 +561,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -561,6 +581,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -615,6 +636,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -634,6 +656,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let session_id = "session-123".to_string();
@@ -692,6 +715,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -711,6 +735,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -750,9 +775,12 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].logfile, ".agent/logs/planning_1_claude_0_a0.log",
-        "logfile attempt should start at a0 for first invocation"
+    // New per-run log format: .agent/logs-<run_id>/agents/planning_1.log
+    // Agent identity is in the log file header, not the filename
+    assert!(
+        calls[0].logfile.contains("/agents/planning_1.log"),
+        "logfile should use per-run format with phase_index naming: {}",
+        calls[0].logfile
     );
 }
 
@@ -773,6 +801,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -792,6 +821,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -830,6 +860,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
 #[test]
 fn test_invoke_development_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -840,6 +871,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -859,6 +891,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -875,6 +908,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
 #[test]
 fn test_invoke_review_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -885,6 +919,7 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -904,6 +939,7 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -936,6 +972,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -955,6 +992,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -980,6 +1018,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 #[test]
 fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -990,6 +1029,7 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1009,6 +1049,7 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -1041,6 +1082,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1060,6 +1102,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -1085,6 +1128,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
 #[test]
 fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -1095,6 +1139,7 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1114,6 +1159,7 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -1156,6 +1202,7 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1175,6 +1222,7 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -1213,6 +1261,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
     // It must surface a typed ErrorEvent so the reducer can decide interruption policy.
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_prompt.txt", "commit prompt content");
+    let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -1223,6 +1272,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1242,6 +1292,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -1302,6 +1353,7 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1321,6 +1373,7 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -1378,6 +1431,7 @@ fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
     );
 
     let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
@@ -1397,6 +1451,7 @@ fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

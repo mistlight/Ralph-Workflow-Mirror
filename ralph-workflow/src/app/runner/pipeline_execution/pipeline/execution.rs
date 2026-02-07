@@ -7,6 +7,8 @@
 // - run_pipeline_with_default_handler: Production entry point with MainEffectHandler
 // - run_pipeline_with_effect_handler: Test entry point with custom effect handler
 
+use anyhow::Context;
+
 /// Parameters for preparing the pipeline context.
 ///
 /// Groups related parameters to avoid too many function arguments.
@@ -58,7 +60,76 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
             .map_err(|e| anyhow::anyhow!("{}", e))?;
     }
 
-    logger = logger.with_log_file(".agent/logs/pipeline.log");
+    // Create run log context for per-run log directory
+    // If resuming, continue with the same run_id from checkpoint; otherwise create new
+    use crate::logging::RunLogContext;
+    let run_log_context = if args.recovery.resume {
+        // Try to load checkpoint to get log_run_id for resume continuity
+        use crate::checkpoint::load_checkpoint_with_workspace;
+        let checkpoint = load_checkpoint_with_workspace(&*workspace)
+            .context("Failed to load checkpoint for resume")?;
+
+        if let Some(mut checkpoint) = checkpoint {
+            // Resume: continue logging to the same run directory using log_run_id
+            if let Some(log_run_id) = checkpoint.log_run_id {
+                RunLogContext::from_checkpoint(&log_run_id, &*workspace)
+                    .context("Failed to restore run log context from checkpoint")?
+            } else {
+                // Older checkpoint without log_run_id field, generate new one
+                logger
+                    .warn("Checkpoint missing log_run_id field, generating new run log directory");
+                let run_log_context =
+                    RunLogContext::new(&*workspace).context("Failed to create run log context")?;
+
+                // Update checkpoint with new log_run_id to ensure subsequent resumes continue with the same directory
+                // This save MUST succeed for resume log continuity. If it fails, we error out rather than
+                // proceeding with logs that will be fragmented on the next resume.
+                checkpoint.log_run_id = Some(run_log_context.run_id().to_string());
+                use crate::checkpoint::save_checkpoint_with_workspace;
+                save_checkpoint_with_workspace(&*workspace, &checkpoint).context(
+                    "Failed to update checkpoint with log_run_id. Log continuity requires this update to succeed. \
+                     Please check filesystem permissions and disk space, then retry.",
+                )?;
+
+                run_log_context
+            }
+        } else {
+            // No checkpoint found, but --resume was requested
+            // This is handled later by resume validation, but we need a run context now
+            logger.warn(
+                "No checkpoint file found (--resume flag was set). A fresh run directory has been created. \
+                 If you expected to resume from a previous run, please check that .agent/checkpoint.json exists.",
+            );
+            RunLogContext::new(&*workspace).context("Failed to create run log context")?
+        }
+    } else {
+        // Fresh run: generate new run_id
+        RunLogContext::new(&*workspace).context("Failed to create run log context")?
+    };
+
+    // Use per-run pipeline.log path via workspace (supports MemoryWorkspace in tests)
+    logger = logger.with_workspace_log(
+        std::sync::Arc::clone(&workspace),
+        &run_log_context.pipeline_log().to_string_lossy(),
+    );
+
+    // Write run.json metadata
+    let run_metadata = crate::logging::RunMetadata {
+        run_id: run_log_context.run_id().to_string(),
+        started_at_utc: chrono::Utc::now().to_rfc3339(),
+        command: format!(
+            "ralph {}",
+            std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+        ),
+        resume: args.recovery.resume,
+        repo_root: repo_root.display().to_string(),
+        ralph_version: env!("CARGO_PKG_VERSION").to_string(),
+        pid: Some(std::process::id()),
+        config_summary: None, // TODO: add public getters to Config if we want to include this
+    };
+    if let Err(e) = run_log_context.write_run_metadata(&*workspace, &run_metadata) {
+        logger.warn(&format!("Failed to write run.json: {}", e));
+    }
 
     // Handle --dry-run
     if args.recovery.dry_run {
@@ -129,6 +200,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         colors,
         template_context,
         executor,
+        run_log_context,
     };
     Ok(Some(ctx))
 }
@@ -456,7 +528,8 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
         let builder = builder
             .with_execution_history(execution_history_before)
-            .with_prompt_history(prompt_history_before);
+            .with_prompt_history(prompt_history_before)
+            .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
         if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);

@@ -196,12 +196,13 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
         let repo_root = PathBuf::from("/test/repo");
         let workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
         // Create PhaseContext
         let mut ctx = PhaseContext {
@@ -221,6 +222,7 @@ mod tests {
             executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            run_log_context: &run_log_context,
         };
 
         // Create handler and execute effect via trait method
@@ -380,12 +382,14 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
         let repo_root = PathBuf::from("/test/repo");
-        let workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+        let base_workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context = crate::logging::RunLogContext::new(&base_workspace).unwrap();
+        let workspace = StrictTmpWorkspace::new(base_workspace);
 
         let mut ctx = PhaseContext {
             config: &config,
@@ -404,6 +408,7 @@ mod tests {
             executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            run_log_context: &run_log_context,
         };
 
         let state = PipelineState::initial(1, 0);
@@ -540,12 +545,14 @@ mod tests {
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let mut timer = Timer::new();
-        
+
         let template_context = TemplateContext::default();
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
         let repo_root = PathBuf::from("/test/repo");
-        let workspace = FailingMarkerWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+        let base_workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context = crate::logging::RunLogContext::new(&base_workspace).unwrap();
+        let workspace = FailingMarkerWorkspace::new(base_workspace);
 
         let mut ctx = PhaseContext {
             config: &config,
@@ -564,6 +571,7 @@ mod tests {
             executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            run_log_context: &run_log_context,
         };
 
         let state = PipelineState::initial(1, 0);

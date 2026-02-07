@@ -135,6 +135,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -152,6 +153,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -203,6 +205,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -220,6 +223,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -265,6 +269,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -282,6 +287,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -330,6 +336,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -347,6 +354,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -406,6 +414,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -423,6 +432,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -481,6 +491,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -498,6 +509,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -547,6 +559,7 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -564,6 +577,7 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

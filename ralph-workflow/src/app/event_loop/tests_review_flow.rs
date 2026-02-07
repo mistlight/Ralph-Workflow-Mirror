@@ -30,6 +30,7 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -47,6 +48,7 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -101,6 +103,7 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -118,6 +121,7 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -184,6 +188,7 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -201,6 +206,7 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -279,6 +285,7 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -296,6 +303,7 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -370,6 +378,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -387,6 +396,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = super::create_initial_state_with_config(&ctx);

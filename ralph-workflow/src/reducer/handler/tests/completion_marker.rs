@@ -226,6 +226,7 @@ fn build_context<'a>(
     colors: &'a Colors,
     template_context: &'a TemplateContext,
     timer: &'a mut Timer,
+    run_log_context: &'a crate::logging::RunLogContext,
 ) -> PhaseContext<'a> {
     PhaseContext {
         config,
@@ -244,6 +245,7 @@ fn build_context<'a>(
         executor_arc: Arc::clone(executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root,
         workspace,
+        run_log_context,
     }
 }
 
@@ -257,6 +259,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
@@ -269,6 +272,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
         &colors,
         &template_context,
         &mut timer,
+        &run_log_context,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -304,6 +308,7 @@ fn emit_completion_marker_emits_event_on_write_failure() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = FailingMarkerWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
@@ -316,6 +321,7 @@ fn emit_completion_marker_emits_event_on_write_failure() {
         &colors,
         &template_context,
         &mut timer,
+        &run_log_context,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -353,6 +359,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
@@ -365,6 +372,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
         &colors,
         &template_context,
         &mut timer,
+        &run_log_context,
     );
     ctx.developer_agent = "missing-agent";
 

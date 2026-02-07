@@ -3,6 +3,7 @@ use crate::executor::ProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::phases::PhaseContext;
 use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
+use anyhow::Context;
 
 /// Attempt to resolve rebase conflicts with AI.
 ///
@@ -271,6 +272,11 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 
     let executor_arc = std::sync::Arc::clone(&executor);
 
+    // Create run log context for per-run logging
+    use crate::logging::RunLogContext;
+    let run_log_context = RunLogContext::new(&workspace)
+        .context("Failed to create run log context for conflict resolution")?;
+
     let mut phase_ctx = PhaseContext {
         config,
         registry: &registry,
@@ -288,6 +294,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         executor_arc: std::sync::Arc::clone(&executor_arc),
         repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let ctx = ConflictResolutionContext {

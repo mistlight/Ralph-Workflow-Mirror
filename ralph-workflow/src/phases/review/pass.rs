@@ -16,6 +16,7 @@ use crate::prompts::{
     get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_review_xml_with_references,
     ContextLevel, PromptContentBuilder,
 };
+use anyhow::Context as _;
 
 use std::path::Path;
 use std::time::Instant;
@@ -89,23 +90,42 @@ pub fn run_review_pass(
         ));
     }
 
-    let log_dir = Path::new(".agent/logs");
-    ctx.workspace.create_dir_all(log_dir)?;
-    let log_prefix = format!(".agent/logs/reviewer_review_{j}");
-    let model_index = 0usize;
-    let agent_for_log = active_agent.to_lowercase();
-    let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
-        Path::new(&log_prefix),
-        &agent_for_log,
-        model_index,
+    // Use per-run log directory with simplified naming
+    let base_log_path = ctx.run_log_context.agent_log("reviewer", j, None);
+    let attempt = crate::pipeline::logfile::next_simplified_logfile_attempt_index(
+        &base_log_path,
         ctx.workspace,
     );
-    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
-        &log_prefix,
-        &agent_for_log,
-        model_index,
+    let logfile = if attempt == 0 {
+        base_log_path.to_str().unwrap().to_string()
+    } else {
+        ctx.run_log_context
+            .agent_log("reviewer", j, Some(attempt))
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // Write log file header with agent metadata
+    // Use append_bytes to avoid overwriting if file exists (defense-in-depth)
+    let log_header = format!(
+        "# Ralph Agent Invocation Log\n\
+         # Role: Reviewer\n\
+         # Agent: {}\n\
+         # Model Index: 0\n\
+         # Attempt: {}\n\
+         # Phase: Review\n\
+         # Timestamp: {}\n\n",
+        active_agent,
         attempt,
+        chrono::Utc::now().to_rfc3339()
     );
+    ctx.workspace
+        .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
+        .context("Failed to write agent log header - log would be incomplete without metadata")?;
+
+    let log_prefix = format!("reviewer_{j}"); // For attribution only
+    let model_index = 0usize; // Default model index for attribution
 
     let agent_config = ctx
         .registry
@@ -340,23 +360,46 @@ pub fn run_fix_pass(
         ));
     }
 
-    let log_dir = Path::new(".agent/logs");
-    ctx.workspace.create_dir_all(log_dir)?;
-    let log_prefix = format!(".agent/logs/reviewer_fix_{j}");
-    let model_index = 0usize;
-    let agent_for_log = active_agent.to_lowercase();
-    let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
-        Path::new(&log_prefix),
-        &agent_for_log,
-        model_index,
+    // Use per-run log directory with simplified naming
+    let base_log_path = ctx.run_log_context.agent_log("reviewer_fix", j, None);
+    let attempt = crate::pipeline::logfile::next_simplified_logfile_attempt_index(
+        &base_log_path,
         ctx.workspace,
     );
-    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
-        &log_prefix,
-        &agent_for_log,
-        model_index,
+    let logfile = if attempt == 0 {
+        base_log_path.to_str().unwrap().to_string()
+    } else {
+        ctx.run_log_context
+            .agent_log("reviewer_fix", j, Some(attempt))
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // Write log file header with agent metadata
+    // Use append_bytes to avoid overwriting if file exists (defense-in-depth)
+    let log_header = format!(
+        "# Ralph Agent Invocation Log\n\
+         # Role: Reviewer (Fix Mode)\n\
+         # Agent: {}\n\
+         # Model Index: 0\n\
+         # Attempt: {}\n\
+         # Phase: Review Fix\n\
+         # Timestamp: {}\n\n",
+        active_agent,
         attempt,
+        chrono::Utc::now().to_rfc3339()
     );
+    if let Err(e) = ctx
+        .workspace
+        .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
+    {
+        ctx.logger
+            .warn(&format!("Failed to write agent log header: {}", e));
+    }
+
+    let log_prefix = format!("reviewer_fix_{j}"); // For attribution only
+    let model_index = 0usize; // Default model index for attribution
 
     let agent_config = ctx
         .registry

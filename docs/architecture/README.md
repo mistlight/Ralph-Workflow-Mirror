@@ -60,8 +60,13 @@ Ralph creates and manages a small set of canonical files under `.agent/`:
 - `.agent/PLAN.md`: plan for the current development iteration (pipeline-written).
 - `.agent/ISSUES.md`: issues found during a review pass (pipeline-written).
 - `.agent/checkpoint.json`: resume snapshot written for interrupted runs.
-- `.agent/tmp/`: transient scratch space (including event loop traces and extracted XML).
-- `.agent/logs/`: per-phase logs.
+- `.agent/tmp/`: transient scratch space (including extracted XML).
+- `.agent/logs-<run_id>/`: per-run log directory containing:
+  - `run.json`: run metadata (timestamp, command, version)
+  - `pipeline.log`: main pipeline execution log
+  - `event_loop.log`: event loop observability log
+  - `event_loop_trace.jsonl`: detailed trace (written on failure/iteration cap)
+  - `agents/`: per-agent invocation logs
 
 Agents may read these artifacts, but pipeline code owns their lifecycle.
 
@@ -78,9 +83,10 @@ Agents may read these artifacts, but pipeline code owns their lifecycle.
 
 ## Debugging Where It "Got Stuck"
 
-- State-machine issues: `.agent/tmp/event_loop_trace.jsonl` (written on internal failures / iteration cap).
+- State-machine issues: `.agent/logs-<run_id>/event_loop_trace.jsonl` (written on internal failures / iteration cap).
+- Event loop behavior: `.agent/logs-<run_id>/event_loop.log` (always-on human-readable effect/event log).
 - Resume issues: inspect `.agent/checkpoint.json` and resume validation output.
-- Agent execution: check `.agent/logs/` and provider streaming output paths.
+- Agent execution: check `.agent/logs-<run_id>/agents/` and provider streaming output paths.
 
 ## Start Here
 

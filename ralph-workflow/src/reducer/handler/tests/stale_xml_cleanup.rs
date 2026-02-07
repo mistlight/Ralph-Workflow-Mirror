@@ -22,6 +22,7 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/planning_prompt.txt", "prompt")
         .with_file(xml_paths::PLAN_XML, "<ralph-plan>old</ralph-plan>");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -51,6 +52,7 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -65,6 +67,7 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
 fn test_cleanup_planning_xml_clears_stale_plan_xml() {
     let workspace =
         MemoryWorkspace::new_test().with_file(xml_paths::PLAN_XML, "<ralph-plan>old</ralph-plan>");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -94,6 +97,7 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -112,6 +116,7 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
             xml_paths::DEVELOPMENT_RESULT_XML,
             "<ralph-development>old</ralph-development>",
         );
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -141,6 +146,7 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -157,6 +163,7 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         xml_paths::DEVELOPMENT_RESULT_XML,
         "<ralph-development>old</ralph-development>",
     );
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -186,6 +193,7 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -201,6 +209,7 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/review_prompt.txt", "prompt")
         .with_file(xml_paths::ISSUES_XML, "<ralph-issues>old</ralph-issues>");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -230,6 +239,7 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -244,6 +254,7 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
 fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(xml_paths::ISSUES_XML, "<ralph-issues>old</ralph-issues>");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -273,6 +284,7 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -291,6 +303,7 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
             xml_paths::FIX_RESULT_XML,
             "<ralph-fix-result>old</ralph-fix-result>",
         );
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -320,6 +333,7 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -336,6 +350,7 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         xml_paths::FIX_RESULT_XML,
         "<ralph-fix-result>old</ralph-fix-result>",
     );
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -365,6 +380,7 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -383,6 +399,7 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
             xml_paths::COMMIT_MESSAGE_XML,
             "<ralph-commit>old</ralph-commit>",
         );
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -412,6 +429,7 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState {
         agent_chain: AgentChainState::initial().with_agents(
@@ -435,6 +453,7 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
         xml_paths::COMMIT_MESSAGE_XML,
         "<ralph-commit>old</ralph-commit>",
     );
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
 
@@ -464,6 +483,7 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 

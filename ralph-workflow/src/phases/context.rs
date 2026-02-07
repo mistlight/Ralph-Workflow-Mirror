@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::executor::ProcessExecutor;
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
+use crate::logging::RunLogContext;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::workspace::Workspace;
@@ -23,6 +24,27 @@ use std::path::Path;
 ///
 /// This struct holds references to all the shared state that phases need
 /// to access. It is passed by mutable reference to each phase function.
+///
+/// # Phase Name Convention
+///
+/// When working with phase names (e.g., for log file naming), use **lowercase**
+/// identifiers with underscores for multi-word phases. The canonical phase names are:
+/// - `"planning"` - Planning phase
+/// - `"analysis"` - Analysis sub-phase of development (when role == AgentRole::Analysis)
+/// - `"developer"` - Development phase (when role == AgentRole::Developer)
+/// - `"reviewer"` - Review phase
+/// - `"commit"` - Commit message generation phase
+/// - `"final_validation"` - Final validation phase
+/// - `"finalizing"` - Finalizing phase
+/// - `"complete"` - Complete phase
+/// - `"awaiting_dev_fix"` - Awaiting dev fix phase
+/// - `"interrupted"` - Interrupted phase
+///
+/// These phase names are used for log file naming under `.agent/logs-<run_id>/agents/`
+/// (e.g., `planning_1.log`, `developer_2_a1.log`).
+///
+/// When adding new phases or extending the phase system, maintain this lowercase
+/// convention for consistency.
 pub struct PhaseContext<'a> {
     /// Configuration settings for the pipeline.
     pub config: &'a Config,
@@ -67,6 +89,12 @@ pub struct PhaseContext<'a> {
     /// - Production code passes `&WorkspaceFs` (real filesystem)
     /// - Tests can pass `&MemoryWorkspace` (in-memory storage)
     pub workspace: &'a dyn Workspace,
+    /// Run log context for per-run log path resolution.
+    ///
+    /// Provides paths to all log files under the per-run directory
+    /// (`.agent/logs-<run_id>/`). This ensures all logs from a single
+    /// pipeline invocation are grouped together for easy debugging.
+    pub run_log_context: &'a RunLogContext,
 }
 
 impl PhaseContext<'_> {
@@ -151,6 +179,7 @@ mod tests {
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: PathBuf,
         workspace: MemoryWorkspace,
+        run_log_context: crate::logging::RunLogContext,
     }
 
     impl TestFixture {
@@ -161,6 +190,7 @@ mod tests {
             let repo_root = PathBuf::from("/test/repo");
             // Use MemoryWorkspace for testing - no real filesystem access
             let workspace = MemoryWorkspace::new(repo_root.clone());
+            let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
             Self {
                 config: Config::default(),
                 colors,
@@ -170,6 +200,7 @@ mod tests {
                 executor_arc,
                 repo_root,
                 workspace,
+                run_log_context,
             }
         }
     }
@@ -206,6 +237,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            run_log_context: &fixture.run_log_context,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -247,6 +279,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            run_log_context: &fixture.run_log_context,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -280,6 +313,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            run_log_context: &fixture.run_log_context,
         };
 
         let result = get_primary_commit_agent(&ctx);

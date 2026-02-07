@@ -139,6 +139,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -156,6 +157,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -210,6 +212,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -227,6 +230,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -274,6 +278,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -291,6 +296,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -352,6 +358,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -369,6 +376,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -419,6 +427,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -436,6 +445,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -467,6 +477,7 @@ fn test_prepare_planning_prompt_errors_when_prompt_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -484,6 +495,7 @@ fn test_prepare_planning_prompt_errors_when_prompt_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     // Seed reducer state with materialized planning inputs so prepare_planning_prompt can run.
@@ -533,6 +545,7 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -550,6 +563,7 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -581,6 +595,7 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -598,6 +613,7 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -644,6 +660,7 @@ fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -661,6 +678,7 @@ fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

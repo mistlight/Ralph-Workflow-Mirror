@@ -36,6 +36,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
         summary: Some("needs more".to_string()),
     });
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -53,6 +54,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let result = handler
@@ -87,6 +89,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
         summary: Some("done".to_string()),
     });
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -104,6 +107,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let result = handler
@@ -138,6 +142,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
         summary: Some("blocked".to_string()),
     });
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -155,6 +160,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let result = handler
@@ -191,6 +197,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
         summary: Some("still failing".to_string()),
     });
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -208,6 +215,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let result = handler
@@ -237,6 +245,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -254,6 +263,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let err = handler

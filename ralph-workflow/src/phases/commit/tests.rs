@@ -134,6 +134,7 @@ mod tests {
         let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
 
         let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         let mut ctx = PhaseContext {
             config: &config,
             registry: &registry,
@@ -151,6 +152,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
+        run_log_context: &run_log_context,
         };
 
         let _ = run_commit_attempt(&mut ctx, 2, "diff --git a/a b/a\n+change\n", "claude")
@@ -158,9 +160,12 @@ mod tests {
 
         let calls = executor.agent_calls();
         assert_eq!(calls.len(), 1);
-        assert_eq!(
-            calls[0].logfile, ".agent/logs/commit_generation/commit_generation_claude_0_a2.log",
-            "commit generation log should include agent, model index, and attempt suffix"
+        // New per-run log format: .agent/logs-<run_id>/agents/commit_2.log
+        // Agent identity is in the log file header, not the filename
+        assert!(
+            calls[0].logfile.contains("/agents/commit_2.log"),
+            "commit generation log should use per-run format with phase_index naming: {}",
+            calls[0].logfile
         );
     }
 
@@ -185,6 +190,7 @@ mod tests {
         let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
 
         let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         let mut ctx = PhaseContext {
             config: &config,
             registry: &registry,
@@ -202,6 +208,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
+        run_log_context: &run_log_context,
         };
 
         let model_safe_diff =

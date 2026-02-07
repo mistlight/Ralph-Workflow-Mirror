@@ -1,7 +1,7 @@
 //! Event loop trace dump behavior.
 //!
 //! These tests verify that when the reducer event loop is exhausted (max iterations)
-//! or recovers from a panic, it persists an execution trace to `.agent/tmp/`.
+//! or recovers from a panic, it persists an execution trace to the per-run log directory.
 
 use crate::test_timeout::with_default_timeout;
 
@@ -23,7 +23,6 @@ use ralph_workflow::workspace::MemoryWorkspace;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const TRACE_PATH: &str = ".agent/tmp/event_loop_trace.jsonl";
 const LOG_PATH: &str = ".agent/tmp/event_loop_trace_test.log";
 
 struct Fixture {
@@ -37,6 +36,7 @@ struct Fixture {
     executor: Arc<MockProcessExecutor>,
     repo_root: PathBuf,
     workspace: Arc<MemoryWorkspace>,
+    run_log_context: ralph_workflow::logging::RunLogContext,
 }
 
 impl Fixture {
@@ -48,6 +48,8 @@ impl Fixture {
         let logger = Logger::new(colors);
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
 
         Self {
             config,
@@ -60,6 +62,7 @@ impl Fixture {
             executor,
             repo_root,
             workspace,
+            run_log_context,
         }
     }
 
@@ -74,6 +77,8 @@ impl Fixture {
         );
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
 
         Self {
             config,
@@ -86,6 +91,7 @@ impl Fixture {
             executor,
             repo_root,
             workspace,
+            run_log_context,
         }
     }
 
@@ -108,6 +114,7 @@ impl Fixture {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: Path::new(&self.repo_root),
             workspace: self.workspace.as_ref(),
+            run_log_context: &self.run_log_context,
         }
     }
 }
@@ -228,14 +235,17 @@ fn test_event_loop_dumps_trace_on_max_iterations() {
             "expected pipeline to not complete in loop scenario"
         );
 
+        let trace_path_buf = fixture.run_log_context.event_loop_trace();
+        let trace_path = trace_path_buf.to_string_lossy();
         assert!(
-            fixture.workspace.was_written(TRACE_PATH),
-            "expected event loop to dump trace to {TRACE_PATH}"
+            fixture.workspace.was_written(trace_path.as_ref()),
+            "expected event loop to dump trace to {}",
+            trace_path
         );
 
         let trace = fixture
             .workspace
-            .get_file(TRACE_PATH)
+            .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         let line_count = trace.lines().filter(|l| !l.trim().is_empty()).count();
         assert!(
@@ -268,14 +278,18 @@ fn test_event_loop_dumps_trace_on_panic() {
             !res.completed,
             "expected pipeline to be marked incomplete on panic"
         );
+
+        let trace_path_buf = fixture.run_log_context.event_loop_trace();
+        let trace_path = trace_path_buf.to_string_lossy();
         assert!(
-            fixture.workspace.was_written(TRACE_PATH),
-            "expected event loop to dump trace to {TRACE_PATH} on panic"
+            fixture.workspace.was_written(trace_path.as_ref()),
+            "expected event loop to dump trace to {} on panic",
+            trace_path
         );
 
         let trace = fixture
             .workspace
-            .get_file(TRACE_PATH)
+            .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         let last_line = trace
             .lines()
@@ -306,9 +320,11 @@ fn test_trace_records_additional_events() {
                 .expect("event loop should run");
         assert!(!res.completed);
 
+        let trace_path_buf = fixture.run_log_context.event_loop_trace();
+        let trace_path = trace_path_buf.to_string_lossy();
         let trace = fixture
             .workspace
-            .get_file(TRACE_PATH)
+            .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         assert!(
             trace.contains("\"event\":\"CheckpointSaved"),
@@ -342,9 +358,11 @@ fn test_trace_entry_phase_reflects_state_after_event_applied() {
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
                 .expect("event loop should run");
 
+        let trace_path_buf = fixture.run_log_context.event_loop_trace();
+        let trace_path = trace_path_buf.to_string_lossy();
         let trace = fixture
             .workspace
-            .get_file(TRACE_PATH)
+            .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         let first_line = trace
             .lines()
@@ -383,9 +401,13 @@ fn test_max_iterations_logs_trace_path_to_workspace_log() {
             .workspace
             .get_file(LOG_PATH)
             .expect("workspace log should be written");
+
+        let trace_path_buf = fixture.run_log_context.event_loop_trace();
+        let trace_path = trace_path_buf.to_string_lossy();
         assert!(
-            log.contains(TRACE_PATH),
-            "expected logs to mention trace path {TRACE_PATH}"
+            log.contains(trace_path.as_ref()),
+            "expected logs to mention trace path {}",
+            trace_path
         );
     });
 }

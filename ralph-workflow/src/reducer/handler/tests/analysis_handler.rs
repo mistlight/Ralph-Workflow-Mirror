@@ -33,6 +33,7 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -50,6 +51,7 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState {
         phase: crate::reducer::event::PipelinePhase::Development,
@@ -104,6 +106,7 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -121,6 +124,7 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
     let mut handler = MainEffectHandler::new(PipelineState {
         phase: crate::reducer::event::PipelinePhase::Development,

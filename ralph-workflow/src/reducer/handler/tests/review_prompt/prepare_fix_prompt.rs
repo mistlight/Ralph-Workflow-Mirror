@@ -145,6 +145,7 @@ fn test_prepare_fix_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -162,6 +163,7 @@ fn test_prepare_fix_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -211,6 +213,7 @@ fn test_prepare_fix_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -228,6 +231,7 @@ fn test_prepare_fix_prompt_same_agent_retry_does_not_stack_retry_notes() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -289,6 +293,7 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -306,6 +311,7 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -343,6 +349,7 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -360,6 +367,7 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -408,6 +416,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -425,6 +434,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -470,6 +480,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -487,6 +498,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -532,6 +544,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -549,6 +562,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -597,6 +611,7 @@ fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_rea
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -614,6 +629,7 @@ fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_rea
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -658,6 +674,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -675,6 +692,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -708,6 +726,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/mock/repo");
 
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -725,6 +744,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

@@ -193,6 +193,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("logger/test_logger_tests.rs"),
     },
     SourceFile {
+        path: "logging_per_run.rs",
+        contents: include_str!("logging_per_run.rs"),
+    },
+    SourceFile {
         path: "loop_detection_after_additional_events.rs",
         contents: include_str!("loop_detection_after_additional_events.rs"),
     },

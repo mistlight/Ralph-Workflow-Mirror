@@ -42,7 +42,10 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         }
 
         fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
-            if relative == Path::new(EVENT_LOOP_TRACE_PATH)
+            // Check if this is an event_loop_trace.jsonl file in any run log directory
+            if relative
+                .to_string_lossy()
+                .contains("event_loop_trace.jsonl")
                 && !self.tmp_created.load(Ordering::Acquire)
             {
                 return Err(io::Error::new(
@@ -90,7 +93,10 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         }
 
         fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
-            if relative == Path::new(".agent/tmp") {
+            // Allow .agent/tmp directory creation (old behavior) and per-run log directories (new behavior)
+            if relative == Path::new(".agent/tmp")
+                || relative.to_string_lossy().starts_with(".agent/logs-")
+            {
                 self.tmp_created.store(true, Ordering::Release);
             }
             self.inner.create_dir_all(relative)
@@ -121,12 +127,13 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let strict_workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+    let run_log_context = crate::logging::RunLogContext::new(&strict_workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -145,6 +152,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &strict_workspace,
+        run_log_context: &run_log_context,
     };
 
     let mut trace = EventTraceBuffer::new(1);
@@ -159,7 +167,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     assert!(
         strict_workspace
             .inner
-            .exists(Path::new(EVENT_LOOP_TRACE_PATH)),
+            .exists(&ctx.run_log_context.event_loop_trace()),
         "expected trace file to be created"
     );
 }
@@ -238,12 +246,13 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -262,6 +271,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -279,7 +289,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
     );
 
     assert!(
-        workspace.exists(Path::new(super::EVENT_LOOP_TRACE_PATH)),
+        workspace.exists(&ctx.run_log_context.event_loop_trace()),
         "expected trace file to be dumped on unrecoverable handler error"
     );
     assert!(
@@ -325,12 +335,13 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let ctx = PhaseContext {
         config: &config,
@@ -349,6 +360,7 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = create_initial_state_with_config(&ctx);
@@ -416,12 +428,13 @@ fn test_event_loop_applies_additional_events_in_order() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
-    
+
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -440,6 +453,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        run_log_context: &run_log_context,
     };
 
     let state = PipelineState::initial(1, 0);

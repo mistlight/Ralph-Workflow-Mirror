@@ -94,23 +94,50 @@ pub fn run_commit_attempt(
         .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
-    let log_prefix = ".agent/logs/commit_generation/commit_generation";
-    let model_index = 0usize;
-    let agent_for_log = commit_agent.to_lowercase();
-    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
-        log_prefix,
-        &agent_for_log,
-        model_index,
-        attempt,
+    // Use per-run log directory with simplified naming
+    let base_log_path = ctx.run_log_context.agent_log("commit", attempt, None);
+    let log_attempt = crate::pipeline::logfile::next_simplified_logfile_attempt_index(
+        &base_log_path,
+        ctx.workspace,
     );
+    let logfile = if log_attempt == 0 {
+        base_log_path.to_str().unwrap().to_string()
+    } else {
+        ctx.run_log_context
+            .agent_log("commit", attempt, Some(log_attempt))
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // Write log file header with agent metadata
+    // Use append_bytes to avoid overwriting if file exists (defense-in-depth)
+    let log_header = format!(
+        "# Ralph Agent Invocation Log\n\
+         # Role: Commit\n\
+         # Agent: {}\n\
+         # Model Index: 0\n\
+         # Attempt: {}\n\
+         # Phase: CommitMessage\n\
+         # Timestamp: {}\n\n",
+        commit_agent,
+        log_attempt,
+        chrono::Utc::now().to_rfc3339()
+    );
+    ctx.workspace
+        .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
+        .context("Failed to write agent log header - log would be incomplete without metadata")?;
+
+    let log_prefix = format!("commit_{attempt}"); // For attribution only
+    let model_index = 0usize; // Default model index for attribution
     let prompt_cmd = PromptCommand {
         label: commit_agent,
         display_name: commit_agent,
         cmd_str: &cmd_str,
         prompt: &prompt,
-        log_prefix,
+        log_prefix: &log_prefix,
         model_index: Some(model_index),
-        attempt: Some(attempt),
+        attempt: Some(log_attempt),
         logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,

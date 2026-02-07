@@ -55,6 +55,7 @@ mod fix_xml_validation;
 mod gemini_parser_tests;
 mod git;
 mod logger;
+mod logging_per_run;
 mod loop_detection_after_additional_events;
 mod loop_detection_recovery;
 mod opencode_parser_tests;

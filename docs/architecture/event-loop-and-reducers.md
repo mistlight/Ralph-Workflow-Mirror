@@ -4,6 +4,7 @@ This document describes Ralph's pipeline event loop and reducer architecture: ho
 
 If you are looking for the end-to-end lifecycle (Planning -> Development -> result verification -> Commit -> Review/Fix loops), see `pipeline-lifecycle.md`.
 If you are looking specifically for effect-handler layering and filesystem rules (`AppEffect` vs pipeline `Effect`, `Workspace` requirements, `std::fs` exceptions), see `effect-system.md`.
+If you are looking for per-run logging, event loop observability, and log directory structure, see `logging-and-observability.md`.
 If you are looking for a codebase-level module map and entrypoints, see `codebase-tour.md`.
 
 ## Core Contract

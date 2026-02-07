@@ -218,6 +218,21 @@ impl MainEffectHandler {
                     let last_output = ctx
                         .workspace
                         .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+                        .or_else(|err| {
+                            if err.kind() == std::io::ErrorKind::NotFound {
+                                // Try reading from the archived .processed file as a fallback
+                                let processed_path =
+                                    Path::new(".agent/tmp/development_result.xml.processed");
+                                ctx.workspace.read(processed_path).inspect(|output| {
+                                    ctx.logger.info(
+                                        "XSD retry: using archived .processed file as last output",
+                                    );
+                                    let _ = output;
+                                })
+                            } else {
+                                Err(err)
+                            }
+                        })
                         .map_err(|err| ErrorEvent::WorkspaceReadFailed {
                             path: xml_paths::DEVELOPMENT_RESULT_XML.to_string(),
                             kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),

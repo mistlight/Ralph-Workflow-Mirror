@@ -352,10 +352,20 @@ pub fn prompt_commit_xsd_retry_with_context(
 
     // Check that required files exist
     let schema_path = Path::new(".agent/tmp/commit_message.xsd");
-    let last_output_path = Path::new(".agent/tmp/commit_message.xml");
+    let canonical_output_path = Path::new(".agent/tmp/commit_message.xml");
+    let processed_output_path = Path::new(".agent/tmp/commit_message.xml.processed");
 
     let schema_exists = workspace.exists(schema_path);
-    let last_output_exists = workspace.exists(last_output_path);
+    let canonical_output_exists = workspace.exists(canonical_output_path);
+    let processed_output_exists = workspace.exists(processed_output_path);
+
+    // If canonical file was archived, try using the .processed file as fallback
+    let (last_output_path, last_output_exists, used_processed) =
+        if !canonical_output_exists && processed_output_exists {
+            (processed_output_path, true, true)
+        } else {
+            (canonical_output_path, canonical_output_exists, false)
+        };
 
     // Build diagnostic prefix for missing files (per acceptance criteria #3)
     let mut diagnostic_prefix = String::new();
@@ -369,11 +379,37 @@ pub fn prompt_commit_xsd_retry_with_context(
             ));
         }
         if !last_output_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Last output: {} (workspace.root() = {})\n",
-                workspace.absolute_str(".agent/tmp/commit_message.xml"),
-                workspace.root().display()
-            ));
+            // Show both attempted paths for clarity
+            if used_processed {
+                // We tried processed as fallback and it's also missing
+                diagnostic_prefix.push_str(&format!(
+                    "  - Last output: Neither canonical nor processed file exists:\n\
+                     \t  Tried: {}\n\
+                     \t  Tried: {}\n\
+                     \t  (workspace.root() = {})\n",
+                    workspace.absolute_str(".agent/tmp/commit_message.xml"),
+                    workspace.absolute_str(".agent/tmp/commit_message.xml.processed"),
+                    workspace.root().display()
+                ));
+            } else {
+                // Canonical path doesn't exist
+                let processed_note = if processed_output_exists {
+                    " (note: .processed file exists but canonical file is missing)"
+                } else {
+                    ""
+                };
+                diagnostic_prefix.push_str(&format!(
+                    "  - Last output: {}{}\n\
+                     \t  (workspace.root() = {})\n",
+                    workspace.absolute_str(
+                        canonical_output_path
+                            .to_str()
+                            .unwrap_or(".agent/tmp/commit_message.xml")
+                    ),
+                    processed_note,
+                    workspace.root().display()
+                ));
+            }
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
@@ -401,7 +437,11 @@ pub fn prompt_commit_xsd_retry_with_context(
         ("XSD_ERROR", xsd_error.to_string()),
         (
             "COMMIT_MESSAGE_XML_PATH",
-            workspace.absolute_str(".agent/tmp/commit_message.xml"),
+            workspace.absolute_str(
+                last_output_path
+                    .to_str()
+                    .unwrap_or(".agent/tmp/commit_message.xml"),
+            ),
         ),
         (
             "COMMIT_MESSAGE_XSD_PATH",
