@@ -91,6 +91,10 @@ fn test_determine_effect_review_phase_with_chain() {
 
 #[test]
 fn test_determine_effect_review_complete() {
+    // Updated test after checkpoint recovery bug fix:
+    // When reviewer_pass == total_reviewer_passes with no progress flags,
+    // orchestration should re-run the review work (resume behavior),
+    // not skip to SaveCheckpoint.
     let state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: 2,
@@ -103,7 +107,8 @@ fn test_determine_effect_review_complete() {
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+    // Should derive review work, not SaveCheckpoint
+    assert!(matches!(effect, Effect::PrepareReviewContext { .. }));
 }
 
 #[test]
@@ -326,6 +331,49 @@ fn test_determine_effect_review_phase_with_wrong_role_chain() {
             }
         ),
         "Expected InitializeAgentChain with Reviewer role, got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_resume_at_final_review_pass_should_run_review_not_skip() {
+    // BUG REPRODUCTION: When checkpoint saved at reviewer_pass=2, total=2
+    // and all progress flags are None (reset on resume),
+    // orchestration should derive review work effects,
+    // NOT SaveCheckpoint (which would skip to next phase).
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        iteration: 3,
+        total_iterations: 3,
+        reviewer_pass: 2,
+        total_reviewer_passes: 2,
+        review_issues_found: false,
+        agent_chain: PipelineState::initial(3, 2).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        // All progress flags None - simulating resume state
+        review_context_prepared_pass: None,
+        review_prompt_prepared_pass: None,
+        review_issues_xml_cleaned_pass: None,
+        review_agent_invoked_pass: None,
+        review_issues_xml_extracted_pass: None,
+        review_validated_outcome: None,
+        review_issues_markdown_written_pass: None,
+        review_issue_snippets_extracted_pass: None,
+        review_issues_xml_archived_pass: None,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    // CRITICAL: Should derive review work, NOT phase transition
+    // This test WILL FAIL with current code (bug reproduction)
+    assert!(
+        matches!(effect, Effect::PrepareReviewContext { .. }),
+        "Expected PrepareReviewContext, got {:?}",
         effect
     );
 }

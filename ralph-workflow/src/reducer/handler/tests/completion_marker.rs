@@ -216,6 +216,7 @@ impl Workspace for FailingMarkerWorkspace {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_context<'a>(
     workspace: &'a dyn Workspace,
     repo_root: &'a Path,

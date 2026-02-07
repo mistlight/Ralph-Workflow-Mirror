@@ -36,13 +36,10 @@ impl Workspace for AtomicWriteEnforcingWorkspace {
 
     fn write(&self, relative: &std::path::Path, content: &str) -> io::Result<()> {
         if relative == self.forbidden_write_path.as_path() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "non-atomic write forbidden for {}",
-                    self.forbidden_write_path.display()
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "non-atomic write forbidden for {}",
+                self.forbidden_write_path.display()
+            )));
         }
         self.inner.write(relative, content)
     }

@@ -49,7 +49,7 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
             _env: &[(String, String)],
             _workdir: Option<&Path>,
         ) -> io::Result<crate::executor::ProcessOutput> {
-            if command == "kill" && args.iter().any(|a| *a == "-KILL") {
+            if command == "kill" && args.contains(&"-KILL") {
                 self.still_running.store(false, Ordering::Release);
             }
 
@@ -211,7 +211,7 @@ fn test_run_with_agent_spawn_cancels_stderr_collector_on_idle_timeout() {
             _env: &[(String, String)],
             _workdir: Option<&Path>,
         ) -> io::Result<crate::executor::ProcessOutput> {
-            if command == "kill" && args.iter().any(|a| *a == "-KILL") {
+            if command == "kill" && args.contains(&"-KILL") {
                 self.still_running.store(false, Ordering::Release);
             }
 
@@ -520,7 +520,7 @@ fn test_run_with_agent_spawn_regains_control_when_stdout_read_blocks_and_idle_ti
             _env: &[(String, String)],
             _workdir: Option<&Path>,
         ) -> io::Result<crate::executor::ProcessOutput> {
-            if command == "kill" && args.iter().any(|a| *a == "-KILL") {
+            if command == "kill" && args.contains(&"-KILL") {
                 self.still_running.store(false, Ordering::Release);
             }
 

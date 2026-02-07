@@ -440,3 +440,117 @@ fn test_development_runs_exactly_n_iterations() {
         "Should transition to FinalValidation after 5 iterations when reviewer_passes=0"
     );
 }
+
+#[test]
+fn test_resume_at_final_iteration_should_run_development_not_skip() {
+    // BUG REPRODUCTION: When checkpoint saved at iteration=1, total=1
+    // and all progress flags are None (reset on resume),
+    // orchestration should derive development work effects,
+    // NOT SaveCheckpoint (which would skip to Review phase).
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 1,
+        total_iterations: 1,
+        agent_chain: PipelineState::initial(1, 0).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        ),
+        // All progress flags None - simulating resume state
+        development_context_prepared_iteration: None,
+        development_prompt_prepared_iteration: None,
+        development_xml_cleaned_iteration: None,
+        development_agent_invoked_iteration: None,
+        analysis_agent_invoked_iteration: None,
+        development_xml_extracted_iteration: None,
+        development_validated_outcome: None,
+        development_xml_archived_iteration: None,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    // CRITICAL: Should derive development work, NOT phase transition
+    // This test WILL FAIL with current code (bug reproduction)
+    assert!(
+        matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+        "Expected PrepareDevelopmentContext, got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_resume_iteration_0_total_1_should_run_development() {
+    // Edge case: iteration=0, total=1
+    // 0 < 1 is true, so this case may already work
+    // But include it to verify boundary behavior
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 0,
+        total_iterations: 1,
+        agent_chain: PipelineState::initial(1, 0).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        ),
+        development_context_prepared_iteration: None,
+        development_agent_invoked_iteration: None,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    assert!(
+        matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+        "Expected PrepareDevelopmentContext for iteration 0, got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_completed_final_iteration_should_transition_not_rerun() {
+    // Verify: When iteration=total AND work is actually done
+    // (development_xml_archived_iteration is Some),
+    // orchestration should transition to next phase, not re-run work.
+    use crate::reducer::state::DevelopmentStatus;
+    use crate::reducer::state::DevelopmentValidatedOutcome;
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 1,
+        total_iterations: 1,
+        agent_chain: PipelineState::initial(1, 0).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        ),
+        // All progress flags set - work is DONE
+        development_context_prepared_iteration: Some(1),
+        development_prompt_prepared_iteration: Some(1),
+        development_xml_cleaned_iteration: Some(1),
+        development_agent_invoked_iteration: Some(1),
+        analysis_agent_invoked_iteration: Some(1),
+        development_xml_extracted_iteration: Some(1),
+        development_validated_outcome: Some(DevelopmentValidatedOutcome {
+            iteration: 1,
+            status: DevelopmentStatus::Completed,
+            summary: "Test complete".to_string(),
+            files_changed: None,
+            next_steps: None,
+        }),
+        development_xml_archived_iteration: Some(1),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    // Should derive ApplyDevelopmentOutcome (next step after archiving)
+    // NOT re-run development work
+    assert!(
+        matches!(effect, Effect::ApplyDevelopmentOutcome { .. }),
+        "Expected ApplyDevelopmentOutcome for completed iteration, got {:?}",
+        effect
+    );
+}

@@ -243,8 +243,10 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
 
-    let mut config = Config::default();
-    config.isolation_mode = false;
+    let config = Config {
+        isolation_mode: false,
+        ..Default::default()
+    };
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
 
@@ -309,8 +311,10 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
 
-    let mut config = Config::default();
-    config.isolation_mode = false;
+    let config = Config {
+        isolation_mode: false,
+        ..Default::default()
+    };
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
 
@@ -364,8 +368,10 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
 
-    let mut config = Config::default();
-    config.isolation_mode = false;
+    let config = Config {
+        isolation_mode: false,
+        ..Default::default()
+    };
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
 
@@ -429,8 +435,10 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
 
-    let mut config = Config::default();
-    config.isolation_mode = false;
+    let config = Config {
+        isolation_mode: false,
+        ..Default::default()
+    };
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
 
@@ -552,8 +560,10 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
 
-    let mut config = Config::default();
-    config.isolation_mode = true;
+    let config = Config {
+        isolation_mode: true,
+        ..Default::default()
+    };
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
 

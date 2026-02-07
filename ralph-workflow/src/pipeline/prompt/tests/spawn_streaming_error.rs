@@ -53,7 +53,7 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
                 return Ok(0);
             }
             self.failed = true;
-            Err(io::Error::new(io::ErrorKind::Other, "boom"))
+            Err(io::Error::other("boom"))
         }
     }
 
@@ -77,7 +77,7 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
                     .lock()
                     .unwrap()
                     .push(self.start.elapsed());
-                if args.iter().any(|a| *a == "-KILL") {
+                if args.contains(&"-KILL") {
                     self.still_running.store(false, Ordering::Release);
                 }
             }

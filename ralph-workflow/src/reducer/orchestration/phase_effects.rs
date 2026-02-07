@@ -138,7 +138,17 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
-            if state.iteration < state.total_iterations {
+            // Design principle: Resume should assume current work is NOT done.
+            // If iteration == total_iterations but progress flags are None (reset on resume),
+            // we should re-run the iteration rather than skip it.
+            // However, if work is in progress or complete, we need to process it.
+            let iteration_needs_work = state.iteration < state.total_iterations
+                || (state.iteration == state.total_iterations
+                    && state.total_iterations > 0
+                    && (state.development_agent_invoked_iteration.is_none()
+                        || state.development_xml_archived_iteration == Some(state.iteration)));
+
+            if iteration_needs_work {
                 if state.development_context_prepared_iteration != Some(state.iteration) {
                     return Effect::PrepareDevelopmentContext {
                         iteration: state.iteration,
@@ -300,7 +310,17 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
             // Otherwise, run next review pass or complete phase
-            if state.reviewer_pass < state.total_reviewer_passes {
+            // Design principle: Resume should assume current work is NOT done.
+            // If reviewer_pass == total_reviewer_passes but progress flags are None (reset on resume),
+            // we should re-run the pass rather than skip it.
+            // However, if work is in progress or complete, we need to process it.
+            let review_pass_needs_work = state.reviewer_pass < state.total_reviewer_passes
+                || (state.reviewer_pass == state.total_reviewer_passes
+                    && state.total_reviewer_passes > 0
+                    && (state.review_agent_invoked_pass.is_none()
+                        || state.review_issues_xml_archived_pass == Some(state.reviewer_pass)));
+
+            if review_pass_needs_work {
                 if state.review_context_prepared_pass != Some(state.reviewer_pass) {
                     return Effect::PrepareReviewContext {
                         pass: state.reviewer_pass,
