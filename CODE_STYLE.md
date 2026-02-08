@@ -1,7 +1,7 @@
 # Code Style Guide
 
 ## Important Rules for this Project
-- A file should at most be 1000 lines long, if it's longer, it's time to break it up. It is also a sign of smelly code and refactor is in order
+- Production files should target 300 lines max (guideline), with a hard limit of 500 lines. Test files should stay under 1000 lines. If files exceed these limits, it's time to break them up into focused modules
 - A file should do one conceptual job. If you need a paragraph to explain what the file does, it’s doing too much.
 - If you need comments to explain what the code does, rewrite it.
 - If nesting goes past 3–4 levels, refactor.

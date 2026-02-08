@@ -33,8 +33,11 @@ See `effect-system.md` for the hard rules.
 
 ## The Reducer Event Loop (The Main Engine)
 
-- Event loop driver: `ralph-workflow/src/app/event_loop.rs`
-  - Builds an initial `reducer::PipelineState` from config (`PipelineState::initial_with_continuation(...)`).
+- Event loop driver: `ralph-workflow/src/app/event_loop/`
+  - `core.rs` - Main loop implementation that builds an initial `reducer::PipelineState` from config and drives the event loop
+  - `config.rs` - Event loop configuration and setup
+  - `error_handling.rs` - Error recovery and fault tolerance mechanisms
+  - `trace.rs` - Event loop trace ring buffer for debugging and diagnostics
   - Repeats: `determine_next_effect(state)` -> handler executes -> emits `PipelineEvent` -> `reduce(state, event)`.
   - Terminates based on `PipelineState::is_complete()`.
 
@@ -44,6 +47,7 @@ Core reducer modules:
 - Reduction (state + event -> state): `ralph-workflow/src/reducer/state_reduction/`
 - State types: `ralph-workflow/src/reducer/state/`
 - Event types: `ralph-workflow/src/reducer/event/`
+  - `types.rs` - Core event type definitions
 
 See `event-loop-and-reducers.md` for invariants and best practices.
 
