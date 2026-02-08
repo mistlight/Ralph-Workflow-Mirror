@@ -1,8 +1,15 @@
-use super::MainEffectHandler;
+//! Planning prompt preparation.
+//!
+//! Handles the preparation of planning prompts in different modes:
+//! - Normal: Initial planning prompt with PROMPT.md references
+//! - XsdRetry: Retry prompt with validation errors and last output
+//! - SameAgentRetry: Retry with same agent, prepending retry guidance
+//!
+//! Each mode handles input materialization, template rendering, and placeholder validation.
+
+use super::super::MainEffectHandler;
 use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
-use crate::files::llm_output_extraction::{archive_xml_file_with_workspace, validate_plan_xml};
-use crate::phases::development::format_plan_as_markdown;
 use crate::phases::PhaseContext;
 use crate::prompts::content_reference::{PromptContentReference, MAX_INLINE_CONTENT_SIZE};
 use crate::prompts::{
@@ -10,103 +17,20 @@ use crate::prompts::{
     prompt_planning_xsd_retry_with_context_files,
 };
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{
-    AgentEvent, ErrorEvent, PipelineEvent, PipelinePhase, WorkspaceIoErrorKind,
-};
+use crate::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, WorkspaceIoErrorKind};
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
 use crate::reducer::state::{
     MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
     PromptMaterializationReason,
 };
-use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
 
 const PLANNING_PROMPT_PATH: &str = ".agent/tmp/planning_prompt.txt";
 
 impl MainEffectHandler {
-    pub(super) fn materialize_planning_inputs(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let prompt_md = ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
-            ErrorEvent::WorkspaceReadFailed {
-                path: "PROMPT.md".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            }
-        })?;
-
-        let content_id_sha256 = sha256_hex_str(&prompt_md);
-        let original_bytes = prompt_md.len() as u64;
-        let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
-        let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
-
-        let prompt_backup_path = Path::new(".agent/PROMPT.md.backup");
-        let (representation, reason) = if original_bytes > inline_budget_bytes {
-            crate::files::create_prompt_backup_with_workspace(ctx.workspace).map_err(|err| {
-                ErrorEvent::WorkspaceWriteFailed {
-                    path: prompt_backup_path.display().to_string(),
-                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                }
-            })?;
-            ctx.logger.warn(&format!(
-                "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
-                original_bytes / 1024,
-                inline_budget_bytes / 1024,
-                prompt_backup_path.display()
-            ));
-            (
-                PromptInputRepresentation::FileReference {
-                    path: prompt_backup_path.to_path_buf(),
-                },
-                PromptMaterializationReason::InlineBudgetExceeded,
-            )
-        } else {
-            (
-                PromptInputRepresentation::Inline,
-                PromptMaterializationReason::WithinBudgets,
-            )
-        };
-
-        let input = MaterializedPromptInput {
-            kind: PromptInputKind::Prompt,
-            content_id_sha256: content_id_sha256.clone(),
-            consumer_signature_sha256: consumer_signature_sha256.clone(),
-            original_bytes,
-            final_bytes: original_bytes,
-            model_budget_bytes: None,
-            inline_budget_bytes: Some(inline_budget_bytes),
-            representation,
-            reason,
-        };
-
-        let mut result = EffectResult::event(PipelineEvent::planning_inputs_materialized(
-            iteration, input,
-        ));
-        if original_bytes > inline_budget_bytes {
-            result = result.with_ui_event(UIEvent::AgentActivity {
-                agent: "pipeline".to_string(),
-                message: format!(
-                    "Oversize PROMPT: {} KB > {} KB; using file reference",
-                    original_bytes / 1024,
-                    inline_budget_bytes / 1024
-                ),
-            });
-            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
-                PipelinePhase::Planning,
-                PromptInputKind::Prompt,
-                content_id_sha256,
-                original_bytes,
-                inline_budget_bytes,
-                "inline-embedding".to_string(),
-            ));
-        }
-        Ok(result)
-    }
-
-    pub(super) fn prepare_planning_prompt(
+    pub(in crate::reducer::handler) fn prepare_planning_prompt(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
@@ -223,13 +147,13 @@ impl MainEffectHandler {
                 // Same-agent retry: prepend retry guidance to the last prepared prompt for this
                 // phase (preserves XSD retry / continuation context if present).
                 let retry_preamble =
-                    super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                    super::super::retry_guidance::same_agent_retry_preamble(continuation_state);
                 let (base_prompt, should_validate) = match ctx
                     .workspace
                     .read(Path::new(PLANNING_PROMPT_PATH))
                 {
                     Ok(previous_prompt) => (
-                        super::retry_guidance::strip_existing_same_agent_retry_preamble(
+                        super::super::retry_guidance::strip_existing_same_agent_retry_preamble(
                             &previous_prompt,
                         )
                         .to_string(),
@@ -378,171 +302,5 @@ impl MainEffectHandler {
             result = result.with_additional_event(ev);
         }
         Ok(result)
-    }
-
-    pub(super) fn invoke_planning_agent(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        // Normalize agent chain state before invocation for determinism
-        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Developer);
-
-        let prompt = match ctx.workspace.read(Path::new(PLANNING_PROMPT_PATH)) {
-            Ok(s) => s,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                return Err(ErrorEvent::PlanningPromptMissing { iteration }.into());
-            }
-            Err(err) => {
-                return Err(ErrorEvent::WorkspaceReadFailed {
-                    path: PLANNING_PROMPT_PATH.to_string(),
-                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                }
-                .into());
-            }
-        };
-
-        let agent = self
-            .state
-            .agent_chain
-            .current_agent()
-            .cloned()
-            .unwrap_or_else(|| ctx.developer_agent.to_string());
-
-        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
-        if result.additional_events.iter().any(|e| {
-            matches!(
-                e,
-                PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
-            )
-        }) {
-            result = result.with_additional_event(PipelineEvent::planning_agent_invoked(iteration));
-        }
-        Ok(result)
-    }
-
-    pub(super) fn cleanup_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let plan_xml = Path::new(xml_paths::PLAN_XML);
-        let _ = ctx.workspace.remove_if_exists(plan_xml);
-        Ok(EffectResult::event(PipelineEvent::planning_xml_cleaned(
-            iteration,
-        )))
-    }
-
-    pub(super) fn extract_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let plan_xml = Path::new(xml_paths::PLAN_XML);
-        let content = ctx.workspace.read(plan_xml);
-
-        match content {
-            Ok(_) => Ok(EffectResult::event(PipelineEvent::planning_xml_extracted(
-                iteration,
-            ))),
-            Err(_) => Ok(EffectResult::event(PipelineEvent::planning_xml_missing(
-                iteration,
-                self.state.continuation.invalid_output_attempts,
-            ))),
-        }
-    }
-
-    pub(super) fn validate_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let plan_xml = match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {
-            Ok(s) => s,
-            Err(_) => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::planning_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
-            }
-        };
-
-        match validate_plan_xml(&plan_xml) {
-            Ok(elements) => {
-                let markdown = format_plan_as_markdown(&elements);
-                Ok(EffectResult::with_ui(
-                    PipelineEvent::planning_xml_validated(iteration, true, Some(markdown)),
-                    vec![UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::DevelopmentPlan,
-                        content: plan_xml,
-                        context: Some(XmlOutputContext {
-                            iteration: Some(iteration),
-                            pass: None,
-                            snippets: Vec::new(),
-                        }),
-                    }],
-                ))
-            }
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::planning_output_validation_failed(
-                    iteration,
-                    self.state.continuation.invalid_output_attempts,
-                ),
-            )),
-        }
-    }
-
-    pub(super) fn write_planning_markdown(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let markdown = self
-            .state
-            .planning_validated_outcome
-            .as_ref()
-            .filter(|outcome| outcome.iteration == iteration)
-            .and_then(|outcome| outcome.markdown.clone())
-            .ok_or(ErrorEvent::ValidatedPlanningMarkdownMissing { iteration })?;
-
-        ctx.workspace
-            .write(Path::new(".agent/PLAN.md"), &markdown)
-            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-                path: ".agent/PLAN.md".to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            })?;
-
-        Ok(EffectResult::event(
-            PipelineEvent::planning_markdown_written(iteration),
-        ))
-    }
-
-    pub(super) fn archive_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::PLAN_XML));
-        Ok(EffectResult::event(PipelineEvent::planning_xml_archived(
-            iteration,
-        )))
-    }
-
-    pub(super) fn apply_planning_outcome(
-        &mut self,
-        _ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-        valid: bool,
-    ) -> Result<EffectResult> {
-        let mut ui_events = Vec::new();
-        if valid {
-            ui_events.push(self.phase_transition_ui(PipelinePhase::Development));
-        }
-        Ok(EffectResult::with_ui(
-            PipelineEvent::plan_generation_completed(iteration, valid),
-            ui_events,
-        ))
     }
 }

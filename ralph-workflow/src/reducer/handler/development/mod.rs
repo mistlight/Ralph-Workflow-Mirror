@@ -57,7 +57,8 @@
 //! See `docs/architecture/effect-system.md` for effect layer design principles.
 
 mod core;
-mod prompts;
+mod materialization;
+mod preparation;
 mod validation;
 
 pub(super) use core::write_continuation_context_to_workspace;

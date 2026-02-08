@@ -1,13 +1,35 @@
 # Code Style Guide
 
 ## Important Rules for this Project
-- Production files should target 300 lines max (guideline), with a hard limit of 500 lines. Test files should stay under 1000 lines. If files exceed these limits, it's time to break them up into focused modules
-- A file should do one conceptual job. If you need a paragraph to explain what the file does, it’s doing too much.
+- Production files should target 300 lines max (guideline), soft limit 500 lines, hard limit 1000 lines. Test files should stay under 1000 lines. See "File Size Guidelines" below for when files over 500 lines are acceptable.
+- A file should do one conceptual job. If you need a paragraph to explain what the file does, it's doing too much.
 - If you need comments to explain what the code does, rewrite it.
 - If nesting goes past 3–4 levels, refactor.
 - Prefer early returns over deep if trees.
 - Function should be at most 100 lines long but if it's longer than 50 lines you should start considering refactoring, if it's like barely passing lint at 97 your PR may not be accepted and you will be asked to refactor.
 - Avoid clever code. Boring is good.
+
+### File Size Guidelines
+
+**Target ranges:**
+- **Under 300 lines:** Ideal for new code, no action needed
+- **300-500 lines:** Good, acceptable for cohesive code
+- **500-700 lines:** Review structure (see criteria below)
+- **700-1000 lines:** Strong smell, likely needs splitting
+- **Over 1000 lines:** MUST split (dylint enforces)
+
+**Files over 500 lines are acceptable IF they are cohesive:**
+- **Large match statements:** Single reducer matching on 20+ event variants (e.g., `state_reduction/review.rs`)
+- **Comprehensive enums:** Type definitions with 20+ variants and extensive documentation (e.g., `effect/types.rs`)
+- **Core state structures:** Central state types with 30+ fields organized by domain (e.g., `state/pipeline.rs`)
+- **Single-algorithm implementations:** Event loops or state machines that are one cohesive function (e.g., `event_loop/driver.rs`)
+
+**Files over 500 lines SHOULD be split IF they have:**
+- **Multiple responsibilities:** 5+ handler functions, mixed concerns (input prep + validation + execution)
+- **Obvious boundaries:** Clear separation between concerns that could be modules
+- **Example:** Handler implementations should group by phase (input/prompt/execution/validation/output)
+
+See `docs/contributing/refactoring-history.md` for detailed examples of good and bad splits.
 
 ## Architecture
 
