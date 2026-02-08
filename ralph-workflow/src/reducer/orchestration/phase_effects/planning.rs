@@ -5,16 +5,17 @@
 //! Planning phase workflow:
 //! 1. Save checkpoint at iteration 0 (after rebase completes)
 //! 2. Initialize agent chain (Developer role)
-//! 3. Cleanup context (remove old PLAN.md from previous iteration)
-//! 4. Materialize planning inputs (prompt template)
-//! 5. Prepare planning prompt
-//! 6. Cleanup planning XML
-//! 7. Invoke planning agent
-//! 8. Extract planning XML
-//! 9. Validate planning XML
-//! 10. Write planning markdown (PLAN.md)
-//! 11. Archive planning XML
-//! 12. Apply planning outcome (transition to Development)
+//! 3. Ensure gitignore entries (.agent/, PROMPT*)
+//! 4. Cleanup context (remove old PLAN.md from previous iteration)
+//! 5. Materialize planning inputs (prompt template)
+//! 6. Prepare planning prompt
+//! 7. Cleanup planning XML
+//! 8. Invoke planning agent
+//! 9. Extract planning XML
+//! 10. Validate planning XML
+//! 11. Write planning markdown (PLAN.md)
+//! 12. Archive planning XML
+//! 13. Apply planning outcome (transition to Development)
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::Effect;
@@ -39,6 +40,11 @@ pub(super) fn determine_planning_effect(state: &PipelineState) -> Effect {
         return Effect::InitializeAgentChain {
             role: AgentRole::Developer,
         };
+    }
+
+    // Ensure gitignore entries BEFORE cleanup
+    if !state.gitignore_entries_ensured {
+        return Effect::EnsureGitignoreEntries;
     }
 
     let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();

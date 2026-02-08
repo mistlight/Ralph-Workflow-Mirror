@@ -681,7 +681,7 @@ All verification commands passed with NO OUTPUT:
 - ✅ `cargo clippy -p ralph-workflow --lib --all-features -- -D warnings` - No lint violations
 - ✅ `cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings` - No test lint violations
 - ✅ `cargo test -p ralph-workflow --lib --all-features` - 2826 unit tests pass
-- ✅ `cargo test -p ralph-workflow-tests` - 119 integration tests pass
+- ✅ `cargo test -p ralph-workflow-tests` - 771 integration tests pass
 - ✅ `cargo build --release` - Release build succeeds
 - ✅ `make dylint` - Custom file size lints pass
 
