@@ -438,7 +438,10 @@ include!("workspace/workspace_fs.rs");
 // ============================================================================
 
 #[cfg(any(test, feature = "test-utils"))]
-include!("workspace/memory_workspace.rs");
+pub mod memory_workspace;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use memory_workspace::MemoryWorkspace;
 
 // ============================================================================
 // Tests

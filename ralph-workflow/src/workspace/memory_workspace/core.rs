@@ -1,0 +1,257 @@
+//! Core Workspace trait implementation for MemoryWorkspace.
+//!
+//! This module implements all Workspace trait methods for the in-memory
+//! workspace, including file operations, directory operations, and metadata access.
+
+use super::{MemoryFile, MemoryWorkspace};
+use crate::workspace::{DirEntry, Workspace};
+use std::io;
+use std::path::{Path, PathBuf};
+
+impl Workspace for MemoryWorkspace {
+    fn root(&self) -> &Path {
+        &self.root
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        self.files
+            .read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .get(relative)
+            .map(|f| String::from_utf8_lossy(&f.content).to_string())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("File not found: {}", relative.display()),
+                )
+            })
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        self.files
+            .read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .get(relative)
+            .map(|f| f.content.clone())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("File not found: {}", relative.display()),
+                )
+            })
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.ensure_parent_dirs(relative);
+        self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .insert(
+                relative.to_path_buf(),
+                MemoryFile::new(content.as_bytes().to_vec()),
+            );
+        Ok(())
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.ensure_parent_dirs(relative);
+        self.files
+            .write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .insert(relative.to_path_buf(), MemoryFile::new(content.to_vec()));
+        Ok(())
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.ensure_parent_dirs(relative);
+        let mut files = self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
+        let entry = files
+            .entry(relative.to_path_buf())
+            .or_insert_with(|| MemoryFile::new(Vec::new()));
+        entry.content.extend_from_slice(content);
+        entry.modified = std::time::SystemTime::now();
+        Ok(())
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.files.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .contains_key(relative)
+            || self.directories.read()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+                .contains(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.files.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .contains_key(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+            .contains(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.files
+            .write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .remove(relative)
+            .map(|_| ())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("File not found: {}", relative.display()),
+                )
+            })
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .remove(relative);
+        Ok(())
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.ensure_dir_path(relative);
+        Ok(())
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        // In-memory operations are inherently atomic - no partial state possible.
+        // Just delegate to regular write().
+        self.write(relative, content)
+    }
+
+    fn set_readonly(&self, _relative: &Path) -> io::Result<()> {
+        // No-op for in-memory workspace - permissions aren't relevant for testing
+        Ok(())
+    }
+
+    fn set_writable(&self, _relative: &Path) -> io::Result<()> {
+        // No-op for in-memory workspace - permissions aren't relevant for testing
+        Ok(())
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        // Check if directory exists first
+        if !self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+            .contains(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Directory not found: {}", relative.display()),
+            ));
+        }
+        self.remove_dir_all_impl(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.remove_dir_all_impl(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
+        let files = self.files.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
+        let dirs = self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock");
+
+        // Check if the directory exists
+        if !relative.as_os_str().is_empty() && !dirs.contains(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Directory not found: {}", relative.display()),
+            ));
+        }
+
+        let mut entries = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // Find all files that are direct children of this directory
+        for (path, mem_file) in files.iter() {
+            if let Some(parent) = path.parent() {
+                if parent == relative {
+                    if let Some(name) = path.file_name() {
+                        if seen.insert(name.to_os_string()) {
+                            entries.push(DirEntry::with_modified(
+                                path.clone(),
+                                true,
+                                false,
+                                mem_file.modified,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Find all directories that are direct children of this directory
+        for dir_path in dirs.iter() {
+            if let Some(parent) = dir_path.parent() {
+                if parent == relative {
+                    if let Some(name) = dir_path.file_name() {
+                        if seen.insert(name.to_os_string()) {
+                            entries.push(DirEntry::new(dir_path.clone(), false, true));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(entries)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        // Create parent directories for destination first (before taking files lock)
+        self.ensure_parent_dirs(to);
+        let mut files = self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
+        if let Some(file) = files.remove(from) {
+            files.insert(to.to_path_buf(), file);
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File not found: {}", from.display()),
+            ))
+        }
+    }
+}
+
+impl MemoryWorkspace {
+    /// Remove all files and directories under the given path (including the path itself).
+    ///
+    /// Internal implementation used by both remove_dir_all and remove_dir_all_if_exists.
+    fn remove_dir_all_impl(&self, relative: &Path) -> io::Result<()> {
+        // Remove all files under this directory
+        {
+            let mut files = self.files.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
+            let to_remove: Vec<PathBuf> = files
+                .keys()
+                .filter(|path| path.starts_with(relative))
+                .cloned()
+                .collect();
+            for path in to_remove {
+                files.remove(&path);
+            }
+        }
+        // Remove all directories under this directory (including itself)
+        {
+            let mut dirs = self.directories.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock");
+            let to_remove: Vec<PathBuf> = dirs
+                .iter()
+                .filter(|path| path.starts_with(relative) || *path == relative)
+                .cloned()
+                .collect();
+            for path in to_remove {
+                dirs.remove(&path);
+            }
+        }
+        Ok(())
+    }
+}

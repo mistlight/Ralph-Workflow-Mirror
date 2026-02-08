@@ -233,18 +233,24 @@ mod tests {
         #[must_use]
         fn with_file<P: Into<PathBuf>, S: Into<String>>(self, path: P, content: S) -> Self {
             let path = path.into();
-            self.files.write().unwrap().insert(path, content.into());
+            self.files.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryCacheEnvironment files lock")
+                .insert(path, content.into());
             self
         }
 
         /// Get the contents of a file (for test assertions).
         fn get_file(&self, path: &Path) -> Option<String> {
-            self.files.read().unwrap().get(path).cloned()
+            self.files.read()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryCacheEnvironment files lock")
+                .get(path).cloned()
         }
 
         /// Check if a file was written (for test assertions).
         fn was_written(&self, path: &Path) -> bool {
-            self.files.read().unwrap().contains_key(path)
+            self.files.read()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryCacheEnvironment files lock")
+                .contains_key(path)
         }
     }
 
@@ -256,7 +262,7 @@ mod tests {
         fn read_file(&self, path: &Path) -> io::Result<String> {
             self.files
                 .read()
-                .unwrap()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryCacheEnvironment files lock")
                 .get(path)
                 .cloned()
                 .ok_or_else(|| {
@@ -270,13 +276,15 @@ mod tests {
         fn write_file(&self, path: &Path, content: &str) -> io::Result<()> {
             self.files
                 .write()
-                .unwrap()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryCacheEnvironment files lock")
                 .insert(path.to_path_buf(), content.to_string());
             Ok(())
         }
 
         fn create_dir_all(&self, path: &Path) -> io::Result<()> {
-            self.dirs.write().unwrap().insert(path.to_path_buf());
+            self.dirs.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryCacheEnvironment dirs lock")
+                .insert(path.to_path_buf());
             Ok(())
         }
     }
