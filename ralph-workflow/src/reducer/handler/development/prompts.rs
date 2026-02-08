@@ -1,4 +1,13 @@
-use super::MainEffectHandler;
+//! Development prompt preparation and input materialization.
+//!
+//! This module handles:
+//! - Reading PROMPT.md and PLAN.md from workspace
+//! - Deciding whether to inline or reference based on size budgets
+//! - Generating prompts based on mode (Normal, XSD Retry, Same-Agent Retry, Continuation)
+//! - Template variable validation
+//! - Prompt replay from history
+
+use super::super::MainEffectHandler;
 use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
@@ -6,24 +15,39 @@ use crate::prompts::content_builder::PromptContentReferences;
 use crate::prompts::content_reference::{
     PlanContentReference, PromptContentReference, MAX_INLINE_CONTENT_SIZE,
 };
-use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
+use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
 use crate::reducer::state::{
     MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
     PromptMaterializationReason,
 };
-use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
-use crate::workspace::Workspace;
+use crate::reducer::ui_event::UIEvent;
 use anyhow::Result;
 use std::path::Path;
 
-const DEVELOPMENT_XSD_ERROR_PATH: &str = ".agent/tmp/development_xsd_error.txt";
-
 impl MainEffectHandler {
-    pub(super) fn materialize_development_inputs(
+    /// Materialize development inputs (PROMPT.md and PLAN.md).
+    ///
+    /// Reads PROMPT.md and PLAN.md from the workspace, determines whether to inline
+    /// or reference each based on the 16KB inline budget, and emits a
+    /// DevelopmentInputsMaterialized event.
+    ///
+    /// If either file exceeds the inline budget, a backup file is created and referenced
+    /// by path instead of embedding the content. This prevents token budget exhaustion
+    /// while preserving full context access for the agent.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Phase context with workspace access
+    /// * `iteration` - Current development iteration number
+    ///
+    /// # Returns
+    ///
+    /// EffectResult with DevelopmentInputsMaterialized event, plus optional oversize
+    /// detection events if either input exceeds the inline budget.
+    pub(in crate::reducer::handler) fn materialize_development_inputs(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
@@ -164,18 +188,45 @@ impl MainEffectHandler {
         Ok(result)
     }
 
-    pub(super) fn prepare_development_context(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let _ = crate::files::create_prompt_backup_with_workspace(ctx.workspace);
-        Ok(EffectResult::event(
-            PipelineEvent::development_context_prepared(iteration),
-        ))
-    }
-
-    pub(super) fn prepare_development_prompt(
+    /// Prepare development prompt based on prompt mode.
+    ///
+    /// Generates the appropriate prompt for the developer agent based on the current mode:
+    ///
+    /// - **Normal** - First attempt for iteration, uses developer_iteration_xml template
+    /// - **XSD Retry** - Invalid XML output, includes last_output.xml and XSD error context
+    /// - **Same-Agent Retry** - Agent failed (non-XML issues), prepends retry preamble
+    /// - **Continuation** - Partial progress, includes continuation context from previous attempt
+    ///
+    /// The prompt is validated for unresolved template variables (except for explicitly ignored
+    /// inline content) and written to `.agent/tmp/development_prompt.txt` for debugging and
+    /// same-agent retry fallback.
+    ///
+    /// # Prompt Replay
+    ///
+    /// Normal and Continuation mode prompts are replayed from history if available (same prompt_key).
+    /// This ensures deterministic prompt generation across resume operations.
+    ///
+    /// # Template Variables
+    ///
+    /// If template variable validation fails, an AgentTemplateVariablesInvalid event is emitted
+    /// and the agent is not invoked. This prevents sending malformed prompts to agents.
+    ///
+    /// # Non-Fatal Writes
+    ///
+    /// Per acceptance criteria #5, prompt file write failures log warnings but do not terminate
+    /// the pipeline. Loop recovery will handle convergence if needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - Phase context with workspace, template context, and prompt history
+    /// * `iteration` - Current development iteration number
+    /// * `prompt_mode` - Prompt generation mode (Normal, XSD Retry, Same-Agent Retry, Continuation)
+    ///
+    /// # Returns
+    ///
+    /// EffectResult with DevelopmentPromptPrepared event, plus optional
+    /// XsdRetryLastOutputMaterialized and PromptInputOversizeDetected events for XSD retry mode.
+    pub(in crate::reducer::handler) fn prepare_development_prompt(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
@@ -320,13 +371,13 @@ impl MainEffectHandler {
                     // Same-agent retry: prepend retry guidance to the last prepared prompt for this
                     // phase (preserves XSD retry / continuation context if present).
                     let retry_preamble =
-                        super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                        super::super::retry_guidance::same_agent_retry_preamble(continuation_state);
                     let (base_prompt, should_validate) = match ctx
                         .workspace
                         .read(Path::new(".agent/tmp/development_prompt.txt"))
                     {
                         Ok(previous_prompt) => (
-                            super::retry_guidance::strip_existing_same_agent_retry_preamble(
+                            super::super::retry_guidance::strip_existing_same_agent_retry_preamble(
                                 &previous_prompt,
                             )
                             .to_string(),
@@ -571,239 +622,4 @@ impl MainEffectHandler {
         }
         Ok(result)
     }
-
-    pub(super) fn invoke_development_agent(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        // Normalize agent chain state before invocation for determinism
-        self.normalize_agent_chain_for_invocation(ctx, AgentRole::Developer);
-
-        let prompt = ctx
-            .workspace
-            .read(Path::new(".agent/tmp/development_prompt.txt"))
-            .map_err(|_| ErrorEvent::DevelopmentPromptMissing { iteration })?;
-
-        let agent = self
-            .state
-            .agent_chain
-            .current_agent()
-            .cloned()
-            .unwrap_or_else(|| ctx.developer_agent.to_string());
-
-        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
-        if result.additional_events.iter().any(|e| {
-            matches!(
-                e,
-                PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
-            )
-        }) {
-            result =
-                result.with_additional_event(PipelineEvent::development_agent_invoked(iteration));
-        }
-        Ok(result)
-    }
-
-    pub(super) fn cleanup_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
-        let _ = ctx.workspace.remove_if_exists(result_xml);
-        Ok(EffectResult::event(PipelineEvent::development_xml_cleaned(
-            iteration,
-        )))
-    }
-
-    pub(super) fn extract_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        let xml_path = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
-        let mut ui_events = vec![UIEvent::IterationProgress {
-            current: iteration,
-            total: self.state.total_iterations,
-        }];
-
-        match ctx.workspace.read(xml_path) {
-            Ok(content) => {
-                ui_events.push(UIEvent::XmlOutput {
-                    xml_type: XmlOutputType::DevelopmentResult,
-                    content,
-                    context: Some(XmlOutputContext {
-                        iteration: Some(iteration),
-                        pass: None,
-                        snippets: Vec::new(),
-                    }),
-                });
-                Ok(EffectResult::with_ui(
-                    PipelineEvent::development_xml_extracted(iteration),
-                    ui_events,
-                ))
-            }
-            Err(_) => Ok(EffectResult::with_ui(
-                PipelineEvent::development_xml_missing(
-                    iteration,
-                    self.state.continuation.invalid_output_attempts,
-                ),
-                ui_events,
-            )),
-        }
-    }
-
-    pub(super) fn validate_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        use crate::files::llm_output_extraction::validate_development_result_xml;
-
-        let xml = match ctx
-            .workspace
-            .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-        {
-            Ok(s) => s,
-            Err(_) => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::development_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
-            }
-        };
-
-        match validate_development_result_xml(&xml) {
-            Ok(elements) => {
-                let _ = ctx
-                    .workspace
-                    .remove_if_exists(Path::new(DEVELOPMENT_XSD_ERROR_PATH));
-                let status = if elements.is_completed() {
-                    crate::reducer::state::DevelopmentStatus::Completed
-                } else if elements.is_partial() {
-                    crate::reducer::state::DevelopmentStatus::Partial
-                } else {
-                    crate::reducer::state::DevelopmentStatus::Failed
-                };
-
-                let files_changed = elements
-                    .files_changed
-                    .as_ref()
-                    .map(|f| f.lines().map(|s| s.to_string()).collect());
-
-                Ok(EffectResult::event(
-                    PipelineEvent::development_xml_validated(
-                        iteration,
-                        status,
-                        elements.summary.clone(),
-                        files_changed,
-                        elements.next_steps.clone(),
-                    ),
-                ))
-            }
-            Err(err) => {
-                let _ = ctx.workspace.write(
-                    Path::new(DEVELOPMENT_XSD_ERROR_PATH),
-                    &err.format_for_ai_retry(),
-                );
-                Ok(EffectResult::event(
-                    PipelineEvent::development_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ))
-            }
-        }
-    }
-
-    pub(super) fn archive_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
-
-        archive_xml_file_with_workspace(
-            ctx.workspace,
-            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-        );
-        Ok(EffectResult::event(
-            PipelineEvent::development_xml_archived(iteration),
-        ))
-    }
-
-    pub(super) fn apply_development_outcome(
-        &mut self,
-        _ctx: &mut PhaseContext<'_>,
-        iteration: u32,
-    ) -> Result<EffectResult> {
-        self.state
-            .development_validated_outcome
-            .as_ref()
-            .filter(|outcome| outcome.iteration == iteration)
-            .ok_or(ErrorEvent::ValidatedDevelopmentOutcomeMissing { iteration })?;
-
-        Ok(EffectResult::event(
-            PipelineEvent::development_outcome_applied(iteration),
-        ))
-    }
-}
-
-pub(super) fn write_continuation_context_to_workspace(
-    workspace: &dyn Workspace,
-    logger: &crate::logger::Logger,
-    data: &ContinuationContextData,
-) -> Result<()> {
-    let tmp_dir = Path::new(".agent/tmp");
-    if !workspace.exists(tmp_dir) {
-        workspace.create_dir_all(tmp_dir).map_err(|err| {
-            ErrorEvent::WorkspaceCreateDirAllFailed {
-                path: tmp_dir.display().to_string(),
-                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-            }
-        })?;
-    }
-
-    let mut content = String::new();
-    content.push_str("# Development Continuation Context\n\n");
-    content.push_str(&format!("- Iteration: {}\n", data.iteration));
-    content.push_str(&format!("- Continuation attempt: {}\n", data.attempt));
-    content.push_str(&format!("- Previous status: {}\n\n", data.status));
-
-    content.push_str("## Previous summary\n\n");
-    content.push_str(&data.summary);
-    content.push('\n');
-
-    if let Some(ref files) = data.files_changed {
-        content.push_str("\n## Files changed\n\n");
-        for file in files {
-            content.push_str("- ");
-            content.push_str(file);
-            content.push('\n');
-        }
-    }
-
-    if let Some(ref steps) = data.next_steps {
-        content.push_str("\n## Recommended next steps\n\n");
-        content.push_str(steps);
-        content.push('\n');
-    }
-
-    content.push_str("\n## Reference files (do not modify)\n\n");
-    content.push_str("- PROMPT.md\n");
-    content.push_str("- .agent/PLAN.md\n");
-
-    workspace
-        .write(Path::new(".agent/tmp/continuation_context.md"), &content)
-        .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
-            path: ".agent/tmp/continuation_context.md".to_string(),
-            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-        })?;
-
-    logger.info("Continuation context written to .agent/tmp/continuation_context.md");
-
-    Ok(())
 }
