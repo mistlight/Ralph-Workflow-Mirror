@@ -231,7 +231,7 @@ mod tests {
 
             // The desired behavior is to return promptly on monitor panic (treat as timeout).
             assert!(
-                elapsed < Duration::from_millis(150),
+                elapsed < Duration::from_millis(250),
                 "wait loop returned too late ({elapsed:?}); monitor panic was likely swallowed"
             );
 

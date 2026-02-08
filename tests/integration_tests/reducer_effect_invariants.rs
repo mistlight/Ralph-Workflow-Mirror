@@ -133,6 +133,7 @@ fn test_planning_phase_emits_prepare_prompt() {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             context_cleaned: true,
+            gitignore_entries_ensured: true,
             iteration: 0,
             total_iterations: 5,
             agent_chain: AgentChainState::initial().with_agents(
@@ -516,16 +517,17 @@ fn test_commit_phase_effect_sequence() {
     });
 }
 
-/// Test that context is cleaned before planning.
+/// Test that gitignore is ensured before context cleanup in planning.
 ///
-/// When entering Planning phase, context should be cleaned first
-/// to remove old PLAN.md from previous iteration.
+/// When entering Planning phase, gitignore should be ensured first,
+/// then context should be cleaned to remove old PLAN.md from previous iteration.
 #[test]
 fn test_context_cleaned_before_planning() {
     with_default_timeout(|| {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             context_cleaned: false,
+            gitignore_entries_ensured: false,
             agent_chain: AgentChainState::initial().with_agents(
                 vec!["claude".to_string()],
                 vec![vec![]],
@@ -534,16 +536,30 @@ fn test_context_cleaned_before_planning() {
             ..PipelineState::initial(5, 2)
         };
 
+        // First, ensure gitignore entries
         let effect = determine_next_effect(&state);
         assert!(
+            matches!(effect, Effect::EnsureGitignoreEntries),
+            "Should ensure gitignore entries before cleanup, got {:?}",
+            effect
+        );
+
+        // After gitignore ensured, should cleanup context
+        let state_gitignore_ensured = PipelineState {
+            gitignore_entries_ensured: true,
+            ..state.clone()
+        };
+        let effect = determine_next_effect(&state_gitignore_ensured);
+        assert!(
             matches!(effect, Effect::CleanupContext),
-            "Should cleanup context before planning, got {:?}",
+            "Should cleanup context after gitignore ensured, got {:?}",
             effect
         );
 
         // After cleanup, should prepare planning prompt
         let state_cleaned = PipelineState {
             context_cleaned: true,
+            gitignore_entries_ensured: true,
             ..state
         };
         let effect = determine_next_effect(&state_cleaned);
@@ -576,6 +592,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             context_cleaned: true,
+            gitignore_entries_ensured: true,
             agent_chain: base_chain.clone(),
             ..PipelineState::initial(5, 2)
         };

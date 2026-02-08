@@ -113,13 +113,30 @@ fn test_effects_determined_from_state_only() {
             effect
         );
 
-        // State with agents but no context cleaned -> clean context
+        // State with agents but no gitignore ensured -> ensure gitignore
         let mut state = PipelineState::initial(3, 1);
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
             AgentRole::Developer,
         );
+        state.gitignore_entries_ensured = false;
+        state.context_cleaned = false;
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::EnsureGitignoreEntries),
+            "Should ensure gitignore before cleanup: {:?}",
+            effect
+        );
+
+        // State with gitignore ensured but no context cleaned -> clean context
+        let mut state = PipelineState::initial(3, 1);
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+        state.gitignore_entries_ensured = true;
         state.context_cleaned = false;
         let effect = determine_next_effect(&state);
         assert!(
@@ -135,6 +152,7 @@ fn test_effects_determined_from_state_only() {
             vec![vec![]],
             AgentRole::Developer,
         );
+        state.gitignore_entries_ensured = true;
         state.context_cleaned = true;
         let effect = determine_next_effect(&state);
         assert!(
