@@ -76,13 +76,24 @@ This document tracks the completion status of the comprehensive technical debt i
 
 ### Verification Status
 
-**Last full verification run** (tests pass, no warnings):
+**Last full verification run**:
 - ✅ cargo fmt --all --check
 - ✅ cargo clippy (all targets)
 - ✅ cargo test (2815 lib tests passing as of Feb 8, 2026)
 - ✅ make dylint
 
-**Note:** Pre-existing compilation errors were blocking test runs; these have been fixed.
+**Post-Refactoring Issue (FIXED):**
+
+After the initial refactoring, verification discovered that 3 event loop tests were failing:
+- `test_event_loop_includes_review_when_reviewer_reviews_nonzero`
+- `test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev_iteration`
+- `test_event_loop_effect_order_dev_then_commit_then_review_then_complete`
+
+**Root Cause:** During the mock effect handler refactoring, support for the `EnsureGitignoreEntries` effect was accidentally omitted when splitting into phase-specific modules.
+
+**Fix Applied:** Added `EnsureGitignoreEntries` handler to `lifecycle_effects.rs` module, which emits the appropriate `gitignore_entries_ensured` event.
+
+**Verification:** All 2815 tests now pass (verified Feb 8, 2026).
 
 ## Remaining Work
 

@@ -21,6 +21,7 @@
 //! - **ValidateFinalState** - Validate pipeline completed successfully
 //! - **CleanupContext** - Clean up temporary files
 //! - **RestorePromptPermissions** - Restore file permissions changed during execution
+//! - **EnsureGitignoreEntries** - Ensure required gitignore entries exist
 //!
 //! ### Error Recovery
 //! - **TriggerDevFixFlow** - Trigger manual intervention workflow (panics in mock)
@@ -217,6 +218,16 @@ impl MockEffectHandler {
                     detected_loop: detected_loop.clone(),
                     loop_count,
                 },
+                vec![],
+                vec![],
+            )),
+
+            Effect::EnsureGitignoreEntries => Some((
+                PipelineEvent::gitignore_entries_ensured(
+                    vec!["/PROMPT*".to_string(), ".agent/".to_string()],
+                    vec![],
+                    false,
+                ),
                 vec![],
                 vec![],
             )),
