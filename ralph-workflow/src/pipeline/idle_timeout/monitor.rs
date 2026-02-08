@@ -104,7 +104,9 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
 
         if let Some(mut state) = timeout_triggered.take() {
             let status = {
-                let mut locked_child = child.lock().unwrap();
+                let mut locked_child = child
+                    .lock()
+                    .expect("child process mutex poisoned - indicates panic in another thread");
                 locked_child.try_wait()
             };
 
@@ -161,7 +163,8 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                                 }
 
                                 let status = {
-                                    let mut locked_child = child_for_reaper.lock().unwrap();
+                                    let mut locked_child = child_for_reaper.lock()
+                                        .expect("child process mutex poisoned - indicates panic in another thread");
                                     locked_child.try_wait()
                                 };
 
@@ -205,7 +208,9 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
         }
 
         let child_id = {
-            let mut locked_child = child.lock().unwrap();
+            let mut locked_child = child
+                .lock()
+                .expect("child process mutex poisoned - indicates panic in another thread");
             if let Ok(Some(_)) = locked_child.try_wait() {
                 return MonitorResult::ProcessCompleted;
             }

@@ -11,7 +11,9 @@ pub(super) fn terminate_child_best_effort(
     use std::time::Instant;
 
     let pid = {
-        let locked_child = child_arc.lock().unwrap();
+        let locked_child = child_arc
+            .lock()
+            .expect("child process mutex poisoned - indicates panic in another thread");
         locked_child.id()
     };
 
@@ -26,7 +28,9 @@ pub(super) fn terminate_child_best_effort(
             let mut last_kill_sent_at: Option<Instant> = None;
             while Instant::now() < hard_deadline {
                 let status = {
-                    let mut locked_child = child_arc.lock().unwrap();
+                    let mut locked_child = child_arc
+                        .lock()
+                        .expect("child process mutex poisoned - indicates panic in another thread");
                     locked_child.try_wait()
                 };
 
@@ -55,7 +59,9 @@ pub(super) fn terminate_child_best_effort(
         KillResult::Failed => {
             // If the kill failed because the process already exited, treat it as done.
             let status = {
-                let mut locked_child = child_arc.lock().unwrap();
+                let mut locked_child = child_arc
+                    .lock()
+                    .expect("child process mutex poisoned - indicates panic in another thread");
                 locked_child.try_wait()
             };
             match status {

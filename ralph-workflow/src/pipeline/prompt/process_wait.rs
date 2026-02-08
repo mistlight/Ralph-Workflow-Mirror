@@ -92,7 +92,9 @@ pub(super) fn wait_for_completion_and_collect_stderr(
             }
         }
 
-        let mut child = child_arc.lock().unwrap();
+        let mut child = child_arc
+            .lock()
+            .expect("child process mutex poisoned - indicates panic in another thread");
         match child.try_wait()? {
             Some(status) => break WaitOutcome::Completed(status),
             None => {
