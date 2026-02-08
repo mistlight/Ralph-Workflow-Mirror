@@ -55,11 +55,11 @@
 //! The main [`PipelineEvent`] enum wraps these category enums to enable
 //! type-safe dispatch in the reducer.
 //!
-//! # Why This File Is Large (511 lines)
+//! # Why This File Is Large (514 lines)
 //!
-//! This file exceeds the 500-line recommended limit but is an acceptable exception to the 300-line
-//! guideline because it's a **comprehensive enum module** with 10+ event category types that must
-//! remain together for:
+//! This file exceeds the 500-line recommended limit (currently 514 lines) but is an acceptable
+//! exception to the 300-line guideline because it's a **comprehensive enum module** with 10+ event
+//! category types that must remain together for:
 //! - Type-safe event category dispatch in reducers
 //! - Exhaustiveness checking across all event variants
 //! - Single source of truth for the event vocabulary
