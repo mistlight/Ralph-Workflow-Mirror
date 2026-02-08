@@ -270,3 +270,228 @@ fn test_ensure_gitignore_partial_entries() {
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
 }
+
+/// Workspace wrapper that simulates write failures for testing error handling.
+struct FailingWriteWorkspace<'a> {
+    inner: &'a dyn Workspace,
+}
+
+impl<'a> FailingWriteWorkspace<'a> {
+    fn new(inner: &'a dyn Workspace) -> Self {
+        Self { inner }
+    }
+}
+
+impl<'a> Workspace for FailingWriteWorkspace<'a> {
+    fn root(&self) -> &std::path::Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &std::path::Path) -> std::io::Result<String> {
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &std::path::Path) -> std::io::Result<Vec<u8>> {
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, _relative: &std::path::Path, _content: &str) -> std::io::Result<()> {
+        // Simulate write failure
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "simulated permission denied",
+        ))
+    }
+
+    fn write_bytes(&self, _relative: &std::path::Path, _content: &[u8]) -> std::io::Result<()> {
+        // Simulate write failure
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "simulated permission denied",
+        ))
+    }
+
+    fn append_bytes(&self, relative: &std::path::Path, content: &[u8]) -> std::io::Result<()> {
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &std::path::Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &std::path::Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &std::path::Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(
+        &self,
+        relative: &std::path::Path,
+    ) -> std::io::Result<Vec<crate::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn set_readonly(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &std::path::Path) -> std::io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+
+    fn write_atomic(&self, relative: &std::path::Path, content: &str) -> std::io::Result<()> {
+        self.inner.write_atomic(relative, content)
+    }
+}
+
+#[test]
+fn test_ensure_gitignore_handles_write_failure_gracefully() {
+    // Setup: workspace with existing file that will fail to write
+    let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
+    let failing_workspace = FailingWriteWorkspace::new(&workspace);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let mut ctx = create_test_context(
+        &failing_workspace,
+        &config,
+        &registry,
+        &logger,
+        &colors,
+        &mut timer,
+        &template_context,
+        executor.as_ref(),
+        executor.clone(),
+        repo_root.as_path(),
+        &run_log_context,
+    );
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let result = handler
+        .ensure_gitignore_entries(&mut ctx)
+        .expect("handler should succeed even on write failure");
+
+    // Verify event - should have empty entries_added because write failed
+    match result.event {
+        crate::reducer::event::PipelineEvent::Planning(
+            PlanningEvent::GitignoreEntriesEnsured {
+                entries_added,
+                already_present,
+                file_created,
+            },
+        ) => {
+            // Write failed, so no entries were added
+            assert!(
+                entries_added.is_empty(),
+                "entries_added should be empty when write fails"
+            );
+            // Already present list should still be correct (checked before write)
+            assert!(already_present.is_empty());
+            // file_created should be false (file existed before)
+            assert!(!file_created);
+        }
+        _ => panic!("Expected GitignoreEntriesEnsured event"),
+    }
+
+    // Verify file was NOT modified (write failed)
+    let content = workspace.read(std::path::Path::new(".gitignore")).unwrap();
+    assert_eq!(content, "node_modules/\n*.log\n");
+    assert!(!content.contains("/PROMPT*"));
+    assert!(!content.contains(".agent/"));
+}
+
+#[test]
+fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
+    // Setup: no existing .gitignore, write will fail
+    let workspace = MemoryWorkspace::new_test();
+    let failing_workspace = FailingWriteWorkspace::new(&workspace);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let mut ctx = create_test_context(
+        &failing_workspace,
+        &config,
+        &registry,
+        &logger,
+        &colors,
+        &mut timer,
+        &template_context,
+        executor.as_ref(),
+        executor.clone(),
+        repo_root.as_path(),
+        &run_log_context,
+    );
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let result = handler
+        .ensure_gitignore_entries(&mut ctx)
+        .expect("handler should succeed even on write failure");
+
+    // Verify event - should have empty entries_added because write failed
+    match result.event {
+        crate::reducer::event::PipelineEvent::Planning(
+            PlanningEvent::GitignoreEntriesEnsured {
+                entries_added,
+                already_present,
+                file_created,
+            },
+        ) => {
+            // Write failed, so no entries were added
+            assert!(
+                entries_added.is_empty(),
+                "entries_added should be empty when write fails"
+            );
+            // Already present list should be empty (no file existed)
+            assert!(already_present.is_empty());
+            // file_created should be true (file didn't exist before, even though write failed)
+            assert!(file_created);
+        }
+        _ => panic!("Expected GitignoreEntriesEnsured event"),
+    }
+
+    // Verify file was NOT created (write failed)
+    assert!(!workspace.exists(std::path::Path::new(".gitignore")));
+}
