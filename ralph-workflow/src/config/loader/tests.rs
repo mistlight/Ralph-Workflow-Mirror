@@ -234,6 +234,7 @@ fn test_load_config_returns_defaults_without_file() {
 }
 
 #[test]
+#[serial]
 fn test_load_config_with_local_override() {
     let global_toml = r#"
 [general]

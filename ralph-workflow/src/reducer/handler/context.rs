@@ -156,6 +156,9 @@ impl MainEffectHandler {
         let gitignore_path = Path::new(".gitignore");
         let required_entries = vec!["/PROMPT*", ".agent/"];
 
+        // Capture file_created status BEFORE any file operations to avoid race condition
+        let file_created = !ctx.workspace.exists(gitignore_path);
+
         // Read existing .gitignore content (or empty string if doesn't exist)
         let existing_content = if ctx.workspace.exists(gitignore_path) {
             ctx.workspace
@@ -164,8 +167,6 @@ impl MainEffectHandler {
         } else {
             String::new()
         };
-
-        let file_created = !ctx.workspace.exists(gitignore_path);
 
         // Check which entries are missing
         let mut entries_added = Vec::new();
