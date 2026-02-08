@@ -86,6 +86,7 @@ fn handle_smart_init_at_paths_with_env<R: ConfigEnvironment>(
 }
 
 /// Handle --init when both config and PROMPT.md exist.
+#[allow(dead_code)] // Used via include!() in parent module
 fn handle_init_both_exist(
     config_path: &std::path::Path,
     prompt_path: &Path,
