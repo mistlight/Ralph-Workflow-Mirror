@@ -4,11 +4,16 @@
 //! while maintaining the non-terminating pipeline guarantee. All errors are routed
 //! through the reducer state machine to ensure proper remediation flow.
 
+use super::trace::{dump_event_loop_trace, EventTraceBuffer};
+use super::StatefulHandler;
+use crate::logging::EventLoopLogger;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::{Effect, EffectResult};
-use crate::reducer::EffectHandler;
+use crate::reducer::event::PipelineEvent;
 use crate::reducer::PipelineState;
+use crate::reducer::{reduce, EffectHandler};
 use std::path::Path;
+use std::time::Instant;
 
 /// Extract ErrorEvent from anyhow::Error if present.
 ///
@@ -124,4 +129,164 @@ pub(super) fn write_completion_marker_on_error(
             false
         }
     }
+}
+
+/// Context for error recovery operations in the event loop.
+///
+/// Groups related parameters needed for error handling to avoid
+/// excessive function parameters.
+pub(super) struct ErrorRecoveryContext<'a, 'b, H>
+where
+    H: StatefulHandler,
+{
+    pub(super) ctx: &'a mut PhaseContext<'b>,
+    pub(super) trace: &'a EventTraceBuffer,
+    pub(super) state: &'a PipelineState,
+    pub(super) effect_str: &'a str,
+    pub(super) start_time: Instant,
+    pub(super) handler: &'a mut H,
+    pub(super) event_loop_logger: &'a mut EventLoopLogger,
+}
+
+/// Handle an unrecoverable error from the effect handler.
+///
+/// Routes the error through the reducer as a HandlerError event, transitioning
+/// to AwaitingDevFix phase. Dumps trace and writes completion marker as best-effort.
+pub(super) fn handle_unrecoverable_error<'ctx, H>(
+    recovery_ctx: &mut ErrorRecoveryContext<'_, '_, H>,
+    err: &anyhow::Error,
+) -> PipelineState
+where
+    H: EffectHandler<'ctx> + StatefulHandler,
+{
+    let ErrorRecoveryContext {
+        ctx,
+        trace,
+        state,
+        effect_str,
+        start_time,
+        handler,
+        event_loop_logger,
+    } = recovery_ctx;
+    let dumped = dump_event_loop_trace(ctx, trace, state, "unrecoverable_handler_error");
+    let marker_written = write_completion_marker_on_error(ctx, err);
+
+    if dumped {
+        let trace_path = ctx.run_log_context.event_loop_trace();
+        ctx.logger.error(&format!(
+            "Event loop encountered unrecoverable handler error (trace: {})",
+            trace_path.display()
+        ));
+    } else {
+        ctx.logger
+            .error("Event loop encountered unrecoverable handler error");
+    }
+    if marker_written {
+        ctx.logger
+            .info("Completion marker written for unrecoverable handler error");
+    }
+
+    // Emit a reducer-visible error that transitions us into AwaitingDevFix.
+    let failure_event =
+        PipelineEvent::PromptInput(crate::reducer::event::PromptInputEvent::HandlerError {
+            phase: state.phase,
+            error: crate::reducer::event::ErrorEvent::WorkspaceWriteFailed {
+                path: "(unrecoverable_handler_error)".to_string(),
+                kind: crate::reducer::event::WorkspaceIoErrorKind::Other,
+            },
+        });
+
+    let event_str = format!("{:?}", failure_event);
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let new_state = reduce(state.clone(), failure_event);
+
+    // Log to event loop log (best-effort)
+    super::driver::log_effect_execution(
+        ctx,
+        event_loop_logger,
+        &new_state,
+        effect_str,
+        &event_str,
+        &[],
+        duration_ms,
+    );
+
+    handler.update_state(new_state.clone());
+    new_state
+}
+
+/// Handle a panic from the effect handler.
+///
+/// Routes the panic through the reducer as a HandlerError event, transitioning
+/// to AwaitingDevFix phase. Dumps trace and writes completion marker as best-effort.
+pub(super) fn handle_panic<'ctx, H>(
+    recovery_ctx: &mut ErrorRecoveryContext<'_, '_, H>,
+    events_processed: usize,
+) -> PipelineState
+where
+    H: EffectHandler<'ctx> + StatefulHandler,
+{
+    let ErrorRecoveryContext {
+        ctx,
+        trace,
+        state,
+        effect_str,
+        start_time,
+        handler,
+        event_loop_logger,
+    } = recovery_ctx;
+    let dumped = dump_event_loop_trace(ctx, trace, state, "panic");
+    if dumped {
+        let trace_path = ctx.run_log_context.event_loop_trace();
+        ctx.logger.error(&format!(
+            "Event loop recovered from panic (trace: {})",
+            trace_path.display()
+        ));
+    } else {
+        ctx.logger.error("Event loop recovered from panic");
+    }
+
+    // Best-effort completion marker for orchestration
+    if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+        ctx.logger.error(&format!(
+            "Failed to create completion marker directory: {err}"
+        ));
+    }
+    let marker_path = Path::new(".agent/tmp/completion_marker");
+    let content = format!(
+        "failure\nHandler panic in effect execution (phase={:?}, events_processed={})",
+        state.phase, events_processed
+    );
+    if let Err(err) = ctx.workspace.write(marker_path, &content) {
+        ctx.logger.error(&format!(
+            "Failed to write completion marker for handler panic: {err}"
+        ));
+    }
+
+    let failure_event =
+        PipelineEvent::PromptInput(crate::reducer::event::PromptInputEvent::HandlerError {
+            phase: state.phase,
+            error: crate::reducer::event::ErrorEvent::WorkspaceWriteFailed {
+                path: "(handler_panic)".to_string(),
+                kind: crate::reducer::event::WorkspaceIoErrorKind::Other,
+            },
+        });
+
+    let event_str = format!("{:?}", failure_event);
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let new_state = reduce(state.clone(), failure_event);
+
+    // Log to event loop log (best-effort)
+    super::driver::log_effect_execution(
+        ctx,
+        event_loop_logger,
+        &new_state,
+        effect_str,
+        &event_str,
+        &[],
+        duration_ms,
+    );
+
+    handler.update_state(new_state.clone());
+    new_state
 }

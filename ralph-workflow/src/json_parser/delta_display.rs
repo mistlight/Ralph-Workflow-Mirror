@@ -130,4 +130,6 @@ include!("delta_display/renderer.rs");
 include!("delta_display/formatter.rs");
 
 // Tests
-include!("delta_display/tests.rs");
+#[cfg(test)]
+#[path = "delta_display/tests/mod.rs"]
+mod tests;

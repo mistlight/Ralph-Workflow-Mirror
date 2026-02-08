@@ -42,6 +42,7 @@ mod config;
 mod core;
 mod driver;
 mod error_handling;
+mod iteration;
 mod recovery;
 mod trace;
 
