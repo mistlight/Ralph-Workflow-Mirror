@@ -59,4 +59,13 @@ pub enum LifecycleEvent {
     },
     /// Pipeline execution completed successfully.
     Completed,
+    /// Gitignore entries ensured in the repository.
+    GitignoreEntriesEnsured {
+        /// Entries that were added to .gitignore.
+        added: Vec<String>,
+        /// Entries that were already present.
+        existing: Vec<String>,
+        /// Whether .gitignore was created.
+        created: bool,
+    },
 }

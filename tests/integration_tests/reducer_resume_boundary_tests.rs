@@ -292,12 +292,6 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         // so the FIRST effect must be CleanupContinuationContext.
         // Verify both the flag and the effect to ensure complete correctness.
         assert!(
-<<<<<<< HEAD
-            matches!(next_effect, Effect::CleanupContinuationContext)
-                || matches!(next_effect, Effect::InitializeAgentChain { .. })
-                || matches!(next_effect, Effect::CheckCommitDiff),
-            "Should derive continuation/commit effect in CommitMessage phase. Got: {:?}",
-=======
             state.continuation.context_cleanup_pending,
             "After development success, context_cleanup_pending flag should be true. State: {:?}",
             state.continuation
@@ -305,7 +299,6 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         assert!(
             matches!(next_effect, Effect::CleanupContinuationContext),
             "After development success, first effect should be CleanupContinuationContext. Got: {:?}",
->>>>>>> main
             next_effect
         );
 

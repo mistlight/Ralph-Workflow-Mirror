@@ -192,17 +192,5 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                 }
             }
         }
-
-        PlanningEvent::GitignoreEntriesEnsured {
-            entries_added: _,
-            already_present: _,
-            file_created: _,
-        } => {
-            // Set flag to prevent re-running effect
-            PipelineState {
-                gitignore_entries_ensured: true,
-                ..state
-            }
-        }
     }
 }

@@ -11,5 +11,12 @@ pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent
             phase: crate::reducer::event::PipelinePhase::Complete,
             ..state
         },
+        LifecycleEvent::GitignoreEntriesEnsured { .. } => {
+            // Set flag to prevent re-running effect
+            PipelineState {
+                gitignore_entries_ensured: true,
+                ..state
+            }
+        }
     }
 }

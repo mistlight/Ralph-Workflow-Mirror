@@ -4,17 +4,8 @@
 //! into categories that determine retry vs fallback behavior.
 
 use crate::reducer::event::AgentErrorKind;
-use regex::Regex;
 use serde_json::Value;
 use std::io;
-use std::sync::LazyLock;
-
-/// Regex pattern for matching file extensions in error messages.
-/// Pattern: dot followed by 1-5 alphanumeric characters, then non-alphanumeric or end-of-string.
-static EXTENSION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\.[a-z0-9]{1,5}([^a-z0-9]|$)")
-        .expect("invalid extension regex pattern - this is a compile-time constant")
-});
 
 /// Classify agent error from exit code, stderr, and optional stdout content.
 ///

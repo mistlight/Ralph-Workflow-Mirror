@@ -4,6 +4,8 @@
 
 This document tracks major refactoring efforts to address technical debt across the Ralph Workflow codebase. Each refactoring iteration focused on improving code organization, maintainability, and adherence to architectural principles.
 
+**Current Status (as of Feb 8, 2026):** See `TECH_DEBT_COMPLETION_STATUS.md` for the most up-to-date information on remaining work. This document provides historical context for refactoring decisions.
+
 ## Iteration 2 (February 2026): File Modularization
 
 ### Goals

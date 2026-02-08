@@ -75,6 +75,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
+            gitignore_entries_ensured: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
             metrics: {
                 let continuation = ContinuationState::new();

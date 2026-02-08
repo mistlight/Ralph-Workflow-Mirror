@@ -6,7 +6,7 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::PlanningEvent;
+use crate::reducer::event::LifecycleEvent;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
 use crate::workspace::{MemoryWorkspace, Workspace};
@@ -14,7 +14,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-fn create_test_context<'a>(
+/// Helper struct to group test context parameters
+struct TestContextParams<'a> {
     workspace: &'a dyn crate::workspace::Workspace,
     config: &'a Config,
     registry: &'a AgentRegistry,
@@ -26,25 +27,27 @@ fn create_test_context<'a>(
     executor_arc: Arc<dyn crate::executor::ProcessExecutor>,
     repo_root: &'a std::path::Path,
     run_log_context: &'a crate::logging::RunLogContext,
-) -> crate::phases::PhaseContext<'a> {
+}
+
+fn create_test_context<'a>(params: TestContextParams<'a>) -> crate::phases::PhaseContext<'a> {
     crate::phases::PhaseContext {
-        config,
-        registry,
-        logger,
-        colors,
-        timer,
+        config: params.config,
+        registry: params.registry,
+        logger: params.logger,
+        colors: params.colors,
+        timer: params.timer,
         developer_agent: "dev",
         reviewer_agent: "rev",
         review_guidelines: None,
-        template_context,
+        template_context: params.template_context,
         run_context: RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: HashMap::new(),
-        executor,
-        executor_arc,
-        repo_root,
-        workspace,
-        run_log_context,
+        executor: params.executor,
+        executor_arc: params.executor_arc,
+        repo_root: params.repo_root,
+        workspace: params.workspace,
+        run_log_context: params.run_log_context,
     }
 }
 
@@ -62,19 +65,19 @@ fn test_ensure_gitignore_creates_file_when_missing() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
-        &workspace,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &mut timer,
-        &template_context,
-        executor.as_ref(),
-        executor.clone(),
-        repo_root.as_path(),
-        &run_log_context,
-    );
+    let mut ctx = create_test_context(TestContextParams {
+        workspace: &workspace,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        template_context: &template_context,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        run_log_context: &run_log_context,
+    });
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -83,18 +86,18 @@ fn test_ensure_gitignore_creates_file_when_missing() {
 
     // Verify event
     match result.event {
-        crate::reducer::event::PipelineEvent::Planning(
-            PlanningEvent::GitignoreEntriesEnsured {
-                entries_added,
-                already_present,
-                file_created,
+        crate::reducer::event::PipelineEvent::Lifecycle(
+            LifecycleEvent::GitignoreEntriesEnsured {
+                added,
+                existing,
+                created,
             },
         ) => {
-            assert_eq!(entries_added.len(), 2);
-            assert!(entries_added.contains(&"/PROMPT*".to_string()));
-            assert!(entries_added.contains(&".agent/".to_string()));
-            assert!(already_present.is_empty());
-            assert!(file_created);
+            assert_eq!(added.len(), 2);
+            assert!(added.contains(&"/PROMPT*".to_string()));
+            assert!(added.contains(&".agent/".to_string()));
+            assert!(existing.is_empty());
+            assert!(created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
@@ -121,19 +124,19 @@ fn test_ensure_gitignore_appends_when_file_exists() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
-        &workspace,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &mut timer,
-        &template_context,
-        executor.as_ref(),
-        executor.clone(),
-        repo_root.as_path(),
-        &run_log_context,
-    );
+    let mut ctx = create_test_context(TestContextParams {
+        workspace: &workspace,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        template_context: &template_context,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        run_log_context: &run_log_context,
+    });
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -142,16 +145,16 @@ fn test_ensure_gitignore_appends_when_file_exists() {
 
     // Verify event
     match result.event {
-        crate::reducer::event::PipelineEvent::Planning(
-            PlanningEvent::GitignoreEntriesEnsured {
-                entries_added,
-                already_present,
-                file_created,
+        crate::reducer::event::PipelineEvent::Lifecycle(
+            LifecycleEvent::GitignoreEntriesEnsured {
+                added,
+                existing,
+                created,
             },
         ) => {
-            assert_eq!(entries_added.len(), 2);
-            assert!(already_present.is_empty());
-            assert!(!file_created);
+            assert_eq!(added.len(), 2);
+            assert!(existing.is_empty());
+            assert!(!created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
@@ -179,19 +182,19 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
-        &workspace,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &mut timer,
-        &template_context,
-        executor.as_ref(),
-        executor.clone(),
-        repo_root.as_path(),
-        &run_log_context,
-    );
+    let mut ctx = create_test_context(TestContextParams {
+        workspace: &workspace,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        template_context: &template_context,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        run_log_context: &run_log_context,
+    });
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -200,16 +203,16 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
 
     // Verify event
     match result.event {
-        crate::reducer::event::PipelineEvent::Planning(
-            PlanningEvent::GitignoreEntriesEnsured {
-                entries_added,
-                already_present,
-                file_created,
+        crate::reducer::event::PipelineEvent::Lifecycle(
+            LifecycleEvent::GitignoreEntriesEnsured {
+                added,
+                existing,
+                created,
             },
         ) => {
-            assert!(entries_added.is_empty());
-            assert_eq!(already_present.len(), 2);
-            assert!(!file_created);
+            assert!(added.is_empty());
+            assert_eq!(existing.len(), 2);
+            assert!(!created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
@@ -233,19 +236,19 @@ fn test_ensure_gitignore_partial_entries() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
-        &workspace,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &mut timer,
-        &template_context,
-        executor.as_ref(),
-        executor.clone(),
-        repo_root.as_path(),
-        &run_log_context,
-    );
+    let mut ctx = create_test_context(TestContextParams {
+        workspace: &workspace,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        template_context: &template_context,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        run_log_context: &run_log_context,
+    });
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -254,18 +257,18 @@ fn test_ensure_gitignore_partial_entries() {
 
     // Verify event
     match result.event {
-        crate::reducer::event::PipelineEvent::Planning(
-            PlanningEvent::GitignoreEntriesEnsured {
-                entries_added,
-                already_present,
-                file_created,
+        crate::reducer::event::PipelineEvent::Lifecycle(
+            LifecycleEvent::GitignoreEntriesEnsured {
+                added,
+                existing,
+                created,
             },
         ) => {
-            assert_eq!(entries_added.len(), 1);
-            assert!(entries_added.contains(&".agent/".to_string()));
-            assert_eq!(already_present.len(), 1);
-            assert!(already_present.contains(&"/PROMPT*".to_string()));
-            assert!(!file_created);
+            assert_eq!(added.len(), 1);
+            assert!(added.contains(&".agent/".to_string()));
+            assert_eq!(existing.len(), 1);
+            assert!(existing.contains(&"/PROMPT*".to_string()));
+            assert!(!created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
@@ -387,19 +390,19 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
-        &failing_workspace,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &mut timer,
-        &template_context,
-        executor.as_ref(),
-        executor.clone(),
-        repo_root.as_path(),
-        &run_log_context,
-    );
+    let mut ctx = create_test_context(TestContextParams {
+        workspace: &failing_workspace,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        template_context: &template_context,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        run_log_context: &run_log_context,
+    });
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -408,22 +411,22 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
 
     // Verify event - should have empty entries_added because write failed
     match result.event {
-        crate::reducer::event::PipelineEvent::Planning(
-            PlanningEvent::GitignoreEntriesEnsured {
-                entries_added,
-                already_present,
-                file_created,
+        crate::reducer::event::PipelineEvent::Lifecycle(
+            LifecycleEvent::GitignoreEntriesEnsured {
+                added,
+                existing,
+                created,
             },
         ) => {
             // Write failed, so no entries were added
             assert!(
-                entries_added.is_empty(),
+                added.is_empty(),
                 "entries_added should be empty when write fails"
             );
             // Already present list should still be correct (checked before write)
-            assert!(already_present.is_empty());
-            // file_created should be false (file existed before)
-            assert!(!file_created);
+            assert!(existing.is_empty());
+            // created should be false (file existed before)
+            assert!(!created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
@@ -451,19 +454,19 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
-        &failing_workspace,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &mut timer,
-        &template_context,
-        executor.as_ref(),
-        executor.clone(),
-        repo_root.as_path(),
-        &run_log_context,
-    );
+    let mut ctx = create_test_context(TestContextParams {
+        workspace: &failing_workspace,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        template_context: &template_context,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        run_log_context: &run_log_context,
+    });
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -472,22 +475,22 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
 
     // Verify event - should have empty entries_added because write failed
     match result.event {
-        crate::reducer::event::PipelineEvent::Planning(
-            PlanningEvent::GitignoreEntriesEnsured {
-                entries_added,
-                already_present,
-                file_created,
+        crate::reducer::event::PipelineEvent::Lifecycle(
+            LifecycleEvent::GitignoreEntriesEnsured {
+                added,
+                existing,
+                created,
             },
         ) => {
             // Write failed, so no entries were added
             assert!(
-                entries_added.is_empty(),
+                added.is_empty(),
                 "entries_added should be empty when write fails"
             );
             // Already present list should be empty (no file existed)
-            assert!(already_present.is_empty());
-            // file_created should be true (file didn't exist before, even though write failed)
-            assert!(file_created);
+            assert!(existing.is_empty());
+            // created should be true (file didn't exist before, even though write failed)
+            assert!(created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }

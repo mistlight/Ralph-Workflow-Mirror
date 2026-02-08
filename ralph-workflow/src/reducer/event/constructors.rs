@@ -29,10 +29,10 @@ impl PipelineEvent {
         already_present: Vec<String>,
         file_created: bool,
     ) -> Self {
-        Self::Planning(PlanningEvent::GitignoreEntriesEnsured {
-            entries_added,
-            already_present,
-            file_created,
+        Self::Lifecycle(LifecycleEvent::GitignoreEntriesEnsured {
+            added: entries_added,
+            existing: already_present,
+            created: file_created,
         })
     }
 }
