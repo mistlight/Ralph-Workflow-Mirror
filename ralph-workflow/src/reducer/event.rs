@@ -165,6 +165,19 @@ pub enum PlanningEvent {
         /// Current invalid output attempt number.
         attempt: u32,
     },
+
+    /// Gitignore entries ensured for agent artifacts.
+    ///
+    /// Emitted after Effect::EnsureGitignoreEntries completes.
+    /// Reports which entries were added vs already present.
+    GitignoreEntriesEnsured {
+        /// Entries that were added to .gitignore
+        entries_added: Vec<String>,
+        /// Entries that were already present
+        already_present: Vec<String>,
+        /// Whether .gitignore was created (didn't exist before)
+        file_created: bool,
+    },
 }
 
 /// Prompt input oversize detection and materialization events.

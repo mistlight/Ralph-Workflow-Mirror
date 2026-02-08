@@ -10,6 +10,7 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
     let pass = 0;
     let mut state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         iteration: pass,
         planning_prompt_prepared_iteration: Some(pass),

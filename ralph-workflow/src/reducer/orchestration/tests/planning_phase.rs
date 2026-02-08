@@ -21,7 +21,8 @@ fn test_determine_effect_planning_phase() {
 fn test_determine_effect_planning_with_agents() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
-        context_cleaned: true, // Context must be cleaned before planning
+        gitignore_entries_ensured: true, // Gitignore must be ensured before planning
+        context_cleaned: true,           // Context must be cleaned before planning
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -61,6 +62,7 @@ fn test_determine_effect_planning_role_mismatch_reinitializes_chain() {
 fn test_determine_effect_planning_rematerializes_when_consumer_signature_changes() {
     let mut state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         iteration: 2,
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
@@ -119,6 +121,7 @@ fn test_determine_effect_planning_rematerializes_when_consumer_signature_changes
 fn test_planning_phase_emits_single_task_effect() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         iteration: 0,
         total_iterations: 3,
@@ -152,6 +155,7 @@ fn test_planning_phase_uses_xsd_retry_prompt_when_pending() {
 
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         iteration: 1,
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(

@@ -21,6 +21,7 @@ fn test_planning_initializes_agent_chain_when_empty() {
 fn test_planning_prepares_prompt_when_agents_ready() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true, // Context must be cleaned before planning
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["claude".to_string()],
@@ -39,6 +40,7 @@ fn test_planning_role_mismatch_initializes_developer_chain() {
     // the developer chain so FallbackConfig.developer is honored.
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         agent_chain: crate::reducer::state::AgentChainState::initial().with_agents(
             vec!["commit-agent".to_string()],
@@ -61,6 +63,7 @@ fn test_planning_role_mismatch_initializes_developer_chain() {
 fn test_planning_prompt_uses_xsd_retry_mode_when_pending() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         iteration: 0,
         total_iterations: 1,
@@ -90,6 +93,7 @@ fn test_planning_prompt_uses_xsd_retry_mode_when_pending() {
 fn test_planning_emits_prepare_prompt_effect() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         iteration: 0,
         total_iterations: 5,
@@ -149,6 +153,7 @@ fn test_planning_markdown_written_invalidates_downstream_materialized_inputs() {
     let mut state = PipelineState {
         phase: PipelinePhase::Planning,
         iteration: 0,
+        gitignore_entries_ensured: true,
         context_cleaned: true,
         prompt_inputs: crate::reducer::state::PromptInputsState {
             development: Some(crate::reducer::state::MaterializedDevelopmentInputs {

@@ -70,6 +70,7 @@ fn create_resume_state(
         checkpoint_saved_count: 0,
         continuation: crate::reducer::state::ContinuationState::new(),
         dev_fix_triggered: false,
+        gitignore_entries_ensured: false,
         prompt_inputs: Default::default(),
         metrics: crate::reducer::state::RunMetrics {
             max_dev_iterations: total_iterations,

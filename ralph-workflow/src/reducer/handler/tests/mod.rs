@@ -10,6 +10,7 @@ mod development_outcome;
 mod development_prompt;
 mod extract_missing;
 mod fix_outcome;
+mod gitignore_handler;
 mod invoke_prompt;
 mod planning_markdown;
 mod planning_prompt;

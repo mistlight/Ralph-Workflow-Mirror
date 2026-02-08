@@ -285,6 +285,13 @@ pub struct PipelineState {
     #[serde(default)]
     pub dev_fix_triggered: bool,
 
+    /// Whether gitignore entries have been ensured for this pipeline run.
+    ///
+    /// Set to true after Effect::EnsureGitignoreEntries completes successfully.
+    /// This prevents re-running the effect on every orchestration cycle.
+    #[serde(default)]
+    pub gitignore_entries_ensured: bool,
+
     /// Canonical, reducer-visible prompt inputs after oversize materialization.
     ///
     /// This is the single source of truth for any inline-vs-reference and
@@ -388,6 +395,7 @@ impl PipelineState {
             checkpoint_saved_count: 0,
             continuation: continuation.clone(),
             dev_fix_triggered: false,
+            gitignore_entries_ensured: false,
             prompt_inputs: PromptInputsState::default(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
         }
@@ -522,6 +530,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
+            gitignore_entries_ensured: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
             metrics: {
                 let continuation = ContinuationState::new();

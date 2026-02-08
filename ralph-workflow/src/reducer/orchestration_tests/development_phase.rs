@@ -25,6 +25,16 @@ fn test_development_runs_exactly_n_iterations() {
         let effect = determine_next_effect(&state);
 
         match effect {
+            Effect::EnsureGitignoreEntries => {
+                state = reduce(
+                    state,
+                    PipelineEvent::gitignore_entries_ensured(
+                        vec!["/PROMPT*".to_string(), ".agent/".to_string()],
+                        vec![],
+                        false,
+                    ),
+                );
+            }
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
             }

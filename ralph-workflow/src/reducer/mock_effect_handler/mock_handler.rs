@@ -614,6 +614,15 @@ src/lib.rs</ralph-files-changed>
                 (checkpoint_saved, vec![])
             }
 
+            Effect::EnsureGitignoreEntries => (
+                PipelineEvent::gitignore_entries_ensured(
+                    vec!["/PROMPT*".to_string(), ".agent/".to_string()],
+                    vec![],
+                    false,
+                ),
+                vec![],
+            ),
+
             Effect::CleanupContext => (PipelineEvent::context_cleaned(), vec![]),
 
             Effect::RestorePromptPermissions => {

@@ -289,6 +289,8 @@ impl MainEffectHandler {
 
             Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
 
+            Effect::EnsureGitignoreEntries => self.ensure_gitignore_entries(ctx),
+
             Effect::CleanupContext => self.cleanup_context(ctx),
 
             Effect::RestorePromptPermissions => self.restore_prompt_permissions(ctx),

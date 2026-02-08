@@ -23,6 +23,11 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
+            // Ensure gitignore entries BEFORE cleaning up context
+            if !state.gitignore_entries_ensured {
+                return Effect::EnsureGitignoreEntries;
+            }
+
             // Clean up BEFORE planning to remove old PLAN.md from previous iteration
             if !state.context_cleaned {
                 return Effect::CleanupContext;

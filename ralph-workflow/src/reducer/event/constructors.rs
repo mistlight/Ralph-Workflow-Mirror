@@ -22,4 +22,17 @@ impl PipelineEvent {
             loop_count,
         }
     }
+
+    /// Create a GitignoreEntriesEnsured event.
+    pub fn gitignore_entries_ensured(
+        entries_added: Vec<String>,
+        already_present: Vec<String>,
+        file_created: bool,
+    ) -> Self {
+        Self::Planning(PlanningEvent::GitignoreEntriesEnsured {
+            entries_added,
+            already_present,
+            file_created,
+        })
+    }
 }

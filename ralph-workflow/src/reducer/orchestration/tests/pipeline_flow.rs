@@ -26,6 +26,16 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
         let effect = determine_next_effect(&state);
 
         match effect {
+            Effect::EnsureGitignoreEntries => {
+                state = reduce(
+                    state,
+                    PipelineEvent::gitignore_entries_ensured(
+                        vec!["/PROMPT*".to_string(), ".agent/".to_string()],
+                        vec![],
+                        false,
+                    ),
+                );
+            }
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
             }
