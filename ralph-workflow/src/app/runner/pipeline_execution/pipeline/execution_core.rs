@@ -1,0 +1,417 @@
+// Pipeline Event Loop Execution
+//
+// This module contains the core pipeline execution logic using the reducer-based event loop.
+//
+// Architecture:
+//
+// The pipeline follows the reducer pattern:
+// State → Orchestrator → Effect → Handler → Event → Reducer → State
+//
+// Execution Flow:
+//
+// 1. Resume Handling: Check for existing checkpoint and offer interactive resume
+// 2. State Initialization: Create or restore pipeline state from checkpoint
+// 3. Context Setup: Configure interrupt handlers, git helpers, monitoring
+// 4. Event Loop: Run the reducer event loop until completion
+// 5. Finalization: Write completion checkpoint, cleanup, restore PROMPT.md
+//
+// Checkpoint and Resume:
+//
+// - Fresh run: Creates new `RunContext` with UUID, initializes state
+// - Resume: Restores state from checkpoint, applies config overrides, restores env vars
+// - Completion: Saves final checkpoint with Complete phase for idempotent resume
+//
+// Event Loop Result Handling:
+//
+// The event loop returns `EventLoopResult`:
+// - `completed=true`: Normal completion (Complete or Interrupted phase)
+// - `completed=false`: Abnormal exit (bug in event loop or reducer)
+//
+// When `completed=false`, we write a defensive completion marker to ensure
+// external orchestrators can detect termination.
+
+/// Runs the pipeline with the default MainEffectHandler.
+///
+/// This is the production entry point - it creates a MainEffectHandler internally.
+///
+/// # Architecture
+///
+/// This function orchestrates the full pipeline execution:
+/// 1. Resume handling (interactive prompt or --resume flag)
+/// 2. State initialization (new or from checkpoint)
+/// 3. Context setup (git helpers, PROMPT.md monitoring, interrupt handlers)
+/// 4. Event loop execution via reducer pattern
+/// 5. Finalization (checkpoint save, cleanup)
+///
+/// # Resume Flow
+///
+/// Resume can happen two ways:
+/// - **Interactive**: If checkpoint exists without --resume, prompts user
+/// - **Automatic**: If --resume flag is set, loads checkpoint directly
+///
+/// Configuration and environment variables are restored from the checkpoint.
+///
+/// # State Initialization
+///
+/// State is initialized with config-derived limits:
+/// - `developer_iters`: Developer iteration budget
+/// - `reviewer_reviews`: Reviewer pass budget
+/// - `continuation_limits`: Per-phase continuation budgets
+///
+/// When resuming, progress is restored but budgets remain config-driven.
+///
+/// # Event Loop
+///
+/// The event loop runs until:
+/// - Pipeline reaches Complete phase
+/// - Pipeline is interrupted (Ctrl+C or non-terminating failure)
+/// - Event loop hits iteration limit (bug protection)
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Resume validation fails
+/// - State initialization fails
+/// - Event loop execution fails
+/// - Finalization operations fail
+pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
+    use crate::app::event_loop::EventLoopConfig;
+    use crate::reducer::MainEffectHandler;
+    use crate::reducer::PipelineState;
+
+    // First, offer interactive resume if checkpoint exists without --resume flag
+    let resume_result = offer_resume_if_checkpoint_exists(
+        &ctx.args,
+        &ctx.config,
+        &ctx.registry,
+        &ctx.logger,
+        &ctx.developer_agent,
+        &ctx.reviewer_agent,
+        &*ctx.workspace,
+    );
+
+    // If interactive resume didn't happen, check for --resume flag
+    let resume_result = match resume_result {
+        Some(result) => Some(result),
+        None => handle_resume_with_validation(
+            &ctx.args,
+            &ctx.config,
+            &ctx.registry,
+            &ctx.logger,
+            &ctx.developer_display,
+            &ctx.reviewer_display,
+            &*ctx.workspace,
+        )?,
+    };
+
+    let resume_checkpoint = resume_result.map(|r| r.checkpoint);
+
+    // Create run context - either new or from checkpoint
+    let run_context = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::RunContext;
+        RunContext::from_checkpoint(checkpoint)
+    } else {
+        use crate::checkpoint::RunContext;
+        RunContext::new()
+    };
+
+    // Apply checkpoint configuration restoration if resuming
+    let config = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::apply_checkpoint_to_config;
+        let mut restored_config = ctx.config.clone();
+        apply_checkpoint_to_config(&mut restored_config, checkpoint);
+        ctx.logger.info("Restored configuration from checkpoint:");
+        if checkpoint.cli_args.developer_iters > 0 {
+            ctx.logger.info(&format!(
+                "  Developer iterations: {} (from checkpoint)",
+                checkpoint.cli_args.developer_iters
+            ));
+        }
+        if checkpoint.cli_args.reviewer_reviews > 0 {
+            ctx.logger.info(&format!(
+                "  Reviewer passes: {} (from checkpoint)",
+                checkpoint.cli_args.reviewer_reviews
+            ));
+        }
+        restored_config
+    } else {
+        ctx.config.clone()
+    };
+
+    // Restore environment variables from checkpoint if resuming
+    if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::restore::restore_environment_from_checkpoint;
+        let restored_count = restore_environment_from_checkpoint(checkpoint);
+        if restored_count > 0 {
+            ctx.logger.info(&format!(
+                "  Restored {} environment variable(s) from checkpoint",
+                restored_count
+            ));
+        }
+    }
+
+    // Set up git helpers and agent phase
+    // Use workspace-aware marker operations; then attempt hook install / wrapper.
+    // This is best-effort: failures must not terminate the pipeline.
+    let mut git_helpers = crate::git_helpers::GitHelpers::new();
+
+    // Marker cleanup/creation are filesystem concerns; use Workspace so tests can run
+    // with MemoryWorkspace, and production stays consistent.
+    if let Err(err) =
+        crate::git_helpers::cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)
+    {
+        ctx.logger
+            .warn(&format!("Failed to cleanup orphaned marker: {err}"));
+    }
+    if let Err(err) = crate::git_helpers::create_marker_with_workspace(&*ctx.workspace) {
+        ctx.logger
+            .warn(&format!("Failed to create agent phase marker: {err}"));
+    }
+
+    // Hook install / wrapper require a real repo; treat as best-effort.
+    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker(&ctx.logger) {
+        ctx.logger.warn(&format!(
+            "Failed to cleanup orphaned marker via git helpers: {err}"
+        ));
+    }
+    if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
+        ctx.logger
+            .warn(&format!("Failed to start agent phase: {err}"));
+    }
+
+    let mut agent_phase_guard =
+        AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
+
+    // Print welcome banner and validate PROMPT.md
+    print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
+    print_pipeline_info_with_config(ctx, &config);
+    validate_prompt_and_setup_backup(ctx)?;
+
+    // Set up PROMPT.md monitoring
+    let mut prompt_monitor = setup_prompt_monitor(ctx);
+
+    // Detect project stack and review guidelines
+    let (_project_stack, review_guidelines) =
+        detect_project_stack(&config, &ctx.repo_root, &ctx.logger, ctx.colors);
+
+    print_review_guidelines(ctx, review_guidelines.as_ref());
+    println!();
+
+    // Create phase context and save starting commit
+    let mut timer = Timer::new();
+    let mut phase_ctx = create_phase_context_with_config(
+        ctx,
+        &config,
+        &mut timer,
+        review_guidelines.as_ref(),
+        &run_context,
+        resume_checkpoint.as_ref(),
+    );
+    save_start_commit_or_warn(ctx);
+
+    // Set up interrupt context for checkpoint saving on Ctrl+C
+    // This must be done after phase_ctx is created
+    let initial_phase = if let Some(ref checkpoint) = resume_checkpoint {
+        checkpoint.phase
+    } else {
+        PipelinePhase::Planning
+    };
+    setup_interrupt_context_for_pipeline(
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &phase_ctx.execution_history,
+        &phase_ctx.prompt_history,
+        &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
+
+    // Ensure interrupt context is cleared on completion
+    let _interrupt_guard = defer_clear_interrupt_context();
+
+    // Determine if we should run rebase based on current args only.
+    let should_run_rebase = ctx.args.rebase_flags.with_rebase;
+
+    // Update interrupt context before entering the reducer event loop.
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
+
+    // ============================================
+    // RUN PIPELINE PHASES VIA REDUCER EVENT LOOP
+    // ============================================
+
+    // Initialize pipeline state
+    let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+        // Restore progress from checkpoint, but keep budgets/limits config-driven.
+        // Initialize a config-aware base state first, then overlay checkpoint progress.
+        let mut base_state = crate::app::event_loop::create_initial_state_with_config(&phase_ctx);
+        let migrated: PipelineState = checkpoint.clone().into();
+
+        base_state.phase = migrated.phase;
+        base_state.iteration = migrated.iteration;
+        base_state.total_iterations = migrated.total_iterations;
+        base_state.reviewer_pass = migrated.reviewer_pass;
+        base_state.total_reviewer_passes = migrated.total_reviewer_passes;
+        base_state.rebase = migrated.rebase;
+        base_state.execution_history = migrated.execution_history;
+        base_state.prompt_inputs = migrated.prompt_inputs;
+        base_state.metrics = migrated.metrics;
+
+        base_state
+    } else {
+        // Create new initial state with config-derived continuation limits.
+        crate::app::event_loop::create_initial_state_with_config(&phase_ctx)
+    };
+
+    if should_run_rebase {
+        if matches!(
+            initial_state.rebase,
+            crate::reducer::state::RebaseState::NotStarted
+        ) {
+            let default_branch =
+                crate::git_helpers::get_default_branch().unwrap_or_else(|_| "main".to_string());
+            initial_state.rebase = crate::reducer::state::RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: default_branch,
+            };
+        }
+    } else if matches!(
+        initial_state.rebase,
+        crate::reducer::state::RebaseState::NotStarted
+    ) {
+        initial_state.rebase = crate::reducer::state::RebaseState::Skipped;
+    }
+
+    // Configure event loop
+    let event_loop_config = EventLoopConfig {
+        max_iterations: event_loop::MAX_EVENT_LOOP_ITERATIONS,
+    };
+
+    // Clone execution_history and prompt_history BEFORE running event loop (to avoid borrow issues)
+    let execution_history_before = phase_ctx.execution_history.clone();
+    let prompt_history_before = phase_ctx.clone_prompt_history();
+
+    // Create effect handler and run event loop.
+    let loop_result = {
+        use crate::app::event_loop::run_event_loop_with_handler;
+        let mut handler = MainEffectHandler::new(initial_state.clone());
+        let phase_ctx_ref = &mut phase_ctx;
+        run_event_loop_with_handler(
+            phase_ctx_ref,
+            Some(initial_state),
+            event_loop_config,
+            &mut handler,
+        )
+    };
+
+    // Handle event loop result
+    let loop_result = loop_result?;
+    if loop_result.completed {
+        match loop_result.final_phase {
+            crate::reducer::event::PipelinePhase::Complete => {
+                ctx.logger
+                    .success("Pipeline completed successfully via reducer event loop");
+            }
+            crate::reducer::event::PipelinePhase::Interrupted => {
+                ctx.logger
+                    .info("Pipeline completed with Interrupted phase (failure handled)");
+                ctx.logger.info(
+                    "Completion marker was written during failure handling. \
+                     External orchestration can detect termination via .agent/tmp/completion_marker"
+                );
+            }
+            _ => {
+                ctx.logger
+                    .success("Pipeline completed via reducer event loop");
+            }
+        }
+        ctx.logger.info(&format!(
+            "Total events processed: {}",
+            loop_result.events_processed
+        ));
+    } else {
+        ctx.logger
+            .error("⚠️  EXCEPTIONAL: Pipeline exited without normal completion");
+        ctx.logger.warn(&format!(
+            "This indicates a bug in the event loop or reducer. \
+             Expected final phase: Complete or Interrupted+checkpoint. \
+             Actual: completed=false, final_phase={:?}, events_processed={}",
+            loop_result.final_phase, loop_result.events_processed
+        ));
+
+        // If we exited from AwaitingDevFix without completing, this is the specific bug
+        // we're trying to fix - log it explicitly with state details
+        if matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::AwaitingDevFix
+        ) {
+            ctx.logger.error(
+                "BUG DETECTED: Event loop exited from AwaitingDevFix without completing dev-fix flow. \
+                 This should transition to Interrupted and save checkpoint. \
+                 Check: Was TriggerDevFixFlow executed? Was completion marker written? \
+                 See .agent/tmp/event_loop_trace.jsonl for execution trace."
+            );
+        }
+
+        // DEFENSIVE: Emit completion marker for orchestration
+        // This ensures external systems can detect termination even if the
+        // event loop exited unexpectedly before SaveCheckpoint was processed.
+        write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
+    }
+
+    // Save Complete checkpoint before clearing (for idempotent resume)
+    if config.features.checkpoint_enabled
+        && should_write_complete_checkpoint(loop_result.final_phase)
+    {
+        let builder = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::Complete,
+                config.developer_iters,
+                config.developer_iters,
+            )
+            .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
+            .capture_from_context(
+                &config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+                &run_context,
+            )
+            .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
+
+        let builder = builder
+            .with_execution_history(execution_history_before)
+            .with_prompt_history(prompt_history_before)
+            .with_log_run_id(ctx.run_log_context.run_id().to_string());
+
+        if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
+            let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+        }
+    }
+
+    // Post-pipeline operations
+    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
+    update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;
+
+    // Commit phase
+    finalize_pipeline(
+        &mut agent_phase_guard,
+        crate::app::finalization::FinalizeContext {
+            logger: &ctx.logger,
+            colors: ctx.colors,
+            config: &config,
+            timer: &timer,
+            workspace: &*ctx.workspace,
+        },
+        &loop_result.final_state,
+        prompt_monitor,
+    );
+    Ok(())
+}

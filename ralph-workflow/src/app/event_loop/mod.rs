@@ -34,11 +34,15 @@
 //! - `config` - Event loop configuration and initialization
 //! - `trace` - Event trace buffer and diagnostics
 //! - `error_handling` - Panic recovery and error extraction
-//! - `core` - Main orchestrate-handle-reduce cycle
+//! - `driver` - Main iteration loop implementing orchestrate→handle→reduce cycle
+//! - `recovery` - Defensive completion and max iterations handling
+//! - `core` - Public API and convenience functions
 
 mod config;
 mod core;
+mod driver;
 mod error_handling;
+mod recovery;
 mod trace;
 
 // Re-export public API

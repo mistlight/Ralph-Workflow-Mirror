@@ -1,6 +1,24 @@
-// Virtual terminal implementation.
+// Virtual terminal implementation for simulating real terminal behavior in tests.
 //
-// Contains VirtualTerminal for simulating real terminal behavior in tests.
+// This module provides VirtualTerminal, a test utility that accurately simulates
+// terminal rendering behavior including cursor movement, ANSI escape sequences,
+// line wrapping, and scrolling.
+//
+// Architecture:
+//
+// - **State management** (state module) - Terminal buffer, cursor positioning, text writing
+// - **ANSI processing** (ansi module) - Parsing and interpreting ANSI escape sequences
+// - **Helper functions** (helpers module) - Utilities for ANSI stripping and carriage return handling
+
+#[cfg(any(test, feature = "test-utils"))]
+mod ansi;
+#[cfg(any(test, feature = "test-utils"))]
+mod helpers;
+#[cfg(any(test, feature = "test-utils"))]
+mod state;
+
+#[cfg(any(test, feature = "test-utils"))]
+use helpers::{apply_cr_overwrite_semantics, strip_ansi_sequences};
 
 /// A virtual terminal that simulates real terminal behavior for testing.
 ///
@@ -28,43 +46,25 @@
 /// - **Scrolling**: When cursor advances past `rows`, the screen scrolls up
 ///   (top row is discarded, new blank row added at bottom)
 /// - **No reflow**: Resizing is not supported; geometry is fixed at creation
-///
-/// # Example
-///
-/// ```ignore
-/// use ralph_workflow::json_parser::printer::VirtualTerminal;
-/// use std::io::Write;
-///
-/// // Create a terminal with 80 columns and 24 rows
-/// let mut term = VirtualTerminal::new_with_geometry(80, 24);
-/// write!(term, "A".repeat(100)).unwrap();  // Wraps to multiple rows
-/// assert!(term.count_visible_lines() > 1);
-///
-/// // Traditional infinite-width terminal (backward compatible)
-/// let mut term = VirtualTerminal::new();
-/// write!(term, "Hello").unwrap();
-/// write!(term, "\rWorld").unwrap();  // Overwrites "Hello"
-/// assert_eq!(term.get_visible_output(), "World");
-/// ```
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
 pub struct VirtualTerminal {
     /// The terminal screen buffer - each element is a line (row)
     /// In geometry mode, this is a fixed-size circular buffer (scrolling)
     /// In unbounded mode, this grows indefinitely
-    screen: RefCell<Vec<String>>,
+    pub(self) screen: RefCell<Vec<String>>,
     /// Current cursor row (0-indexed, relative to screen buffer)
-    cursor_row: RefCell<usize>,
+    pub(self) cursor_row: RefCell<usize>,
     /// Current cursor column (0-indexed)
-    cursor_col: RefCell<usize>,
+    pub(self) cursor_col: RefCell<usize>,
     /// Whether to simulate terminal mode (affects is_terminal())
-    simulated_is_terminal: bool,
+    pub(self) simulated_is_terminal: bool,
     /// Raw write history for debugging
-    write_history: RefCell<Vec<String>>,
+    pub(self) write_history: RefCell<Vec<String>>,
     /// Terminal width in columns (None = unbounded, for backward compatibility)
-    cols: Option<usize>,
+    pub(self) cols: Option<usize>,
     /// Terminal height in rows (None = unbounded, for backward compatibility)
-    rows: Option<usize>,
+    pub(self) rows: Option<usize>,
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -189,218 +189,6 @@ impl VirtualTerminal {
         *self.cursor_row.borrow_mut() = 0;
         *self.cursor_col.borrow_mut() = 0;
         self.write_history.borrow_mut().clear();
-    }
-
-    /// Ensure the current row exists in the buffer.
-    ///
-    /// In geometry mode, this may trigger scrolling if cursor is past the bottom.
-    /// In unbounded mode, this grows the buffer as needed.
-    fn ensure_row_exists(&self) {
-        let row = *self.cursor_row.borrow();
-        let mut screen = self.screen.borrow_mut();
-
-        // In geometry mode, check if we need to scroll
-        if let Some(max_rows) = self.rows {
-            if row >= max_rows {
-                // Scroll: remove top row, add blank row at bottom
-                screen.remove(0);
-                screen.push(String::new());
-                // Cursor stays at bottom row (last row index)
-                *self.cursor_row.borrow_mut() = max_rows - 1;
-                return;
-            }
-        }
-
-        // Ensure row exists (grow buffer if needed)
-        while screen.len() <= row {
-            screen.push(String::new());
-        }
-    }
-
-    /// Write a string of regular characters at the current cursor position.
-    ///
-    /// In geometry mode, this handles automatic wrapping when writing past terminal width.
-    /// In unbounded mode, the line grows indefinitely.
-    fn write_str(&self, s: &str) {
-        if s.is_empty() {
-            return;
-        }
-
-        // Handle wrapping character by character in geometry mode
-        if self.cols.is_some() {
-            for ch in s.chars() {
-                self.write_char_with_wrap(ch);
-            }
-        } else {
-            // Unbounded mode: write entire string without wrapping
-            self.write_str_unbounded(s);
-        }
-    }
-
-    /// Write a single character with automatic wrapping (geometry mode).
-    fn write_char_with_wrap(&self, ch: char) {
-        self.ensure_row_exists();
-        let mut row = *self.cursor_row.borrow();
-        let mut col = *self.cursor_col.borrow();
-
-        // Check if we need to wrap to next line
-        if let Some(max_cols) = self.cols {
-            if col >= max_cols {
-                // Wrap to next row, column 0
-                *self.cursor_row.borrow_mut() = row + 1;
-                *self.cursor_col.borrow_mut() = 0;
-                self.ensure_row_exists(); // May trigger scrolling
-                row = *self.cursor_row.borrow();
-                col = 0;
-            }
-        }
-
-        let mut screen = self.screen.borrow_mut();
-        let line = &mut screen[row];
-
-        // Extend the line with spaces if needed
-        while line.chars().count() < col {
-            line.push(' ');
-        }
-
-        // Build new line: prefix + new char + suffix
-        let prefix: String = line.chars().take(col).collect();
-        let suffix: String = line.chars().skip(col + 1).collect();
-        *line = format!("{}{}{}", prefix, ch, suffix);
-
-        // Move cursor right
-        *self.cursor_col.borrow_mut() = col + 1;
-    }
-
-    /// Write a string without wrapping (unbounded mode, backward compatible).
-    fn write_str_unbounded(&self, s: &str) {
-        self.ensure_row_exists();
-        let row = *self.cursor_row.borrow();
-        let col = *self.cursor_col.borrow();
-        let mut screen = self.screen.borrow_mut();
-        let line = &mut screen[row];
-
-        // Extend the line with spaces if needed
-        while line.chars().count() < col {
-            line.push(' ');
-        }
-
-        // Build new line: prefix + new content + suffix
-        let prefix: String = line.chars().take(col).collect();
-        let suffix: String = line.chars().skip(col + s.chars().count()).collect();
-        *line = format!("{}{}{}", prefix, s, suffix);
-
-        // Move cursor right
-        *self.cursor_col.borrow_mut() = col + s.chars().count();
-    }
-
-    /// Clear the current line.
-    ///
-    /// This clears ONLY the current row where the cursor is positioned.
-    /// If content has wrapped to multiple rows, this only clears the cursor's row.
-    /// This behavior matches real terminal `\x1b[2K` (erase line).
-    fn clear_line(&self) {
-        self.ensure_row_exists();
-        let row = *self.cursor_row.borrow();
-        let mut screen = self.screen.borrow_mut();
-        screen[row].clear();
-        // Note: cursor position is NOT changed by clear line
-    }
-
-    /// Move cursor up n rows.
-    fn cursor_up(&self, n: usize) {
-        let mut row = self.cursor_row.borrow_mut();
-        *row = row.saturating_sub(n);
-    }
-
-    /// Move cursor down n rows.
-    fn cursor_down(&self, n: usize) {
-        *self.cursor_row.borrow_mut() += n;
-        self.ensure_row_exists();
-    }
-
-    /// Process a string, interpreting control characters and ANSI sequences.
-    fn process_string(&self, s: &str) {
-        let mut chars = s.chars().peekable();
-        let mut text_buffer = String::new();
-
-        // Flush accumulated text to the terminal
-        let flush_text = |term: &Self, buf: &mut String| {
-            if !buf.is_empty() {
-                term.write_str(buf);
-                buf.clear();
-            }
-        };
-
-        while let Some(c) = chars.next() {
-            match c {
-                '\r' => {
-                    flush_text(self, &mut text_buffer);
-                    // Carriage return: move to column 0
-                    *self.cursor_col.borrow_mut() = 0;
-                }
-                '\n' => {
-                    flush_text(self, &mut text_buffer);
-                    // Newline: move to next row, column 0
-                    *self.cursor_row.borrow_mut() += 1;
-                    *self.cursor_col.borrow_mut() = 0;
-                    self.ensure_row_exists();
-                }
-                '\x1b' => {
-                    flush_text(self, &mut text_buffer);
-                    // ANSI escape sequence
-                    if chars.peek() == Some(&'[') {
-                        chars.next(); // consume '['
-
-                        // Parse the numeric parameter (if any)
-                        let mut param = String::new();
-                        while let Some(&c) = chars.peek() {
-                            if c.is_ascii_digit() {
-                                param.push(c);
-                                chars.next();
-                            } else {
-                                break;
-                            }
-                        }
-
-                        // Get the command character
-                        if let Some(cmd) = chars.next() {
-                            let n: usize = param.parse().unwrap_or(1);
-                            match cmd {
-                                'A' => self.cursor_up(n),   // Cursor up
-                                'B' => self.cursor_down(n), // Cursor down
-                                'K' => {
-                                    // Erase in line
-                                    // \x1b[K or \x1b[0K - erase from cursor to end
-                                    // \x1b[1K - erase from start to cursor
-                                    // \x1b[2K - erase entire line
-                                    let mode: usize = param.parse().unwrap_or(0);
-                                    if mode == 2 {
-                                        self.clear_line();
-                                    }
-                                    // For now, we only implement mode 2 (full line clear)
-                                    // which is what the streaming code uses
-                                }
-                                'm' => {
-                                    // SGR (Select Graphic Rendition) - colors/styles
-                                    // We ignore these as they don't affect text content
-                                }
-                                _ => {
-                                    // Unknown command, ignore
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    // Regular character: buffer it for batch writing
-                    text_buffer.push(c);
-                }
-            }
-        }
-
-        // Flush any remaining text
-        flush_text(self, &mut text_buffer);
     }
 
     /// Check for duplicate visible lines (useful for detecting rendering bugs).
@@ -572,77 +360,6 @@ impl VirtualTerminal {
         let prefix_lines: Vec<_> = lines.iter().filter(|l| l.contains(prefix)).collect();
         prefix_lines.len() > 1
     }
-}
-
-/// Strip ANSI escape sequences from a string.
-///
-/// This is a simplified implementation that removes common ANSI sequences
-/// used in terminal output (SGR codes for colors/styles, cursor movement).
-///
-/// # Arguments
-///
-/// * `s` - The string to strip ANSI sequences from
-///
-/// # Returns
-///
-/// The string with ANSI sequences removed
-#[cfg(any(test, feature = "test-utils"))]
-fn strip_ansi_sequences(s: &str) -> String {
-    // Simple regex-free implementation: skip \x1b[...m and \x1b[...A/B/K sequences
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next(); // consume '['
-                          // Skip until we find a letter (command char)
-            while let Some(&next_char) = chars.peek() {
-                chars.next();
-                if next_char.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-fn apply_cr_overwrite_semantics(s: &str) -> String {
-    // Simulate a log console that does NOT interpret ANSI escape codes, but DOES treat
-    // carriage return as "return to start of current line" (common for progress output).
-    //
-    // Approach: process character-by-character, maintaining a current line buffer and
-    // cursor position. `\n` commits the line, `\r` sets cursor to 0.
-    let mut out = String::new();
-    let mut line: Vec<char> = Vec::new();
-    let mut col: usize = 0;
-
-    for ch in s.chars() {
-        match ch {
-            '\n' => {
-                out.extend(line.iter());
-                out.push('\n');
-                line.clear();
-                col = 0;
-            }
-            '\r' => {
-                col = 0;
-            }
-            _ => {
-                if col >= line.len() {
-                    line.resize(col + 1, ' ');
-                }
-                line[col] = ch;
-                col += 1;
-            }
-        }
-    }
-
-    out.extend(line.iter());
-    out
 }
 
 #[cfg(any(test, feature = "test-utils"))]

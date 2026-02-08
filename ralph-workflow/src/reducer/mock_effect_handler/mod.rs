@@ -75,9 +75,9 @@
 #![cfg(any(test, feature = "test-utils"))]
 
 use super::effect::{Effect, EffectHandler, EffectResult};
-use super::event::{PipelineEvent, PipelinePhase};
+use super::event::PipelineEvent;
 use super::state::PipelineState;
-use super::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
+use super::ui_event::UIEvent;
 use crate::phases::PhaseContext;
 use anyhow::Result;
 use std::cell::RefCell;
