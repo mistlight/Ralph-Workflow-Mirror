@@ -113,7 +113,7 @@ mod agent;
 mod awaiting_dev_fix;
 #[path = "state_reduction/commit.rs"]
 mod commit;
-#[path = "state_reduction/development.rs"]
+#[path = "state_reduction/development/mod.rs"]
 mod development;
 #[path = "state_reduction/error.rs"]
 mod error;
@@ -125,7 +125,7 @@ mod planning;
 mod prompt_input;
 #[path = "state_reduction/rebase.rs"]
 mod rebase;
-#[path = "state_reduction/review.rs"]
+#[path = "state_reduction/review/mod.rs"]
 mod review;
 
 #[cfg(test)]

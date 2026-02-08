@@ -1,0 +1,176 @@
+//! Development phase orchestration.
+//!
+//! Pure orchestration: State → Effect, no I/O.
+//!
+//! Development phase workflow:
+//! 1. Write continuation context (if pending from previous attempt)
+//! 2. Initialize agent chain (Developer role)
+//! 3. For each iteration (up to total_iterations):
+//!    a. Prepare development context
+//!    b. Materialize development inputs (prompt + plan)
+//!    c. Prepare development prompt (Normal or Continuation mode)
+//!    d. Cleanup development XML
+//!    e. Invoke development agent
+//!    f. Initialize Analysis agent chain
+//!    g. Invoke analysis agent (verifies git diff vs PLAN.md)
+//!    h. Extract development XML
+//!    i. Validate development XML
+//!    j. Archive development XML
+//!    k. Apply development outcome
+//! 4. Save checkpoint (transition to Review)
+//!
+//! Iteration boundary handling:
+//! - At iteration == total_iterations, still process the current iteration
+//! - On resume, progress flags are reset (pipeline.rs:453-532)
+//! - Only skip to SaveCheckpoint when:
+//!   - iteration > total_iterations (abnormal: exceeds configured iterations)
+//!   - total_iterations == 0 (no iterations configured)
+
+use crate::agents::AgentRole;
+use crate::reducer::effect::{ContinuationContextData, Effect};
+use crate::reducer::event::CheckpointTrigger;
+use crate::reducer::state::{DevelopmentStatus, PipelineState, PromptMode};
+
+pub(super) fn determine_development_effect(state: &PipelineState) -> Effect {
+    if state.continuation.context_write_pending {
+        let status = state
+            .continuation
+            .previous_status
+            .clone()
+            .unwrap_or(DevelopmentStatus::Failed);
+        let summary = state
+            .continuation
+            .previous_summary
+            .clone()
+            .unwrap_or_default();
+        let files_changed = state.continuation.previous_files_changed.clone();
+        let next_steps = state.continuation.previous_next_steps.clone();
+
+        return Effect::WriteContinuationContext(ContinuationContextData {
+            iteration: state.iteration,
+            attempt: state.continuation.continuation_attempt,
+            status,
+            summary,
+            files_changed,
+            next_steps,
+        });
+    }
+
+    if state.agent_chain.agents.is_empty() {
+        return Effect::InitializeAgentChain {
+            role: AgentRole::Developer,
+        };
+    }
+
+    // Development phase runs two distinct roles (Developer then Analysis). Ensure
+    // we are on the developer chain before preparing/invoking the developer agent.
+    if state.development_agent_invoked_iteration != Some(state.iteration)
+        && state.agent_chain.current_role != AgentRole::Developer
+    {
+        return Effect::InitializeAgentChain {
+            role: AgentRole::Developer,
+        };
+    }
+
+    let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
+    // Iteration boundary check: At iteration == total_iterations, still need to process
+    // the current iteration (either run it if not started, or apply its outcome if complete).
+    // On resume, progress flags are reset to None (pipeline.rs:453-532), so orchestration
+    // will derive the appropriate step. Only skip to SaveCheckpoint when:
+    // - iteration > total_iterations (abnormal: exceeds configured iterations), or
+    // - total_iterations == 0 (no iterations configured, transition immediately)
+    let iteration_needs_work = state.iteration < state.total_iterations
+        || (state.iteration == state.total_iterations && state.total_iterations > 0);
+
+    if iteration_needs_work {
+        if state.development_context_prepared_iteration != Some(state.iteration) {
+            return Effect::PrepareDevelopmentContext {
+                iteration: state.iteration,
+            };
+        }
+
+        if state.development_prompt_prepared_iteration != Some(state.iteration) {
+            let development_inputs_materialized_for_iteration =
+                state.prompt_inputs.development.as_ref().is_some_and(|p| {
+                    p.iteration == state.iteration
+                        && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
+                        && p.plan.consumer_signature_sha256 == consumer_signature_sha256
+                });
+            if !development_inputs_materialized_for_iteration {
+                return Effect::MaterializeDevelopmentInputs {
+                    iteration: state.iteration,
+                };
+            }
+
+            let prompt_mode = if state.continuation.is_continuation() {
+                PromptMode::Continuation
+            } else {
+                PromptMode::Normal
+            };
+            return Effect::PrepareDevelopmentPrompt {
+                iteration: state.iteration,
+                prompt_mode,
+            };
+        }
+
+        if state.development_xml_cleaned_iteration != Some(state.iteration) {
+            return Effect::CleanupDevelopmentXml {
+                iteration: state.iteration,
+            };
+        }
+
+        if state.development_agent_invoked_iteration != Some(state.iteration) {
+            return Effect::InvokeDevelopmentAgent {
+                iteration: state.iteration,
+            };
+        }
+
+        // After EVERY development iteration, invoke analysis agent to verify results
+        // Analysis agent produces development_result.xml by comparing git diff vs PLAN.md
+        // This runs AFTER InvokeDevelopmentAgent completes (checked via development_agent_invoked_iteration)
+        // and BEFORE ExtractDevelopmentXml (checked via analysis_agent_invoked_iteration)
+        if state.development_agent_invoked_iteration == Some(state.iteration)
+            && state.analysis_agent_invoked_iteration != Some(state.iteration)
+        {
+            if state.agent_chain.current_role != AgentRole::Analysis {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Analysis,
+                };
+            }
+            return Effect::InvokeAnalysisAgent {
+                iteration: state.iteration,
+            };
+        }
+
+        if state.development_xml_extracted_iteration != Some(state.iteration) {
+            return Effect::ExtractDevelopmentXml {
+                iteration: state.iteration,
+            };
+        }
+
+        let dev_validated_is_for_iteration = state
+            .development_validated_outcome
+            .as_ref()
+            .is_some_and(|o| o.iteration == state.iteration);
+        if !dev_validated_is_for_iteration {
+            return Effect::ValidateDevelopmentXml {
+                iteration: state.iteration,
+            };
+        }
+
+        if state.development_xml_archived_iteration != Some(state.iteration) {
+            return Effect::ArchiveDevelopmentXml {
+                iteration: state.iteration,
+            };
+        }
+
+        Effect::ApplyDevelopmentOutcome {
+            iteration: state.iteration,
+        }
+    } else {
+        Effect::SaveCheckpoint {
+            trigger: CheckpointTrigger::PhaseTransition,
+        }
+    }
+}

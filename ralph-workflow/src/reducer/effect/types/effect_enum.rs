@@ -1,11 +1,10 @@
+// NOTE: split from reducer/effect/types.rs (Effect enum and helper structs).
+
 use crate::agents::AgentRole;
-use crate::phases::PhaseContext;
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::event::{CheckpointTrigger, ConflictStrategy, PipelineEvent, RebasePhase};
-use super::state::PromptMode;
-use super::ui_event::UIEvent;
+use crate::reducer::event::{CheckpointTrigger, ConflictStrategy, PipelinePhase, RebasePhase};
+use crate::reducer::state::{DevelopmentStatus, PromptMode};
 
 /// Data for continuation context writing.
 ///
@@ -15,7 +14,7 @@ use super::ui_event::UIEvent;
 pub struct ContinuationContextData {
     pub iteration: u32,
     pub attempt: u32,
-    pub status: super::state::DevelopmentStatus,
+    pub status: DevelopmentStatus,
     pub summary: String,
     pub files_changed: Option<Vec<String>>,
     pub next_steps: Option<String>,
@@ -420,7 +419,7 @@ pub enum Effect {
     /// reducer processes to transition to Interrupted phase.
     ReportAgentChainExhausted {
         role: AgentRole,
-        phase: super::event::PipelinePhase,
+        phase: PipelinePhase,
         cycle: u32,
     },
 
@@ -468,7 +467,7 @@ pub enum Effect {
     /// marker and transitions to Interrupted.
     TriggerDevFixFlow {
         /// The phase where the failure occurred.
-        failed_phase: super::event::PipelinePhase,
+        failed_phase: PipelinePhase,
         /// The role of the exhausted agent chain.
         failed_role: AgentRole,
         /// Retry cycle count when exhaustion occurred.
@@ -498,77 +497,4 @@ pub enum Effect {
         /// Number of times the loop was repeated.
         loop_count: u32,
     },
-}
-
-/// Result of executing an effect.
-///
-/// Contains both the PipelineEvent (for reducer) and optional UIEvents (for display).
-/// This separation keeps UI concerns out of the reducer while allowing handlers
-/// to emit rich feedback during execution.
-///
-/// # Multiple Events
-///
-/// Some effects produce multiple reducer events. For example, agent invocation
-/// may produce:
-/// 1. `InvocationSucceeded` - the primary event
-/// 2. `SessionEstablished` - additional event when session ID is extracted
-///
-/// The `additional_events` field holds events that should be processed after
-/// the primary event. The reducer loop processes all events in order.
-#[derive(Clone, Debug)]
-pub struct EffectResult {
-    /// Primary event for reducer (affects state).
-    pub event: PipelineEvent,
-    /// Additional events to process after the primary event.
-    ///
-    /// Used for cases where an effect produces multiple events, such as
-    /// agent invocation followed by session establishment. Each event is
-    /// processed by the reducer in order.
-    pub additional_events: Vec<PipelineEvent>,
-    /// UI events for display (do not affect state).
-    pub ui_events: Vec<UIEvent>,
-}
-
-impl EffectResult {
-    /// Create result with just a pipeline event (no UI events).
-    pub fn event(event: PipelineEvent) -> Self {
-        Self {
-            event,
-            additional_events: Vec::new(),
-            ui_events: Vec::new(),
-        }
-    }
-
-    /// Create result with pipeline event and UI events.
-    pub fn with_ui(event: PipelineEvent, ui_events: Vec<UIEvent>) -> Self {
-        Self {
-            event,
-            additional_events: Vec::new(),
-            ui_events,
-        }
-    }
-
-    /// Add an additional event to process after the primary event.
-    ///
-    /// Used for emitting separate events like SessionEstablished after
-    /// agent invocation completes. Each additional event is processed
-    /// by the reducer in order.
-    pub fn with_additional_event(mut self, event: PipelineEvent) -> Self {
-        self.additional_events.push(event);
-        self
-    }
-
-    /// Add a UI event to the result.
-    pub fn with_ui_event(mut self, ui_event: UIEvent) -> Self {
-        self.ui_events.push(ui_event);
-        self
-    }
-}
-
-/// Trait for executing effects.
-///
-/// Returns EffectResult containing both PipelineEvent (for state) and
-/// UIEvents (for display). This allows mocking in tests.
-pub trait EffectHandler<'ctx> {
-    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult>;
 }

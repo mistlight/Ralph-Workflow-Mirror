@@ -4,20 +4,25 @@
 //! These state structures can be serialized as checkpoints for resume functionality.
 
 use crate::agents::AgentRole;
-use crate::checkpoint::execution_history::ExecutionStep;
-use crate::checkpoint::{
-    PipelineCheckpoint, PipelinePhase as CheckpointPhase, RebaseState as CheckpointRebaseState,
-};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+// Re-export checkpoint types used by pipeline module for checkpoint conversion
+#[allow(unused_imports)]
+use crate::checkpoint::{
+    PipelineCheckpoint, PipelinePhase as CheckpointPhase, RebaseState as CheckpointRebaseState,
+};
+
+// Re-export PipelinePhase from event module for use in pipeline module
+#[allow(unused_imports)]
 use super::event::PipelinePhase;
 
 // State enums and basic types (ArtifactType, PromptMode, DevelopmentStatus, FixStatus, RebaseState, CommitState)
 include!("state/enums.rs");
 
 // Continuation state for development and fix iterations
-include!("state/continuation.rs");
+pub mod continuation;
+pub use continuation::ContinuationState;
 
 // Agent fallback chain state and backoff computation
 include!("state/agent_chain.rs");
@@ -25,8 +30,9 @@ include!("state/agent_chain.rs");
 // Run-level execution metrics
 include!("state/metrics.rs");
 
-// Pipeline state, validated outcomes, and checkpoint conversion
-include!("state/pipeline.rs");
+// Pipeline state module (checkpoint payload and reducer state)
+pub mod pipeline;
+pub use pipeline::*;
 
 // Tests
 include!("state/tests.rs");

@@ -48,5 +48,9 @@
 //! side effects (in handlers). See [`CODE_STYLE.md`](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/CODE_STYLE.md)
 //! for the full architecture overview.
 
-include!("effect/types.rs");
-include!("effect/tests.rs");
+#[cfg(test)]
+#[path = "effect/tests.rs"]
+mod tests;
+mod types;
+
+pub use types::{ContinuationContextData, Effect, EffectHandler, EffectResult};

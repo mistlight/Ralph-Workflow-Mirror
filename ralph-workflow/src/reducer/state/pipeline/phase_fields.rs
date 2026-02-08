@@ -1,0 +1,97 @@
+// Phase-specific validated outcome types.
+//
+// These structures capture the validated results from each pipeline phase
+// after XML parsing and schema validation. They represent the contract
+// between agent output and reducer state.
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewValidatedOutcome {
+    pub pass: u32,
+    pub issues_found: bool,
+    pub clean_no_issues: bool,
+    #[serde(default)]
+    pub issues: Vec<String>,
+    #[serde(default)]
+    pub no_issues_found: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlanningValidatedOutcome {
+    pub iteration: u32,
+    pub valid: bool,
+    #[serde(default)]
+    pub markdown: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DevelopmentValidatedOutcome {
+    pub iteration: u32,
+    pub status: DevelopmentStatus,
+    pub summary: String,
+    pub files_changed: Option<Vec<String>>,
+    pub next_steps: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FixValidatedOutcome {
+    pub pass: u32,
+    pub status: FixStatus,
+    pub summary: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommitValidatedOutcome {
+    pub attempt: u32,
+    pub message: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct PromptInputsState {
+    #[serde(default)]
+    pub planning: Option<MaterializedPlanningInputs>,
+    #[serde(default)]
+    pub development: Option<MaterializedDevelopmentInputs>,
+    #[serde(default)]
+    pub review: Option<MaterializedReviewInputs>,
+    #[serde(default)]
+    pub commit: Option<MaterializedCommitInputs>,
+    /// Materialized last invalid XML output for XSD retry prompts.
+    ///
+    /// This is used to dedupe retries and keep oversize handling reducer-visible.
+    #[serde(default)]
+    pub xsd_retry_last_output: Option<MaterializedXsdRetryLastOutput>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedPlanningInputs {
+    pub iteration: u32,
+    pub prompt: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedDevelopmentInputs {
+    pub iteration: u32,
+    pub prompt: MaterializedPromptInput,
+    pub plan: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedReviewInputs {
+    pub pass: u32,
+    pub plan: MaterializedPromptInput,
+    pub diff: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedCommitInputs {
+    pub attempt: u32,
+    pub diff: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedXsdRetryLastOutput {
+    pub phase: PipelinePhase,
+    pub scope_id: u32,
+    pub last_output: MaterializedPromptInput,
+}

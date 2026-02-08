@@ -1,15 +1,114 @@
-//
-// This module implements the EffectHandler trait to execute pipeline side effects
-// through the reducer architecture. Effect handlers perform actual work (agent
-// invocation, git operations, file I/O) and emit events.
-//
-// Handler responsibilities vs reducer responsibilities:
-// - Reducer: pure state transitions, policy decisions, phase progression
-// - Handler: effect execution, I/O, cleanup, validation
-//
-// Handlers execute exactly one effect and emit events. They must not perform
-// hidden cleanup, fallback, or retry logic beyond the effect being executed.
-// XML `.processed` files are archives only and are never read as inputs.
+//! Effect handler implementation for pipeline side effects.
+//!
+//! This module implements the [`EffectHandler`] trait to execute pipeline effects
+//! through the reducer architecture. Effect handlers perform actual work (agent
+//! invocation, git operations, file I/O) and emit events that drive state transitions.
+//!
+//! # Architecture Contract
+//!
+//! ```text
+//! State → Orchestrator → Effect → Handler → Event → Reducer → State
+//!                                  ^^^^^^^
+//!                                  Impure execution (this module)
+//! ```
+//!
+//! ## Handler Responsibilities
+//!
+//! - **Execute effects**: Perform the I/O operation specified by the effect
+//! - **Report outcomes**: Emit events describing what happened (success/failure)
+//! - **Use workspace abstraction**: All filesystem access via `ctx.workspace`
+//! - **Single-task execution**: Execute exactly one effect, no hidden retry logic
+//!
+//! ## Reducer Responsibilities (NOT handler)
+//!
+//! - **Pure state transitions**: Process events to update state
+//! - **Policy decisions**: Retry, fallback, phase progression
+//! - **Control flow**: Determine what happens next based on events
+//!
+//! # Key Principle: Handlers Report, Reducers Decide
+//!
+//! Handlers must NOT contain decision logic. Examples:
+//!
+//! ```ignore
+//! // WRONG - Handler decides to retry
+//! fn handle_invoke_agent() -> Result<EffectResult> {
+//!     for attempt in 0..3 {  // NO! Reducer controls retry
+//!         if let Ok(output) = invoke_agent() {
+//!             return Ok(output);
+//!         }
+//!     }
+//! }
+//!
+//! // CORRECT - Handler reports outcome, reducer decides
+//! fn handle_invoke_agent() -> Result<EffectResult> {
+//!     match invoke_agent() {
+//!         Ok(output) => Ok(EffectResult::event(
+//!             AgentEvent::InvocationSucceeded { output }
+//!         )),
+//!         Err(e) => Ok(EffectResult::event(
+//!             AgentEvent::InvocationFailed { error: e, retriable: true }
+//!         )),
+//!     }
+//! }
+//! ```
+//!
+//! The reducer processes `InvocationFailed` and decides whether to retry
+//! (increment retry count, emit retry effect) or fallback (advance chain).
+//!
+//! # Workspace Abstraction
+//!
+//! All filesystem operations MUST use `ctx.workspace`:
+//!
+//! ```ignore
+//! // CORRECT
+//! ctx.workspace.write(path, content)?;
+//! let content = ctx.workspace.read(path)?;
+//!
+//! // WRONG - Never use std::fs in handlers
+//! std::fs::write(path, content)?;
+//! ```
+//!
+//! This abstraction enables:
+//! - In-memory testing with `MemoryWorkspace`
+//! - Proper error handling and path resolution
+//! - Consistent file operations across the pipeline
+//!
+//! See [`docs/agents/workspace-trait.md`] for details.
+//!
+//! # Testing Handlers
+//!
+//! Handlers require mocks for I/O (workspace) but NOT for reducer/orchestration:
+//!
+//! ```ignore
+//! #[test]
+//! fn test_invoke_agent_emits_success_event() {
+//!     let workspace = MemoryWorkspace::new_test();
+//!     let mut ctx = create_test_context(&workspace);
+//!
+//!     let result = handler.execute(
+//!         Effect::InvokeAgent { role, agent, prompt },
+//!         &mut ctx
+//!     )?;
+//!
+//!     assert!(matches!(
+//!         result.event,
+//!         PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+//!     ));
+//! }
+//! ```
+//!
+//! # Module Organization
+//!
+//! - [`agent`] - Agent invocation and chain management
+//! - [`planning`] - Planning phase effects (prompt, XML, validation)
+//! - [`development`] - Development phase effects (iteration, continuation)
+//! - [`review`] - Review phase effects (issue detection, fix application)
+//! - [`commit`] - Commit phase effects (message generation, commit creation)
+//! - [`rebase`] - Rebase effects (conflict resolution, validation)
+//! - [`checkpoint`] - Checkpoint save/restore
+//! - [`context`] - Context preparation and cleanup
+//!
+//! [`docs/agents/workspace-trait.md`]: https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/agents/workspace-trait.md
 
 mod agent;
 mod analysis;
