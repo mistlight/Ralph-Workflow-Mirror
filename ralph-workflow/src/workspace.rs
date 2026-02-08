@@ -86,7 +86,6 @@ pub const AGENT_DIR: &str = ".agent";
 pub const AGENT_TMP: &str = ".agent/tmp";
 
 // AGENT_LOGS constant removed - use RunLogContext for per-run log directories.
-// The agent_logs() method below is kept for backward compatibility.
 
 /// Path to the implementation plan file.
 pub const PLAN_MD: &str = ".agent/PLAN.md";
@@ -125,7 +124,6 @@ pub const AGENT_CONFIG_TOML: &str = ".agent/config.toml";
 pub const AGENTS_TOML: &str = ".agent/agents.toml";
 
 // PIPELINE_LOG constant removed - use RunLogContext::pipeline_log() for per-run log paths.
-// The pipeline_log() method below is kept for backward compatibility.
 
 use std::fs;
 use std::io;
@@ -348,13 +346,6 @@ pub trait Workspace: Send + Sync {
 
     /// Path to the `.agent/logs` directory.
     ///
-    /// **Note:** New code should use `RunLogContext` to get the appropriate per-run agent
-    /// log directories instead. This method is kept for backward compatibility during
-    /// the migration to per-run logging.
-    fn agent_logs(&self) -> PathBuf {
-        self.root().join(".agent/logs")
-    }
-
     /// Path to the `.agent/tmp` directory.
     fn agent_tmp(&self) -> PathBuf {
         self.root().join(AGENT_TMP)
@@ -418,15 +409,6 @@ pub trait Workspace: Send + Sync {
     /// Path to `.agent/agents.toml`.
     fn agents_toml(&self) -> PathBuf {
         self.root().join(AGENTS_TOML)
-    }
-
-    /// Path to `.agent/logs/pipeline.log`.
-    ///
-    /// **Note:** New code should use `RunLogContext::pipeline_log()` for per-run log paths
-    /// instead. This method is kept for backward compatibility during the migration to
-    /// per-run logging.
-    fn pipeline_log(&self) -> PathBuf {
-        self.root().join(".agent/logs/pipeline.log")
     }
 
     /// Path to an XSD schema file in `.agent/tmp/`.

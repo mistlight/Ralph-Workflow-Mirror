@@ -161,6 +161,18 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("deduplication/mod.rs"),
     },
     SourceFile {
+        path: "deduplication/streaming.rs",
+        contents: include_str!("deduplication/streaming.rs"),
+    },
+    SourceFile {
+        path: "deduplication/assistant_events.rs",
+        contents: include_str!("deduplication/assistant_events.rs"),
+    },
+    SourceFile {
+        path: "deduplication/edge_cases.rs",
+        contents: include_str!("deduplication/edge_cases.rs"),
+    },
+    SourceFile {
         path: "dylint_target.rs",
         contents: include_str!("dylint_target.rs"),
     },
@@ -245,8 +257,48 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_fault_tolerance/continuation_exhaustion.rs"),
     },
     SourceFile {
-        path: "reducer_fault_tolerance/failure_completion_marker.rs",
-        contents: include_str!("reducer_fault_tolerance/failure_completion_marker.rs"),
+        path: "reducer_fault_tolerance/failure_completion_marker/mod.rs",
+        contents: include_str!("reducer_fault_tolerance/failure_completion_marker/mod.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/common.rs",
+        contents: include_str!("reducer_fault_tolerance/failure_completion_marker/common.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/state_transitions.rs",
+        contents: include_str!(
+            "reducer_fault_tolerance/failure_completion_marker/state_transitions.rs"
+        ),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/marker_emission.rs",
+        contents: include_str!(
+            "reducer_fault_tolerance/failure_completion_marker/marker_emission.rs"
+        ),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/error_handling.rs",
+        contents: include_str!(
+            "reducer_fault_tolerance/failure_completion_marker/error_handling.rs"
+        ),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/state_transitions.rs",
+        contents: include_str!(
+            "reducer_fault_tolerance/failure_completion_marker/state_transitions.rs"
+        ),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/marker_emission.rs",
+        contents: include_str!(
+            "reducer_fault_tolerance/failure_completion_marker/marker_emission.rs"
+        ),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker/error_handling.rs",
+        contents: include_str!(
+            "reducer_fault_tolerance/failure_completion_marker/error_handling.rs"
+        ),
     },
     SourceFile {
         path: "reducer_hidden_behavior.rs",

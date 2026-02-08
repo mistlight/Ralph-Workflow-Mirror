@@ -97,12 +97,15 @@ pub fn run_review_pass(
         ctx.workspace,
     );
     let logfile = if attempt == 0 {
-        base_log_path.to_str().unwrap().to_string()
+        base_log_path
+            .to_str()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8")
+            .to_string()
     } else {
         ctx.run_log_context
             .agent_log("reviewer", j, Some(attempt))
             .to_str()
-            .unwrap()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8")
             .to_string()
     };
 
@@ -367,12 +370,15 @@ pub fn run_fix_pass(
         ctx.workspace,
     );
     let logfile = if attempt == 0 {
-        base_log_path.to_str().unwrap().to_string()
+        base_log_path
+            .to_str()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8")
+            .to_string()
     } else {
         ctx.run_log_context
             .agent_log("reviewer_fix", j, Some(attempt))
             .to_str()
-            .unwrap()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8")
             .to_string()
     };
 

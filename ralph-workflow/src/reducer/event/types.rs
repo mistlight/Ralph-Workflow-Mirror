@@ -1,32 +1,41 @@
-//! Pipeline event types for reducer architecture.
+//! Core event type definitions for the reducer architecture.
 //!
-//! Defines all possible events that can occur during pipeline execution.
-//! Each event represents a state transition that the reducer handles.
+//! This module contains all event enum definitions organized by category.
+//! Each event represents a fact about what happened during pipeline execution.
+//!
+//! # Event Architecture
+//!
+//! Events follow the reducer architecture contract:
+//! - **Events are facts** (past-tense, descriptive)
+//! - **Events carry data** needed for reducer decisions
+//! - **Handlers emit events**, reducers decide what to do next
 //!
 //! # Event Categories
 //!
-//! Events are organized into logical categories for type-safe routing to
-//! category-specific reducers. Each category has a dedicated inner enum:
-//!
+//! Events are organized into logical categories for type-safe routing:
 //! - [`LifecycleEvent`] - Pipeline start/stop/resume
 //! - [`PlanningEvent`] - Plan generation events
-//! - [`DevelopmentEvent`] - Development iteration and continuation events
-//! - [`ReviewEvent`] - Review pass and fix attempt events
-//! - [`AgentEvent`] - Agent invocation and chain management events
-//! - [`RebaseEvent`] - Git rebase operation events
-//! - [`CommitEvent`] - Commit generation events
+//! - [`PromptInputEvent`] - Prompt input materialization
+//! - [`RebaseEvent`] - Git rebase operations
+//! - [`CommitEvent`] - Commit generation
+//! - [`AwaitingDevFixEvent`] - Dev-fix flow events
 //!
-//! The main [`PipelineEvent`] enum wraps these category enums to enable
-//! type-safe dispatch in the reducer.
+//! Other categories are defined in separate files:
+//! - `DevelopmentEvent` in `development.rs`
+//! - `ReviewEvent` in `review.rs`
+//! - `AgentEvent` in `agent.rs`
+//! - `ErrorEvent` in `error.rs`
 
 use crate::agents::AgentRole;
-use crate::reducer::state::{DevelopmentStatus, MaterializedPromptInput, PromptInputKind};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
-// ============================================================================
-// Event Category Enums
-// ============================================================================
+// Re-export common types used in events
+pub use std::path::PathBuf;
+
+// Re-export types from state module that are used in events
+pub use crate::reducer::state::{MaterializedPromptInput, PromptInputKind};
+
+use super::{ErrorEvent, PipelinePhase};
 
 /// Pipeline lifecycle events (start, stop, resume).
 ///
@@ -69,7 +78,7 @@ use std::path::PathBuf;
 ///
 /// ## Enforcement
 ///
-/// The freeze policy is enforced by the `lifecycle_event_is_frozen` test in this module,
+/// The freeze policy is enforced by the `lifecycle_event_is_frozen` test in the parent module,
 /// which will fail to compile if new variants are added. This is intentional.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum LifecycleEvent {
@@ -95,6 +104,12 @@ pub enum LifecycleEvent {
 /// - `GenerationCompleted(valid=true)`: Transitions to Development
 /// - `GenerationCompleted(valid=false)`: Stays in Planning for retry
 /// - `PhaseCompleted`: Transitions to Development
+///
+/// # Emitted By
+///
+/// - Planning effect handlers in `handler/planning/`
+/// - XSD validation handlers
+/// - Markdown generation handlers
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum PlanningEvent {
     /// Planning phase has started.
@@ -148,6 +163,11 @@ pub enum PlanningEvent {
         iteration: u32,
     },
     /// Plan generation completed with validation result.
+    ///
+    /// This event signals the end of the plan generation attempt.
+    /// The reducer uses the `valid` field to decide whether to:
+    /// - Transition to Development phase (valid=true)
+    /// - Retry with same agent or switch agents (valid=false)
     GenerationCompleted {
         /// The iteration number this plan was for.
         iteration: u32,
@@ -171,34 +191,68 @@ pub enum PlanningEvent {
 ///
 /// These events make reducer-visible any transformation that affects the
 /// agent-visible prompt content (inline vs file reference, truncation, etc.).
+///
+/// # Purpose
+///
+/// Large prompt inputs (PROMPT.md, PLAN.md, diffs) may exceed model context limits.
+/// When this occurs, handlers materialize the content as file references instead of
+/// inline text. These events record the materialization strategy for observability
+/// and to enable the reducer to track content transformations.
+///
+/// # Emitted By
+///
+/// - Prompt preparation handlers in `handler/*/prepare_prompt.rs`
+/// - XSD retry handlers
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum PromptInputEvent {
+    /// Oversize content detected, will be materialized as file reference.
     OversizeDetected {
+        /// Pipeline phase where oversize was detected.
         phase: PipelinePhase,
+        /// Type of content (prompt, plan, diff, etc.).
         kind: PromptInputKind,
+        /// SHA256 hex digest of the content.
         content_id_sha256: String,
+        /// Actual content size in bytes.
         size_bytes: u64,
+        /// Configured size limit in bytes.
         limit_bytes: u64,
+        /// Materialization policy applied.
         policy: String,
     },
+    /// Planning prompt inputs materialized.
     PlanningInputsMaterialized {
+        /// Iteration number.
         iteration: u32,
+        /// Materialized prompt input.
         prompt: MaterializedPromptInput,
     },
+    /// Development prompt inputs materialized.
     DevelopmentInputsMaterialized {
+        /// Iteration number.
         iteration: u32,
+        /// Materialized prompt input.
         prompt: MaterializedPromptInput,
+        /// Materialized plan input.
         plan: MaterializedPromptInput,
     },
+    /// Review prompt inputs materialized.
     ReviewInputsMaterialized {
+        /// Review pass number.
         pass: u32,
+        /// Materialized plan input.
         plan: MaterializedPromptInput,
+        /// Materialized diff input.
         diff: MaterializedPromptInput,
     },
+    /// Commit prompt inputs materialized.
     CommitInputsMaterialized {
+        /// Commit attempt number.
         attempt: u32,
+        /// Materialized diff input.
         diff: MaterializedPromptInput,
     },
+    /// XSD retry last output materialized.
     XsdRetryLastOutputMaterialized {
         /// Phase that produced the invalid output being retried.
         phase: PipelinePhase,
@@ -221,23 +275,6 @@ pub enum PromptInputEvent {
     },
 }
 
-#[path = "event/development.rs"]
-mod development;
-pub use development::DevelopmentEvent;
-
-#[path = "event/review.rs"]
-mod review;
-pub use review::ReviewEvent;
-
-#[path = "event/agent.rs"]
-mod agent;
-pub use agent::AgentEvent;
-
-#[path = "event/error.rs"]
-mod error;
-pub use error::ErrorEvent;
-pub use error::WorkspaceIoErrorKind;
-
 /// Rebase operation events.
 ///
 /// Events related to git rebase operations including conflict detection
@@ -253,9 +290,18 @@ pub use error::WorkspaceIoErrorKind;
 ///                    |
 ///                    +---------> Failed (resets to NotStarted)
 /// ```
+///
+/// # Emitted By
+///
+/// - Rebase handlers in `handler/rebase.rs`
+/// - Git integration layer
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum RebaseEvent {
     /// Rebase operation started.
+    ///
+    /// Emitted when a rebase begins. The reducer uses this to:
+    /// - Track which rebase phase is active (initial or post-review)
+    /// - Record the target branch for observability
     Started {
         /// The rebase phase (initial or post-review).
         phase: RebasePhase,
@@ -263,16 +309,27 @@ pub enum RebaseEvent {
         target_branch: String,
     },
     /// Merge conflict detected during rebase.
+    ///
+    /// Emitted when git detects merge conflicts. The handler will attempt
+    /// automated resolution; the reducer tracks which files are conflicted.
     ConflictDetected {
         /// The files with conflicts.
         files: Vec<PathBuf>,
     },
     /// Merge conflicts were resolved.
+    ///
+    /// Emitted after successful conflict resolution. The reducer uses this
+    /// to clear the conflict state and allow rebase to continue.
     ConflictResolved {
         /// The files that were resolved.
         files: Vec<PathBuf>,
     },
     /// Rebase completed successfully.
+    ///
+    /// Emitted when rebase finishes without errors. The reducer uses this to:
+    /// - Mark rebase as complete
+    /// - Record the new HEAD commit
+    /// - Transition to the next pipeline phase
     Succeeded {
         /// The rebase phase that completed.
         phase: RebasePhase,
@@ -280,6 +337,9 @@ pub enum RebaseEvent {
         new_head: String,
     },
     /// Rebase failed and was reset.
+    ///
+    /// Emitted when rebase encounters an unrecoverable error. The reducer
+    /// uses this to decide whether to retry or abort the pipeline.
     Failed {
         /// The rebase phase that failed.
         phase: RebasePhase,
@@ -287,6 +347,9 @@ pub enum RebaseEvent {
         reason: String,
     },
     /// Rebase was aborted and state restored.
+    ///
+    /// Emitted when rebase is explicitly aborted (e.g., user interrupt).
+    /// The reducer marks rebase as not attempted.
     Aborted {
         /// The rebase phase that was aborted.
         phase: RebasePhase,
@@ -294,6 +357,9 @@ pub enum RebaseEvent {
         restored_to: String,
     },
     /// Rebase was skipped (e.g., already up to date).
+    ///
+    /// Emitted when rebase is unnecessary. The reducer marks rebase as
+    /// complete without actually performing the operation.
     Skipped {
         /// The rebase phase that was skipped.
         phase: RebasePhase,
@@ -316,11 +382,20 @@ pub enum RebaseEvent {
 ///                    |
 ///                    +--> Skipped
 /// ```
+///
+/// # Emitted By
+///
+/// - Commit generation handlers in `handler/commit/`
+/// - Commit message validation handlers
+/// - Git commit handlers
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum CommitEvent {
     /// Commit message generation started.
     GenerationStarted,
     /// Commit diff computed for commit generation.
+    ///
+    /// Emitted after preparing the diff that will be committed. The reducer
+    /// uses the `empty` flag to decide whether to skip commit creation.
     DiffPrepared {
         /// True when the diff is empty.
         empty: bool,
@@ -424,348 +499,135 @@ pub enum CommitEvent {
 ///
 /// This phase handles pipeline failure remediation by invoking the development
 /// agent to diagnose and fix the root cause before termination.
+///
+/// # When This Occurs
+///
+/// The AwaitingDevFix phase is entered when the pipeline encounters a terminal
+/// failure condition (e.g., agent chain exhausted) in any phase. Instead of
+/// immediately terminating, the pipeline gives the development agent one final
+/// chance to diagnose and fix the issue.
+///
+/// # State Flow
+///
+/// 1. Terminal failure detected (e.g., AgentChainExhausted)
+/// 2. Reducer transitions to AwaitingDevFix phase
+/// 3. DevFixTriggered event emitted
+/// 4. Development agent invoked with failure context
+/// 5. DevFixCompleted event emitted
+/// 6. CompletionMarkerEmitted event signals transition to Interrupted
+/// 7. Checkpoint saved
+/// 8. Pipeline exits
+///
+/// # Emitted By
+///
+/// - Dev-fix flow handlers in `handler/dev_fix/`
+/// - Completion marker handlers
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum AwaitingDevFixEvent {
     /// Dev-fix flow was triggered.
+    ///
+    /// Emitted when entering the dev-fix phase. Records which phase and agent
+    /// failed, providing context for the development agent.
     DevFixTriggered {
+        /// Phase where the failure occurred.
         failed_phase: PipelinePhase,
+        /// Agent role that failed.
         failed_role: AgentRole,
     },
     /// Dev-fix flow was skipped (not yet implemented or disabled).
-    DevFixSkipped { reason: String },
+    DevFixSkipped {
+        /// Reason for skipping.
+        reason: String,
+    },
     /// Dev-fix flow completed (may or may not have fixed the issue).
+    ///
+    /// Emitted after the development agent finishes its fix attempt.
+    /// The `success` field indicates whether the agent believes it fixed
+    /// the issue, but does not guarantee the pipeline will succeed on retry.
     DevFixCompleted {
+        /// Whether the fix attempt succeeded.
         success: bool,
+        /// Optional summary of what was fixed.
         summary: Option<String>,
     },
     /// Dev-fix agent is unavailable (quota/usage limit).
+    ///
+    /// Emitted when the dev-fix agent cannot be invoked due to resource limits.
+    /// The pipeline will proceed to termination without a fix attempt.
     DevFixAgentUnavailable {
+        /// Phase where the failure occurred.
         failed_phase: PipelinePhase,
+        /// Reason for unavailability.
         reason: String,
     },
     /// Completion marker was emitted to filesystem.
-    CompletionMarkerEmitted { is_failure: bool },
-}
-
-// ============================================================================
-// Supporting Types
-// ============================================================================
-
-/// Pipeline phases for checkpoint tracking.
-///
-/// These phases represent the major stages of the Ralph pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PipelinePhase {
-    Planning,
-    Development,
-    Review,
-    CommitMessage,
-    FinalValidation,
-    /// Finalizing phase for cleanup operations before completion.
     ///
-    /// This phase handles:
-    /// - Restoring PROMPT.md write permissions
-    /// - Any other cleanup that must go through the effect system
-    Finalizing,
-    Complete,
-    /// Awaiting development agent to fix pipeline failure.
-    ///
-    /// This phase occurs when the pipeline encounters a terminal failure condition
-    /// (e.g., agent chain exhausted) but before transitioning to Interrupted. It
-    /// signals that the development agent should be invoked to diagnose and fix
-    /// the failure root cause.
-    ///
-    /// ## Failure Handling Flow
-    ///
-    /// 1. ErrorEvent::AgentChainExhausted occurs in any phase
-    /// 2. Reducer transitions state to AwaitingDevFix
-    /// 3. Orchestration determines Effect::TriggerDevFixFlow
-    /// 4. Handler executes TriggerDevFixFlow:
-    ///    a. Writes completion marker to .agent/tmp/completion_marker (failure status)
-    ///    b. Emits DevFixTriggered event
-    ///    c. Dispatches dev-fix agent
-    ///    d. Emits DevFixCompleted event
-    ///    e. Emits CompletionMarkerEmitted event
-    /// 5. DevFixTriggered/DevFixCompleted events: no state change (stays in AwaitingDevFix)
-    /// 6. CompletionMarkerEmitted event: transitions to Interrupted
-    /// 7. Orchestration determines Effect::SaveCheckpoint for Interrupted
-    /// 8. Handler saves checkpoint, increments checkpoint_saved_count
-    /// 9. Event loop recognizes is_complete() == true and exits successfully
-    ///
-    /// ## Event Loop Termination Guarantees
-    ///
-    /// The event loop MUST NOT exit with completed=false when in AwaitingDevFix phase.
-    /// The failure handling flow is designed to always complete with:
-    /// - Completion marker written to filesystem
-    /// - State transitioned to Interrupted
-    /// - Checkpoint saved (checkpoint_saved_count > 0)
-    /// - Event loop returning completed=true
-    ///
-    /// If the event loop exits with completed=false from AwaitingDevFix, this indicates
-    /// a critical bug (e.g., max iterations reached before checkpoint saved).
-    ///
-    /// ## Completion Marker Requirement
-    ///
-    /// The completion marker MUST be written before transitioning to Interrupted.
-    /// This ensures external orchestration systems (CI, monitoring) can detect
-    /// pipeline termination even if the event loop exits unexpectedly.
-    ///
-    /// ## Agent Chain Exhaustion Handling
-    ///
-    /// When in AwaitingDevFix phase with an exhausted agent chain, orchestration
-    /// falls through to phase-specific logic (TriggerDevFixFlow) instead of reporting
-    /// exhaustion again. This prevents infinite loops where exhaustion is reported
-    /// repeatedly.
-    ///
-    /// Transitions:
-    /// - From: Any phase where AgentChainExhausted error occurs
-    /// - To: Interrupted (after dev-fix attempt completes or fails)
-    AwaitingDevFix,
-    Interrupted,
-}
-
-impl std::fmt::Display for PipelinePhase {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Planning => write!(f, "Planning"),
-            Self::Development => write!(f, "Development"),
-            Self::Review => write!(f, "Review"),
-            Self::CommitMessage => write!(f, "Commit Message"),
-            Self::FinalValidation => write!(f, "Final Validation"),
-            Self::Finalizing => write!(f, "Finalizing"),
-            Self::Complete => write!(f, "Complete"),
-            Self::AwaitingDevFix => write!(f, "Awaiting Dev Fix"),
-            Self::Interrupted => write!(f, "Interrupted"),
-        }
-    }
-}
-
-/// Pipeline events representing all state transitions.
-///
-/// Events are organized into logical categories for type-safe routing
-/// to category-specific reducers. Each category has a dedicated inner enum.
-///
-/// # Event Categories
-///
-/// - `Lifecycle` - Pipeline start/stop/resume
-/// - `Planning` - Plan generation events
-/// - `Development` - Development iteration and continuation events
-/// - `Review` - Review pass and fix attempt events
-/// - `Agent` - Agent invocation and chain management events
-/// - `Rebase` - Git rebase operation events
-/// - `Commit` - Commit generation events
-/// - Miscellaneous events (context cleanup, checkpoints, finalization)
-///
-/// # Example
-///
-/// ```ignore
-/// // Type-safe event construction
-/// let event = PipelineEvent::Agent(AgentEvent::InvocationStarted {
-///     role: AgentRole::Developer,
-///     agent: "claude".to_string(),
-///     model: Some("opus".to_string()),
-/// });
-///
-/// // Pattern matching routes to category handlers
-/// match event {
-///     PipelineEvent::Agent(agent_event) => reduce_agent_event(state, agent_event),
-///     // ...
-/// }
-/// ```
-///
-/// # ⚠️ FROZEN - DO NOT ADD VARIANTS ⚠️
-///
-/// This enum is **FROZEN**. Adding new top-level variants is **PROHIBITED**.
-///
-/// ## Why is this frozen?
-///
-/// `PipelineEvent` provides category-based event routing to the reducer. The existing
-/// categories (Lifecycle, Planning, Development, Review, etc.) cover all pipeline phases.
-/// Adding new top-level variants would indicate a missing architectural abstraction or
-/// an attempt to bypass phase-specific event handling.
-///
-/// ## What to do instead
-///
-/// 1. **Express events through existing categories** - Use the category enums:
-///    - `PlanningEvent` for planning phase observations
-///    - `DevelopmentEvent` for development phase observations
-///    - `ReviewEvent` for review phase observations
-///    - `CommitEvent` for commit generation observations
-///    - `AgentEvent` for agent invocation observations
-///    - `RebaseEvent` for rebase state machine transitions
-///
-/// 2. **Return errors for unrecoverable failures** - Don't create events for conditions
-///    that should terminate the pipeline. Return `Err` from the effect handler instead.
-///
-/// 3. **Extend category enums if needed** - If you truly need a new event within an
-///    existing phase, add it to that phase's category enum (e.g., add a new variant to
-///    `ReviewEvent` rather than creating a new top-level category).
-///
-/// ## Enforcement
-///
-/// The freeze policy is enforced by the `pipeline_event_is_frozen` test in this module,
-/// which will fail to compile if new variants are added. This is intentional.
-///
-/// See `LifecycleEvent` documentation for additional context on the freeze policy rationale.
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum PipelineEvent {
-    /// Pipeline lifecycle events (start, stop, resume).
-    Lifecycle(LifecycleEvent),
-    /// Planning phase events.
-    Planning(PlanningEvent),
-    /// Development phase events.
-    Development(DevelopmentEvent),
-    /// Review phase events.
-    Review(ReviewEvent),
-    /// Prompt input materialization events.
-    PromptInput(PromptInputEvent),
-    /// Agent invocation and chain events.
-    Agent(AgentEvent),
-    /// Rebase operation events.
-    Rebase(RebaseEvent),
-    /// Commit generation events.
-    Commit(CommitEvent),
-    /// AwaitingDevFix phase events.
-    AwaitingDevFix(AwaitingDevFixEvent),
-
-    // ========================================================================
-    // Miscellaneous events that don't fit a category
-    // ========================================================================
-    /// Context cleanup completed.
-    ContextCleaned,
-    /// Checkpoint saved.
-    CheckpointSaved {
-        /// What triggered the checkpoint save.
-        trigger: CheckpointTrigger,
-    },
-    /// Finalization phase started.
-    FinalizingStarted,
-    /// PROMPT.md permissions restored.
-    PromptPermissionsRestored,
-    /// Loop recovery triggered (tight loop detected and broken).
-    LoopRecoveryTriggered {
-        /// String representation of the detected loop.
-        detected_loop: String,
-        /// Number of times the loop was repeated.
-        loop_count: u32,
+    /// Emitted after writing the completion marker to `.agent/tmp/completion_marker`.
+    /// The reducer uses this event to transition from AwaitingDevFix to Interrupted,
+    /// enabling the pipeline to complete gracefully.
+    CompletionMarkerEmitted {
+        /// Whether this is a failure completion (true) or success (false).
+        is_failure: bool,
     },
 }
-
-// ============================================================================
-// Convenience Constructors
-// ============================================================================
-
-#[path = "event/constructors.rs"]
-mod constructors;
 
 /// Rebase phase (initial or post-review).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RebasePhase {
+    /// Initial rebase before development starts.
     Initial,
+    /// Post-review rebase after review fixes.
     PostReview,
 }
 
+/// Checkpoint save trigger.
+///
+/// Records what caused a checkpoint to be saved, enabling analysis of
+/// checkpoint patterns and frequency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckpointTrigger {
+    /// Checkpoint saved during phase transition.
+    PhaseTransition,
+    /// Checkpoint saved after iteration completion.
+    IterationComplete,
+    /// Checkpoint saved before risky operation (rebase).
+    BeforeRebase,
+    /// Checkpoint saved due to interrupt signal.
+    Interrupt,
+}
+
 /// Error kind for agent failures.
+///
+/// Classifies agent invocation failures to enable retry/fallback decisions in the reducer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentErrorKind {
+    /// Network connectivity failure.
     Network,
+    /// Authentication or authorization failure.
     Authentication,
+    /// Rate limiting or quota exceeded.
     RateLimit,
+    /// Request timeout.
     Timeout,
+    /// Internal server error from agent API.
     InternalError,
+    /// Requested model is unavailable.
     ModelUnavailable,
+    /// Output parsing or validation error.
     ParsingError,
+    /// Filesystem error during agent invocation.
     FileSystem,
 }
 
 /// Conflict resolution strategy.
+///
+/// Determines how the pipeline should handle merge conflicts during rebase operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConflictStrategy {
+    /// Abort the rebase and restore original state.
     Abort,
+    /// Continue rebase after conflict resolution.
     Continue,
+    /// Skip the conflicting commit.
     Skip,
-}
-
-/// Checkpoint save trigger.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CheckpointTrigger {
-    PhaseTransition,
-    IterationComplete,
-    BeforeRebase,
-    Interrupt,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pipeline_phase_display() {
-        assert_eq!(format!("{}", PipelinePhase::Planning), "Planning");
-        assert_eq!(format!("{}", PipelinePhase::Development), "Development");
-        assert_eq!(format!("{}", PipelinePhase::Review), "Review");
-        assert_eq!(
-            format!("{}", PipelinePhase::CommitMessage),
-            "Commit Message"
-        );
-        assert_eq!(
-            format!("{}", PipelinePhase::FinalValidation),
-            "Final Validation"
-        );
-        assert_eq!(format!("{}", PipelinePhase::Finalizing), "Finalizing");
-        assert_eq!(format!("{}", PipelinePhase::Complete), "Complete");
-        assert_eq!(
-            format!("{}", PipelinePhase::AwaitingDevFix),
-            "Awaiting Dev Fix"
-        );
-        assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
-    }
-
-    /// This test enforces the FROZEN policy on LifecycleEvent.
-    ///
-    /// If you're here because this test failed to compile after adding
-    /// a variant, you are violating the freeze policy. See the FROZEN
-    /// comment on LifecycleEvent for alternatives.
-    #[test]
-    fn lifecycle_event_is_frozen() {
-        fn exhaustive_match(e: LifecycleEvent) -> &'static str {
-            match e {
-                LifecycleEvent::Started => "started",
-                LifecycleEvent::Resumed { .. } => "resumed",
-                LifecycleEvent::Completed => "completed",
-                // DO NOT ADD _ WILDCARD - intentionally exhaustive
-            }
-        }
-        // Just needs to compile; actual call proves exhaustiveness
-        let _ = exhaustive_match(LifecycleEvent::Started);
-    }
-
-    /// This test enforces the FROZEN policy on PipelineEvent.
-    ///
-    /// If you're here because this test failed to compile after adding
-    /// a variant, you are violating the freeze policy. See the FROZEN
-    /// comment on PipelineEvent for alternatives.
-    #[test]
-    fn pipeline_event_is_frozen() {
-        fn exhaustive_match(e: PipelineEvent) -> &'static str {
-            match e {
-                PipelineEvent::Lifecycle(_) => "lifecycle",
-                PipelineEvent::Planning(_) => "planning",
-                PipelineEvent::Development(_) => "development",
-                PipelineEvent::Review(_) => "review",
-                PipelineEvent::PromptInput(_) => "prompt_input",
-                PipelineEvent::Agent(_) => "agent",
-                PipelineEvent::Rebase(_) => "rebase",
-                PipelineEvent::Commit(_) => "commit",
-                PipelineEvent::AwaitingDevFix(_) => "awaiting_dev_fix",
-                PipelineEvent::ContextCleaned => "context_cleaned",
-                PipelineEvent::CheckpointSaved { .. } => "checkpoint_saved",
-                PipelineEvent::FinalizingStarted => "finalizing_started",
-                PipelineEvent::PromptPermissionsRestored => "prompt_permissions_restored",
-                PipelineEvent::LoopRecoveryTriggered { .. } => "loop_recovery_triggered",
-                // DO NOT ADD _ WILDCARD - intentionally exhaustive
-            }
-        }
-        let _ = exhaustive_match(PipelineEvent::ContextCleaned);
-    }
 }

@@ -78,8 +78,13 @@ pub fn run_commit_attempt(
     };
 
     let log_dir = Path::new(".agent/logs/commit_generation");
-    let mut session = CommitLogSession::new(log_dir.to_str().unwrap(), ctx.workspace)
-        .unwrap_or_else(|_| CommitLogSession::noop());
+    let mut session = CommitLogSession::new(
+        log_dir
+            .to_str()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8"),
+        ctx.workspace,
+    )
+    .unwrap_or_else(|_| CommitLogSession::noop());
     let mut attempt_log = session.new_attempt(commit_agent, "single");
     attempt_log.set_prompt_size(prompt.len());
     // The diff passed here is already model-safe. However, for accurate debugging we still want
@@ -102,12 +107,15 @@ pub fn run_commit_attempt(
         ctx.workspace,
     );
     let logfile = if log_attempt == 0 {
-        base_log_path.to_str().unwrap().to_string()
+        base_log_path
+            .to_str()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8")
+            .to_string()
     } else {
         ctx.run_log_context
             .agent_log("commit", attempt, Some(log_attempt))
             .to_str()
-            .unwrap()
+            .expect("Path contains invalid UTF-8 - all paths in this codebase should be UTF-8")
             .to_string()
     };
 

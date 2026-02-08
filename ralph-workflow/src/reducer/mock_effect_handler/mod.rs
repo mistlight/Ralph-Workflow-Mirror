@@ -54,7 +54,8 @@
 //! ## Module Organization
 //!
 //! - [`core`] - `MockEffectHandler` struct, builder methods, and inspection helpers
-//! - [`handler`] - `EffectHandler` trait implementation (effect-to-event mapping)
+//! - [`effect_mapping`] - Effect-to-event mapping logic (pure `execute_mock` method)
+//! - [`handler`] - `EffectHandler` and `StatefulHandler` trait implementations
 //! - [`tests`] - Test suite for mock handler behavior
 //!
 //! ## Design Principles
@@ -82,6 +83,7 @@ use anyhow::Result;
 use std::cell::RefCell;
 
 mod core;
+mod effect_mapping;
 mod handler;
 
 // Re-export the main type

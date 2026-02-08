@@ -1,7 +1,40 @@
 // File path extraction implementation.
 // All imports for the module are defined here.
 
+use regex::Regex;
 use std::collections::BTreeSet;
+use std::sync::LazyLock;
+
+// Static regex patterns for file path extraction.
+// These are compiled once at first use and reused for all subsequent calls.
+
+/// Pattern 1: Bracketed format with optional line numbers.
+/// Matches: [src/main.rs:42], [src/lib.rs], [path/to/file.rs:100]
+static BRACKET_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[([^\]]+?\.[a-z]+(?::\d+)?)\]")
+        .expect("BRACKET_PATTERN: invalid regex - this is a developer error")
+});
+
+/// Pattern 2: Parenthesized format.
+/// Matches: (src/main.rs), (path/to/file.rs)
+static PAREN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\(([^\)]+?\.[a-z]+)\)")
+        .expect("PAREN_PATTERN: invalid regex - this is a developer error")
+});
+
+/// Pattern 3: Backtick format (used by some agents like Codex).
+/// Matches: `src/main.rs:42`, `path/to/file.rs`
+static BACKTICK_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"`([^`]+?\.[a-z]+(?::\d+)?)`")
+        .expect("BACKTICK_PATTERN: invalid regex - this is a developer error")
+});
+
+/// Pattern 4: Bare colon format (file.rs:line).
+/// Matches: src/main.rs:42, lib.rs:123 (but not URLs or similar)
+static BARE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b([\w/-]+?\.[a-z]+:\d+)\b")
+        .expect("BARE_PATTERN: invalid regex - this is a developer error")
+});
 
 /// Extract file paths from ISSUES markdown content.
 ///
@@ -44,28 +77,8 @@ use std::collections::BTreeSet;
 pub fn extract_file_paths_from_issues(content: &str) -> Vec<String> {
     let mut files = BTreeSet::new();
 
-    // Pattern 1: Bracketed format with optional line numbers
-    // Matches: [src/main.rs:42], [src/lib.rs], [path/to/file.rs:100]
-    // Use non-greedy match to avoid partial matches
-    let bracket_pattern = regex::Regex::new(r"\[([^\]]+?\.[a-z]+(?::\d+)?)\]").unwrap();
-
-    // Pattern 2: Parenthesized format
-    // Matches: (src/main.rs), (path/to/file.rs)
-    // Use non-greedy match to avoid partial matches
-    let paren_pattern = regex::Regex::new(r"\(([^\)]+?\.[a-z]+)\)").unwrap();
-
-    // Pattern 3: Backtick format (used by some agents like Codex)
-    // Matches: `src/main.rs:42`, `path/to/file.rs`
-    // Use non-greedy match to avoid partial matches
-    let backtick_pattern = regex::Regex::new(r"`([^`]+?\.[a-z]+(?::\d+)?)`").unwrap();
-
-    // Pattern 4: Bare colon format (file.rs:line)
-    // Matches: src/main.rs:42, lib.rs:123 (but not URLs or similar)
-    // Use word boundaries and non-greedy matching
-    let bare_pattern = regex::Regex::new(r"\b([\w/-]+?\.[a-z]+:\d+)\b").unwrap();
-
     // Extract from bracketed format
-    for caps in bracket_pattern.captures_iter(content) {
+    for caps in BRACKET_PATTERN.captures_iter(content) {
         if let Some(file_ref) = caps.get(1) {
             let path = file_ref.as_str().trim();
             // Remove line number if present
@@ -77,7 +90,7 @@ pub fn extract_file_paths_from_issues(content: &str) -> Vec<String> {
     }
 
     // Extract from parenthesized format
-    for caps in paren_pattern.captures_iter(content) {
+    for caps in PAREN_PATTERN.captures_iter(content) {
         if let Some(file_ref) = caps.get(1) {
             let path = file_ref.as_str().trim();
             if looks_like_file_path(path) {
@@ -87,7 +100,7 @@ pub fn extract_file_paths_from_issues(content: &str) -> Vec<String> {
     }
 
     // Extract from backtick format
-    for caps in backtick_pattern.captures_iter(content) {
+    for caps in BACKTICK_PATTERN.captures_iter(content) {
         if let Some(file_ref) = caps.get(1) {
             let path = file_ref.as_str().trim();
             // Remove line number if present
@@ -99,7 +112,7 @@ pub fn extract_file_paths_from_issues(content: &str) -> Vec<String> {
     }
 
     // Extract from bare colon format
-    for caps in bare_pattern.captures_iter(content) {
+    for caps in BARE_PATTERN.captures_iter(content) {
         if let Some(file_ref) = caps.get(1) {
             let path = file_ref.as_str().trim();
             // Remove line number

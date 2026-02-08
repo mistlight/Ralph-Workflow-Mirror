@@ -10,9 +10,12 @@ pub fn handle_item_started(ctx: &EventHandlerContext, item: Option<&CodexItem>) 
         }
         Some("agent_message") => Some(handle_agent_message_started(ctx, item.text.as_ref())),
         Some("reasoning") => Some(handle_reasoning_started(ctx, item.text.as_ref())),
-        Some("file_read" | "file_write") => {
-            let output =
-                handle_file_io_started(ctx, item.path.clone(), item.item_type.as_deref().unwrap());
+        Some("file_read") => {
+            let output = handle_file_io_started(ctx, item.path.clone(), "file_read");
+            (!output.is_empty()).then_some(output)
+        }
+        Some("file_write") => {
+            let output = handle_file_io_started(ctx, item.path.clone(), "file_write");
             (!output.is_empty()).then_some(output)
         }
         Some("mcp_tool_call" | "mcp") => {
