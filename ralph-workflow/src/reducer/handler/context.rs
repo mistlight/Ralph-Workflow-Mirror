@@ -145,6 +145,88 @@ impl MainEffectHandler {
             loop_count,
         )))
     }
+
+    pub(super) fn ensure_gitignore_entries(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        ctx.logger
+            .info("Ensuring .gitignore contains agent artifact entries...");
+
+        let gitignore_path = Path::new(".gitignore");
+        let required_entries = vec!["/PROMPT*", ".agent/"];
+
+        // Capture file_created status BEFORE any file operations to avoid race condition
+        let file_created = !ctx.workspace.exists(gitignore_path);
+
+        // Read existing .gitignore content (or empty string if doesn't exist)
+        let existing_content = if ctx.workspace.exists(gitignore_path) {
+            ctx.workspace
+                .read(gitignore_path)
+                .unwrap_or_else(|_| String::new())
+        } else {
+            String::new()
+        };
+
+        // Check which entries are missing
+        let mut entries_added = Vec::new();
+        let mut already_present = Vec::new();
+
+        for pattern in &required_entries {
+            if entry_exists(&existing_content, pattern) {
+                already_present.push(pattern.to_string());
+            } else {
+                entries_added.push(pattern.to_string());
+            }
+        }
+
+        // If any entries are missing, update .gitignore
+        if !entries_added.is_empty() {
+            let mut new_content = existing_content;
+
+            // Ensure content ends with newline if not empty
+            if !new_content.is_empty() && !new_content.ends_with('\n') {
+                new_content.push('\n');
+            }
+
+            // Add comment header and new entries
+            if !new_content.is_empty() {
+                new_content.push('\n');
+            }
+            new_content.push_str("# Ralph-workflow artifacts (auto-generated)\n");
+            for entry in &entries_added {
+                new_content.push_str(entry);
+                new_content.push('\n');
+            }
+
+            // Write updated content
+            match ctx.workspace.write(gitignore_path, &new_content) {
+                Ok(()) => {
+                    ctx.logger.success(&format!(
+                        "Added {} entries to .gitignore: {}",
+                        entries_added.len(),
+                        entries_added.join(", ")
+                    ));
+                }
+                Err(err) => {
+                    // Log warning but don't fail pipeline
+                    ctx.logger.warn(&format!(
+                        "Failed to write .gitignore (continuing anyway): {}",
+                        err
+                    ));
+                    // Clear entries_added since write failed
+                    entries_added.clear();
+                }
+            }
+        } else {
+            ctx.logger
+                .info("All required .gitignore entries already present");
+        }
+
+        Ok(EffectResult::event(
+            PipelineEvent::gitignore_entries_ensured(entries_added, already_present, file_created),
+        ))
+    }
 }
 
 fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
@@ -158,4 +240,15 @@ fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Resu
             })?;
     }
     Ok(())
+}
+
+/// Check if a gitignore pattern exists in the content.
+///
+/// Matches exact pattern on its own line (ignoring comments and whitespace).
+fn entry_exists(content: &str, pattern: &str) -> bool {
+    content
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
+        .any(|line| line == pattern)
 }

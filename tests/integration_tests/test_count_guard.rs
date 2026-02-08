@@ -193,6 +193,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("gemini_parser_tests.rs"),
     },
     SourceFile {
+        path: "gitignore_enforcement.rs",
+        contents: include_str!("gitignore_enforcement.rs"),
+    },
+    SourceFile {
         path: "git/mod.rs",
         contents: include_str!("git/mod.rs"),
     },

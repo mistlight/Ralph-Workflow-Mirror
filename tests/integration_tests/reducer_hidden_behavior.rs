@@ -23,18 +23,28 @@ use ralph_workflow::app::event_loop::{run_event_loop_with_handler, EventLoopConf
 #[test]
 fn test_handler_cleanup_requires_effect() {
     with_default_timeout(|| {
-        // Cleanup must be driven by explicit effects (e.g., CleanupContext,
-        // CleanupContinuationContext). Handlers must not perform hidden cleanup
-        // beyond the effect being executed.
+        // Cleanup must be driven by explicit effects (e.g., EnsureGitignoreEntries,
+        // CleanupContext, CleanupContinuationContext). Handlers must not perform
+        // hidden cleanup beyond the effect being executed.
         let mut state = PipelineState::initial(2, 1);
         state.phase = PipelinePhase::Planning;
         state.context_cleaned = false;
+        state.gitignore_entries_ensured = false;
         state.agent_chain = AgentChainState::initial().with_agents(
             vec!["dev-primary".to_string()],
             vec![vec![]],
             AgentRole::Developer,
         );
 
+        // First effect should be EnsureGitignoreEntries
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::EnsureGitignoreEntries),
+            "First effect must be EnsureGitignoreEntries, got: {effect:?}"
+        );
+
+        // After gitignore ensured, cleanup should be next
+        state.gitignore_entries_ensured = true;
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::CleanupContext),

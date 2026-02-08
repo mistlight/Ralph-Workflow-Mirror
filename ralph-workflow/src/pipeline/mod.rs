@@ -29,7 +29,9 @@ pub mod logfile;
 mod prompt;
 mod types;
 
-pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
+pub use prompt::{
+    extract_error_message_from_logfile, run_with_prompt, PipelineRuntime, PromptCommand,
+};
 pub use types::AgentPhaseGuard;
 
 // ===== Timer Utilities =====

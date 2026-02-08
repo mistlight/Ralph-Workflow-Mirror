@@ -344,8 +344,6 @@ pub trait Workspace: Send + Sync {
         self.root().join(AGENT_DIR)
     }
 
-    /// Path to the `.agent/logs` directory.
-    ///
     /// Path to the `.agent/tmp` directory.
     fn agent_tmp(&self) -> PathBuf {
         self.root().join(AGENT_TMP)

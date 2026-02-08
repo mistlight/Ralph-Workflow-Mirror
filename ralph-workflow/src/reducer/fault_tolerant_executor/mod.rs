@@ -167,7 +167,16 @@ fn try_agent_execution(
         }),
         Ok(result) => {
             let exit_code = result.exit_code;
-            let error_kind = classify_agent_error(exit_code, &result.stderr);
+
+            // Extract error message from logfile (stdout) for agents that emit errors as JSON
+            // This is critical for OpenCode and similar agents that don't use stderr for errors
+            let stdout_error = crate::pipeline::extract_error_message_from_logfile(
+                config.logfile,
+                runtime.workspace,
+            );
+
+            let error_kind =
+                classify_agent_error(exit_code, &result.stderr, stdout_error.as_deref());
 
             // Special handling for rate limit: emit fact event with prompt context
             if is_rate_limit_error(&error_kind) {

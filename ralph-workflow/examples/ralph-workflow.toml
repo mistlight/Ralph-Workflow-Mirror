@@ -31,12 +31,6 @@ auto_detect_stack = true
 # Enable checkpoint/resume functionality for interrupted runs
 checkpoint_enabled = true
 
-# Enable automatic rebasing before development phase
-auto_rebase = true
-
-# Maximum number of recovery attempts during rebase conflict resolution
-max_recovery_attempts = 3
-
 # Number of developer iterations (how many times the developer agent runs)
 developer_iters = 5
 

@@ -56,6 +56,16 @@ pub trait ConfigEnvironment: Send + Sync {
     /// Returns `None` if the path cannot be determined (e.g., no home directory).
     fn unified_config_path(&self) -> Option<PathBuf>;
 
+    /// Get the path to the local config file.
+    ///
+    /// In production, this returns `.agent/ralph-workflow.toml` relative to CWD.
+    /// Tests may override this to use a different path.
+    ///
+    /// Returns `None` if local config is not supported or path cannot be determined.
+    fn local_config_path(&self) -> Option<PathBuf> {
+        Some(PathBuf::from(".agent/ralph-workflow.toml"))
+    }
+
     /// Get the path to the PROMPT.md file.
     ///
     /// In production, this returns `./PROMPT.md` (relative to current directory).
@@ -75,6 +85,15 @@ pub trait ConfigEnvironment: Send + Sync {
 
     /// Create directories recursively.
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
+
+    /// Get the root of the current git worktree, if running inside one.
+    ///
+    /// Returns `None` if not in a git repository or in a bare repository.
+    /// This is used to resolve local config paths relative to the worktree root
+    /// instead of the current working directory.
+    fn worktree_root(&self) -> Option<PathBuf> {
+        None // Default implementation for backwards compatibility
+    }
 }
 
 /// Production implementation of [`ConfigEnvironment`].
@@ -108,6 +127,19 @@ impl ConfigEnvironment for RealConfigEnvironment {
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         std::fs::create_dir_all(path)
     }
+
+    fn worktree_root(&self) -> Option<PathBuf> {
+        git2::Repository::discover(".")
+            .ok()
+            .and_then(|repo| repo.workdir().map(PathBuf::from))
+    }
+
+    fn local_config_path(&self) -> Option<PathBuf> {
+        // Try worktree root first, fall back to default behavior
+        self.worktree_root()
+            .map(|root| root.join(".agent/ralph-workflow.toml"))
+            .or_else(|| Some(PathBuf::from(".agent/ralph-workflow.toml")))
+    }
 }
 
 /// In-memory implementation of [`ConfigEnvironment`] for testing.
@@ -137,6 +169,8 @@ impl ConfigEnvironment for RealConfigEnvironment {
 pub struct MemoryConfigEnvironment {
     unified_config_path: Option<PathBuf>,
     prompt_path: Option<PathBuf>,
+    local_config_path: Option<PathBuf>,
+    worktree_root: Option<PathBuf>,
     /// In-memory file storage.
     files: Arc<RwLock<HashMap<PathBuf, String>>>,
     /// Directories that have been created.
@@ -156,6 +190,13 @@ impl MemoryConfigEnvironment {
         self
     }
 
+    /// Set the local config path.
+    #[must_use]
+    pub fn with_local_config_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.local_config_path = Some(path.into());
+        self
+    }
+
     /// Set the PROMPT.md path.
     #[must_use]
     pub fn with_prompt_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
@@ -170,6 +211,13 @@ impl MemoryConfigEnvironment {
         self.files.write()
             .expect("RwLock poisoned - indicates panic in another thread holding MemoryConfigEnvironment files lock")
             .insert(path, content.into());
+        self
+    }
+
+    /// Set the worktree root path for testing git worktree scenarios.
+    #[must_use]
+    pub fn with_worktree_root<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.worktree_root = Some(path.into());
         self
     }
 
@@ -191,6 +239,18 @@ impl MemoryConfigEnvironment {
 impl ConfigEnvironment for MemoryConfigEnvironment {
     fn unified_config_path(&self) -> Option<PathBuf> {
         self.unified_config_path.clone()
+    }
+
+    fn local_config_path(&self) -> Option<PathBuf> {
+        // If explicit local_config_path was set, use it (for legacy tests)
+        if let Some(ref path) = self.local_config_path {
+            return Some(path.clone());
+        }
+
+        // Otherwise, use worktree root if available
+        self.worktree_root()
+            .map(|root| root.join(".agent/ralph-workflow.toml"))
+            .or_else(|| Some(PathBuf::from(".agent/ralph-workflow.toml")))
     }
 
     fn prompt_path(&self) -> PathBuf {
@@ -238,6 +298,10 @@ impl ConfigEnvironment for MemoryConfigEnvironment {
             .expect("RwLock poisoned - indicates panic in another thread holding MemoryConfigEnvironment dirs lock")
             .insert(path.to_path_buf());
         Ok(())
+    }
+
+    fn worktree_root(&self) -> Option<PathBuf> {
+        self.worktree_root.clone()
     }
 }
 
@@ -315,5 +379,40 @@ mod tests {
         let result = env.read_file(Path::new("/nonexistent"));
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn test_memory_environment_with_worktree_root() {
+        let env = MemoryConfigEnvironment::new().with_worktree_root("/test/worktree");
+
+        assert_eq!(env.worktree_root(), Some(PathBuf::from("/test/worktree")));
+        assert_eq!(
+            env.local_config_path(),
+            Some(PathBuf::from("/test/worktree/.agent/ralph-workflow.toml"))
+        );
+    }
+
+    #[test]
+    fn test_memory_environment_without_worktree_root() {
+        let env = MemoryConfigEnvironment::new();
+
+        assert_eq!(env.worktree_root(), None);
+        assert_eq!(
+            env.local_config_path(),
+            Some(PathBuf::from(".agent/ralph-workflow.toml"))
+        );
+    }
+
+    #[test]
+    fn test_memory_environment_explicit_local_path_overrides_worktree() {
+        let env = MemoryConfigEnvironment::new()
+            .with_worktree_root("/test/worktree")
+            .with_local_config_path("/custom/path/config.toml");
+
+        // Explicit local_config_path should take precedence
+        assert_eq!(
+            env.local_config_path(),
+            Some(PathBuf::from("/custom/path/config.toml"))
+        );
     }
 }

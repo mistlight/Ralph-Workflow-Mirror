@@ -288,16 +288,24 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
             next_effect
         );
 
-        // Verify we get a continuation effect (CleanupContinuationContext or InitializeAgentChain),
-        // not an immediate exit. The exact effect depends on continuation state:
-        // - If context_cleanup_pending=true (set by reducer on success): CleanupContinuationContext
-        // - Then InitializeAgentChain (for Commit role)
-        // - Then CheckCommitDiff and other commit work
+        // After development completes, reducer sets context_cleanup_pending=true,
+        // so the FIRST effect must be CleanupContinuationContext.
+        // Verify both the flag and the effect to ensure complete correctness.
         assert!(
+<<<<<<< HEAD
             matches!(next_effect, Effect::CleanupContinuationContext)
                 || matches!(next_effect, Effect::InitializeAgentChain { .. })
                 || matches!(next_effect, Effect::CheckCommitDiff),
             "Should derive continuation/commit effect in CommitMessage phase. Got: {:?}",
+=======
+            state.continuation.context_cleanup_pending,
+            "After development success, context_cleanup_pending flag should be true. State: {:?}",
+            state.continuation
+        );
+        assert!(
+            matches!(next_effect, Effect::CleanupContinuationContext),
+            "After development success, first effect should be CleanupContinuationContext. Got: {:?}",
+>>>>>>> main
             next_effect
         );
 

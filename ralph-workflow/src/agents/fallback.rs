@@ -65,7 +65,7 @@ impl std::fmt::Display for AgentRole {
 /// - Each cycle multiplies by `backoff_multiplier` (default: 2.0)
 /// - Capped at `max_backoff_ms` (default: 60000ms = 1 minute)
 /// - Maximum cycles controlled by `max_cycles` (default: 3)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FallbackConfig {
     /// Ordered list of agents for developer role (first = preferred, rest = fallbacks).
     #[serde(default)]

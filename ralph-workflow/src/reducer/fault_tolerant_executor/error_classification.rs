@@ -16,8 +16,24 @@ static EXTENSION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         .expect("invalid extension regex pattern - this is a compile-time constant")
 });
 
-/// Classify agent error from exit code and stderr.
-pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
+/// Classify agent error from exit code, stderr, and optional stdout content.
+///
+/// # Arguments
+///
+/// * `exit_code` - Process exit code
+/// * `stderr` - Standard error output
+/// * `stdout_error` - Optional error message extracted from stdout (e.g., from JSON logs)
+///
+/// # Stdout Error Detection
+///
+/// Some agents (like OpenCode) emit errors as JSON to stdout rather than stderr.
+/// When `stdout_error` is provided, it is examined for rate limit patterns alongside stderr.
+/// This ensures rate limit errors are properly detected regardless of output stream.
+pub fn classify_agent_error(
+    exit_code: i32,
+    stderr: &str,
+    stdout_error: Option<&str>,
+) -> AgentErrorKind {
     const SIGSEGV: i32 = 139;
     const SIGABRT: i32 = 134;
     const SIGTERM: i32 = 143;
@@ -30,7 +46,7 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
 
             if is_timeout_stderr(&stderr_lower) {
                 AgentErrorKind::Timeout
-            } else if is_rate_limit_stderr(&stderr_lower, stderr) {
+            } else if is_rate_limit_error_from_any_source(&stderr_lower, stderr, stdout_error) {
                 // Rate limit detection must run before broad auth heuristics.
                 // Some providers encode quota/rate-limit as 403 Forbidden, and we
                 // still want the "429 => rate-limit policy" semantics.
@@ -106,6 +122,35 @@ fn contains_timeout_phrase(text_lower: &str) -> bool {
         .any(|timeout_phrase| text_lower.contains(timeout_phrase))
 }
 
+/// Check for rate limit errors from both stderr and stdout sources.
+///
+/// This function examines:
+/// 1. stderr (traditional error output)
+/// 2. stdout_error (extracted from JSON logs, e.g., OpenCode)
+///
+/// This dual-source approach ensures rate limit errors are detected
+/// regardless of which stream the agent uses for error reporting.
+fn is_rate_limit_error_from_any_source(
+    stderr_lower: &str,
+    stderr_raw: &str,
+    stdout_error: Option<&str>,
+) -> bool {
+    // Check stderr first (traditional path)
+    if is_rate_limit_stderr(stderr_lower, stderr_raw) {
+        return true;
+    }
+
+    // Check stdout error message if available (e.g., from OpenCode JSON logs)
+    if let Some(stdout_err) = stdout_error {
+        let stdout_lower = stdout_err.to_lowercase();
+        if is_rate_limit_stderr(&stdout_lower, stdout_err) {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // Prefer structured formats when available.
     if is_structured_rate_limit_error(stderr_raw) {
@@ -162,6 +207,14 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // For the bare "usage limit" pattern, we require API error context to avoid
     // false positives from filenames (e.g., "usage_limit.rs") or non-error text.
     // Context markers: "error:" prefix, sentence punctuation, or HTTP status codes.
+    //
+    // Last Verified: 2026-02-07
+    // Source: OpenCode production logs and multi-provider gateway behavior
+    // How to verify:
+    //   1. Check OpenCode source at https://github.com/anomalyco/opencode
+    //   2. Review /packages/opencode/src/cli/cmd/run.ts for error emission
+    //   3. Test with OpenCode CLI near usage limit to observe actual messages
+    //   4. Update patterns if format changes
     //
     // Providers affected: OpenCode (multi-provider), Claude API wrappers
     // Related patterns: "quota exceeded", "rate limit exceeded"
@@ -332,13 +385,16 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Authentication)
 }
 
-/// Check if a pattern is immediately followed by a file extension.
+/// Check if a pattern is followed by a file extension (with optional whitespace).
 ///
 /// This prevents false positives where "usage limit" appears as part of a filename
-/// (e.g., "error: usage limit.rs file not found") rather than as an API error message.
+/// (e.g., "error: usage limit.rs file not found" or "error: usage limit .rs file not found")
+/// rather than as an API error message.
 ///
 /// Uses a regex pattern to match any file extension (dot followed by 1-5 alphanumeric chars).
 /// This covers all common programming language file extensions and is future-proof.
+///
+/// The regex is compiled once at startup using LazyLock for efficiency.
 ///
 /// # Arguments
 /// * `text` - The full text to search in (lowercase)
@@ -347,18 +403,30 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
 /// # Returns
 /// `true` if the pattern is found and is followed by a file extension pattern
 fn is_followed_by_file_extension_generic(text: &str, pattern: &str) -> bool {
+    /// LazyLock for one-time regex initialization (compiled on first use, then cached).
+    /// Pattern matches: optional whitespace + dot + 1-10 alphanumeric chars + non-alphanumeric or end.
+    /// Matches common file extensions: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, .properties, .markdown, .terraform, etc.
+    /// Handles edge case of whitespace between pattern and extension: "usage limit .rs"
+    /// Updated from 1-5 to 1-10 to support longer extensions like .properties, .markdown
+    static EXTENSION_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^\s*\.[a-z0-9]{1,10}([^a-z0-9]|$)").unwrap()
+    });
+
     let Some(pos) = text.find(pattern) else {
         return false;
     };
 
-    // Check if the character after the pattern is a dot followed by 1-5 alphanumeric chars
+    // Check if the character after the pattern (with optional whitespace) is a dot
+    // followed by 1-5 alphanumeric chars.
     // This matches common file extensions like: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, etc.
+    // Also handles the edge case where there's whitespace between the pattern and the extension
+    // (e.g., "usage limit .rs file not found")
     let after_pattern = text.get(pos + pattern.len()..);
     match after_pattern {
         None | Some("") => false, // Pattern is at end of string, no extension
         Some(rest) => {
-            // Check if it starts with a dot followed by 1-5 alphanumeric characters
-            // The pattern is: "." + [a-z0-9]{1,5}
+            // Check if it starts with optional whitespace, then a dot followed by 1-5 alphanumeric characters
+            // The pattern is: optional whitespace + "." + [a-z0-9]{1,5}
             // After the extension, there should be a non-alphanumeric character or end of string
             EXTENSION_REGEX.is_match(rest)
         }
@@ -373,7 +441,7 @@ mod tests {
     fn classify_agent_error_does_not_treat_filename_timeout_rs_as_timeout() {
         // Regression test: naive `contains("timeout")` matching can incorrectly classify
         // compiler/file path diagnostics (e.g., `timeout.rs:1:1`) as a timeout error.
-        let error_kind = classify_agent_error(1, "timeout.rs:1:1: error: unexpected token");
+        let error_kind = classify_agent_error(1, "timeout.rs:1:1: error: unexpected token", None);
 
         assert_eq!(error_kind, AgentErrorKind::InternalError);
     }

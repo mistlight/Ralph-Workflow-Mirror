@@ -42,6 +42,16 @@ fn test_complete_pipeline_flow() {
                     ),
                 );
             }
+            Effect::EnsureGitignoreEntries => {
+                state = reduce(
+                    state,
+                    PipelineEvent::gitignore_entries_ensured(
+                        vec!["/PROMPT*".to_string(), ".agent/".to_string()],
+                        vec![],
+                        false,
+                    ),
+                );
+            }
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
             }

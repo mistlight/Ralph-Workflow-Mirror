@@ -456,6 +456,16 @@ pub enum Effect {
         trigger: CheckpointTrigger,
     },
 
+    /// Ensure required gitignore entries exist (single-task).
+    ///
+    /// This effect checks the repository's .gitignore for required entries
+    /// (`/PROMPT*`, `.agent/`) and adds any missing entries. It runs at
+    /// pipeline start before phase-specific work begins.
+    ///
+    /// The effect is idempotent: if entries already exist, no changes are made.
+    /// File write errors are logged as warnings but do not fail the pipeline.
+    EnsureGitignoreEntries,
+
     CleanupContext,
 
     /// Restore PROMPT.md write permissions after pipeline completion.

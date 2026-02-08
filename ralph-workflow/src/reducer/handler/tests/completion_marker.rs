@@ -216,8 +216,9 @@ impl Workspace for FailingMarkerWorkspace {
     }
 }
 
-/// Helper struct to group test context parameters and reduce parameter count.
-struct TestContextParams<'a> {
+/// Parameters for building a test PhaseContext.
+/// Groups related parameters to avoid clippy::too_many_arguments.
+struct ContextParams<'a> {
     workspace: &'a dyn Workspace,
     repo_root: &'a Path,
     executor: &'a Arc<MockProcessExecutor>,
@@ -226,16 +227,17 @@ struct TestContextParams<'a> {
     logger: &'a Logger,
     colors: &'a Colors,
     template_context: &'a TemplateContext,
+    timer: &'a mut Timer,
     run_log_context: &'a crate::logging::RunLogContext,
 }
 
-fn build_context<'a>(params: TestContextParams<'a>, timer: &'a mut Timer) -> PhaseContext<'a> {
+fn build_context<'a>(params: ContextParams<'a>) -> PhaseContext<'a> {
     PhaseContext {
         config: params.config,
         registry: params.registry,
         logger: params.logger,
         colors: params.colors,
-        timer,
+        timer: params.timer,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
@@ -264,20 +266,18 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        TestContextParams {
-            workspace: &workspace,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            run_log_context: &run_log_context,
-        },
-        &mut timer,
-    );
+    let mut ctx = build_context(ContextParams {
+        workspace: &workspace,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    });
 
     let state = PipelineState::initial(1, 0);
     let mut handler = MainEffectHandler::new(state);
@@ -303,7 +303,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
 }
 
 #[test]
-fn emit_completion_marker_emits_event_on_write_failure() {
+fn emit_completion_marker_with_write_failure_emits_event() {
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -315,20 +315,18 @@ fn emit_completion_marker_emits_event_on_write_failure() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        TestContextParams {
-            workspace: &workspace,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            run_log_context: &run_log_context,
-        },
-        &mut timer,
-    );
+    let mut ctx = build_context(ContextParams {
+        workspace: &workspace,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    });
 
     let state = PipelineState::initial(1, 0);
     let mut handler = MainEffectHandler::new(state);
@@ -368,20 +366,18 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        TestContextParams {
-            workspace: &workspace,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            run_log_context: &run_log_context,
-        },
-        &mut timer,
-    );
+    let mut ctx = build_context(ContextParams {
+        workspace: &workspace,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    });
     ctx.developer_agent = "missing-agent";
 
     let state = PipelineState::initial(1, 0);

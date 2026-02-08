@@ -60,6 +60,21 @@ pub struct UnifiedInitFlags {
         hide = true
     )]
     pub init_global: bool,
+
+    /// Initialize local project config file and exit
+    #[arg(
+        long,
+        conflicts_with_all = ["init", "init_config", "init_global"],
+        help = "Create .agent/ralph-workflow.toml for project-specific overrides"
+    )]
+    pub init_local_config: bool,
+
+    /// Validate configuration and show effective settings
+    #[arg(
+        long,
+        help = "Validate config files and display effective merged settings"
+    )]
+    pub check_config: bool,
 }
 
 /// Work Guide listing flag.

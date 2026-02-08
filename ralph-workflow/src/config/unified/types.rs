@@ -35,7 +35,7 @@ use std::collections::HashMap;
 /// General configuration behavioral flags.
 ///
 /// Groups user interaction and validation-related boolean settings for `GeneralConfig`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct GeneralBehaviorFlags {
     /// Interactive mode (keep agent in foreground).
@@ -49,7 +49,7 @@ pub struct GeneralBehaviorFlags {
 /// General configuration workflow automation flags.
 ///
 /// Groups workflow automation features for `GeneralConfig`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct GeneralWorkflowFlags {
     /// Enable checkpoint/resume functionality.
@@ -59,7 +59,7 @@ pub struct GeneralWorkflowFlags {
 /// General configuration execution behavior flags.
 ///
 /// Groups execution behavior settings for `GeneralConfig`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct GeneralExecutionFlags {
     /// Force universal review prompt for all agents.
@@ -69,7 +69,7 @@ pub struct GeneralExecutionFlags {
 }
 
 /// General configuration section.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default)]
 // Configuration options naturally use many boolean flags. These represent
 // independent feature toggles, not a state machine, so bools are appropriate.
@@ -202,7 +202,7 @@ impl Default for GeneralConfig {
 pub type CcsAliases = HashMap<String, CcsAliasToml>;
 
 /// CCS defaults applied to all CCS aliases unless overridden per-alias.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct CcsConfig {
     /// Output-format flag for CCS (often Claude-compatible stream JSON).
@@ -252,7 +252,7 @@ impl Default for CcsConfig {
 }
 
 /// Per-alias CCS configuration (table form).
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct CcsAliasConfig {
     /// Base CCS command to run (e.g., "ccs work", "ccs gemini").
@@ -279,7 +279,7 @@ pub struct CcsAliasConfig {
 }
 
 /// CCS alias entry supports both shorthand string and table form.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum CcsAliasToml {
     Command(String),
@@ -305,7 +305,7 @@ impl CcsAliasToml {
 /// Agent TOML configuration (compatible with `examples/agents.toml`).
 ///
 /// Fields are used via serde deserialization.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct AgentConfigToml {
     /// Base command to run the agent.
@@ -364,7 +364,7 @@ pub struct AgentConfigToml {
 ///
 /// This is the sole source of truth for Ralph configuration,
 /// located at `~/.config/ralph-workflow.toml`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct UnifiedConfig {
     /// General settings.

@@ -26,6 +26,7 @@ fn test_pipeline_advances_after_prompt_preparation() {
                 AgentRole::Developer,
             ),
             context_cleaned: true,
+            gitignore_entries_ensured: true,
             planning_xml_cleaned_iteration: Some(0),
             ..PipelineState::initial(1, 0)
         };

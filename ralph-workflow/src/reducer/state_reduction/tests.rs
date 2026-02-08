@@ -73,3 +73,7 @@ mod fix_continuation;
 // Metrics tracking tests
 #[path = "tests/metrics/mod.rs"]
 mod metrics;
+
+// Gitignore entries ensured tests
+#[path = "tests/gitignore_entries.rs"]
+mod gitignore_entries;
