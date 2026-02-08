@@ -1,0 +1,206 @@
+//! Pass completion management for review phase.
+//!
+//! This module handles the logic for completing review passes and transitioning
+//! between passes or to the commit phase. All functions are pure state transformations.
+
+use crate::reducer::event::PipelinePhase;
+use crate::reducer::state::*;
+
+/// Handles `ReviewEvent::Completed`.
+///
+/// Completes review pass. If no issues found and all passes complete, transitions to CommitMessage.
+/// Otherwise, stays in Review for fix or next pass.
+pub(in crate::reducer::state_reduction::review) fn reduce_completed(
+    state: PipelineState,
+    pass: u32,
+    issues_found: bool,
+) -> PipelineState {
+    let next_pass = if issues_found { pass } else { pass + 1 };
+    let next_phase = if !issues_found && next_pass >= state.total_reviewer_passes {
+        PipelinePhase::CommitMessage
+    } else {
+        state.phase
+    };
+
+    // Increment completed passes counter if no issues found (clean pass)
+    let mut metrics = state.metrics.clone();
+    if !issues_found {
+        metrics.review_passes_completed += 1;
+    }
+
+    if next_phase == PipelinePhase::CommitMessage {
+        PipelineState {
+            phase: next_phase,
+            previous_phase: None,
+            reviewer_pass: next_pass,
+            review_issues_found: issues_found,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_issues_xml_cleaned_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
+            review_issues_xml_archived_pass: None,
+            commit: CommitState::NotStarted,
+            commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
+            commit_agent_invoked: false,
+            commit_xml_cleaned: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
+            continuation: ContinuationState {
+                invalid_output_attempts: 0,
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
+                // Clear review error when transitioning to commit phase
+                last_review_xsd_error: None,
+                ..state.continuation
+            },
+            fix_result_xml_cleaned_pass: None,
+            metrics,
+            ..state
+        }
+    } else {
+        PipelineState {
+            phase: next_phase,
+            reviewer_pass: next_pass,
+            review_issues_found: issues_found,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_issues_xml_cleaned_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
+            review_issues_xml_archived_pass: None,
+            continuation: ContinuationState {
+                invalid_output_attempts: 0,
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
+                ..state.continuation
+            },
+            fix_result_xml_cleaned_pass: None,
+            metrics,
+            ..state
+        }
+    }
+}
+
+/// Handles `ReviewEvent::PhaseCompleted`.
+///
+/// Completes entire review phase and transitions to CommitMessage.
+pub(in crate::reducer::state_reduction::review) fn reduce_phase_completed(
+    state: PipelineState,
+) -> PipelineState {
+    PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: None,
+        commit: CommitState::NotStarted,
+        commit_prompt_prepared: false,
+        commit_diff_prepared: false,
+        commit_diff_empty: false,
+        commit_agent_invoked: false,
+        commit_xml_cleaned: false,
+        commit_xml_extracted: false,
+        commit_validated_outcome: None,
+        commit_xml_archived: false,
+        continuation: ContinuationState {
+            invalid_output_attempts: 0,
+            ..state.continuation
+        },
+        review_issues_xml_cleaned_pass: None,
+        fix_result_xml_cleaned_pass: None,
+        ..state
+    }
+}
+
+/// Handles `ReviewEvent::PassCompletedClean`.
+///
+/// Completes a clean review pass (no issues found).
+/// Advances to next pass or transitions to CommitMessage if all passes complete.
+pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
+    state: PipelineState,
+    pass: u32,
+) -> PipelineState {
+    // Clean pass means no issues found in this pass.
+    // Advance to the next pass when more passes remain.
+    // Increment completed passes counter
+    let mut metrics = state.metrics.clone();
+    metrics.review_passes_completed += 1;
+
+    let next_pass = pass + 1;
+    let next_phase = if next_pass >= state.total_reviewer_passes {
+        PipelinePhase::CommitMessage
+    } else {
+        PipelinePhase::Review
+    };
+
+    if next_phase == PipelinePhase::CommitMessage {
+        PipelineState {
+            phase: next_phase,
+            previous_phase: None,
+            reviewer_pass: next_pass,
+            review_issues_found: false,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_issues_xml_cleaned_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
+            review_issues_xml_archived_pass: None,
+            commit: CommitState::NotStarted,
+            commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
+            commit_agent_invoked: false,
+            commit_xml_cleaned: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
+            continuation: ContinuationState {
+                invalid_output_attempts: 0,
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
+                ..state.continuation
+            },
+            fix_result_xml_cleaned_pass: None,
+            metrics,
+            ..state
+        }
+    } else {
+        PipelineState {
+            phase: next_phase,
+            reviewer_pass: next_pass,
+            review_issues_found: false,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_issues_xml_cleaned_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
+            review_issues_xml_archived_pass: None,
+            continuation: ContinuationState {
+                invalid_output_attempts: 0,
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
+                ..state.continuation
+            },
+            fix_result_xml_cleaned_pass: None,
+            metrics,
+            ..state
+        }
+    }
+}

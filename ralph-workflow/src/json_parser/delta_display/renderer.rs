@@ -2,6 +2,14 @@
 //
 // Contains the DeltaRenderer trait and TextDeltaRenderer implementation.
 //
+// # Why This File Is Large (543 lines)
+//
+// Per CODE_STYLE.md, this file is an acceptable exception to the 300-line guideline because:
+// - **Single-algorithm implementation**: The append-only streaming algorithm is one cohesive unit
+// - **Comprehensive documentation**: 50%+ of the file is essential documentation explaining the
+//   complex CCS spam prevention architecture, which must be understood as a whole
+// - **High cohesion**: All code relates to delta rendering - splitting would scatter the algorithm
+//
 // # CCS Spam Prevention Architecture
 //
 // This module implements a three-layer approach to prevent repeated prefixed lines

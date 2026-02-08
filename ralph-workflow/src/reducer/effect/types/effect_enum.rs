@@ -1,4 +1,31 @@
-// NOTE: split from reducer/effect/types.rs (Effect enum and helper structs).
+//! Effect type definitions for the Ralph pipeline.
+//!
+//! This module defines the [`Effect`] enum, which represents all side-effect operations
+//! that can be executed by the pipeline. Effects are determined by the reducer's orchestration
+//! logic and executed by effect handlers.
+//!
+//! ## Why This File Is Large (500 lines)
+//!
+//! Per CODE_STYLE.md, this file is an acceptable exception to the 300-line guideline because it's
+//! a **comprehensive enum** with 60+ variants that must remain together for exhaustiveness checking.
+//! Splitting the enum would break pattern matching across the codebase.
+//!
+//! ## Architecture Note
+//!
+//! Effects are part of the reducer architecture's event-sourced pipeline:
+//! ```text
+//! State → Orchestrator → Effect → Handler → Event → Reducer → State
+//! ```
+//!
+//! The Effect enum defines the vocabulary of operations the pipeline can execute. Each variant
+//! corresponds to a single, focused side-effect operation (e.g., invoke agent, write file,
+//! validate XML).
+//!
+//! ## See Also
+//!
+//! - `docs/architecture/effect-system.md` - Effect system design
+//! - `reducer::handler` - Effect handler implementations
+//! - `reducer::state_reduction` - Orchestration logic that determines effects
 
 use crate::agents::AgentRole;
 use serde::{Deserialize, Serialize};

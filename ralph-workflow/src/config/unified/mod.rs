@@ -1,0 +1,75 @@
+//! Unified Configuration Types
+//!
+//! This module defines the unified configuration format for Ralph,
+//! consolidating all settings into a single `~/.config/ralph-workflow.toml` file.
+//!
+//! # Configuration Structure
+//!
+//! ```toml
+//! [general]
+//! verbosity = 2
+//! interactive = true
+//! isolation_mode = true
+//!
+//! [agents.claude]
+//! cmd = "claude -p"
+//! # ...
+//!
+//! [ccs_aliases]
+//! work = "ccs work"
+//! personal = "ccs personal"
+//!
+//! [agent_chain]
+//! developer = ["ccs/work", "claude"]
+//! reviewer = ["claude"]
+//! ```
+//!
+//! # Module Organization
+//!
+//! This module is split into three focused submodules:
+//!
+//! - [`types`]: All configuration type definitions (General, CCS, Agent configs)
+//! - [`loading`]: Configuration loading and initialization logic
+//! - [`helpers`]: Utility functions (path resolution, etc.)
+//!
+//! # Examples
+//!
+//! ## Loading Configuration
+//!
+//! ```rust
+//! use ralph_workflow::config::unified::UnifiedConfig;
+//!
+//! // Load from default location (~/.config/ralph-workflow.toml)
+//! if let Some(config) = UnifiedConfig::load_default() {
+//!     println!("Verbosity: {}", config.general.verbosity);
+//! }
+//! ```
+//!
+//! ## Ensuring Configuration Exists
+//!
+//! ```rust
+//! use ralph_workflow::config::unified::{UnifiedConfig, ConfigInitResult};
+//!
+//! // Create config from template if it doesn't exist
+//! match UnifiedConfig::ensure_config_exists() {
+//!     Ok(ConfigInitResult::Created) => println!("Created new config"),
+//!     Ok(ConfigInitResult::AlreadyExists) => println!("Config already exists"),
+//!     Err(e) => eprintln!("Error: {}", e),
+//! }
+//! # Ok::<(), std::io::Error>(())
+//! ```
+
+pub mod helpers;
+pub mod loading;
+pub mod types;
+
+// Re-export all public types and functions at the module level for convenience
+pub use helpers::{unified_config_path, DEFAULT_UNIFIED_CONFIG_NAME};
+pub use loading::{ConfigInitResult, ConfigLoadError, DEFAULT_UNIFIED_CONFIG};
+pub use types::{
+    AgentConfigToml, CcsAliasConfig, CcsAliasToml, CcsAliases, CcsConfig, GeneralBehaviorFlags,
+    GeneralConfig, GeneralExecutionFlags, GeneralWorkflowFlags, UnifiedConfig,
+};
+
+#[cfg(test)]
+mod tests;
