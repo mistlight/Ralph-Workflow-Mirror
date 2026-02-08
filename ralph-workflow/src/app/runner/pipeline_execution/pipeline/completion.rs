@@ -54,8 +54,9 @@
 ///
 /// # Example
 ///
-/// ```
-/// use ralph_workflow::app::runner::pipeline_execution::pipeline::completion::write_defensive_completion_marker;
+/// ```ignore
+/// // This function is included via include!() macro and not a separate module,
+/// // so it can't be imported in doctests. See the unit tests below for usage examples.
 /// use ralph_workflow::logger::{Logger, Colors};
 /// use ralph_workflow::workspace::MemoryWorkspace;
 /// use ralph_workflow::reducer::event::PipelinePhase;

@@ -16,7 +16,8 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```ignore
+//! // Note: This is a private module, functions are re-exported from phases::review
 //! // Run a review pass
 //! let result = run_review_pass(ctx, j, "review", &review_prompt, Some("reviewer-agent"))?;
 //! if result.issues_found {

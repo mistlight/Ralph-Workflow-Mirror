@@ -27,7 +27,7 @@ use thiserror::Error;
 mod error_formatting;
 mod key_detection;
 mod keys;
-mod levenshtein;
+pub mod levenshtein;
 
 // Re-export public API
 pub use levenshtein::suggest_key;

@@ -27,10 +27,12 @@
 //!
 //! ```rust
 //! use ralph_workflow::files::llm_output_extraction::xml_helpers::validation::check_for_illegal_xml_characters;
-//!
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let content = "<root>Hello world</root>";
 //! check_for_illegal_xml_characters(content)?; // Validates before parsing
 //! // Now safe to parse with quick_xml
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::common::truncate_text;

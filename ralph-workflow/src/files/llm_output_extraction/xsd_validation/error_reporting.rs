@@ -9,7 +9,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XsdValidationError {
     /// The type of validation error that occurred
-    pub(crate) error_type: XsdErrorType,
+    pub error_type: XsdErrorType,
     /// The path to the element that failed validation
     pub element_path: String,
     /// What was expected at this location
@@ -134,7 +134,7 @@ impl std::error::Error for XsdValidationError {}
 /// Each variant represents a different category of validation failure,
 /// allowing for targeted error messages and retry strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum XsdErrorType {
+pub enum XsdErrorType {
     /// A required element is missing from the XML
     MissingRequiredElement,
     /// An unexpected element was found

@@ -29,7 +29,8 @@
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
+/// // Note: issue_count() and is_empty() are test-only methods
 /// use ralph_workflow::files::llm_output_extraction::xsd_validation_issues::IssuesElements;
 ///
 /// // Issues found
