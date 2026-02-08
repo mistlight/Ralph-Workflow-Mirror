@@ -10,6 +10,7 @@ use crate::files::llm_output_extraction::validate_issues_xml;
 use crate::reducer::ui_event::{XmlCodeSnippet, XmlOutputContext};
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 /// Render review issues XML with semantic formatting.
 pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
@@ -159,23 +160,36 @@ fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
     a_start <= b_end && b_start <= a_end
 }
 
+/// Regex for parsing severity levels from issue text.
+static SEVERITY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\[(critical|high|medium|low)\]\s*")
+        .expect("invalid severity regex pattern - this is a compile-time constant")
+});
+
+/// Regex for parsing file locations in standard format (file.ext:123-456).
+static LOCATION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?")
+        .expect("invalid location regex pattern - this is a compile-time constant")
+});
+
+/// Regex for parsing GitHub-style locations (file.ext#L123-L456).
+static GH_LOCATION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?")
+        .expect("invalid GitHub location regex pattern - this is a compile-time constant")
+});
+
+/// Regex for parsing code snippets in markdown fenced code blocks.
+static SNIPPET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)```(?:[A-Za-z0-9_-]+)?\s*(?P<code>.*?)\s*```")
+        .expect("invalid snippet regex pattern - this is a compile-time constant")
+});
+
 fn parse_issue(issue: &str) -> ParsedIssue {
     let trimmed = issue.trim();
 
-    let severity_re = Regex::new(r"(?i)^\[(critical|high|medium|low)\]\s*").unwrap();
-    let location_re = Regex::new(
-        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
-    )
-    .unwrap();
-    let gh_location_re = Regex::new(
-        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
-    )
-    .unwrap();
-    let snippet_re = Regex::new(r"(?s)```(?:[A-Za-z0-9_-]+)?\s*(?P<code>.*?)\s*```").unwrap();
-
     let mut working = trimmed.to_string();
 
-    let severity = severity_re
+    let severity = SEVERITY_RE
         .captures(&working)
         .and_then(|cap| cap.get(1).map(|m| m.as_str().to_ascii_lowercase()))
         .map(|s| match s.as_str() {
@@ -186,17 +200,17 @@ fn parse_issue(issue: &str) -> ParsedIssue {
             _ => s,
         });
     if severity.is_some() {
-        working = severity_re.replace(&working, "").to_string();
+        working = SEVERITY_RE.replace(&working, "").to_string();
     }
 
-    let snippet = snippet_re
+    let snippet = SNIPPET_RE
         .captures(&working)
         .and_then(|cap| cap.name("code").map(|m| m.as_str().to_string()));
     if snippet.is_some() {
-        working = snippet_re.replace(&working, "").to_string();
+        working = SNIPPET_RE.replace(&working, "").to_string();
     }
 
-    let (file, line_start, line_end) = if let Some(cap) = location_re.captures(&working) {
+    let (file, line_start, line_end) = if let Some(cap) = LOCATION_RE.captures(&working) {
         let file = cap.name("file").map(|m| m.as_str().to_string());
         let start = cap
             .name("start")
@@ -206,7 +220,7 @@ fn parse_issue(issue: &str) -> ParsedIssue {
             .and_then(|m| m.as_str().parse::<u32>().ok())
             .or(start);
         (file, start, end)
-    } else if let Some(cap) = gh_location_re.captures(&working) {
+    } else if let Some(cap) = GH_LOCATION_RE.captures(&working) {
         let file = cap.name("file").map(|m| m.as_str().to_string());
         let start = cap
             .name("start")
