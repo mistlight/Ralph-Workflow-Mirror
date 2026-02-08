@@ -21,12 +21,8 @@ mod local;
 mod prompt;
 mod validation;
 
-// Re-export public API
-// Re-export public API
-pub use global::{handle_init_global, handle_init_global_with, handle_init_none_exist_with_env};
+// Re-export public API for external callers
+pub use global::{handle_init_global, handle_init_global_with};
 pub use local::{handle_init_local_config, handle_init_local_config_with};
-pub use prompt::{
-    handle_init_only_config_exists_with_env, handle_init_only_prompt_exists_with_env,
-    handle_init_state_inference_with_env, handle_init_template_arg_at_path_with_env,
-};
+pub use prompt::{handle_init_state_inference_with_env, handle_init_template_arg_at_path_with_env};
 pub use validation::{handle_check_config, handle_check_config_with};

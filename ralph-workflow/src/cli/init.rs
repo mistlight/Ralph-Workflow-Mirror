@@ -27,19 +27,9 @@ include!("init/project_detection.rs");
 mod config_generation;
 
 // Re-export config generation public API
-// Note: Some exports appear unused because they're called from included files (smart_init.rs)
-#[allow(unused_imports)]
 pub use config_generation::{
-    handle_check_config,
-    handle_check_config_with,
-    handle_init_global,
-    handle_init_global_with,
-    handle_init_local_config,
-    handle_init_local_config_with,
-    handle_init_none_exist_with_env, // Used in smart_init.rs (via include!)
-    handle_init_only_config_exists_with_env, // Used in smart_init.rs (via include!)
-    handle_init_only_prompt_exists_with_env, // Used in smart_init.rs (via include!)
-    handle_init_state_inference_with_env,
+    handle_check_config, handle_check_config_with, handle_init_global, handle_init_global_with,
+    handle_init_local_config, handle_init_local_config_with, handle_init_state_inference_with_env,
     handle_init_template_arg_at_path_with_env,
 };
 

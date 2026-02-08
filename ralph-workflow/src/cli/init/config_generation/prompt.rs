@@ -174,7 +174,6 @@ pub fn handle_init_template_arg_at_path_with_env<R: ConfigEnvironment>(
 /// Handle --init with smart inference using the provided environment.
 ///
 /// Dispatches to the appropriate handler based on which files exist.
-/// Note: The (true, true) case is handled by smart_init.rs::handle_init_both_exist
 pub fn handle_init_state_inference_with_env<R: ConfigEnvironment>(
     config_path: &std::path::Path,
     prompt_path: &Path,
@@ -194,12 +193,55 @@ pub fn handle_init_state_inference_with_env<R: ConfigEnvironment>(
             env,
         )),
         (false, true) => handle_init_only_prompt_exists_with_env(colors, env),
-        (true, true) => {
-            // This case is actually handled by smart_init.rs::handle_init_both_exist
-            // but we need to return something here for the match to be exhaustive
-            Ok(true)
-        }
+        (true, true) => Ok(handle_init_both_exist(
+            config_path,
+            prompt_path,
+            force,
+            colors,
+        )),
     }
+}
+
+/// Handle --init when both config and PROMPT.md exist.
+fn handle_init_both_exist(
+    config_path: &std::path::Path,
+    prompt_path: &Path,
+    force: bool,
+    colors: Colors,
+) -> bool {
+    // If force is set, show that they can use --force-overwrite to overwrite
+    if force {
+        println!(
+            "{}Note:{} --force-overwrite has no effect when not specifying a Work Guide.",
+            colors.yellow(),
+            colors.reset()
+        );
+        println!("Use: ralph --init <work-guide> --force-overwrite  to overwrite PROMPT.md");
+        println!();
+    }
+
+    println!("{}Setup complete!{}", colors.green(), colors.reset());
+    println!();
+    println!(
+        "  Config: {}{}{}",
+        colors.dim(),
+        config_path.display(),
+        colors.reset()
+    );
+    println!(
+        "  PROMPT: {}{}{}",
+        colors.dim(),
+        prompt_path.display(),
+        colors.reset()
+    );
+    println!();
+    println!("You're ready to run Ralph:");
+    println!("  ralph \"your commit message\"");
+    println!();
+    println!("Other commands:");
+    println!("  ralph --list-work-guides   # Show all Work Guides");
+    println!("  ralph --init <work-guide> --force-overwrite  # Overwrite PROMPT.md");
+    true
 }
 
 /// Handle --init when only config exists (no PROMPT.md), using the provided environment.
