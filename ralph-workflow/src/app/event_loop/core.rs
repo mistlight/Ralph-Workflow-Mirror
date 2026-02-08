@@ -1,332 +1,44 @@
-//! Event loop for reducer-based pipeline architecture.
+//! Main event loop implementation.
 //!
-//! This module implements main event loop that coordinates reducer,
-//! effect handlers, and orchestration logic. It provides a unified way to
-//! run the pipeline using the event-sourced architecture from RFC-004.
+//! This module contains the core orchestrate-handle-reduce cycle that drives
+//! the reducer-based pipeline. The event loop coordinates pure reducer logic
+//! with impure effect handlers, maintaining strict separation of concerns.
 //!
-//! # Non-Terminating Pipeline Architecture
+//! ## Event Loop Cycle
 //!
-//! The pipeline is designed to be **non-terminating by default** for unattended operation.
-//! It must NEVER exit early due to internal failures, budget exhaustion, or agent errors.
+//! ```text
+//! State → Orchestrate → Effect → Handle → Event → Reduce → Next State
+//!         (pure)                 (impure)         (pure)
+//! ```
 //!
-//! ## Failure Handling Flow
-//!
-//! 1. Any terminal failure (Status: Failed, budget exhausted, agent chain exhausted)
-//!    transitions to `AwaitingDevFix` phase
-//! 2. `TriggerDevFixFlow` effect writes completion marker to `.agent/tmp/completion_marker`
-//! 3. Dev-fix agent is optionally dispatched for remediation attempt
-//! 4. `CompletionMarkerEmitted` event transitions to `Interrupted` phase
-//! 5. `SaveCheckpoint` effect saves state for resume
-//! 6. Event loop returns `EventLoopResult { completed: true, ... }`
-//!
-//! ## Acceptable Termination Reasons
-//!
-//! The ONLY acceptable reasons for pipeline termination are catastrophic external events:
-//! - Process termination (SIGKILL)
-//! - Machine outage / power loss
-//! - OS kill signal
-//! - Unrecoverable panic in effect handler (caught and logged)
-//!
-//! All internal errors route through the failure handling flow above.
+//! The loop continues until reaching a terminal state (Interrupted, Completed)
+//! or until max iterations is exceeded.
 
+use super::config::{create_initial_state_with_config, EventLoopConfig, EventLoopResult};
+use super::error_handling::{
+    execute_effect_guarded, write_completion_marker_on_error, GuardedEffectResult,
+};
+use super::trace::{
+    build_trace_entry, dump_event_loop_trace, EventTraceBuffer, DEFAULT_EVENT_LOOP_TRACE_CAPACITY,
+};
 use crate::logging::EventLoopLogger;
 use crate::phases::PhaseContext;
-use crate::reducer::effect::{Effect, EffectResult};
+use crate::reducer::effect::Effect;
 use crate::reducer::event::{AwaitingDevFixEvent, CheckpointTrigger, PipelineEvent, PipelinePhase};
-use crate::reducer::state::ContinuationState;
 use crate::reducer::{
     determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
 };
 use anyhow::Result;
-use serde::Serialize;
-use std::collections::VecDeque;
 use std::path::Path;
 use std::time::Instant;
 
-/// Create initial pipeline state with continuation limits from config.
+/// Trait for handlers that maintain internal state.
 ///
-/// This function creates a `PipelineState` with XSD retry and continuation limits
-/// loaded from the config, ensuring these values are available for the reducer
-/// to make deterministic retry decisions.
-pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
-    // Config semantics: max_dev_continuations counts continuation attempts *beyond*
-    // the initial attempt. ContinuationState::max_continue_count semantics are
-    // "maximum total attempts including initial".
-    let max_dev_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
-    let max_continue_count = 1 + max_dev_continuations;
-
-    let continuation = ContinuationState::with_limits(
-        ctx.config.max_xsd_retries.unwrap_or(10),
-        max_continue_count,
-        ctx.config.max_same_agent_retries.unwrap_or(2),
-    );
-    PipelineState::initial_with_continuation(
-        ctx.config.developer_iters,
-        ctx.config.reviewer_reviews,
-        continuation,
-    )
-}
-
-/// Maximum iterations for the main event loop to prevent infinite loops.
-///
-/// This is a safety limit - the pipeline should complete well before this limit
-/// under normal circumstances. If reached, it indicates either a bug in the
-/// reducer logic or an extremely complex project.
-///
-/// NOTE: Even 1_000_000 can still be too low for extremely slow-progress runs.
-/// If this cap is hit in practice, prefer making it configurable and/or
-/// investigating why the reducer is not converging.
-pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1_000_000;
-
-/// Configuration for event loop.
-#[derive(Clone, Debug)]
-pub struct EventLoopConfig {
-    /// Maximum number of iterations to prevent infinite loops.
-    pub max_iterations: usize,
-}
-
-/// Result of event loop execution.
-#[derive(Debug, Clone)]
-pub struct EventLoopResult {
-    /// Whether pipeline completed successfully.
-    pub completed: bool,
-    /// Total events processed.
-    pub events_processed: usize,
-    /// Final reducer phase when the loop stopped.
-    pub final_phase: PipelinePhase,
-    /// Final pipeline state (for metrics and summary).
-    pub final_state: PipelineState,
-}
-
-const DEFAULT_EVENT_LOOP_TRACE_CAPACITY: usize = 200;
-
-#[derive(Clone, Serialize, Debug)]
-struct EventTraceEntry {
-    iteration: usize,
-    effect: String,
-    event: String,
-    phase: String,
-    xsd_retry_pending: bool,
-    xsd_retry_count: u32,
-    invalid_output_attempts: u32,
-    agent_index: usize,
-    model_index: usize,
-    retry_cycle: u32,
-}
-
-#[derive(Debug)]
-struct EventTraceBuffer {
-    capacity: usize,
-    entries: VecDeque<EventTraceEntry>,
-}
-
-impl EventTraceBuffer {
-    fn new(capacity: usize) -> Self {
-        Self {
-            capacity: capacity.max(1),
-            entries: VecDeque::new(),
-        }
-    }
-
-    fn push(&mut self, entry: EventTraceEntry) {
-        self.entries.push_back(entry);
-        while self.entries.len() > self.capacity {
-            self.entries.pop_front();
-        }
-    }
-
-    fn entries(&self) -> &VecDeque<EventTraceEntry> {
-        &self.entries
-    }
-}
-
-#[derive(Serialize)]
-struct EventTraceFinalState<'a> {
-    kind: &'static str,
-    reason: &'a str,
-    state: &'a PipelineState,
-}
-
-fn build_trace_entry(
-    iteration: usize,
-    state: &PipelineState,
-    effect: &str,
-    event: &str,
-) -> EventTraceEntry {
-    EventTraceEntry {
-        iteration,
-        effect: effect.to_string(),
-        event: event.to_string(),
-        phase: format!("{:?}", state.phase),
-        xsd_retry_pending: state.continuation.xsd_retry_pending,
-        xsd_retry_count: state.continuation.xsd_retry_count,
-        invalid_output_attempts: state.continuation.invalid_output_attempts,
-        agent_index: state.agent_chain.current_agent_index,
-        model_index: state.agent_chain.current_model_index,
-        retry_cycle: state.agent_chain.retry_cycle,
-    }
-}
-
-/// Extract ErrorEvent from anyhow::Error if present.
-///
-/// # Error Event Processing Architecture
-///
-/// Effect handlers return errors through `Err(ErrorEvent::Variant.into())`. This function
-/// extracts the original `ErrorEvent` so it can be processed through the reducer.
-///
-/// ## Why Downcast?
-///
-/// When an effect handler returns `Err(ErrorEvent::Variant.into())`, the error is wrapped
-/// in an `anyhow::Error`. Since `ErrorEvent` implements `std::error::Error`, anyhow's
-/// blanket `From` implementation preserves the original error type, allowing us to downcast
-/// back to `ErrorEvent` for reducer processing.
-///
-/// ## Processing Flow
-///
-/// 1. Handler returns `Err(ErrorEvent::AgentChainExhausted { ... }.into())`
-/// 2. Event loop catches the error and calls this function
-/// 3. If downcast succeeds, wrap in `PipelineEvent::PromptInput(PromptInputEvent::HandlerError { ... })`
-///    and process through reducer
-/// 4. If downcast fails, return `Err()` to terminate the event loop (truly unrecoverable error)
-///
-/// This architecture allows the reducer to decide recovery strategy based on the specific
-/// error type, rather than terminating immediately on any `Err()`.
-fn extract_error_event(err: &anyhow::Error) -> Option<crate::reducer::event::ErrorEvent> {
-    // Handlers are allowed to wrap typed ErrorEvents with additional context
-    // (e.g. via `anyhow::Context`). Search the full error chain so we still
-    // recover the underlying reducer error event.
-    for cause in err.chain() {
-        if let Some(error_event) = cause.downcast_ref::<crate::reducer::event::ErrorEvent>() {
-            return Some(error_event.clone());
-        }
-    }
-    None
-}
-
-enum GuardedEffectResult {
-    Ok(Box<EffectResult>),
-    Unrecoverable(anyhow::Error),
-    Panic,
-}
-
-fn execute_effect_guarded<'ctx, H>(
-    handler: &mut H,
-    effect: Effect,
-    ctx: &mut PhaseContext<'_>,
-    state: &PipelineState,
-) -> GuardedEffectResult
-where
-    H: EffectHandler<'ctx>,
-{
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        handler.execute(effect, ctx)
-    })) {
-        Ok(Ok(result)) => GuardedEffectResult::Ok(Box::new(result)),
-        Ok(Err(err)) => {
-            if let Some(error_event) = extract_error_event(&err) {
-                GuardedEffectResult::Ok(Box::new(crate::reducer::effect::EffectResult::event(
-                    crate::reducer::event::PipelineEvent::PromptInput(
-                        crate::reducer::event::PromptInputEvent::HandlerError {
-                            phase: state.phase,
-                            error: error_event,
-                        },
-                    ),
-                )))
-            } else {
-                GuardedEffectResult::Unrecoverable(err)
-            }
-        }
-        Err(_) => GuardedEffectResult::Panic,
-    }
-}
-
-fn dump_event_loop_trace(
-    ctx: &mut PhaseContext<'_>,
-    trace: &EventTraceBuffer,
-    final_state: &PipelineState,
-    reason: &str,
-) -> bool {
-    let mut out = String::new();
-
-    for entry in trace.entries() {
-        match serde_json::to_string(entry) {
-            Ok(line) => {
-                out.push_str(&line);
-                out.push('\n');
-            }
-            Err(err) => {
-                ctx.logger.error(&format!(
-                    "Failed to serialize event loop trace entry: {err}"
-                ));
-            }
-        }
-    }
-
-    let final_line = match serde_json::to_string(&EventTraceFinalState {
-        kind: "final_state",
-        reason,
-        state: final_state,
-    }) {
-        Ok(line) => line,
-        Err(err) => {
-            ctx.logger.error(&format!(
-                "Failed to serialize event loop final state: {err}"
-            ));
-            // Ensure the file still contains something useful.
-            format!(
-                "{{\"kind\":\"final_state\",\"reason\":{},\"phase\":{}}}",
-                serde_json::to_string(reason).unwrap_or_else(|_| "\"unknown\"".to_string()),
-                serde_json::to_string(&format!("{:?}", final_state.phase))
-                    .unwrap_or_else(|_| "\"unknown\"".to_string())
-            )
-        }
-    };
-    out.push_str(&final_line);
-    out.push('\n');
-
-    // Get trace path from run log context
-    let trace_path = ctx.run_log_context.event_loop_trace();
-
-    // Ensure the trace directory exists. While `Workspace::write` is expected to
-    // create parent directories, we do this explicitly so trace dumping is
-    // resilient even under stricter workspace implementations.
-    if let Some(parent) = trace_path.parent() {
-        if let Err(err) = ctx.workspace.create_dir_all(parent) {
-            ctx.logger
-                .error(&format!("Failed to create trace directory: {err}"));
-            return false;
-        }
-    }
-
-    match ctx.workspace.write(&trace_path, &out) {
-        Ok(()) => true,
-        Err(err) => {
-            ctx.logger
-                .error(&format!("Failed to write event loop trace: {err}"));
-            false
-        }
-    }
-}
-
-fn write_completion_marker_on_error(ctx: &mut PhaseContext<'_>, err: &anyhow::Error) -> bool {
-    if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
-        ctx.logger.error(&format!(
-            "Failed to create completion marker directory: {err}"
-        ));
-        return false;
-    }
-
-    let marker_path = Path::new(".agent/tmp/completion_marker");
-    let content = format!("failure\nUnrecoverable handler error: {err}");
-    match ctx.workspace.write(marker_path, &content) {
-        Ok(()) => true,
-        Err(err) => {
-            ctx.logger.error(&format!(
-                "Failed to write completion marker for unrecoverable handler error: {err}"
-            ));
-            false
-        }
-    }
+/// This trait allows the event loop to update the handler's internal state
+/// after each event is processed.
+pub trait StatefulHandler {
+    /// Update the handler's internal state.
+    fn update_state(&mut self, state: PipelineState);
 }
 
 fn run_event_loop_with_handler_traced<'ctx, H>(
@@ -1011,7 +723,6 @@ where
         final_state: state.clone(),
     })
 }
-
 /// Run the main event loop for the reducer-based pipeline.
 ///
 /// This function orchestrates pipeline execution by repeatedly:
@@ -1067,22 +778,4 @@ where
     H: EffectHandler<'ctx> + StatefulHandler,
 {
     run_event_loop_with_handler_traced(ctx, initial_state, config, handler)
-}
-
-/// Trait for handlers that maintain internal state.
-///
-/// This trait allows the event loop to update the handler's internal state
-/// after each event is processed.
-pub trait StatefulHandler {
-    /// Update the handler's internal state.
-    fn update_state(&mut self, state: PipelineState);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    include!("event_loop/tests_trace_dump.rs");
-    include!("event_loop/tests_checkpoint.rs");
-    include!("event_loop/tests_review_flow.rs");
 }

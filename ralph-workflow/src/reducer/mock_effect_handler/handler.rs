@@ -1,13 +1,34 @@
-// MockEffectHandler implementation (the handler struct and trait implementation).
-//
-// This file contains the execute_mock method and EffectHandler/StatefulHandler
-// trait implementations for MockEffectHandler.
+//! EffectHandler trait implementation for MockEffectHandler.
+//!
+//! This module contains the core effect-to-event mapping logic that allows
+//! `MockEffectHandler` to simulate handler behavior in tests. For each effect type,
+//! it returns appropriate mock events without performing real side effects.
+//!
+//! ## Design
+//!
+//! The `execute_mock` method implements a large match statement mapping each
+//! `Effect` variant to appropriate `PipelineEvent`(s). This provides deterministic,
+//! hermetic testing of:
+//! - Reducer state transitions (given events → new state)
+//! - Orchestrator decisions (given state → next effect)
+//! - Event loop behavior (orchestrate → execute → reduce cycle)
+//!
+//! ## Special Cases
+//!
+//! Some effects require workspace access (e.g., `SaveCheckpoint`, `TriggerDevFixFlow`)
+//! and are handled in the `execute()` method rather than `execute_mock()`.
+
+use super::*;
 
 impl MockEffectHandler {
     /// Execute an effect without requiring PhaseContext.
     ///
     /// This is used for testing when you don't have a full PhaseContext.
     /// It captures the effect and returns an appropriate mock EffectResult.
+    ///
+    /// Most effects are handled here with pure effect-to-event mapping.
+    /// Effects requiring workspace access (`SaveCheckpoint`, `TriggerDevFixFlow`)
+    /// panic and must be called via `execute()` instead.
     pub fn execute_mock(&mut self, effect: Effect) -> EffectResult {
         // Capture the effect
         self.captured_effects.borrow_mut().push(effect.clone());
@@ -699,8 +720,12 @@ src/lib.rs</ralph-files-changed>
 /// Implement the EffectHandler trait for MockEffectHandler.
 ///
 /// This allows MockEffectHandler to be used as a drop-in replacement for
-/// MainEffectHandler in tests. The PhaseContext is ignored - the mock
-/// simply captures the effect and returns an appropriate mock event.
+/// MainEffectHandler in tests. The PhaseContext is ignored for most effects -
+/// the mock simply captures the effect and returns an appropriate mock event.
+///
+/// Special cases that require workspace access:
+/// - `SaveCheckpoint` - Actually saves checkpoint for resume tests
+/// - `TriggerDevFixFlow` - Writes completion marker file
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         match effect {
@@ -831,7 +856,8 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
 /// Implement StatefulHandler for MockEffectHandler.
 ///
 /// This allows the event loop to update the mock's internal state after
-/// each event is processed.
+/// each event is processed. The mock maintains synchronized state to support
+/// effects that depend on current pipeline state (e.g., phase transitions).
 impl crate::app::event_loop::StatefulHandler for MockEffectHandler {
     fn update_state(&mut self, state: PipelineState) {
         self.state = state;

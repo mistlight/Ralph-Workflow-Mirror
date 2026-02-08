@@ -85,9 +85,8 @@ pub const AGENT_DIR: &str = ".agent";
 /// The `.agent/tmp` directory for temporary files.
 pub const AGENT_TMP: &str = ".agent/tmp";
 
-/// The `.agent/logs` directory for agent logs (deprecated - per-run logs use RunLogContext).
-#[deprecated(note = "Use RunLogContext for per-run log directories")]
-pub const AGENT_LOGS: &str = ".agent/logs";
+// AGENT_LOGS constant removed - use RunLogContext for per-run log directories.
+// The agent_logs() method below is kept for backward compatibility.
 
 /// Path to the implementation plan file.
 pub const PLAN_MD: &str = ".agent/PLAN.md";
@@ -125,9 +124,8 @@ pub const AGENT_CONFIG_TOML: &str = ".agent/config.toml";
 /// Path to the agents registry file.
 pub const AGENTS_TOML: &str = ".agent/agents.toml";
 
-/// Path to the pipeline log file (deprecated - per-run logs use RunLogContext).
-#[deprecated(note = "Use RunLogContext::pipeline_log() for per-run log paths")]
-pub const PIPELINE_LOG: &str = ".agent/logs/pipeline.log";
+// PIPELINE_LOG constant removed - use RunLogContext::pipeline_log() for per-run log paths.
+// The pipeline_log() method below is kept for backward compatibility.
 
 use std::fs;
 use std::io;
@@ -350,15 +348,11 @@ pub trait Workspace: Send + Sync {
 
     /// Path to the `.agent/logs` directory.
     ///
-    /// # Deprecated
-    ///
-    /// This method is deprecated. New code should use [`RunLogContext`] for per-run
+    /// **Note:** New code should use `RunLogContext` to get the appropriate per-run agent
     /// log directories instead. This method is kept for backward compatibility during
     /// the migration to per-run logging.
-    #[deprecated(note = "Use RunLogContext for per-run log directories")]
-    #[allow(deprecated)]
     fn agent_logs(&self) -> PathBuf {
-        self.root().join(AGENT_LOGS)
+        self.root().join(".agent/logs")
     }
 
     /// Path to the `.agent/tmp` directory.
@@ -428,15 +422,11 @@ pub trait Workspace: Send + Sync {
 
     /// Path to `.agent/logs/pipeline.log`.
     ///
-    /// # Deprecated
-    ///
-    /// This method is deprecated. New code should use [`RunLogContext::pipeline_log()`]
-    /// for per-run log paths instead. This method is kept for backward compatibility
-    /// during the migration to per-run logging.
-    #[deprecated(note = "Use RunLogContext::pipeline_log() for per-run log paths")]
-    #[allow(deprecated)]
+    /// **Note:** New code should use `RunLogContext::pipeline_log()` for per-run log paths
+    /// instead. This method is kept for backward compatibility during the migration to
+    /// per-run logging.
     fn pipeline_log(&self) -> PathBuf {
-        self.root().join(PIPELINE_LOG)
+        self.root().join(".agent/logs/pipeline.log")
     }
 
     /// Path to an XSD schema file in `.agent/tmp/`.

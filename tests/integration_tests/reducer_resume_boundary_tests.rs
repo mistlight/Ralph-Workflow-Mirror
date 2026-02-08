@@ -294,9 +294,9 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         // - Then InitializeAgentChain (for Commit role)
         // - Then CheckCommitDiff and other commit work
         assert!(
-            matches!(next_effect, Effect::CleanupContinuationContext { .. })
+            matches!(next_effect, Effect::CleanupContinuationContext)
                 || matches!(next_effect, Effect::InitializeAgentChain { .. })
-                || matches!(next_effect, Effect::CheckCommitDiff { .. }),
+                || matches!(next_effect, Effect::CheckCommitDiff),
             "Should derive continuation/commit effect in CommitMessage phase. Got: {:?}",
             next_effect
         );

@@ -17,10 +17,6 @@ fn test_workspace_fs_agent_paths() {
     let ws = WorkspaceFs::new(PathBuf::from("/test/repo"));
 
     assert_eq!(ws.agent_dir(), PathBuf::from("/test/repo/.agent"));
-    // Test legacy API for backward compatibility
-    #[allow(deprecated)]
-    let agent_logs = ws.agent_logs();
-    assert_eq!(agent_logs, PathBuf::from("/test/repo/.agent/logs"));
     assert_eq!(ws.agent_tmp(), PathBuf::from("/test/repo/.agent/tmp"));
     assert_eq!(ws.plan_md(), PathBuf::from("/test/repo/.agent/PLAN.md"));
     assert_eq!(ws.issues_md(), PathBuf::from("/test/repo/.agent/ISSUES.md"));

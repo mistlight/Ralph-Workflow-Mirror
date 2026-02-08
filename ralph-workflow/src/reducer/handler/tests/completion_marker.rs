@@ -216,8 +216,8 @@ impl Workspace for FailingMarkerWorkspace {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_context<'a>(
+/// Helper struct to group test context parameters and reduce parameter count.
+struct TestContextParams<'a> {
     workspace: &'a dyn Workspace,
     repo_root: &'a Path,
     executor: &'a Arc<MockProcessExecutor>,
@@ -226,27 +226,28 @@ fn build_context<'a>(
     logger: &'a Logger,
     colors: &'a Colors,
     template_context: &'a TemplateContext,
-    timer: &'a mut Timer,
     run_log_context: &'a crate::logging::RunLogContext,
-) -> PhaseContext<'a> {
+}
+
+fn build_context<'a>(params: TestContextParams<'a>, timer: &'a mut Timer) -> PhaseContext<'a> {
     PhaseContext {
-        config,
-        registry,
-        logger,
-        colors,
+        config: params.config,
+        registry: params.registry,
+        logger: params.logger,
+        colors: params.colors,
         timer,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
-        template_context,
+        template_context: params.template_context,
         run_context: RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: std::collections::HashMap::new(),
-        executor: &**executor,
-        executor_arc: Arc::clone(executor) as Arc<dyn crate::executor::ProcessExecutor>,
-        repo_root,
-        workspace,
-        run_log_context,
+        executor: &**params.executor,
+        executor_arc: Arc::clone(params.executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: params.repo_root,
+        workspace: params.workspace,
+        run_log_context: params.run_log_context,
     }
 }
 
@@ -264,16 +265,18 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
-        &workspace,
-        &repo_root,
-        &executor,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &template_context,
+        TestContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            run_log_context: &run_log_context,
+        },
         &mut timer,
-        &run_log_context,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -313,16 +316,18 @@ fn emit_completion_marker_emits_event_on_write_failure() {
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
-        &workspace,
-        &repo_root,
-        &executor,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &template_context,
+        TestContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            run_log_context: &run_log_context,
+        },
         &mut timer,
-        &run_log_context,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -364,16 +369,18 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
-        &workspace,
-        &repo_root,
-        &executor,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &template_context,
+        TestContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            run_log_context: &run_log_context,
+        },
         &mut timer,
-        &run_log_context,
     );
     ctx.developer_agent = "missing-agent";
 

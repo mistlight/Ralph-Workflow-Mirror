@@ -1,7 +1,32 @@
 // MemoryWorkspace - In-memory test implementation of the Workspace trait.
 //
-// This file contains the test implementation that stores files in memory,
-// allowing tests to run without touching the real filesystem.
+// This module provides an in-memory implementation that stores files in memory rather
+// than on disk. This enables tests to:
+// - Verify file operations without touching the real filesystem
+// - Control what file reads return (including error conditions)
+// - Run in parallel without filesystem conflicts
+// - Execute quickly and deterministically
+//
+// ## Thread Safety and RwLock Poisoning
+//
+// The workspace uses `RwLock` for interior mutability to allow concurrent reads while
+// serializing writes. Lock operations use `.expect()` instead of `.unwrap()` with
+// descriptive panic messages for clarity when failures occur.
+//
+// **RwLock Poisoning:** An `RwLock` becomes "poisoned" when a thread panics while holding
+// the lock. This prevents data corruption by ensuring no thread can access potentially
+// inconsistent state left by the panicked thread.
+//
+// In test infrastructure like `MemoryWorkspace`, poisoning indicates a serious test bug
+// (a panic while holding the workspace lock). Using `.expect()` with a clear message
+// helps diagnose these issues quickly:
+// - The panic message identifies which lock was poisoned
+// - The message explains what poisoning means (panic in another thread)
+// - The original panic that caused poisoning is preserved in the stack trace
+//
+// For production code paths that must not panic, prefer returning `Result` and handling
+// lock poisoning errors explicitly. For test infrastructure, `.expect()` with descriptive
+// messages is acceptable as poisoning indicates a test bug that should be fixed.
 
 /// In-memory file entry with content and metadata.
 #[derive(Debug, Clone)]
@@ -62,7 +87,8 @@ impl MemoryWorkspace {
             if parent.as_os_str().is_empty() {
                 return;
             }
-            let mut dirs = self.directories.write().unwrap();
+            let mut dirs = self.directories.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock");
             let mut current = PathBuf::new();
             for component in parent.components() {
                 current.push(component);
@@ -75,7 +101,8 @@ impl MemoryWorkspace {
     ///
     /// Used for creating directories themselves (not just parents).
     fn ensure_dir_path(&self, path: &Path) {
-        let mut dirs = self.directories.write().unwrap();
+        let mut dirs = self.directories.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock");
         let mut current = PathBuf::new();
         for component in path.components() {
             current.push(component);
@@ -91,7 +118,7 @@ impl MemoryWorkspace {
         self.ensure_parent_dirs(&path_buf);
         self.files
             .write()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .insert(path_buf, MemoryFile::new(content.as_bytes().to_vec()));
         self
     }
@@ -107,10 +134,12 @@ impl MemoryWorkspace {
     ) -> Self {
         let path_buf = PathBuf::from(path);
         self.ensure_parent_dirs(&path_buf);
-        self.files.write().unwrap().insert(
-            path_buf,
-            MemoryFile::with_modified(content.as_bytes().to_vec(), modified),
-        );
+        self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .insert(
+                path_buf,
+                MemoryFile::with_modified(content.as_bytes().to_vec(), modified),
+            );
         self
     }
 
@@ -122,7 +151,7 @@ impl MemoryWorkspace {
         self.ensure_parent_dirs(&path_buf);
         self.files
             .write()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .insert(path_buf, MemoryFile::new(content.to_vec()));
         self
     }
@@ -141,7 +170,7 @@ impl MemoryWorkspace {
         let dir_path = PathBuf::from(dir);
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .keys()
             .filter(|path| {
                 path.parent()
@@ -156,21 +185,23 @@ impl MemoryWorkspace {
     pub fn get_modified(&self, path: &str) -> Option<std::time::SystemTime> {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .get(&PathBuf::from(path))
             .map(|f| f.modified)
     }
 
     /// List all directories (for test assertions).
     pub fn list_directories(&self) -> Vec<PathBuf> {
-        self.directories.read().unwrap().iter().cloned().collect()
+        self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+            .iter().cloned().collect()
     }
 
     /// Get all files that were written (for test assertions).
     pub fn written_files(&self) -> std::collections::HashMap<PathBuf, Vec<u8>> {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .iter()
             .map(|(k, v)| (k.clone(), v.content.clone()))
             .collect()
@@ -180,7 +211,7 @@ impl MemoryWorkspace {
     pub fn get_file(&self, path: &str) -> Option<String> {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .get(&PathBuf::from(path))
             .map(|f| String::from_utf8_lossy(&f.content).to_string())
     }
@@ -189,7 +220,7 @@ impl MemoryWorkspace {
     pub fn get_file_bytes(&self, path: &str) -> Option<Vec<u8>> {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .get(&PathBuf::from(path))
             .map(|f| f.content.clone())
     }
@@ -198,14 +229,18 @@ impl MemoryWorkspace {
     pub fn was_written(&self, path: &str) -> bool {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .contains_key(&PathBuf::from(path))
     }
 
     /// Clear all files (for test setup).
     pub fn clear(&self) {
-        self.files.write().unwrap().clear();
-        self.directories.write().unwrap().clear();
+        self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .clear();
+        self.directories.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+            .clear();
     }
 }
 
@@ -217,7 +252,7 @@ impl Workspace for MemoryWorkspace {
     fn read(&self, relative: &Path) -> io::Result<String> {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .get(relative)
             .map(|f| String::from_utf8_lossy(&f.content).to_string())
             .ok_or_else(|| {
@@ -231,7 +266,7 @@ impl Workspace for MemoryWorkspace {
     fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
         self.files
             .read()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .get(relative)
             .map(|f| f.content.clone())
             .ok_or_else(|| {
@@ -244,10 +279,12 @@ impl Workspace for MemoryWorkspace {
 
     fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
         self.ensure_parent_dirs(relative);
-        self.files.write().unwrap().insert(
-            relative.to_path_buf(),
-            MemoryFile::new(content.as_bytes().to_vec()),
-        );
+        self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .insert(
+                relative.to_path_buf(),
+                MemoryFile::new(content.as_bytes().to_vec()),
+            );
         Ok(())
     }
 
@@ -255,14 +292,15 @@ impl Workspace for MemoryWorkspace {
         self.ensure_parent_dirs(relative);
         self.files
             .write()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .insert(relative.to_path_buf(), MemoryFile::new(content.to_vec()));
         Ok(())
     }
 
     fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
         self.ensure_parent_dirs(relative);
-        let mut files = self.files.write().unwrap();
+        let mut files = self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
         let entry = files
             .entry(relative.to_path_buf())
             .or_insert_with(|| MemoryFile::new(Vec::new()));
@@ -272,22 +310,30 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn exists(&self, relative: &Path) -> bool {
-        self.files.read().unwrap().contains_key(relative)
-            || self.directories.read().unwrap().contains(relative)
+        self.files.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .contains_key(relative)
+            || self.directories.read()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+                .contains(relative)
     }
 
     fn is_file(&self, relative: &Path) -> bool {
-        self.files.read().unwrap().contains_key(relative)
+        self.files.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .contains_key(relative)
     }
 
     fn is_dir(&self, relative: &Path) -> bool {
-        self.directories.read().unwrap().contains(relative)
+        self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+            .contains(relative)
     }
 
     fn remove(&self, relative: &Path) -> io::Result<()> {
         self.files
             .write()
-            .unwrap()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
             .remove(relative)
             .map(|_| ())
             .ok_or_else(|| {
@@ -299,13 +345,17 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
-        self.files.write().unwrap().remove(relative);
+        self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+            .remove(relative);
         Ok(())
     }
 
     fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
         // Check if directory exists first
-        if !self.directories.read().unwrap().contains(relative) {
+        if !self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+            .contains(relative) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("Directory not found: {}", relative.display()),
@@ -317,7 +367,8 @@ impl Workspace for MemoryWorkspace {
     fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
         // Remove all files under this directory
         {
-            let mut files = self.files.write().unwrap();
+            let mut files = self.files.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
             let to_remove: Vec<PathBuf> = files
                 .keys()
                 .filter(|path| path.starts_with(relative))
@@ -329,7 +380,8 @@ impl Workspace for MemoryWorkspace {
         }
         // Remove all directories under this directory (including itself)
         {
-            let mut dirs = self.directories.write().unwrap();
+            let mut dirs = self.directories.write()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock");
             let to_remove: Vec<PathBuf> = dirs
                 .iter()
                 .filter(|path| path.starts_with(relative) || *path == relative)
@@ -348,8 +400,10 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
-        let files = self.files.read().unwrap();
-        let dirs = self.directories.read().unwrap();
+        let files = self.files.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
+        let dirs = self.directories.read()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock");
 
         // Check if the directory exists
         if !relative.as_os_str().is_empty() && !dirs.contains(relative) {
@@ -399,7 +453,8 @@ impl Workspace for MemoryWorkspace {
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         // Create parent directories for destination first (before taking files lock)
         self.ensure_parent_dirs(to);
-        let mut files = self.files.write().unwrap();
+        let mut files = self.files.write()
+            .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
         if let Some(file) = files.remove(from) {
             files.insert(to.to_path_buf(), file);
             Ok(())
@@ -432,8 +487,12 @@ impl Clone for MemoryWorkspace {
     fn clone(&self) -> Self {
         Self {
             root: self.root.clone(),
-            files: std::sync::RwLock::new(self.files.read().unwrap().clone()),
-            directories: std::sync::RwLock::new(self.directories.read().unwrap().clone()),
+            files: std::sync::RwLock::new(self.files.read()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")
+                .clone()),
+            directories: std::sync::RwLock::new(self.directories.read()
+                .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
+                .clone()),
         }
     }
 }

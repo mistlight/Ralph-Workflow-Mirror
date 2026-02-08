@@ -41,7 +41,6 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
 
-use super::delta_display::{DeltaDisplayFormatter, DeltaRenderer, TextDeltaRenderer};
 use super::health::HealthMonitor;
 #[cfg(any(test, feature = "test-utils"))]
 use super::health::StreamingQualityMetrics;
@@ -49,8 +48,7 @@ use super::printer::SharedPrinter;
 use super::streaming_state::StreamingSession;
 use super::terminal::TerminalMode;
 use super::types::{
-    format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock, ContentBlockDelta,
-    ContentType, StreamInnerEvent,
+    format_tool_input, format_unknown_json_event, ClaudeEvent, ContentBlock, StreamInnerEvent,
 };
 
 // Parser struct and constructors
@@ -60,7 +58,7 @@ include!("claude/parser.rs");
 include!("claude/formatting.rs");
 
 // Delta handling methods
-include!("claude/delta_handling.rs");
+mod delta_handling;
 
 // Stream parsing methods
 include!("claude/stream_parsing.rs");

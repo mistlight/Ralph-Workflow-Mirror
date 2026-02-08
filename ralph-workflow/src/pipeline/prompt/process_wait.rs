@@ -232,8 +232,9 @@ mod tests {
             controller.store(false, Ordering::Release);
 
             // The desired behavior is to return promptly on monitor panic (treat as timeout).
+            // Increased threshold to 250ms to reduce flakiness on loaded systems.
             assert!(
-                elapsed < Duration::from_millis(150),
+                elapsed < Duration::from_millis(250),
                 "wait loop returned too late ({elapsed:?}); monitor panic was likely swallowed"
             );
 

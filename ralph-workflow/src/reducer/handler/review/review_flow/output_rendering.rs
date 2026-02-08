@@ -1,0 +1,304 @@
+// Review phase output rendering.
+//
+// This module handles converting validated XML output to human-readable markdown format,
+// extracting code snippets from referenced files, and archiving processed XML files.
+//
+// ## Responsibilities
+//
+// - Converting validated XML to Markdown format (.agent/ISSUES.md)
+// - Extracting code snippets from files referenced in issues
+// - Parsing file locations from issue text (standard and GitHub formats)
+// - Reading source files to extract snippet context
+// - Archiving processed XML files
+// - Determining final review outcome (clean vs issues found)
+//
+// ## File Location Formats
+//
+// The snippet extractor supports two formats:
+// - Standard: `path/to/file.rs:10-20` or `path/to/file.rs:10`
+// - GitHub: `path/to/file.rs#L10-L20` or `path/to/file.rs#L10`
+//
+// ## Snippet Extraction
+//
+// When an issue references a file location, the extractor:
+// 1. Parses the file path and line range
+// 2. Reads the file from the workspace
+// 3. Extracts the relevant lines with line numbers
+// 4. Deduplicates snippets (same file/line range)
+// 5. Attaches snippets to UI events for display
+//
+// ## See Also
+//
+// - `validation.rs` - XML validation that produces the input for rendering
+
+/// Extract code snippets from files referenced in issues.
+///
+/// Parses issue text for file locations in standard (`file:line-line`) or GitHub
+/// (`file#Lline-Lline`) format, reads the files from the workspace, and extracts
+/// the referenced line ranges.
+///
+/// Deduplicates snippets to avoid redundant extraction when multiple issues
+/// reference the same location.
+fn extract_issue_snippets(
+    issues: &[String],
+    workspace: &dyn crate::workspace::Workspace,
+) -> Vec<XmlCodeSnippet> {
+    let mut snippets = Vec::new();
+    let mut seen = HashSet::new();
+
+    let location_re = issue_location_regex();
+    let gh_location_re = issue_gh_location_regex();
+
+    for issue in issues {
+        let (file, line_start, line_end) = if let Some(cap) = location_re.captures(issue) {
+            let file = cap
+                .name("file")
+                .map(|m| m.as_str().trim().replace('\\', "/"));
+            let start = cap
+                .name("start")
+                .and_then(|m| m.as_str().parse::<u32>().ok());
+            let end = cap
+                .name("end")
+                .and_then(|m| m.as_str().parse::<u32>().ok())
+                .or(start);
+            (file, start, end)
+        } else if let Some(cap) = gh_location_re.captures(issue) {
+            let file = cap
+                .name("file")
+                .map(|m| m.as_str().trim().replace('\\', "/"));
+            let start = cap
+                .name("start")
+                .and_then(|m| m.as_str().parse::<u32>().ok());
+            let end = cap
+                .name("end")
+                .and_then(|m| m.as_str().parse::<u32>().ok())
+                .or(start);
+            (file, start, end)
+        } else {
+            (None, None, None)
+        };
+
+        let Some(file) = file else { continue };
+        let Some(start) = line_start else { continue };
+        let end = line_end.unwrap_or(start);
+
+        let key = (file.clone(), start, end);
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let content = match workspace.read(Path::new(&file)) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        if let Some(snippet) = extract_snippet_lines(&content, start, end) {
+            snippets.push(XmlCodeSnippet {
+                file,
+                line_start: start,
+                line_end: end,
+                content: snippet,
+            });
+        }
+    }
+
+    snippets
+}
+
+/// Lazy-initialized regex for parsing standard file locations (file:line-line).
+fn issue_location_regex() -> &'static Regex {
+    static LOCATION_RE: OnceLock<Regex> = OnceLock::new();
+    LOCATION_RE.get_or_init(|| {
+        Regex::new(
+            r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
+        )
+        .expect("valid file location regex pattern")
+    })
+}
+
+/// Lazy-initialized regex for parsing GitHub-style file locations (file#Lline-Lline).
+fn issue_gh_location_regex() -> &'static Regex {
+    static GH_LOCATION_RE: OnceLock<Regex> = OnceLock::new();
+    GH_LOCATION_RE.get_or_init(|| {
+        Regex::new(
+            r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
+        )
+        .expect("valid GitHub location regex pattern")
+    })
+}
+
+/// Extract a snippet from file content for the given line range.
+///
+/// Returns the extracted lines with line numbers prepended (e.g., "42 | code here").
+/// Line numbers are 1-based. Returns `None` if the range is invalid.
+fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+
+    let start_idx = start.saturating_sub(1) as usize;
+    if start_idx >= lines.len() {
+        return None;
+    }
+
+    let end_idx = end.saturating_sub(1) as usize;
+    let end_idx = end_idx.min(lines.len().saturating_sub(1));
+    let mut out = String::new();
+    for (offset, line) in lines[start_idx..=end_idx].iter().enumerate() {
+        let line_no = start + offset as u32;
+        out.push_str(&format!("{line_no} | {line}\n"));
+    }
+    Some(out.trim_end().to_string())
+}
+
+/// Render validated issues XML elements to markdown format.
+///
+/// Produces a markdown checklist with each issue as an unchecked item.
+/// If `no_issues_found` is present and no issues exist, renders the no-issues message.
+fn render_issues_markdown(
+    elements: &crate::files::llm_output_extraction::IssuesElements,
+) -> String {
+    let mut output = String::from("# Issues\n\n");
+
+    if let Some(message) = &elements.no_issues_found {
+        let trimmed = message.trim();
+        if trimmed.is_empty() {
+            output.push_str("No issues found.\n");
+        } else {
+            output.push_str(trimmed);
+            output.push('\n');
+        }
+        return output;
+    }
+
+    if elements.issues.is_empty() {
+        output.push_str("No issues found.\n");
+        return output;
+    }
+
+    for issue in &elements.issues {
+        let trimmed = issue.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        output.push_str("- [ ] ");
+        output.push_str(trimmed);
+        output.push('\n');
+    }
+
+    output
+}
+
+impl MainEffectHandler {
+    pub(in crate::reducer::handler) fn write_issues_markdown(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        use std::path::Path;
+
+        let outcome = self
+            .state
+            .review_validated_outcome
+            .as_ref()
+            .filter(|outcome| outcome.pass == pass)
+            .ok_or(ErrorEvent::ValidatedReviewOutcomeMissing { pass })?;
+
+        let elements = crate::files::llm_output_extraction::IssuesElements {
+            issues: outcome.issues.clone(),
+            no_issues_found: outcome.no_issues_found.clone(),
+        };
+        let markdown = render_issues_markdown(&elements);
+        ctx.workspace
+            .write(Path::new(".agent/ISSUES.md"), &markdown)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/ISSUES.md".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
+
+        Ok(EffectResult::event(
+            PipelineEvent::review_issues_markdown_written(pass),
+        ))
+    }
+
+    pub(in crate::reducer::handler) fn extract_review_issue_snippets(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+        use std::path::Path;
+
+        let outcome = self
+            .state
+            .review_validated_outcome
+            .as_ref()
+            .filter(|outcome| outcome.pass == pass)
+            .ok_or(ErrorEvent::ValidatedReviewOutcomeMissing { pass })?;
+
+        let issues_xml = ctx.workspace.read(Path::new(xml_paths::ISSUES_XML));
+        let issues_xml = match issues_xml {
+            Ok(s) => s,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                ctx.logger
+                    .warn("Missing .agent/tmp/issues.xml; using empty content for UI output");
+                String::new()
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: xml_paths::ISSUES_XML.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
+
+        let snippets = extract_issue_snippets(&outcome.issues, ctx.workspace);
+        Ok(EffectResult::with_ui(
+            PipelineEvent::review_issue_snippets_extracted(pass),
+            vec![UIEvent::XmlOutput {
+                xml_type: XmlOutputType::ReviewIssues,
+                content: issues_xml,
+                context: Some(XmlOutputContext {
+                    iteration: None,
+                    pass: Some(pass),
+                    snippets,
+                }),
+            }],
+        ))
+    }
+
+    pub(in crate::reducer::handler) fn archive_review_issues_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
+        use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+        use std::path::Path;
+
+        archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::ISSUES_XML));
+        Ok(EffectResult::event(
+            PipelineEvent::review_issues_xml_archived(pass),
+        ))
+    }
+
+    pub(in crate::reducer::handler) fn apply_review_outcome(
+        &mut self,
+        _ctx: &mut PhaseContext<'_>,
+        pass: u32,
+        issues_found: bool,
+        clean_no_issues: bool,
+    ) -> Result<EffectResult> {
+        if clean_no_issues {
+            return Ok(EffectResult::event(
+                PipelineEvent::review_pass_completed_clean(pass),
+            ));
+        }
+        Ok(EffectResult::event(PipelineEvent::review_completed(
+            pass,
+            issues_found,
+        )))
+    }
+}

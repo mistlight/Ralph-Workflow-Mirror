@@ -24,6 +24,6 @@ impl MainEffectHandler {
     const DIFF_BASELINE_PATH: &str = ".agent/DIFF.base";
 }
 
-include!("review/review_flow.rs");
+#[path = "review/review_flow/mod.rs"]
+mod review_flow;
 include!("review/fix_flow.rs");
-include!("review/snippets.rs");

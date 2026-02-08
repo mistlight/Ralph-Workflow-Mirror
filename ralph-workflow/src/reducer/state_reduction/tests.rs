@@ -63,7 +63,7 @@ mod event_sequence;
 mod dev_review_transition;
 
 // XSD retry state transition tests
-#[path = "tests/xsd_retry.rs"]
+#[path = "tests/xsd_retry/mod.rs"]
 mod xsd_retry;
 
 // Fix continuation tests
@@ -71,5 +71,5 @@ mod xsd_retry;
 mod fix_continuation;
 
 // Metrics tracking tests
-#[path = "tests/metrics.rs"]
+#[path = "tests/metrics/mod.rs"]
 mod metrics;
