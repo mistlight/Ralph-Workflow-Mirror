@@ -10,13 +10,8 @@
 ///
 /// # Examples
 ///
-/// ```
-/// use ralph_workflow::config::validation::levenshtein::levenshtein_distance;
-///
-/// assert_eq!(levenshtein_distance("abc", "abc"), 0);
-/// assert_eq!(levenshtein_distance("abc", "abd"), 1);
-/// ```
-pub fn levenshtein_distance(a: &str, b: &str) -> usize {
+/// See the unit tests in this module for working examples of Levenshtein distance calculation.
+pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_len = a.len();
     let b_len = b.len();
 

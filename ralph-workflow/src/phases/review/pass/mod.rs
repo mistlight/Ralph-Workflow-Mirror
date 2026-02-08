@@ -17,7 +17,9 @@
 //! ## Usage
 //!
 //! ```ignore
-//! // Note: This is a private module, functions are re-exported from phases::review
+//! // Import from the public re-export location
+//! use ralph_workflow::phases::review::{run_review_pass, run_fix_pass};
+//!
 //! // Run a review pass
 //! let result = run_review_pass(ctx, j, "review", &review_prompt, Some("reviewer-agent"))?;
 //! if result.issues_found {

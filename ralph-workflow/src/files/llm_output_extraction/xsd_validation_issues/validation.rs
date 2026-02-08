@@ -56,7 +56,7 @@ pub const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
 /// # Examples
 ///
 /// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xsd_validation_issues::validate_issues_xml;
+/// use ralph_workflow::files::llm_output_extraction::validate_issues_xml;
 ///
 /// // Valid XML with issues
 /// let xml = r#"<ralph-issues>

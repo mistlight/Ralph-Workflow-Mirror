@@ -12,27 +12,7 @@
 //!
 //! ## Usage Pattern
 //!
-//! ```rust
-//! use ralph_workflow::files::llm_output_extraction::xml_helpers::readers::{create_reader, read_text_until_end};
-//! use quick_xml::events::Event;
-//!
-//! let xml = "<root>Hello world</root>";
-//! let mut reader = create_reader(xml);
-//! let mut buf = Vec::new();
-//!
-//! // Skip to opening tag
-//! loop {
-//!     match reader.read_event_into(&mut buf) {
-//!         Ok(Event::Start(e)) if e.name().as_ref() == b"root" => break,
-//!         _ => {}
-//!     }
-//!     buf.clear();
-//! }
-//!
-//! // Read text content
-//! let text = read_text_until_end(&mut reader, b"root").unwrap();
-//! assert_eq!(text, "Hello world");
-//! ```
+//! See the unit tests in this module for working examples of XML reading utilities.
 //!
 //! ## CDATA Handling
 //!
@@ -60,13 +40,7 @@ use quick_xml::Reader;
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::readers::create_reader;
-///
-/// let xml = "<root>  text  </root>";
-/// let reader = create_reader(xml);
-/// // Reader is configured to trim whitespace
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn create_reader(content: &str) -> Reader<&[u8]> {
     let mut reader = Reader::from_str(content);
     reader.config_mut().trim_text(true);
@@ -91,27 +65,7 @@ pub fn create_reader(content: &str) -> Reader<&[u8]> {
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::readers::{create_reader, read_text_until_end};
-/// use quick_xml::events::Event;
-///
-/// // With entity escaping
-/// let xml = "<code>a &lt; b &amp;&amp; c &gt; d</code>";
-/// let mut reader = create_reader(xml);
-/// let mut buf = Vec::new();
-///
-/// // Skip to opening tag
-/// loop {
-///     match reader.read_event_into(&mut buf) {
-///         Ok(Event::Start(e)) if e.name().as_ref() == b"code" => break,
-///         _ => {}
-///     }
-///     buf.clear();
-/// }
-///
-/// let result = read_text_until_end(&mut reader, b"code").unwrap();
-/// assert_eq!(result, "a < b && c > d");
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn read_text_until_end(
     reader: &mut Reader<&[u8]>,
     end_tag: &[u8],
@@ -170,26 +124,7 @@ pub fn read_text_until_end(
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::readers::{create_reader, skip_to_end};
-/// use quick_xml::events::Event;
-///
-/// let xml = "<outer><inner>nested content</inner></outer>";
-/// let mut reader = create_reader(xml);
-/// let mut buf = Vec::new();
-///
-/// // Skip to outer opening tag
-/// loop {
-///     match reader.read_event_into(&mut buf) {
-///         Ok(Event::Start(e)) if e.name().as_ref() == b"outer" => break,
-///         _ => {}
-///     }
-///     buf.clear();
-/// }
-///
-/// // Skip all content including nested elements
-/// skip_to_end(&mut reader, b"outer").unwrap();
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), XsdValidationError> {
     let mut buf = Vec::new();
     let mut depth = 1;

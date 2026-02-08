@@ -15,7 +15,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use ralph_workflow::files::llm_output_extraction::xsd_validation_issues::validate_issues_xml;
+//! use ralph_workflow::files::llm_output_extraction::validate_issues_xml;
 //!
 //! let xml = r#"<ralph-issues>
 //! <ralph-issue>Missing error handling in API endpoint</ralph-issue>

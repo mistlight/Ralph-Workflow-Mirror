@@ -29,12 +29,12 @@ mod xml_extraction_fix_result;
 mod xml_extraction_issues;
 mod xml_extraction_plan;
 mod xml_formatter;
-pub mod xml_helpers;
-pub mod xsd_validation;
-pub mod xsd_validation_development_result;
-pub mod xsd_validation_fix_result;
-pub mod xsd_validation_issues;
-pub mod xsd_validation_plan;
+pub(crate) mod xml_helpers;
+pub(crate) mod xsd_validation;
+pub(crate) mod xsd_validation_development_result;
+pub(crate) mod xsd_validation_fix_result;
+pub(crate) mod xsd_validation_issues;
+pub(crate) mod xsd_validation_plan;
 
 // Internal types module (only used for tests)
 #[cfg(test)]

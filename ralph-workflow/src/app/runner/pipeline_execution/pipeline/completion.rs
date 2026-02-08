@@ -52,27 +52,10 @@
 ///
 /// Errors are logged but not returned as errors since this is defensive code.
 ///
-/// # Example
+/// # Examples
 ///
-/// ```ignore
-/// // This function is included via include!() macro and not a separate module,
-/// // so it can't be imported in doctests. See the unit tests below for usage examples.
-/// use ralph_workflow::logger::{Logger, Colors};
-/// use ralph_workflow::workspace::MemoryWorkspace;
-/// use ralph_workflow::reducer::event::PipelinePhase;
-/// use std::path::PathBuf;
-///
-/// let workspace = MemoryWorkspace::new(PathBuf::from("/test"));
-/// let logger = Logger::new(Colors { enabled: false });
-///
-/// let wrote = write_defensive_completion_marker(
-///     &workspace,
-///     &logger,
-///     PipelinePhase::AwaitingDevFix,
-/// );
-///
-/// assert!(wrote);
-/// ```
+/// See the unit tests in the `completion_tests` module for working examples
+/// of how this function behaves in different scenarios.
 pub(super) fn write_defensive_completion_marker(
     workspace: &dyn crate::workspace::Workspace,
     logger: &Logger,

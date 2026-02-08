@@ -33,13 +33,7 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::errors::unexpected_element_error;
-///
-/// let error = unexpected_element_error(b"invalid", &["status", "summary"], "ralph-fix");
-/// assert_eq!(error.element_path, "ralph-fix/invalid");
-/// assert!(error.suggestion.contains("Remove <invalid>"));
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn unexpected_element_error(
     found_tag: &[u8],
     valid_tags: &[&str],
@@ -71,17 +65,7 @@ pub fn unexpected_element_error(
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::errors::missing_required_error;
-///
-/// let error = missing_required_error(
-///     "status",
-///     "ralph-fix",
-///     Some("<status>all-issues-addressed</status>")
-/// );
-/// assert_eq!(error.element_path, "ralph-fix/status");
-/// assert!(error.example.is_some());
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn missing_required_error(
     element_name: &str,
     parent_element: &str,
@@ -109,13 +93,7 @@ pub fn missing_required_error(
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::errors::duplicate_element_error;
-///
-/// let error = duplicate_element_error("status", "ralph-fix");
-/// assert_eq!(error.element_path, "ralph-fix/status");
-/// assert!(error.suggestion.contains("Remove the duplicate"));
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn duplicate_element_error(element_name: &str, parent_element: &str) -> XsdValidationError {
     XsdValidationError {
         error_type: XsdErrorType::UnexpectedElement,
@@ -139,13 +117,7 @@ pub fn duplicate_element_error(element_name: &str, parent_element: &str) -> XsdV
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::errors::text_outside_tags_error;
-///
-/// let error = text_outside_tags_error("loose text", "ralph-fix");
-/// assert!(error.found.contains("loose text"));
-/// assert!(error.suggestion.contains("Remove any text"));
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn text_outside_tags_error(text: &str, parent_element: &str) -> XsdValidationError {
     // Use truncate_text for UTF-8 safe truncation (53 chars = ~50 visible + "...")
     let display_text = truncate_text(text, 53);
@@ -167,13 +139,7 @@ pub fn text_outside_tags_error(text: &str, parent_element: &str) -> XsdValidatio
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::errors::format_content_preview;
-///
-/// assert_eq!(format_content_preview(""), "empty content");
-/// assert_eq!(format_content_preview("short"), "short");
-/// assert!(format_content_preview(&"x".repeat(100)).contains("..."));
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn format_content_preview(content: &str) -> String {
     if content.is_empty() {
         "empty content".to_string()
@@ -195,14 +161,7 @@ pub fn format_content_preview(content: &str) -> String {
 ///
 /// # Examples
 ///
-/// ```rust
-/// use ralph_workflow::files::llm_output_extraction::xml_helpers::errors::malformed_xml_error;
-/// use quick_xml::Error;
-///
-/// let error = Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag);
-/// let result = malformed_xml_error(error);
-/// assert_eq!(result.error_type, ralph_workflow::files::llm_output_extraction::xsd_validation::XsdErrorType::MalformedXml);
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn malformed_xml_error(error: quick_xml::Error) -> XsdValidationError {
     let error_str = error.to_string();
 

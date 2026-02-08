@@ -29,23 +29,22 @@
 ///
 /// # Examples
 ///
-/// ```ignore
-/// // Note: issue_count() and is_empty() are test-only methods
-/// use ralph_workflow::files::llm_output_extraction::xsd_validation_issues::IssuesElements;
+/// ```
+/// use ralph_workflow::files::llm_output_extraction::IssuesElements;
 ///
 /// // Issues found
 /// let issues = IssuesElements {
 ///     issues: vec!["First issue".to_string(), "Second issue".to_string()],
 ///     no_issues_found: None,
 /// };
-/// assert_eq!(issues.issue_count(), 2);
+/// assert_eq!(issues.issues.len(), 2);
 ///
 /// // No issues found
 /// let no_issues = IssuesElements {
 ///     issues: vec![],
 ///     no_issues_found: Some("All good".to_string()),
 /// };
-/// assert!(no_issues.is_empty());
+/// assert!(no_issues.issues.is_empty());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssuesElements {

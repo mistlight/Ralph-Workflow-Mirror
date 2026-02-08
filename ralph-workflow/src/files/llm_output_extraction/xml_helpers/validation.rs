@@ -25,15 +25,7 @@
 //!
 //! ## Usage Example
 //!
-//! ```rust
-//! use ralph_workflow::files::llm_output_extraction::xml_helpers::validation::check_for_illegal_xml_characters;
-//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let content = "<root>Hello world</root>";
-//! check_for_illegal_xml_characters(content)?; // Validates before parsing
-//! // Now safe to parse with quick_xml
-//! # Ok(())
-//! # }
-//! ```
+//! See the unit tests in this module for working examples.
 
 use crate::common::truncate_text;
 use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
@@ -45,17 +37,7 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 ///
 /// # Examples
 ///
-/// ```rust
-/// # use ralph_workflow::files::llm_output_extraction::xml_helpers::validation::check_for_illegal_xml_characters;
-/// // Valid content passes
-/// assert!(check_for_illegal_xml_characters("Hello\nworld\t").is_ok());
-///
-/// // NUL byte is rejected
-/// assert!(check_for_illegal_xml_characters("text\0here").is_err());
-///
-/// // Control characters are rejected
-/// assert!(check_for_illegal_xml_characters("text\u{0001}here").is_err());
-/// ```
+/// See the unit tests in this module for working examples.
 pub fn check_for_illegal_xml_characters(content: &str) -> Result<(), XsdValidationError> {
     for (byte_index, ch) in content.char_indices() {
         let is_illegal = match ch as u32 {
