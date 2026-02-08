@@ -7,15 +7,13 @@ use crate::agents::AgentRole;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-// Re-export checkpoint types used by pipeline module for checkpoint conversion
-#[allow(unused_imports)]
+// Checkpoint types and PipelinePhase used by tests
+#[cfg(test)]
+use super::event::PipelinePhase;
+#[cfg(test)]
 use crate::checkpoint::{
     PipelineCheckpoint, PipelinePhase as CheckpointPhase, RebaseState as CheckpointRebaseState,
 };
-
-// Re-export PipelinePhase from event module for use in pipeline module
-#[allow(unused_imports)]
-use super::event::PipelinePhase;
 
 // State enums and basic types (ArtifactType, PromptMode, DevelopmentStatus, FixStatus, RebaseState, CommitState)
 include!("state/enums.rs");
