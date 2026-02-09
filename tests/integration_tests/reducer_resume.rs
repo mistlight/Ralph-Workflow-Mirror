@@ -2,6 +2,11 @@
 //!
 //! Tests verify that resume functionality works correctly with reducer state machine.
 //! Tests cover resume at all pipeline phases (planning, development, review, commit).
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::checkpoint::PipelineCheckpoint;

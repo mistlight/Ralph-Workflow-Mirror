@@ -9,6 +9,11 @@
 //! Tests the error handling architecture where effect handlers return typed error events
 //! that are processed through the reducer, not bypassed via Err(). Verifies downcasting
 //! roundtrip and reducer state transitions for different error types.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use ralph_workflow::reducer::state::PipelineState;

@@ -3,6 +3,11 @@
 //! This test simulates real production scenarios with hundreds of deltas to ensure
 //! the spam fix works at scale. Real-world CCS sessions can emit 500+ deltas for
 //! long reasoning or tool input streams.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

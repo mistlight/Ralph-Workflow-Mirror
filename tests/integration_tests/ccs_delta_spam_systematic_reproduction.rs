@@ -13,6 +13,11 @@
 //! - Layer 1: Renderer suppression in non-TTY modes
 //! - Layer 2: StreamingSession accumulation across deltas
 //! - Layer 3: Parser flush at completion boundaries
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

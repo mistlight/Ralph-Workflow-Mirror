@@ -4,6 +4,11 @@
 //! - Per-run log directories are created with correct structure
 //! - Resume continues logging to the same run directory
 //! - event_loop.log does not contain sensitive content
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use anyhow::Result;
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;

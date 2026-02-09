@@ -3,6 +3,11 @@
 //! Codex can emit duplicate `item.completed` events for the same agent_message.
 //! This must not cause the final agent message to be printed more than once in
 //! non-TTY modes (Basic/None).
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

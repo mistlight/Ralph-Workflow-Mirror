@@ -7,6 +7,11 @@
 //! correct point in the pipeline lifecycle (after agent chain initialization,
 //! before context cleanup in the Planning phase), and that it doesn't run
 //! again on resume.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;

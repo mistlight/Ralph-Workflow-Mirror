@@ -2,6 +2,11 @@
 //!
 //! Verifies that agent chain state is normalized before each invocation to ensure
 //! checkpoint replay produces identical agent selection.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::determine_next_effect;

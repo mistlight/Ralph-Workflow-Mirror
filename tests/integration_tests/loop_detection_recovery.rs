@@ -2,6 +2,11 @@
 //!
 //! Verifies that the pipeline detects tight retry loops and triggers mandatory recovery
 //! to prevent infinite XSD retry loops.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::reducer::determine_next_effect;
 use ralph_workflow::reducer::effect::Effect;

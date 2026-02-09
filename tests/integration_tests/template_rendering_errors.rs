@@ -2,6 +2,11 @@
 //!
 //! Verifies that prompt template rendering failures do not terminate the pipeline.
 //! The pipeline should use fallback prompts and continue advancing through effects.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::determine_next_effect;

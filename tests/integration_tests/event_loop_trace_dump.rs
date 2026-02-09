@@ -2,6 +2,11 @@
 //!
 //! These tests verify that when the reducer event loop is exhausted (max iterations)
 //! or recovers from a panic, it persists an execution trace to the per-run log directory.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 

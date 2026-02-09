@@ -2,6 +2,11 @@
 //!
 //! Verifies that XSD retry prompts detect missing schema files and last_output.xml
 //! and emit actionable diagnostics including workspace root path.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::prompts::{
     prompt_commit_xsd_retry_with_context, prompt_developer_iteration_xsd_retry_with_context_files,

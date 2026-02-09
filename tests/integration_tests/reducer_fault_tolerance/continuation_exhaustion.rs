@@ -3,6 +3,11 @@
 //! These tests verify that when a development iteration's continuation budget is
 //! exhausted (due to repeated failed/partial status), the pipeline switches to the
 //! next agent in the fallback chain rather than immediately aborting.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::{AgentRegistry, AgentRole};

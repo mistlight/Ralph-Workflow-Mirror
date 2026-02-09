@@ -4,6 +4,11 @@
 //! produces proper output, and writes events to log files for extraction.
 //!
 //! Uses `MemoryWorkspace` for all file operations - NO real filesystem access.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

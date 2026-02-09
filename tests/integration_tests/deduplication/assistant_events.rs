@@ -6,6 +6,11 @@
 //! - Assistant events during streaming
 //! - GLM-specific multi-block scenarios
 //! - Message ID tracking and deduplication
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
 use super::parse_events;
 use crate::test_timeout::with_default_timeout;

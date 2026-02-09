@@ -5,6 +5,11 @@
 //! - Progress events are emitted during iterations
 //! - UIEvents do not affect reducer state
 //! - UIEvents are properly formatted for display
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::PipelinePhase;

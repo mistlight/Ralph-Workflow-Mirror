@@ -3,6 +3,11 @@
 //! These tests simulate CI/log environments that strip or ignore ANSI escape sequences.
 //! The append-only pattern should work correctly even when ANSI is stripped, producing
 //! clean single-line output without repeated prefixes.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

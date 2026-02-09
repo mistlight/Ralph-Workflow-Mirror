@@ -2,6 +2,11 @@
 //!
 //! Verifies that pre-v1 checkpoint formats are rejected and not auto-migrated,
 //! requiring explicit user action to update workflows to the current format.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::checkpoint::load_checkpoint_with_workspace;
 use ralph_workflow::workspace::MemoryWorkspace;

@@ -2,6 +2,11 @@
 //!
 //! Verifies that checkpoints containing legacy phase names (e.g., "Fix", "Analyze")
 //! are rejected and require explicit user migration rather than silent auto-migration.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::checkpoint::load_checkpoint_with_workspace;
 use ralph_workflow::workspace::MemoryWorkspace;

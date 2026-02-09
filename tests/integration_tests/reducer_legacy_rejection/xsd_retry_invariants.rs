@@ -3,6 +3,11 @@
 //! Verifies that XSD validation retry logic is tracked explicitly in reducer state
 //! rather than hidden in phase handlers, ensuring retry behavior is observable
 //! and deterministic.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 

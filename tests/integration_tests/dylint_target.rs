@@ -12,6 +12,11 @@
 //! Per integration test rules, we do not spawn external processes (no `make`,
 //! no `cargo`, no `rustup`). We assert the observable, deterministic behavior
 //! of the Makefile content itself.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 

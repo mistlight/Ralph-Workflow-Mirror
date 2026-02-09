@@ -5,6 +5,11 @@
 //! primary event. This is a critical fix to prevent incorrect loop detection
 //! when additional events change phase, agent chain, or other state that affects
 //! the effect fingerprint.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
 use ralph_workflow::reducer::orchestration::compute_effect_fingerprint;

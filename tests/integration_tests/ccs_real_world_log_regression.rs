@@ -16,6 +16,11 @@
 //! Expected behavior: In None/Basic modes, these thousands of deltas should NOT
 //! produce thousands of output lines. Instead, content should be accumulated and
 //! flushed at message boundaries (message_stop, content_block_stop).
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

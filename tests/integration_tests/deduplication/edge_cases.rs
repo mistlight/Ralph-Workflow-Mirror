@@ -5,6 +5,11 @@
 //! - Multi-block content handling
 //! - Real log file regression tests
 //! - Complex interleaving scenarios
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
 use super::{create_parser_with_vterm, parse_events};
 use crate::test_timeout::with_default_timeout;

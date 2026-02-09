@@ -91,6 +91,11 @@
 //! 3. All delta types work correctly
 //! 4. Multi-delta scenarios produce bounded output
 //! 5. Content is not lost during suppression
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;

@@ -3,6 +3,11 @@
 //! Verifies that prompts use workspace.root() for absolute paths, not process CWD.
 //! This prevents the bug where reviewers write XML to the wrong directory in
 //! multi-worktree or isolation mode scenarios.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
 use ralph_workflow::prompts::{
     prompt_generate_commit_message_with_diff_with_context, prompt_planning_xml_with_references,
