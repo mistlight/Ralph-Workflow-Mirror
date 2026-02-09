@@ -121,6 +121,7 @@ fn test_memory_workspace_written_files() {
     ws.write(Path::new("file2.txt"), "content2").unwrap();
 
     let files = ws.written_files();
+    assert_eq!(files.len(), 2, "Should write exactly 2 files");
     assert_eq!(
         String::from_utf8_lossy(files.get(&PathBuf::from("file1.txt")).unwrap()),
         "content1"
