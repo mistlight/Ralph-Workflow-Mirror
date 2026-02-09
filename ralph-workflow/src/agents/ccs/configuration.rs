@@ -78,89 +78,85 @@ pub fn resolve_ccs_agent(
 ///
 /// Debug summary of CCS environment variables loaded for a profile.
 /// Public in test mode for testing; crate-private in production.
-///
-/// Implementation note: We use a macro to eliminate duplication between test and production builds.
-macro_rules! define_ccs_env_var_debug_summary {
-    ($vis:vis) => {
-        $vis struct CcsEnvVarDebugSummary {
-            $vis whitelisted_keys_present: Vec<String>,
-            $vis redacted_sensitive_keys: usize,
-            $vis hidden_non_whitelisted_keys: usize,
-        }
-    };
+#[cfg(any(test, feature = "test-utils"))]
+pub struct CcsEnvVarDebugSummary {
+    pub whitelisted_keys_present: Vec<String>,
+    pub redacted_sensitive_keys: usize,
+    pub hidden_non_whitelisted_keys: usize,
+}
+
+#[cfg(not(any(test, feature = "test-utils")))]
+pub(crate) struct CcsEnvVarDebugSummary {
+    pub(crate) whitelisted_keys_present: Vec<String>,
+    pub(crate) redacted_sensitive_keys: usize,
+    pub(crate) hidden_non_whitelisted_keys: usize,
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-define_ccs_env_var_debug_summary!(pub);
-
-#[cfg(not(any(test, feature = "test-utils")))]
-define_ccs_env_var_debug_summary!(pub(crate));
-
-macro_rules! define_ccs_env_var_debug_summary_fn {
-    ($vis:vis) => {
-        $vis fn ccs_env_var_debug_summary(
-            env_vars: &HashMap<String, String>,
-        ) -> CcsEnvVarDebugSummary {
-            // Whitelist of safe-to-log environment variable keys.
-            // These are configuration keys, not credentials, so it's safe to log them.
-            const SAFE_KEYS: &[&str] = &[
-                "ANTHROPIC_BASE_URL",
-                "ANTHROPIC_MODEL",
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-                "ANTHROPIC_DEFAULT_OPUS_MODEL",
-                "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            ];
-
-            let mut whitelisted_keys_present = Vec::new();
-            let mut redacted_sensitive_keys = 0usize;
-            let mut hidden_non_whitelisted_keys = 0usize;
-
-            for key in env_vars.keys() {
-                let key_upper = key.to_uppercase();
-
-                if SAFE_KEYS.contains(&key_upper.as_str()) {
-                    whitelisted_keys_present.push(key_upper);
-                    continue;
-                }
-
-                // Treat as sensitive if it looks secret-like. Otherwise it's just hidden because it's not on the whitelist.
-                let key_normalized = key_upper
-                    .chars()
-                    .filter(char::is_ascii_alphanumeric)
-                    .collect::<String>();
-
-                let looks_sensitive = key_normalized.contains("TOKEN")
-                    || key_normalized.contains("SECRET")
-                    || key_normalized.contains("PASSWORD")
-                    || key_normalized.contains("AUTH")
-                    || key_normalized.contains("KEY")
-                    || key_normalized.contains("API")
-                    || key_normalized == "AUTHORIZATION";
-
-                if looks_sensitive {
-                    redacted_sensitive_keys += 1;
-                } else {
-                    hidden_non_whitelisted_keys += 1;
-                }
-            }
-
-            whitelisted_keys_present.sort();
-            whitelisted_keys_present.dedup();
-
-            CcsEnvVarDebugSummary {
-                whitelisted_keys_present,
-                redacted_sensitive_keys,
-                hidden_non_whitelisted_keys,
-            }
-        }
-    };
+pub fn ccs_env_var_debug_summary(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
+    ccs_env_var_debug_summary_impl(env_vars)
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-define_ccs_env_var_debug_summary_fn!(pub);
-
 #[cfg(not(any(test, feature = "test-utils")))]
-define_ccs_env_var_debug_summary_fn!(pub(crate));
+pub(crate) fn ccs_env_var_debug_summary(
+    env_vars: &HashMap<String, String>,
+) -> CcsEnvVarDebugSummary {
+    ccs_env_var_debug_summary_impl(env_vars)
+}
+
+fn ccs_env_var_debug_summary_impl(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
+    // Whitelist of safe-to-log environment variable keys.
+    // These are configuration keys, not credentials, so it's safe to log them.
+    const SAFE_KEYS: &[&str] = &[
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    ];
+
+    let mut whitelisted_keys_present = Vec::new();
+    let mut redacted_sensitive_keys = 0usize;
+    let mut hidden_non_whitelisted_keys = 0usize;
+
+    for key in env_vars.keys() {
+        let key_upper = key.to_uppercase();
+
+        if SAFE_KEYS.contains(&key_upper.as_str()) {
+            whitelisted_keys_present.push(key_upper);
+            continue;
+        }
+
+        // Treat as sensitive if it looks secret-like. Otherwise it's just hidden because it's not on the whitelist.
+        let key_normalized = key_upper
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>();
+
+        let looks_sensitive = key_normalized.contains("TOKEN")
+            || key_normalized.contains("SECRET")
+            || key_normalized.contains("PASSWORD")
+            || key_normalized.contains("AUTH")
+            || key_normalized.contains("KEY")
+            || key_normalized.contains("API")
+            || key_normalized == "AUTHORIZATION";
+
+        if looks_sensitive {
+            redacted_sensitive_keys += 1;
+        } else {
+            hidden_non_whitelisted_keys += 1;
+        }
+    }
+
+    whitelisted_keys_present.sort();
+    whitelisted_keys_present.dedup();
+
+    CcsEnvVarDebugSummary {
+        whitelisted_keys_present,
+        redacted_sensitive_keys,
+        hidden_non_whitelisted_keys,
+    }
+}
 
 fn log_ccs_env_vars_loaded(
     debug_mode: bool,
@@ -218,121 +214,143 @@ fn is_glm_alias(alias_name: &str) -> bool {
 /// - The agent name is `ccs/<alias>` (not plain `ccs`)
 /// - We successfully loaded at least one env var for that profile
 /// - The configured command targets that profile (e.g. `ccs <profile>` or `ccs api <profile>`
-///
-/// Implementation note: We use a macro to eliminate duplication between test and production builds.
-macro_rules! define_resolve_ccs_command {
-    ($vis:vis) => {
-        $vis fn resolve_ccs_command(
-            alias_config: &CcsAliasConfig,
-            alias_name: &str,
-            env_vars_loaded: bool,
-            profile_used_for_env: Option<&String>,
-            debug_mode: bool,
-        ) -> String {
-            let original_cmd = alias_config.cmd.as_str();
-
-            find_claude_binary().map_or_else(
-                || {
-                    // Could not find claude binary, use original command
-                    // This may result in suboptimal flag passthrough, but is better than breaking
-                    if original_cmd.starts_with("ccs ") || original_cmd == "ccs" {
-                        if debug_mode {
-                            eprintln!("CCS DEBUG: Claude binary not found in PATH");
-                        }
-                        eprintln!("Warning: `claude` binary not found in PATH, using `ccs` wrapper");
-                        eprintln!(
-                            "  This may cause issues with streaming flags like --include-partial-messages"
-                        );
-                        eprintln!(
-                            "  Consider installing the Claude CLI (see your internal install docs, or the upstream Claude CLI installer)"
-                        );
-                    }
-                    original_cmd.to_string()
-                },
-                |claude_path| {
-                    // Only GLM supports bypassing the `ccs` wrapper.
-                    // Other CCS profiles (gemini, codex, etc.) must run through `ccs` directly so
-                    // CCS can initialize provider-specific state.
-                    let can_bypass_wrapper = is_glm_alias(alias_name) && env_vars_loaded;
-
-                    // Debug logging
-                    if debug_mode {
-                        eprintln!(
-                            "CCS DEBUG: Claude binary found at: {}",
-                            claude_path.display()
-                        );
-                        eprintln!("CCS DEBUG: Original command: {original_cmd}");
-                        eprintln!("CCS DEBUG: Alias name: '{alias_name}'");
-                        eprintln!("CCS DEBUG: Env vars loaded: {env_vars_loaded}");
-                        eprintln!("CCS DEBUG: Can bypass wrapper: {can_bypass_wrapper}");
-                    }
-
-                    if !can_bypass_wrapper {
-                        if debug_mode {
-                            eprintln!("CCS DEBUG: Not bypassing (conditions not met)");
-                        }
-                        return original_cmd.to_string();
-                    }
-
-                    let Ok(parts) = split_command(original_cmd) else {
-                        if debug_mode {
-                            eprintln!("CCS DEBUG: Failed to parse command, using original");
-                        }
-                        return original_cmd.to_string();
-                    };
-
-                    let profile = ccs_profile_from_command(original_cmd)
-                        .or_else(|| profile_used_for_env.cloned())
-                        .unwrap_or_else(|| alias_name.to_string());
-                    let is_ccs_cmd = parts.first().is_some_and(|p| looks_like_ccs_executable(p));
-                    let skip = if parts.get(1).is_some_and(|p| p == &profile) {
-                        Some(2)
-                    } else if parts.get(1).is_some_and(|p| p == "api")
-                        && parts.get(2).is_some_and(|p| p == &profile)
-                    {
-                        Some(3)
-                    } else {
-                        None
-                    };
-                    let is_profile_ccs_cmd = is_ccs_cmd && skip.is_some();
-
-                    if debug_mode {
-                        eprintln!("CCS DEBUG: Command parts: {parts:?}");
-                        eprintln!("CCS DEBUG: Is profile CCS command: {is_profile_ccs_cmd}");
-                    }
-
-                    if !is_profile_ccs_cmd {
-                        if debug_mode {
-                            eprintln!("CCS DEBUG: Not bypassing (command doesn't match pattern)");
-                        }
-                        return original_cmd.to_string();
-                    }
-
-                    let skip = skip.unwrap_or(2);
-                    let mut new_parts = Vec::with_capacity(parts.len().saturating_sub(skip - 1));
-                    new_parts.push(claude_path.to_string_lossy().to_string());
-                    new_parts.extend(parts.into_iter().skip(skip));
-                    let new_cmd = shell_words::join(&new_parts);
-
-                    if debug_mode {
-                        eprintln!("CCS DEBUG: New command parts: {new_parts:?}");
-                        eprintln!("CCS DEBUG: New command: {new_cmd}");
-                        eprintln!(
-                            "CCS DEBUG: bypassing `ccs` wrapper for `ccs/{alias_name}` to preserve Claude CLI flag passthrough"
-                        );
-                    }
-                    new_cmd
-                },
-            )
-        }
-    };
+#[cfg(any(test, feature = "test-utils"))]
+pub fn resolve_ccs_command(
+    alias_config: &CcsAliasConfig,
+    alias_name: &str,
+    env_vars_loaded: bool,
+    profile_used_for_env: Option<&String>,
+    debug_mode: bool,
+) -> String {
+    resolve_ccs_command_impl(
+        alias_config,
+        alias_name,
+        env_vars_loaded,
+        profile_used_for_env,
+        debug_mode,
+    )
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-define_resolve_ccs_command!(pub);
-
 #[cfg(not(any(test, feature = "test-utils")))]
-define_resolve_ccs_command!(pub(crate));
+pub(crate) fn resolve_ccs_command(
+    alias_config: &CcsAliasConfig,
+    alias_name: &str,
+    env_vars_loaded: bool,
+    profile_used_for_env: Option<&String>,
+    debug_mode: bool,
+) -> String {
+    resolve_ccs_command_impl(
+        alias_config,
+        alias_name,
+        env_vars_loaded,
+        profile_used_for_env,
+        debug_mode,
+    )
+}
+
+fn resolve_ccs_command_impl(
+    alias_config: &CcsAliasConfig,
+    alias_name: &str,
+    env_vars_loaded: bool,
+    profile_used_for_env: Option<&String>,
+    debug_mode: bool,
+) -> String {
+    let original_cmd = alias_config.cmd.as_str();
+
+    find_claude_binary().map_or_else(
+        || {
+            // Could not find claude binary, use original command
+            // This may result in suboptimal flag passthrough, but is better than breaking
+            if original_cmd.starts_with("ccs ") || original_cmd == "ccs" {
+                if debug_mode {
+                    eprintln!("CCS DEBUG: Claude binary not found in PATH");
+                }
+                eprintln!("Warning: `claude` binary not found in PATH, using `ccs` wrapper");
+                eprintln!(
+                    "  This may cause issues with streaming flags like --include-partial-messages"
+                );
+                eprintln!(
+                    "  Consider installing the Claude CLI (see your internal install docs, or the upstream Claude CLI installer)"
+                );
+            }
+            original_cmd.to_string()
+        },
+        |claude_path| {
+            // Only GLM supports bypassing the `ccs` wrapper.
+            // Other CCS profiles (gemini, codex, etc.) must run through `ccs` directly so
+            // CCS can initialize provider-specific state.
+            let can_bypass_wrapper = is_glm_alias(alias_name) && env_vars_loaded;
+
+            // Debug logging
+            if debug_mode {
+                eprintln!(
+                    "CCS DEBUG: Claude binary found at: {}",
+                    claude_path.display()
+                );
+                eprintln!("CCS DEBUG: Original command: {original_cmd}");
+                eprintln!("CCS DEBUG: Alias name: '{alias_name}'");
+                eprintln!("CCS DEBUG: Env vars loaded: {env_vars_loaded}");
+                eprintln!("CCS DEBUG: Can bypass wrapper: {can_bypass_wrapper}");
+            }
+
+            if !can_bypass_wrapper {
+                if debug_mode {
+                    eprintln!("CCS DEBUG: Not bypassing (conditions not met)");
+                }
+                return original_cmd.to_string();
+            }
+
+            let Ok(parts) = split_command(original_cmd) else {
+                if debug_mode {
+                    eprintln!("CCS DEBUG: Failed to parse command, using original");
+                }
+                return original_cmd.to_string();
+            };
+
+            let profile = ccs_profile_from_command(original_cmd)
+                .or_else(|| profile_used_for_env.cloned())
+                .unwrap_or_else(|| alias_name.to_string());
+            let is_ccs_cmd = parts.first().is_some_and(|p| looks_like_ccs_executable(p));
+            let skip = if parts.get(1).is_some_and(|p| p == &profile) {
+                Some(2)
+            } else if parts.get(1).is_some_and(|p| p == "api")
+                && parts.get(2).is_some_and(|p| p == &profile)
+            {
+                Some(3)
+            } else {
+                None
+            };
+            let is_profile_ccs_cmd = is_ccs_cmd && skip.is_some();
+
+            if debug_mode {
+                eprintln!("CCS DEBUG: Command parts: {parts:?}");
+                eprintln!("CCS DEBUG: Is profile CCS command: {is_profile_ccs_cmd}");
+            }
+
+            if !is_profile_ccs_cmd {
+                if debug_mode {
+                    eprintln!("CCS DEBUG: Not bypassing (command doesn't match pattern)");
+                }
+                return original_cmd.to_string();
+            }
+
+            let skip = skip.unwrap_or(2);
+            let mut new_parts = Vec::with_capacity(parts.len().saturating_sub(skip - 1));
+            new_parts.push(claude_path.to_string_lossy().to_string());
+            new_parts.extend(parts.into_iter().skip(skip));
+            let new_cmd = shell_words::join(&new_parts);
+
+            if debug_mode {
+                eprintln!("CCS DEBUG: New command parts: {new_parts:?}");
+                eprintln!("CCS DEBUG: New command: {new_cmd}");
+                eprintln!(
+                    "CCS DEBUG: bypassing `ccs` wrapper for `ccs/{alias_name}` to preserve Claude CLI flag passthrough"
+                );
+            }
+            new_cmd
+        },
+    )
+}
 
 /// Build the final `AgentConfig` from alias config and defaults.
 fn build_ccs_config_from_flags(
@@ -406,84 +424,94 @@ fn build_ccs_config_from_flags(
     }
 }
 
+/// Build an `AgentConfig` for CCS, loading credentials and determining command to use.
+///
 /// CCS aliases to use their configured credentials without requiring manual environment variable
 /// configuration, while avoiding hard-coded assumptions about CCS' internal schema.
-///
-/// Implementation note: We use a macro to eliminate duplication between test and production builds.
-macro_rules! define_build_ccs_agent_config {
-    ($vis:vis) => {
-        $vis fn build_ccs_agent_config(
-            alias_config: &CcsAliasConfig,
-            defaults: &CcsConfig,
-            display_name: String,
-            alias_name: &str,
-        ) -> AgentConfig {
-            // Check for CCS_DEBUG env var to enable detailed logging
-            let debug_mode = std::env::var("RALPH_CCS_DEBUG").is_ok();
-
-            let mut profile_used_for_env: Option<String> = None;
-            let (env_vars, env_vars_loaded) = if alias_name.is_empty() {
-                (HashMap::new(), false)
-            } else if is_glm_alias(alias_name) {
-                let original_cmd = alias_config.cmd.as_str();
-                let profile =
-                    ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
-                profile_used_for_env = Some(profile.clone());
-                match load_ccs_env_vars_with_guess(&profile) {
-                    Ok((vars, guessed)) => {
-                        if let Some(guessed) = guessed {
-                            eprintln!("Info: CCS profile '{profile}' not found; using '{guessed}'");
-                        }
-                        let loaded = !vars.is_empty();
-                        (vars, loaded)
-                    }
-                    Err(err) => {
-                        let suggestions = find_ccs_profile_suggestions(&profile);
-                        eprintln!("Warning: failed to load CCS env vars for profile '{profile}': {err}");
-                        if !suggestions.is_empty() {
-                            eprintln!("Tip: available/nearby CCS profiles:");
-                            for s in suggestions {
-                                eprintln!("  - {s}");
-                            }
-                        }
-                        (HashMap::new(), false)
-                    }
-                }
-            } else {
-                // Non-GLM CCS aliases must execute `ccs ...` directly.
-                // Do not inject GLM/Anthropic-style env vars for other providers.
-                (HashMap::new(), false)
-            };
-
-            // Debug logging: Show env vars loaded
-            log_ccs_env_vars_loaded(
-                debug_mode,
-                alias_name,
-                profile_used_for_env.as_ref(),
-                env_vars_loaded,
-                &env_vars,
-            );
-
-            // Determine the command to use
-            let cmd = resolve_ccs_command(
-                alias_config,
-                alias_name,
-                env_vars_loaded,
-                profile_used_for_env.as_ref(),
-                debug_mode,
-            );
-
-            // Build the final AgentConfig
-            build_ccs_config_from_flags(alias_config, defaults, cmd, env_vars, display_name)
-        }
-    };
+#[cfg(any(test, feature = "test-utils"))]
+pub fn build_ccs_agent_config(
+    alias_config: &CcsAliasConfig,
+    defaults: &CcsConfig,
+    display_name: String,
+    alias_name: &str,
+) -> AgentConfig {
+    build_ccs_agent_config_impl(alias_config, defaults, display_name, alias_name)
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-define_build_ccs_agent_config!(pub);
-
 #[cfg(not(any(test, feature = "test-utils")))]
-define_build_ccs_agent_config!(pub(crate));
+pub(crate) fn build_ccs_agent_config(
+    alias_config: &CcsAliasConfig,
+    defaults: &CcsConfig,
+    display_name: String,
+    alias_name: &str,
+) -> AgentConfig {
+    build_ccs_agent_config_impl(alias_config, defaults, display_name, alias_name)
+}
+
+fn build_ccs_agent_config_impl(
+    alias_config: &CcsAliasConfig,
+    defaults: &CcsConfig,
+    display_name: String,
+    alias_name: &str,
+) -> AgentConfig {
+    // Check for CCS_DEBUG env var to enable detailed logging
+    let debug_mode = std::env::var("RALPH_CCS_DEBUG").is_ok();
+
+    let mut profile_used_for_env: Option<String> = None;
+    let (env_vars, env_vars_loaded) = if alias_name.is_empty() {
+        (HashMap::new(), false)
+    } else if is_glm_alias(alias_name) {
+        let original_cmd = alias_config.cmd.as_str();
+        let profile =
+            ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
+        profile_used_for_env = Some(profile.clone());
+        match load_ccs_env_vars_with_guess(&profile) {
+            Ok((vars, guessed)) => {
+                if let Some(guessed) = guessed {
+                    eprintln!("Info: CCS profile '{profile}' not found; using '{guessed}'");
+                }
+                let loaded = !vars.is_empty();
+                (vars, loaded)
+            }
+            Err(err) => {
+                let suggestions = find_ccs_profile_suggestions(&profile);
+                eprintln!("Warning: failed to load CCS env vars for profile '{profile}': {err}");
+                if !suggestions.is_empty() {
+                    eprintln!("Tip: available/nearby CCS profiles:");
+                    for s in suggestions {
+                        eprintln!("  - {s}");
+                    }
+                }
+                (HashMap::new(), false)
+            }
+        }
+    } else {
+        // Non-GLM CCS aliases must execute `ccs ...` directly.
+        // Do not inject GLM/Anthropic-style env vars for other providers.
+        (HashMap::new(), false)
+    };
+
+    // Debug logging: Show env vars loaded
+    log_ccs_env_vars_loaded(
+        debug_mode,
+        alias_name,
+        profile_used_for_env.as_ref(),
+        env_vars_loaded,
+        &env_vars,
+    );
+
+    // Determine the command to use
+    let cmd = resolve_ccs_command(
+        alias_config,
+        alias_name,
+        env_vars_loaded,
+        profile_used_for_env.as_ref(),
+        debug_mode,
+    );
+
+    // Build the final AgentConfig
+    build_ccs_config_from_flags(alias_config, defaults, cmd, env_vars, display_name)
+}
 
 /// CCS alias resolver that can be used by the agent registry.
 #[derive(Debug, Clone, Default)]

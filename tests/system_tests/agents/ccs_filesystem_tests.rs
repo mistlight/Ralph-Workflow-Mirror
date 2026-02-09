@@ -1,7 +1,9 @@
 // System tests for CCS binary discovery that require real filesystem operations
 // These tests cannot use MemoryWorkspace as they need to interact with PATH and real executables
 
-use ralph_workflow::agents::ccs::*;
+use ralph_workflow::agents::ccs::{
+    build_ccs_agent_config, ccs_env_var_debug_summary, resolve_ccs_command,
+};
 use ralph_workflow::config::{CcsAliasConfig, CcsConfig};
 use std::sync::Mutex;
 
