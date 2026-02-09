@@ -237,9 +237,17 @@ fn test_collision_handling_impl() -> Result<()> {
     use ralph_workflow::logging::{RunId, RunLogContext};
     use ralph_workflow::workspace::MemoryWorkspace;
 
-    // Use MemoryWorkspace to test collision numbering logic (run-1, run-2, etc.).
-    // Collision detection is purely algorithmic (check existence, increment suffix),
-    // so MemoryWorkspace's in-memory implementation is sufficient for testing behavior.
+    // Use MemoryWorkspace to test collision numbering logic (logs-TIMESTAMP-01, logs-TIMESTAMP-02, etc.).
+    // Collision detection is purely algorithmic and deterministic:
+    // 1. Check if .agent/logs-TIMESTAMP/agents exists via workspace.exists()
+    // 2. If exists, increment counter and try logs-TIMESTAMP-NN
+    // 3. Create directories via workspace.create_dir_all()
+    // 4. Verify creation succeeded by checking workspace.exists() again
+    //
+    // This logic depends only on workspace.exists() and workspace.create_dir_all() APIs,
+    // not on filesystem-level race conditions or timestamp precision. MemoryWorkspace's
+    // in-memory implementation correctly simulates these APIs, making it sufficient for
+    // testing collision handling behavior without real filesystem overhead.
     let workspace = MemoryWorkspace::new_test();
 
     // Create a fixed run_id that we can use to simulate collision

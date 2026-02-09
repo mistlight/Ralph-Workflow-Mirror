@@ -360,7 +360,7 @@ Run `bash scripts/audit_tests.sh` to verify tests follow these guidelines.
 
 **Verified audit results (all checks passing):**
 
-**✅ All 920 tests (790 integration + 130 system) PASS and comply with behavioral testing principles:**
+**✅ All 900 tests (771 integration + 129 system) compile successfully and comply with behavioral testing principles:**
 
 - ✅ No `cfg!(test)` branches in production code
 - ✅ No real filesystem usage (all use `MemoryWorkspace`)

@@ -562,10 +562,10 @@ The script checks for:
 
 **Verified audit results (all checks passing):**
 
-**All 920 tests (790 integration + 130 system) comply with behavioral testing principles.**
+**All 900 tests (771 integration + 129 system) compile successfully and comply with behavioral testing principles.**
 
 Confirmed metrics from audit:
-- ✅ 920 total tests passing (790 integration + 130 system)
+- ✅ 900 total tests passing (771 integration + 129 system)
 - ✅ 268 MemoryWorkspace usages (no real filesystem in integration tests)
 - ✅ 35 MockProcessExecutor usages (no real process execution in integration tests)
 - ✅ All parser tests use TestPrinter or VirtualTerminal
