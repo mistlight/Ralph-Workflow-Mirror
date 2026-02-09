@@ -268,6 +268,9 @@ fn test_orchestration_requires_initialized_chain_for_review() {
 #[test]
 fn test_chain_initialized_event_populates_state() {
     with_default_timeout(|| {
+        // Define expected agents at test level for consistency between event and assertions
+        const EXPECTED_AGENTS: [&str; 2] = ["claude", "codex"];
+
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             agent_chain: AgentChainState::initial(), // Empty
@@ -278,7 +281,7 @@ fn test_chain_initialized_event_populates_state() {
             state,
             PipelineEvent::agent_chain_initialized(
                 AgentRole::Developer,
-                vec!["claude".to_string(), "codex".to_string()],
+                EXPECTED_AGENTS.iter().map(|s| s.to_string()).collect(),
                 3,
                 1000,
                 2.0,
@@ -288,18 +291,26 @@ fn test_chain_initialized_event_populates_state() {
 
         assert_eq!(
             new_state.agent_chain.agents.len(),
-            2,
-            "Should initialize with 2 agents"
+            EXPECTED_AGENTS.len(),
+            "Should initialize with {} agents",
+            EXPECTED_AGENTS.len()
         );
         assert_eq!(
-            new_state.agent_chain.agents[0], "claude",
-            "First agent should be claude"
+            new_state.agent_chain.agents[0], EXPECTED_AGENTS[0],
+            "First agent should be {}",
+            EXPECTED_AGENTS[0]
         );
         assert_eq!(
-            new_state.agent_chain.agents[1], "codex",
-            "Second agent should be codex"
+            new_state.agent_chain.agents[1], EXPECTED_AGENTS[1],
+            "Second agent should be {}",
+            EXPECTED_AGENTS[1]
         );
-        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "claude");
+        assert_eq!(
+            new_state.agent_chain.current_agent().unwrap(),
+            EXPECTED_AGENTS[0],
+            "Current agent should be the first agent ({})",
+            EXPECTED_AGENTS[0]
+        );
         assert_eq!(new_state.agent_chain.current_role, AgentRole::Developer);
     });
 }

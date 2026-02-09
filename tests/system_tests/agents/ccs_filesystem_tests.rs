@@ -184,8 +184,9 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     assert_eq!(config.cmd, claude_path.to_string_lossy().to_string());
     assert!(config.env_vars.contains_key("ANTHROPIC_MODEL"));
 
-    // Verify debug summary classification logic: test actual key classification, not just counts.
-    // According to the integration testing guide, length assertions should be combined with content verification.
+    // Verify environment variable classification by checking specific keys and counts match
+    // expectations from the test env vars. Per integration testing guide: combine length
+    // assertions with content checks.
     let summary = ccs_env_var_debug_summary(&config.env_vars);
 
     // Verify environment variable classification:
