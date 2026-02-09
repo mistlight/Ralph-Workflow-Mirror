@@ -86,8 +86,13 @@ fi
 
 printf "\n=== Checking for length assertions without content checks ===\n"
 # Find .len() assertions and check if nearby lines have content assertions
-# Exclude test utilities (test_logger, TestPrinter, TestLogger) and explicitly OK cases
-# Exclude template files (documentation) and system tests (different rules apply)
+# Exclusions (legitimate cases where length assertions are acceptable):
+# - test_logger, TestPrinter, TestLogger: test utilities, length is the behavior being tested
+# - get_logs, captured(): logger/output test helpers where count is meaningful
+# - Summary, DebugSummary: test structures where field counts are part of the contract
+# - _TEMPLATE.rs: documentation files, not actual tests
+# - Lines with // OK: explicitly marked as acceptable by developer
+# - Comment lines (//|/*|*): documentation, not actual assertions
 len_issues=$(rg -A 5 "assert.*\.len\(\)" tests/integration_tests/ --type rust | \
   grep -v "test_logger\|TestPrinter\|TestLogger\|get_logs\|// OK\|captured()\|Summary\|DebugSummary\|_TEMPLATE\.rs\|^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*\*" | \
   grep "assert_eq.*\.len()" | wc -l)

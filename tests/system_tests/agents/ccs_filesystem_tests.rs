@@ -195,16 +195,14 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     assert!(
         summary
             .whitelisted_keys_present
-            .iter()
-            .any(|k| k == "ANTHROPIC_MODEL"),
+            .contains(&"ANTHROPIC_MODEL".to_string()),
         "Expected ANTHROPIC_MODEL to be whitelisted"
     );
 
     assert!(
         summary
             .whitelisted_keys_present
-            .iter()
-            .any(|k| k == "ANTHROPIC_BASE_URL"),
+            .contains(&"ANTHROPIC_BASE_URL".to_string()),
         "Expected ANTHROPIC_BASE_URL to be whitelisted"
     );
 

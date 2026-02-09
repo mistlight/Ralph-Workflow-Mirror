@@ -12,9 +12,9 @@
 // from the public API surface in production builds.
 //
 // Functions using this pattern:
-// - `ccs_env_var_debug_summary` (lines 95-105)
-// - `resolve_ccs_command` (lines 217-249)
-// - `build_ccs_agent_config` (lines 431-449)
+// - ccs_env_var_debug_summary
+// - resolve_ccs_command
+// - build_ccs_agent_config
 
 /// Resolve a CCS alias to an `AgentConfig`.
 ///
