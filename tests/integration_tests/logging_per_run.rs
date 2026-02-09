@@ -232,6 +232,9 @@ fn test_collision_handling_impl() -> Result<()> {
     use ralph_workflow::logging::{RunId, RunLogContext};
     use ralph_workflow::workspace::MemoryWorkspace;
 
+    // MemoryWorkspace is CORRECT here - RunLogContext::for_testing() works with
+    // the Workspace trait, not real filesystem. It uses workspace.create_dir_all()
+    // and workspace.exists() which work perfectly with MemoryWorkspace.
     let workspace = MemoryWorkspace::new_test();
 
     // Create a fixed run_id that we can use to simulate collision

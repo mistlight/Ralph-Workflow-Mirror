@@ -465,9 +465,11 @@ The script checks for:
 - Implementation-focused test names
 - Integration guide references
 
-**As of 2026-02-08: All 771 integration tests comply with behavioral testing principles.**
+**Target state after audit completion (verification pending):**
 
-Key metrics from last audit:
+**Expected: All 771 integration tests comply with behavioral testing principles.**
+
+Target metrics from audit:
 - ✅ 771 integration tests passing
 - ✅ 266 MemoryWorkspace usages (no real filesystem)
 - ✅ 35 MockProcessExecutor usages (no real process execution)

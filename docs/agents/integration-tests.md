@@ -319,9 +319,9 @@ When naming tests, focus on **what the system does** (observable behavior), not 
 
 Run `bash scripts/audit_tests.sh` to verify tests follow these guidelines.
 
-As of the last audit (2026-02-08):
+**Target state after audit completion (verification pending):**
 
-**✅ All 771 integration tests PASS and comply with behavioral testing principles:**
+**✅ Expected: All 771 integration tests PASS and comply with behavioral testing principles:**
 
 - ✅ No `cfg!(test)` branches in production code
 - ✅ No real filesystem usage (all use `MemoryWorkspace`)
