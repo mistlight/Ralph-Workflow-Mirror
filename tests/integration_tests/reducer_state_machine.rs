@@ -517,8 +517,8 @@ fn test_authentication_error_triggers_agent_fallback() {
 /// Test that agent fallback occurs after internal error retry budget is exhausted.
 ///
 /// When an agent encounters internal errors repeatedly, the pipeline should:
-/// 1. First retry the same agent (within retry budget)
-/// 2. Then fall back to the next agent after budget exhaustion
+/// 1. First retry the same agent up to continuation.same_agent_retry_limit times
+/// 2. Then fall back to the next agent after retry budget is exhausted
 ///
 /// This tests the observable behavior of agent selection after errors,
 /// not internal retry logic implementation.

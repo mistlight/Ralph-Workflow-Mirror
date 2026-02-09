@@ -43,7 +43,7 @@ fn test_review_xml_valid_issues() {
             "Should not have no_issues_found when issues exist"
         );
 
-        // Verify both issues are present (testing observable behavior)
+        // Verify issue content (array access implicitly verifies count of 2)
         assert_eq!(
             elements.issues[0], "Variable unused in src/main.rs",
             "Should extract first issue"
