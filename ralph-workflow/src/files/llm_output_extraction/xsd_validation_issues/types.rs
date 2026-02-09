@@ -38,6 +38,7 @@
 ///     no_issues_found: None,
 /// };
 /// assert_eq!(issues.issues.len(), 2);
+/// assert_eq!(issues.no_issues_found, None);
 ///
 /// // No issues found - access via public fields
 /// let no_issues = IssuesElements {

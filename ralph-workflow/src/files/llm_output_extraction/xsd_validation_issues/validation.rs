@@ -64,6 +64,10 @@ pub const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
 /// </ralph-issues>"#;
 /// let result = validate_issues_xml(xml);
 /// assert!(result.is_ok());
+/// let parsed = result.unwrap();
+/// assert_eq!(parsed.issues.len(), 1);
+/// assert_eq!(parsed.issues[0], "Missing error handling");
+/// assert_eq!(parsed.no_issues_found, None);
 ///
 /// // Valid XML with no issues
 /// let xml = r#"<ralph-issues>
@@ -71,6 +75,9 @@ pub const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
 /// </ralph-issues>"#;
 /// let result = validate_issues_xml(xml);
 /// assert!(result.is_ok());
+/// let parsed = result.unwrap();
+/// assert!(parsed.issues.is_empty());
+/// assert_eq!(parsed.no_issues_found, Some("All good".to_string()));
 /// ```
 ///
 /// # Errors

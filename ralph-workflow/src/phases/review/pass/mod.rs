@@ -17,7 +17,7 @@
 //! ## Usage
 //!
 //! The example below uses `ignore` because it requires extensive setup (context, workspace, agents).
-//! For complete working examples, see the integration tests in `tests/ralph/review/`.
+//! For complete working examples, see the integration tests in `tests/integration_tests/workflows/review.rs`.
 //!
 //! ```ignore
 //! // Import from the public re-export location
