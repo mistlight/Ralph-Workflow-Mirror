@@ -75,13 +75,13 @@ pub fn resolve_ccs_agent(
 /// leakage of sensitive credential values. Keys containing patterns like "token",
 /// "key", "secret", "password", "auth" are always filtered out regardless of
 /// their actual value, to protect against custom credential formats.
-struct CcsEnvVarDebugSummary {
-    whitelisted_keys_present: Vec<String>,
-    redacted_sensitive_keys: usize,
-    hidden_non_whitelisted_keys: usize,
+pub struct CcsEnvVarDebugSummary {
+    pub whitelisted_keys_present: Vec<String>,
+    pub redacted_sensitive_keys: usize,
+    pub hidden_non_whitelisted_keys: usize,
 }
 
-fn ccs_env_var_debug_summary(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
+pub fn ccs_env_var_debug_summary(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
     // Whitelist of safe-to-log environment variable keys.
     // These are configuration keys, not credentials, so it's safe to log them.
     const SAFE_KEYS: &[&str] = &[
@@ -191,7 +191,7 @@ fn is_glm_alias(alias_name: &str) -> bool {
 /// - The agent name is `ccs/<alias>` (not plain `ccs`)
 /// - We successfully loaded at least one env var for that profile
 /// - The configured command targets that profile (e.g. `ccs <profile>` or `ccs api <profile>`
-fn resolve_ccs_command(
+pub fn resolve_ccs_command(
     alias_config: &CcsAliasConfig,
     alias_name: &str,
     env_vars_loaded: bool,
@@ -369,7 +369,7 @@ fn build_ccs_config_from_flags(
 
 /// CCS aliases to use their configured credentials without requiring manual environment variable
 /// configuration, while avoiding hard-coded assumptions about CCS' internal schema.
-pub(super) fn build_ccs_agent_config(
+pub fn build_ccs_agent_config(
     alias_config: &CcsAliasConfig,
     defaults: &CcsConfig,
     display_name: String,

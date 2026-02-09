@@ -2,7 +2,7 @@
 // These tests cannot use MemoryWorkspace as they need to interact with PATH and real executables
 
 use ralph_workflow::agents::ccs::*;
-use std::collections::HashMap;
+use ralph_workflow::config::{CcsAliasConfig, CcsConfig};
 use std::sync::Mutex;
 
 // NOTE: Some tests in this file need to temporarily modify process-wide env vars

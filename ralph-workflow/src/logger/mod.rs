@@ -107,6 +107,12 @@ impl Colors {
         }
     }
 
+    /// Create a Colors instance with explicit enabled/disabled state (for tests).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub const fn with_enabled(enabled: bool) -> Self {
+        Self { enabled }
+    }
+
     pub const fn bold(self) -> &'static str {
         if self.enabled {
             "\x1b[1m"

@@ -14,7 +14,7 @@ use std::fs::{self, File};
 
 #[test]
 fn test_git_snapshot() {
-    use ralph_workflow::test_helpers::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -29,7 +29,7 @@ fn test_git_snapshot() {
 
 #[test]
 fn test_install_hook() {
-    use ralph_workflow::test_helpers::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -48,8 +48,8 @@ fn test_install_hook() {
 
 #[test]
 fn test_uninstall_hook_restores_original() {
-    use ralph_workflow::test_helpers::with_temp_cwd;
-    let logger = Logger::new(ralph_workflow::logger::Colors { enabled: false });
+    use test_helpers::with_temp_cwd;
+    let logger = Logger::new(ralph_workflow::logger::Colors::with_enabled(false));
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -80,7 +80,7 @@ fn test_uninstall_hook_restores_original() {
 
 #[test]
 fn test_install_hook_uses_absolute_path() {
-    use ralph_workflow::test_helpers::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|_dir| {
         git2::Repository::init(".").unwrap();
@@ -105,10 +105,10 @@ fn test_install_hook_uses_absolute_path() {
 
 #[test]
 fn test_cleanup_orphaned_marker() {
-    use ralph_workflow::test_helpers::with_temp_cwd;
+    use test_helpers::with_temp_cwd;
 
     with_temp_cwd(|dir| {
-        let logger = Logger::new(ralph_workflow::logger::Colors { enabled: false });
+        let logger = Logger::new(ralph_workflow::logger::Colors::with_enabled(false));
         let dir_path = dir.path();
 
         git2::Repository::init(dir_path).unwrap();

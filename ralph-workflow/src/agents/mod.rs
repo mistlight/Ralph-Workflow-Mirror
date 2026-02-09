@@ -67,6 +67,9 @@
 //! json_parser = "claude"  # Use Claude's JSON parser
 //! ```
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod ccs;
+#[cfg(not(any(test, feature = "test-utils")))]
 mod ccs;
 mod ccs_env;
 mod config;
