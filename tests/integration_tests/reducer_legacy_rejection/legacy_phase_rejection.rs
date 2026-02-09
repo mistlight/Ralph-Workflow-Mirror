@@ -1,3 +1,8 @@
+//! Integration tests for legacy phase rejection.
+//!
+//! Verifies that checkpoints containing legacy phase names (e.g., "Fix", "Analyze")
+//! are rejected and require explicit user migration rather than silent auto-migration.
+
 use ralph_workflow::checkpoint::load_checkpoint_with_workspace;
 use ralph_workflow::workspace::MemoryWorkspace;
 

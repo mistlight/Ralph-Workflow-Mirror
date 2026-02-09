@@ -1,3 +1,8 @@
+//! Integration tests for v3 checkpoint file system state validation.
+//!
+//! Verifies that when resuming from v3 checkpoints, the file system state
+//! (checksums, sizes) is validated to prevent resume with stale data.
+
 use std::path::PathBuf;
 
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;

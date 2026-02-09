@@ -1,3 +1,22 @@
+//! Integration tests for agent crash handling.
+//!
+//! Verifies that when agents crash or produce invalid output, the pipeline
+//! handles failures gracefully through retries and fallback mechanisms.
+//!
+//! Observable behaviors tested:
+//! - SIGSEGV crashes are caught by fault-tolerant executor
+//! - Invalid output triggers retry with same agent
+//! - Retry exhaustion triggers agent fallback
+//! - Invalid output counters reset on agent change
+//! - Pipeline advances correctly after recovery
+//!
+//! # Integration Test Compliance
+//!
+//! These tests follow [../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md):
+//! - Test observable behavior: retry/fallback transitions
+//! - Pure reducer tests require no mocks
+//! - Verify error recovery mechanisms
+
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;

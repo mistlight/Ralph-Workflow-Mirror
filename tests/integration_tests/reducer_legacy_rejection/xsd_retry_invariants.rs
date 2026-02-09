@@ -1,3 +1,9 @@
+//! Integration tests for XSD retry state tracking invariants.
+//!
+//! Verifies that XSD validation retry logic is tracked explicitly in reducer state
+//! rather than hidden in phase handlers, ensuring retry behavior is observable
+//! and deterministic.
+
 use crate::test_timeout::with_default_timeout;
 
 // ============================================================================

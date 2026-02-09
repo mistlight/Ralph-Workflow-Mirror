@@ -1,3 +1,22 @@
+//! Integration tests for archival invariants with legacy artifacts.
+//!
+//! Verifies that legacy artifacts from previous Ralph versions don't affect
+//! pipeline execution. The reducer must derive all decisions from events,
+//! not from file presence or content.
+//!
+//! Observable behaviors tested:
+//! - Legacy PLAN.md files are ignored during planning
+//! - Legacy ISSUES.md files are ignored during review
+//! - Pipeline decisions come from events, not file system state
+//! - Effect determination is independent of legacy artifacts
+//!
+//! # Integration Test Compliance
+//!
+//! These tests follow [../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md):
+//! - Test observable behavior: effect determination
+//! - Use MemoryWorkspace to simulate legacy files
+//! - Verify event-driven architecture
+
 use crate::test_timeout::with_default_timeout;
 use std::path::Path;
 

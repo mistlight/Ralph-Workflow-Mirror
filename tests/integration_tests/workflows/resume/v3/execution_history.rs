@@ -1,3 +1,8 @@
+//! Integration tests for v3 checkpoint execution history tracking.
+//!
+//! Verifies that execution history is correctly preserved and restored when
+//! resuming from v3 checkpoints, enabling audit trails and debugging.
+
 use std::path::PathBuf;
 
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;

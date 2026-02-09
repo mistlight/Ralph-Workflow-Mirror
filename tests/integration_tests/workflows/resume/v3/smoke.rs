@@ -1,3 +1,8 @@
+//! Integration smoke tests for v3 checkpoint resume functionality.
+//!
+//! Basic end-to-end tests verifying that v3 checkpoints can be successfully
+//! loaded and resumed with proper state restoration and user feedback.
+
 use std::path::PathBuf;
 
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;

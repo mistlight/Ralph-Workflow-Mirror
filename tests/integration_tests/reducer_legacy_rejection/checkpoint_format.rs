@@ -1,3 +1,8 @@
+//! Integration tests for legacy checkpoint format rejection.
+//!
+//! Verifies that pre-v1 checkpoint formats are rejected and not auto-migrated,
+//! requiring explicit user action to update workflows to the current format.
+
 use ralph_workflow::checkpoint::load_checkpoint_with_workspace;
 use ralph_workflow::workspace::MemoryWorkspace;
 

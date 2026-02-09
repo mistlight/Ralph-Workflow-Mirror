@@ -1,3 +1,8 @@
+//! Integration tests for v3 checkpoint prompt history replay.
+//!
+//! Verifies that when resuming from v3 checkpoints, the prompt history is correctly
+//! replayed to ensure deterministic agent behavior across suspend/resume cycles.
+
 use std::path::PathBuf;
 
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;

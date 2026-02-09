@@ -1,3 +1,22 @@
+//! Integration tests for model fallback behavior.
+//!
+//! Verifies that when agents encounter transient errors (network issues,
+//! rate limits, overloaded), the pipeline falls back to alternative models
+//! within the same agent before switching agents.
+//!
+//! Observable behaviors tested:
+//! - Network errors trigger model fallback
+//! - Rate limit errors trigger model fallback
+//! - Overloaded errors trigger model fallback
+//! - Model fallback advances to next model in chain
+//! - Model exhaustion triggers agent fallback
+//!
+//! # Integration Test Compliance
+//!
+//! These tests follow [../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md):
+//! - Test observable behavior: model/agent chain transitions
+//! - Pure reducer tests require no mocks
+
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};

@@ -1,3 +1,8 @@
+//! Test helper utilities for reducer fault tolerance tests.
+//!
+//! Provides factory functions for creating common test state configurations
+//! used across multiple fault tolerance test scenarios.
+
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
