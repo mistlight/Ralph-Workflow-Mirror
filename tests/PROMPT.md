@@ -1,2 +1,0 @@
-# Test Requirements
-Test task

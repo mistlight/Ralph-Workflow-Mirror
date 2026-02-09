@@ -31,7 +31,7 @@ Ralph Workflow works best if you think like a Product Manager and can scope out 
 
 * Claude Code (and Claude Code Switch profiles)
 * OpenAI Codex CLI
-* OpenCode (Not Tested Much Yet, working on that soon)
+* OpenCode
 
 ## Recommendations
 
