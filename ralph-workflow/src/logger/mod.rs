@@ -107,15 +107,16 @@ impl Colors {
         }
     }
 
-    /// Create a Colors instance with explicit enabled/disabled state.
+    /// **TEST-ONLY:** Create a Colors instance with explicit enabled/disabled state.
     ///
     /// This constructor is for test utilities that need explicit control over
     /// color state, bypassing the automatic detection from `colors_enabled()`.
     ///
     /// # Availability
     ///
-    /// This method is only available when compiling tests or with the `test-utils`
-    /// feature enabled. It is not part of the public API for library users.
+    /// **This method is ONLY available in test/test-utils builds** (`#[cfg(any(test, feature = "test-utils"))]`).
+    /// It is not part of the public API for library users in production builds.
+    /// The extensive documentation here is for maintainers reviewing test code.
     ///
     /// # Example
     ///

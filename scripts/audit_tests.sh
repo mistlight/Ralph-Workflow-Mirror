@@ -4,13 +4,52 @@
 set -e
 
 echo "=== Checking for cfg!(test) usage ==="
-rg "cfg!\(test\)|#\[cfg\(test\)\]" tests/integration_tests/ --type rust || echo "None found ✓"
+# Check for actual code usage, not documentation/comments
+# Allow #[cfg(test)] on module declarations (legitimate usage for test modules)
+violations=$(rg "cfg!\(test\)|#\[cfg\(test\)\]" tests/integration_tests/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" | \
+  grep -v "^[^:]*:#\[cfg(test)\][[:space:]]*$" || true)
+if [ -n "$violations" ]; then
+    echo "ERROR: cfg!(test) usage detected in integration tests"
+    echo "Per integration testing guide, avoid cfg!(test) in production code."
+    echo "Violations found:"
+    echo "$violations"
+    exit 1
+else
+    echo "None found ✓"
+fi
 
 printf "\n=== Checking for real filesystem usage ===\n"
-rg "std::fs::|TempDir|tempfile::" tests/integration_tests/ --type rust || echo "None found ✓"
+# Check for actual code usage, not documentation/comments
+# Filter out lines that start with // or /* or * (comments)
+violations=$(rg "std::fs::|TempDir|tempfile::" tests/integration_tests/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$violations" ]; then
+    echo "ERROR: Real filesystem usage detected in integration tests"
+    echo "Per integration testing guide, integration tests must use MemoryWorkspace exclusively."
+    echo "Use system tests for real filesystem operations."
+    echo "Violations found:"
+    echo "$violations"
+    exit 1
+else
+    echo "None found ✓"
+fi
 
 printf "\n=== Checking for real process execution ===\n"
-rg "std::process::Command|Command::new" tests/integration_tests/ --type rust | grep -v "MockProcessExecutor" || echo "None found ✓"
+# Check for actual code usage, not documentation/comments
+violations=$(rg "std::process::Command|Command::new" tests/integration_tests/ --type rust | \
+  grep -v "MockProcessExecutor" | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$violations" ]; then
+    echo "ERROR: Real process execution detected in integration tests"
+    echo "Per integration testing guide, integration tests must use MockProcessExecutor."
+    echo "Use system tests for real process execution."
+    echo "Violations found:"
+    echo "$violations"
+    exit 1
+else
+    echo "None found ✓"
+fi
 
 printf "\n=== Checking for MemoryWorkspace usage (should be present) ===\n"
 workspace_count=$(rg "MemoryWorkspace" tests/integration_tests/ --type rust --count-matches | awk -F: '{sum+=$2} END {print sum}')
@@ -48,12 +87,18 @@ fi
 printf "\n=== Checking for length assertions without content checks ===\n"
 # Find .len() assertions and check if nearby lines have content assertions
 # Exclude test utilities (test_logger, TestPrinter, TestLogger) and explicitly OK cases
+# Exclude template files (documentation) and system tests (different rules apply)
 len_issues=$(rg -A 5 "assert.*\.len\(\)" tests/integration_tests/ --type rust | \
-  grep -v "test_logger\|TestPrinter\|TestLogger\|get_logs\|// OK\|captured()" | \
+  grep -v "test_logger\|TestPrinter\|TestLogger\|get_logs\|// OK\|captured()\|Summary\|DebugSummary\|_TEMPLATE\.rs\|^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*\*" | \
   grep "assert_eq.*\.len()" | wc -l)
 if [ "$len_issues" -gt 0 ]; then
-    echo "Found $len_issues potential length assertions - manual review needed"
-    echo "Note: Length assertions are OK when combined with content checks"
+    echo "ERROR: Found $len_issues potential length assertions without content checks"
+    echo "Per integration testing guide, length assertions must be combined with content verification."
+    echo "Violations found:"
+    rg -A 5 "assert.*\.len\(\)" tests/integration_tests/ --type rust | \
+      grep -v "test_logger\|TestPrinter\|TestLogger\|get_logs\|// OK\|captured()\|Summary\|DebugSummary\|_TEMPLATE\.rs\|^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*\*" | \
+      grep "assert_eq.*\.len()" | head -10
+    exit 1
 else
     echo "No suspicious length assertions found ✓"
 fi
@@ -64,9 +109,10 @@ printf "\n=== Checking for tests with implementation-focused names ===\n"
 impl_names=$(rg "fn test.*(internal_[^e]|_buffer|_cache|_queue)" tests/integration_tests/ --type rust | \
   grep -v "test_logger" | wc -l)
 if [ "$impl_names" -gt 0 ]; then
-    echo "Found $impl_names tests with potentially implementation-focused names"
+    echo "WARNING: Found $impl_names tests with potentially implementation-focused names"
     rg "fn test.*(internal_[^e]|_buffer|_cache|_queue)" tests/integration_tests/ --type rust | \
       grep -v "test_logger" | head -5
+    echo "Note: This is a warning - manual review recommended to ensure tests focus on behavior"
 else
     echo "All test names are behavior-focused ✓"
 fi

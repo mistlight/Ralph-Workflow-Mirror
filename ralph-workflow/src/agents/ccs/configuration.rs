@@ -1,4 +1,20 @@
 // CCS configuration handling - config types, aliases, environment variables
+//
+// # Conditional Visibility Pattern
+//
+// This module uses a conditional compilation pattern for several functions:
+// - `pub fn` when `test` or `test-utils` feature is enabled (for test access)
+// - `pub(crate) fn` otherwise (internal-only in production)
+//
+// Both variants call the same `_impl` function, avoiding code duplication while
+// providing conditional API visibility. This pattern appears repetitive but is
+// intentional: it keeps test utilities accessible in tests while hiding them
+// from the public API surface in production builds.
+//
+// Functions using this pattern:
+// - `ccs_env_var_debug_summary` (lines 95-105)
+// - `resolve_ccs_command` (lines 217-249)
+// - `build_ccs_agent_config` (lines 431-449)
 
 /// Resolve a CCS alias to an `AgentConfig`.
 ///

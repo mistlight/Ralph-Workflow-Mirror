@@ -237,11 +237,11 @@ fn test_collision_handling_impl() -> Result<()> {
     use ralph_workflow::logging::{RunId, RunLogContext};
     use ralph_workflow::workspace::MemoryWorkspace;
 
-    // Use TempDir + MemoryWorkspace to test collision handling with real filesystem behavior.
-    // This ensures we test actual filesystem collision detection, timestamp precision,
-    // and potential race conditions that may occur in production.
-    let tempdir = tempfile::tempdir()?;
-    let workspace = MemoryWorkspace::new(tempdir.path().to_path_buf());
+    // Test collision handling logic using MemoryWorkspace.
+    // This tests the observable behavior: when directories with collision-detecting names exist,
+    // RunLogContext should create a new directory with an incremented suffix.
+    // Per integration testing guide: use MemoryWorkspace exclusively, no real filesystem.
+    let workspace = MemoryWorkspace::new_test();
 
     // Create a fixed run_id that we can use to simulate collision
     let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");

@@ -184,8 +184,11 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     assert_eq!(config.cmd, claude_path.to_string_lossy().to_string());
     assert!(config.env_vars.contains_key("ANTHROPIC_MODEL"));
 
-    // Sanity-check debug summary classification logic.
+    // Verify debug summary classification logic: test actual key classification, not just counts.
+    // According to the integration testing guide, length assertions should be combined with content verification.
     let summary = ccs_env_var_debug_summary(&config.env_vars);
+
+    // Verify whitelisted keys (safe to log)
     assert!(
         summary
             .whitelisted_keys_present
@@ -193,6 +196,28 @@ fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
             .any(|k| k == "ANTHROPIC_MODEL"),
         "Expected ANTHROPIC_MODEL to be whitelisted"
     );
-    assert_eq!(summary.hidden_non_whitelisted_keys, 1);
-    assert_eq!(summary.redacted_sensitive_keys, 1);
+
+    // Verify sensitive keys are classified correctly: ANTHROPIC_AUTH_TOKEN should be redacted
+    // We expect exactly 1 redacted key (ANTHROPIC_AUTH_TOKEN) and verify by checking:
+    // - Total env vars = 4 (BASE_URL, AUTH_TOKEN, MODEL, CUSTOM_ENV)
+    // - Whitelisted = 2 (BASE_URL, MODEL)
+    // - Redacted = 1 (AUTH_TOKEN - contains "TOKEN" and "AUTH")
+    // - Hidden = 1 (CUSTOM_ENV - not whitelisted, not sensitive)
+    assert_eq!(
+        summary.hidden_non_whitelisted_keys, 1,
+        "Expected 1 hidden non-whitelisted key (CUSTOM_ENV)"
+    );
+    assert_eq!(
+        summary.redacted_sensitive_keys, 1,
+        "Expected 1 redacted sensitive key (ANTHROPIC_AUTH_TOKEN)"
+    );
+
+    // Verify ANTHROPIC_BASE_URL is also whitelisted
+    assert!(
+        summary
+            .whitelisted_keys_present
+            .iter()
+            .any(|k| k == "ANTHROPIC_BASE_URL"),
+        "Expected ANTHROPIC_BASE_URL to be whitelisted"
+    );
 }
