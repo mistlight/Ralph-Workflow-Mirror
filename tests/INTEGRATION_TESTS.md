@@ -433,6 +433,22 @@ If it's in the checkpoint JSON, it's observable. If it's public and drives behav
 
 ---
 
+## Test Naming Guidelines
+
+Test names should describe **observable behavior**, not implementation details:
+
+**Good test names (behavior-focused):**
+- `test_agent_fallback_after_internal_error_retry_exhaustion` - describes what happens
+- `test_pipeline_stops_after_reaching_retry_limit` - describes observable outcome
+- `test_parser_outputs_complete_message` - describes visible behavior
+
+**Bad test names (implementation-focused):**
+- `test_buffer_fills_correctly` - implementation detail
+- `test_counter_increments` - internal bookkeeping
+- `test_cache_invalidation` - internal mechanism
+
+**Exception:** Test names containing "internal_error" are acceptable when testing how the system behaves when internal errors occur (the error type is observable, not the internal implementation).
+
 ## Audit Script
 
 Run `bash scripts/audit_tests.sh` from repo root to verify compliance with these guidelines.
@@ -443,7 +459,19 @@ The script checks for:
 - Real process execution
 - Files over 1000 lines
 - Internal field assertions
-- Parser tests using TestPrinter
+- Parser tests using TestPrinter/VirtualTerminal
 - MemoryWorkspace and MockProcessExecutor usage
+- Length assertions without content checks
+- Implementation-focused test names
+- Integration guide references
 
 **As of 2026-02-08: All 771 integration tests comply with behavioral testing principles.**
+
+Key metrics from last audit:
+- ✅ 771 integration tests passing
+- ✅ 266 MemoryWorkspace usages (no real filesystem)
+- ✅ 35 MockProcessExecutor usages (no real process execution)
+- ✅ All parser tests use TestPrinter or VirtualTerminal
+- ✅ No files over 1000 lines
+- ✅ Length assertions combined with content checks
+- ✅ 94 integration guide references across test files

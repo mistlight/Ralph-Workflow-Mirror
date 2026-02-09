@@ -286,7 +286,19 @@ fn test_chain_initialized_event_populates_state() {
             ),
         );
 
-        assert_eq!(new_state.agent_chain.agents.len(), 2);
+        assert_eq!(
+            new_state.agent_chain.agents.len(),
+            2,
+            "Should initialize with 2 agents"
+        );
+        assert_eq!(
+            new_state.agent_chain.agents[0], "claude",
+            "First agent should be claude"
+        );
+        assert_eq!(
+            new_state.agent_chain.agents[1], "codex",
+            "Second agent should be codex"
+        );
         assert_eq!(new_state.agent_chain.current_agent().unwrap(), "claude");
         assert_eq!(new_state.agent_chain.current_role, AgentRole::Developer);
     });

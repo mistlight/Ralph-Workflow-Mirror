@@ -514,8 +514,16 @@ fn test_authentication_error_triggers_agent_fallback() {
     });
 }
 
+/// Test that agent fallback occurs after internal error retry budget is exhausted.
+///
+/// When an agent encounters internal errors repeatedly, the pipeline should:
+/// 1. First retry the same agent (within retry budget)
+/// 2. Then fall back to the next agent after budget exhaustion
+///
+/// This tests the observable behavior of agent selection after errors,
+/// not internal retry logic implementation.
 #[test]
-fn test_internal_error_triggers_agent_fallback() {
+fn test_agent_fallback_after_internal_error_retry_exhaustion() {
     with_default_timeout(|| {
         let state = PipelineState {
             continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
@@ -535,10 +543,10 @@ fn test_internal_error_triggers_agent_fallback() {
             ),
         );
 
-        // First internal error should retry same agent (not fall back yet)
+        // Observable behavior: First internal error should retry same agent (not fall back yet)
         assert_eq!(
-            after_first.agent_chain.current_agent_index,
-            initial_agent_index
+            after_first.agent_chain.current_agent_index, initial_agent_index,
+            "Should retry same agent on first internal error"
         );
         // Internal errors use same_agent_retry_pending, not xsd_retry_pending
         // (XSD retry is only for invalid XML output, not execution failures)
@@ -555,8 +563,11 @@ fn test_internal_error_triggers_agent_fallback() {
             ),
         );
 
-        // After exhausting same-agent retry budget, should fall back to next agent
-        assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
+        // Observable behavior: After exhausting retry budget, pipeline falls back to next agent
+        assert!(
+            after_second.agent_chain.current_agent_index > initial_agent_index,
+            "Should fall back to next agent after retry budget exhausted"
+        );
     });
 }
 

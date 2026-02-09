@@ -205,6 +205,42 @@
 //! - "The implementation changed" (but behavior didn't)
 //! - "The test is failing after my refactor" (refactors shouldn't change behavior)
 //!
+//! # Length Assertions - When They're Acceptable
+//!
+//! Length assertions (`.len()`) are acceptable when:
+//!
+//! 1. **Combined with content checks:**
+//! ```rust
+//! // Good: Count + content verification
+//! assert_eq!(agents.len(), 2, "Should initialize with 2 agents");
+//! assert_eq!(agents[0], "claude", "First agent should be claude");
+//! assert_eq!(agents[1], "codex", "Second agent should be codex");
+//! ```
+//!
+//! 2. **Testing public API return values:**
+//! ```rust
+//! // Good: Part of API contract
+//! let issues = validate_issues_xml(xml).unwrap().issues;
+//! assert_eq!(issues.len(), 3, "Should extract all 3 issues");
+//! assert!(issues[0].contains("Error 1"));
+//! assert!(issues[1].contains("Warning 1"));
+//! assert!(issues[2].contains("Info 1"));
+//! ```
+//!
+//! 3. **Testing test utilities:**
+//! ```rust
+//! // Good: Testing the utility's behavior IS testing its observable contract
+//! assert_eq!(logger.get_logs().len(), 2);
+//! assert!(logger.has_log("Message 1"));
+//! assert!(logger.has_log("Message 2"));
+//! ```
+//!
+//! **Bad - Length without content:**
+//! ```rust
+//! // Bad: What if the array has 2 wrong items?
+//! assert_eq!(agents.len(), 2); // WRONG - no content verification
+//! ```
+//!
 //! # Module Organization
 //!
 //! Integration tests are organized by feature/area:

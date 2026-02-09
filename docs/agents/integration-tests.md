@@ -299,6 +299,22 @@ Length assertions are NOT acceptable when:
 
 ---
 
+## Test Naming Best Practices
+
+When naming tests, focus on **what the system does** (observable behavior), not **how it does it** (implementation):
+
+**✅ Good names:**
+- `test_agent_fallback_after_internal_error_retry_exhaustion` - describes observable behavior
+- `test_pipeline_transitions_to_failure_after_retry_limit` - describes state transition
+- `test_parser_streams_deltas_to_terminal` - describes observable output
+
+**❌ Avoid:**
+- `test_buffer_management` - implementation detail
+- `test_internal_counter_updates` - internal bookkeeping (unless it's testing error type handling)
+- `test_cache_size_tracking` - non-observable detail
+
+**Note:** Names like `test_agent_fallback_after_internal_error` are acceptable because they describe behavior (fallback) triggered by an observable error type (internal error), not internal implementation details.
+
 ## Compliance Verification
 
 Run `bash scripts/audit_tests.sh` to verify tests follow these guidelines.
@@ -315,10 +331,19 @@ As of the last audit (2026-02-08):
 - ✅ All parser tests use `TestPrinter` or `VirtualTerminal`
 - ✅ All test files have comprehensive behavioral documentation
 - ✅ `.len()` assertions are combined with content checks where appropriate
+- ✅ Test names focus on observable behavior
 
 **Test utilities:**
 - 266 MemoryWorkspace usages
 - 35 MockProcessExecutor usages
-- 105 test files (all properly documented)
+- 105 test files
+- 94 integration guide references
 
 The codebase demonstrates **exemplary adherence** to behavioral testing principles.
+
+**Enhanced audit script checks:**
+The audit script now includes additional checks for:
+- Length assertions without content verification
+- Implementation-focused test names (buffer, cache, queue)
+- Parser tests missing TestPrinter/VirtualTerminal
+- Integration guide reference count
