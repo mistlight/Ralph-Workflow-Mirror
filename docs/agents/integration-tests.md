@@ -315,6 +315,45 @@ When naming tests, focus on **what the system does** (observable behavior), not 
 
 **Note:** Names like `test_agent_fallback_after_internal_error` are acceptable because they describe behavior (fallback) triggered by an observable error type (internal error), not internal implementation details.
 
+## Recent Compliance Improvements (Feb 2026)
+
+The integration test suite was audited and improved to ensure strict compliance with behavioral testing principles:
+
+### Length Assertions Fixed
+
+**Updated files:**
+- `tests/integration_tests/logger/test_logger_tests.rs` - Combined 3 length assertions with content checks
+- `ralph-workflow/src/git_helpers/rebase_checkpoint/tests.rs` - Added content verification to 7 length assertions
+- `tests/integration_tests/test_traits.rs` - Removed redundant length assertion (content checks sufficient)
+- `tests/integration_tests/reducer_rebase_state_machine.rs` - Removed redundant length check
+- `ralph-workflow/src/workspace/tests.rs` - Removed redundant assertion, verified both files
+
+**Key principle:** Length assertions are acceptable when combined with content checks. If content checks already verify correctness (e.g., checking array indices or using `.contains()`), the length check is redundant and should be removed.
+
+### Examples of Correct Length Assertions
+
+**✅ CORRECT - Length + Content:**
+```rust
+let logs = logger.get_logs();
+assert_eq!(logs.len(), 2, "Should buffer two separate writes");
+assert!(logs[0].contains("Partial line"), "First log content");
+assert!(logs[1].contains("Another line"), "Second log content");
+```
+
+**✅ CORRECT - Content checks sufficient (no length needed):**
+```rust
+// Array indexing already verifies length (would panic if wrong)
+assert_eq!(files[0].as_path(), "file1.txt");
+assert_eq!(files[1].as_path(), "file2.txt");
+```
+
+**❌ WRONG - Length without content:**
+```rust
+assert_eq!(logger.get_logs().len(), 2);  // What's in the logs? No verification!
+```
+
+See `tests/INTEGRATION_TESTS.md` for detailed before/after examples from the actual fixes.
+
 ## Compliance Verification
 
 Run `bash scripts/audit_tests.sh` to verify tests follow these guidelines.

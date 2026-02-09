@@ -449,6 +449,77 @@ Test names should describe **observable behavior**, not implementation details:
 
 **Exception:** Test names containing "internal_error" are acceptable when testing how the system behaves when internal errors occur (the error type is observable, not the internal implementation).
 
+## Recent Fixes (Feb 2026)
+
+### Length Assertions with Content Checks
+
+The following tests were updated to combine length assertions with content verification, ensuring they test observable behavior rather than just collection sizes.
+
+**Before (WRONG - only testing count):**
+```rust
+#[test]
+fn test_logger_line_buffering() {
+    // ...
+    assert_eq!(logger.get_logs().len(), 2);  // Only tests count
+}
+```
+
+**After (CORRECT - testing count AND content):**
+```rust
+#[test]
+fn test_logger_line_buffering() {
+    // ...
+    let logs = logger.get_logs();
+    assert_eq!(logs.len(), 2, "Should buffer two separate writes");
+    assert!(logs[0].contains("Partial line"), "First log should contain expected text");
+    assert!(logs[1].contains("Another line"), "Second log should contain expected text");
+}
+```
+
+**Files updated:**
+- `tests/integration_tests/logger/test_logger_tests.rs` - Added content verification to 3 length assertions
+- `ralph-workflow/src/git_helpers/rebase_checkpoint/tests.rs` - Added content checks to 7 length assertions
+
+### Redundant Length Assertions Removed
+
+Some tests had length assertions that were redundant because content checks already verified correctness. These were removed to keep tests focused on observable behavior.
+
+**Before (redundant length check):**
+```rust
+let files = workspace.written_files();
+assert_eq!(files.len(), 2);  // Redundant
+assert_eq!(
+    String::from_utf8_lossy(files.get(&PathBuf::from("file1.txt")).unwrap()),
+    "content1"
+);
+```
+
+**After (content checks are sufficient):**
+```rust
+let files = workspace.written_files();
+assert_eq!(
+    String::from_utf8_lossy(files.get(&PathBuf::from("file1.txt")).unwrap()),
+    "content1"
+);
+assert_eq!(
+    String::from_utf8_lossy(files.get(&PathBuf::from("file2.txt")).unwrap()),
+    "content2"
+);
+```
+
+**Files updated:**
+- `tests/integration_tests/test_traits.rs` - Removed redundant assertion (content checks via .any() are sufficient)
+- `tests/integration_tests/reducer_rebase_state_machine.rs` - Removed redundant assertion (array indexing verifies both presence and count)
+- `ralph-workflow/src/workspace/tests.rs` - Removed redundant assertion, added check for second file
+
+### Test Location by I/O Requirements
+
+**Tests previously migrated to system tests (already completed):**
+- CCS binary discovery tests - require real PATH and executables (tests/system_tests/agents/ccs_filesystem_tests.rs)
+- Git helper tests - require real git2::Repository (tests/system_tests/git/git_helpers_tests.rs)
+
+These tests were moved from `ralph-workflow/src/` to `tests/system_tests/` because they require real filesystem and git operations that cannot be mocked with MemoryWorkspace.
+
 ## Audit Script
 
 Run `bash scripts/audit_tests.sh` from repo root to verify compliance with these guidelines.

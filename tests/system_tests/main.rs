@@ -35,7 +35,9 @@ mod common;
 mod test_timeout;
 
 // Test modules using real filesystem/git operations
+mod agents;
 mod deduplication;
+mod git;
 mod rebase;
 
 // Future modules:

@@ -37,10 +37,38 @@ mod tests {
         let checkpoint = RebaseCheckpoint::new("main".to_string())
             .with_conflicted_file("file1.txt".to_string())
             .with_conflicted_file("file2.txt".to_string());
-        assert_eq!(checkpoint.conflicted_files.len(), 2);
+
+        assert_eq!(
+            checkpoint.conflicted_files.len(),
+            2,
+            "Should track both files"
+        );
+        assert!(
+            checkpoint
+                .conflicted_files
+                .contains(&"file1.txt".to_string()),
+            "Should contain file1.txt"
+        );
+        assert!(
+            checkpoint
+                .conflicted_files
+                .contains(&"file2.txt".to_string()),
+            "Should contain file2.txt"
+        );
+
         // Adding duplicate should not increase count
         let checkpoint = checkpoint.with_conflicted_file("file1.txt".to_string());
-        assert_eq!(checkpoint.conflicted_files.len(), 2);
+        assert_eq!(
+            checkpoint.conflicted_files.len(),
+            2,
+            "Should not increase count for duplicate"
+        );
+        assert!(
+            checkpoint
+                .conflicted_files
+                .contains(&"file1.txt".to_string()),
+            "Should still contain file1.txt"
+        );
     }
 
     #[test]
@@ -109,7 +137,19 @@ mod tests {
                 .expect("checkpoint should exist after save");
             assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
             assert_eq!(loaded.upstream_branch, "main");
-            assert_eq!(loaded.conflicted_files.len(), 2);
+            assert_eq!(
+                loaded.conflicted_files.len(),
+                2,
+                "Should have two conflicted files"
+            );
+            assert!(
+                loaded.conflicted_files.contains(&"file1.rs".to_string()),
+                "Should contain file1.rs"
+            );
+            assert!(
+                loaded.conflicted_files.contains(&"file2.rs".to_string()),
+                "Should contain file2.rs"
+            );
         });
     }
 
@@ -181,7 +221,15 @@ mod tests {
                 .unwrap()
                 .expect("checkpoint should exist");
             assert_eq!(loaded.phase, RebasePhase::RebaseComplete);
-            assert_eq!(loaded.conflicted_files.len(), 1);
+            assert_eq!(
+                loaded.conflicted_files.len(),
+                1,
+                "Should have one conflicted file"
+            );
+            assert!(
+                loaded.conflicted_files.contains(&"test.rs".to_string()),
+                "Should contain test.rs"
+            );
         });
     }
 
@@ -251,7 +299,15 @@ mod tests {
                 .expect("should restore from backup");
 
             assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
-            assert_eq!(loaded.conflicted_files.len(), 1);
+            assert_eq!(
+                loaded.conflicted_files.len(),
+                1,
+                "Should have one conflicted file"
+            );
+            assert!(
+                loaded.conflicted_files.contains(&"file.rs".to_string()),
+                "Should contain file.rs"
+            );
         });
     }
 
@@ -312,10 +368,21 @@ mod tests {
                 .unwrap()
                 .expect("should restore from backup");
 
-            assert_eq!(loaded.conflicted_files.len(), 1);
-            assert!(!loaded
-                .resolved_files
-                .contains(&"not_in_conflicted.rs".to_string()));
+            assert_eq!(
+                loaded.conflicted_files.len(),
+                1,
+                "Should have one conflicted file"
+            );
+            assert!(
+                loaded.conflicted_files.contains(&"file.rs".to_string()),
+                "Should contain file.rs"
+            );
+            assert!(
+                !loaded
+                    .resolved_files
+                    .contains(&"not_in_conflicted.rs".to_string()),
+                "Should not have invalid resolved file"
+            );
         });
     }
 }
@@ -346,7 +413,15 @@ mod workspace_tests {
 
         assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
         assert_eq!(loaded.upstream_branch, "main");
-        assert_eq!(loaded.conflicted_files.len(), 1);
+        assert_eq!(
+            loaded.conflicted_files.len(),
+            1,
+            "Should have one conflicted file"
+        );
+        assert!(
+            loaded.conflicted_files.contains(&"file1.rs".to_string()),
+            "Should contain file1.rs"
+        );
     }
 
     #[test]

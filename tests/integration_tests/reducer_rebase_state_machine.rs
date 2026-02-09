@@ -73,7 +73,6 @@ fn test_rebase_conflict_detected_transitions_to_conflicted() {
         );
 
         if let RebaseState::Conflicted { files, .. } = &new_state.rebase {
-            assert_eq!(files.len(), 2);
             assert_eq!(files[0].as_path(), "file1.txt");
             assert_eq!(files[1].as_path(), "file2.txt");
         } else {

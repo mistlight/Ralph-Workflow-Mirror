@@ -101,8 +101,17 @@ fn test_logger_line_buffering() {
         writeln!(logger, "Another line").unwrap();
         assert!(logger.has_log("Another line"));
 
-        // Check total log count
-        assert_eq!(logger.get_logs().len(), 2);
+        // Check total log count with content verification
+        let logs = logger.get_logs();
+        assert_eq!(logs.len(), 2, "Should buffer two separate writes");
+        assert!(
+            logs[0].contains("Partial line"),
+            "First log should contain expected text"
+        );
+        assert!(
+            logs[1].contains("Another line"),
+            "Second log should contain expected text"
+        );
     });
 }
 
@@ -121,7 +130,12 @@ fn test_logger_flush_behavior() {
         // The content is in the buffer, but get_logs() includes buffered content
         // So we should still see it via get_logs() and has_log()
         assert!(logger.has_log("Partial content"));
-        assert_eq!(logger.get_logs().len(), 1);
+        let logs = logger.get_logs();
+        assert_eq!(logs.len(), 1, "Should have one buffered entry");
+        assert!(
+            logs[0].contains("Partial content"),
+            "Log should contain buffered content"
+        );
 
         // Write more content with newline - this should flush the buffer
         writeln!(logger, " with newline").unwrap();
@@ -185,7 +199,16 @@ fn test_logger_clear() {
         logger.log("First message");
         logger.log("Second message");
 
-        assert_eq!(logger.get_logs().len(), 2);
+        let logs = logger.get_logs();
+        assert_eq!(logs.len(), 2, "Should have two log entries");
+        assert!(
+            logs[0].contains("First message"),
+            "Should contain first message"
+        );
+        assert!(
+            logs[1].contains("Second message"),
+            "Should contain second message"
+        );
 
         logger.clear();
         assert_eq!(logger.get_logs().len(), 0);

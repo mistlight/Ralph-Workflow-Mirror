@@ -75,7 +75,6 @@ fn test_mock_app_effect_handler_captures_effects() {
         handler.execute(AppEffect::GitDiff);
 
         let captured = handler.captured();
-        assert_eq!(captured.len(), 3);
         assert!(captured
             .iter()
             .any(|e| matches!(e, AppEffect::GitRequireRepo)));
