@@ -16,6 +16,9 @@
 //!
 //! ## Usage
 //!
+//! The example below uses `ignore` because it requires extensive setup (context, workspace, agents).
+//! For complete working examples, see the integration tests in `tests/ralph/review/`.
+//!
 //! ```ignore
 //! // Import from the public re-export location
 //! use ralph_workflow::phases::review::{run_review_pass, run_fix_pass};

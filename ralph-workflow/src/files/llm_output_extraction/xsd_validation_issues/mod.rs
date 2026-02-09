@@ -14,6 +14,9 @@
 //!
 //! # Usage
 //!
+//! The main types and functions are re-exported at the parent level for convenience.
+//! Use the shorter import path shown below:
+//!
 //! ```rust
 //! use ralph_workflow::files::llm_output_extraction::validate_issues_xml;
 //!

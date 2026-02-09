@@ -32,19 +32,20 @@
 /// ```
 /// use ralph_workflow::files::llm_output_extraction::IssuesElements;
 ///
-/// // Issues found
+/// // Issues found - access via public fields
 /// let issues = IssuesElements {
 ///     issues: vec!["First issue".to_string(), "Second issue".to_string()],
 ///     no_issues_found: None,
 /// };
 /// assert_eq!(issues.issues.len(), 2);
 ///
-/// // No issues found
+/// // No issues found - access via public fields
 /// let no_issues = IssuesElements {
 ///     issues: vec![],
 ///     no_issues_found: Some("All good".to_string()),
 /// };
 /// assert!(no_issues.issues.is_empty());
+/// assert_eq!(no_issues.no_issues_found, Some("All good".to_string()));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssuesElements {
