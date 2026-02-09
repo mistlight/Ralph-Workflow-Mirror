@@ -239,10 +239,18 @@ fn test_collision_handling_impl() -> Result<()> {
 
     // MemoryWorkspace is CORRECT here - this is an integration test that tests
     // RunLogContext collision handling through the Workspace trait interface.
-    // The collision detection logic uses workspace.exists() and workspace.create_dir_all()
-    // which MemoryWorkspace implements identically to real filesystem semantics.
-    // This tests the LOGIC of collision numbering (run-1, run-2, etc.), not OS-specific
-    // filesystem behavior. The Workspace trait abstraction ensures correctness.
+    //
+    // Why MemoryWorkspace is the right choice (not real filesystem):
+    // 1. Tests collision numbering LOGIC (run-1, run-2, etc.), not filesystem I/O
+    // 2. MemoryWorkspace implements exists() and create_dir_all() with identical semantics
+    // 3. Collision detection is purely algorithmic - checks directory existence, increments suffix
+    // 4. No platform-specific behavior being tested (POSIX vs Windows paths, permissions, etc.)
+    // 5. This is a behavioral test per integration test guide: tests observable outcomes
+    //    (directory names with collision suffixes) through public API (workspace trait)
+    //
+    // A real filesystem test would be needed ONLY if testing actual OS-level directory
+    // creation, permissions, race conditions, or platform-specific path handling - none
+    // of which are relevant to collision suffix logic.
     let workspace = MemoryWorkspace::new_test();
 
     // Create a fixed run_id that we can use to simulate collision

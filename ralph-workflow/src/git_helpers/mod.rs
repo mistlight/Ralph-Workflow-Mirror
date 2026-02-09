@@ -21,39 +21,33 @@
 use std::io;
 
 /// Convert git2 errors to std::io errors for consistent error handling.
-#[cfg(any(test, feature = "test-utils"))]
-pub fn git2_to_io_error(err: &git2::Error) -> io::Error {
-    // Fall back to mapping git2 error codes to a best-effort io::ErrorKind.
-    let kind = match err.code() {
-        git2::ErrorCode::NotFound => io::ErrorKind::NotFound,
-        git2::ErrorCode::Exists => io::ErrorKind::AlreadyExists,
-        git2::ErrorCode::Auth => io::ErrorKind::PermissionDenied,
-        git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
-        git2::ErrorCode::Invalid => io::ErrorKind::InvalidInput,
-        git2::ErrorCode::Eof => io::ErrorKind::UnexpectedEof,
-        git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
-        _ => io::ErrorKind::Other,
-    };
+///
+/// Implementation note: We use a macro to eliminate duplication between test and production builds.
+macro_rules! define_git2_to_io_error {
+    ($vis:vis) => {
+        $vis fn git2_to_io_error(err: &git2::Error) -> io::Error {
+            // Fall back to mapping git2 error codes to a best-effort io::ErrorKind.
+            let kind = match err.code() {
+                git2::ErrorCode::NotFound => io::ErrorKind::NotFound,
+                git2::ErrorCode::Exists => io::ErrorKind::AlreadyExists,
+                git2::ErrorCode::Auth => io::ErrorKind::PermissionDenied,
+                git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
+                git2::ErrorCode::Invalid => io::ErrorKind::InvalidInput,
+                git2::ErrorCode::Eof => io::ErrorKind::UnexpectedEof,
+                git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
+                _ => io::ErrorKind::Other,
+            };
 
-    io::Error::new(kind, err.to_string())
+            io::Error::new(kind, err.to_string())
+        }
+    };
 }
+
+#[cfg(any(test, feature = "test-utils"))]
+define_git2_to_io_error!(pub);
 
 #[cfg(not(any(test, feature = "test-utils")))]
-pub(crate) fn git2_to_io_error(err: &git2::Error) -> io::Error {
-    // Fall back to mapping git2 error codes to a best-effort io::ErrorKind.
-    let kind = match err.code() {
-        git2::ErrorCode::NotFound => io::ErrorKind::NotFound,
-        git2::ErrorCode::Exists => io::ErrorKind::AlreadyExists,
-        git2::ErrorCode::Auth => io::ErrorKind::PermissionDenied,
-        git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
-        git2::ErrorCode::Invalid => io::ErrorKind::InvalidInput,
-        git2::ErrorCode::Eof => io::ErrorKind::UnexpectedEof,
-        git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
-        _ => io::ErrorKind::Other,
-    };
-
-    io::Error::new(kind, err.to_string())
-}
+define_git2_to_io_error!(pub(crate));
 
 pub mod branch;
 #[cfg(any(test, feature = "test-utils"))]

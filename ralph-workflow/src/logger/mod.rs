@@ -112,12 +112,17 @@ impl Colors {
     /// This constructor is for test utilities that need explicit control over
     /// color state, bypassing the automatic detection from `colors_enabled()`.
     ///
+    /// # Availability
+    ///
+    /// This method is only available when compiling tests or with the `test-utils`
+    /// feature enabled. It is not part of the public API for library users.
+    ///
     /// # Example
     ///
-    /// This example is ignored because the `with_enabled` method is only available
-    /// with the `test-utils` feature flag.
-    ///
-    /// ```ignore
+    /// ```
+    /// # // This doctest only runs when test-utils is enabled
+    /// # #[cfg(any(test, feature = "test-utils"))]
+    /// # {
     /// use ralph_workflow::logger::Colors;
     ///
     /// // Force colors off for tests checking raw output
@@ -127,6 +132,7 @@ impl Colors {
     /// // Force colors on for tests checking colored output
     /// let colors = Colors::with_enabled(true);
     /// assert_eq!(colors.bold(), "\x1b[1m"); // ANSI bold code
+    /// # }
     /// ```
     #[cfg(any(test, feature = "test-utils"))]
     pub const fn with_enabled(enabled: bool) -> Self {
