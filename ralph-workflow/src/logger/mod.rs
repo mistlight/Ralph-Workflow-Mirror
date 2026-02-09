@@ -114,6 +114,9 @@ impl Colors {
     ///
     /// # Example
     ///
+    /// This example is ignored because the `with_enabled` method is only available
+    /// with the `test-utils` feature flag.
+    ///
     /// ```ignore
     /// use ralph_workflow::logger::Colors;
     ///

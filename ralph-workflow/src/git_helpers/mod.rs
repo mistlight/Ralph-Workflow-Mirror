@@ -21,7 +21,7 @@
 use std::io;
 
 /// Convert git2 errors to std::io errors for consistent error handling.
-pub fn git2_to_io_error(err: &git2::Error) -> io::Error {
+pub(crate) fn git2_to_io_error(err: &git2::Error) -> io::Error {
     // Fall back to mapping git2 error codes to a best-effort io::ErrorKind.
     let kind = match err.code() {
         git2::ErrorCode::NotFound => io::ErrorKind::NotFound,

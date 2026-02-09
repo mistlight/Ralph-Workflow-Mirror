@@ -6,27 +6,27 @@ set -e
 echo "=== Checking for cfg!(test) usage ==="
 rg "cfg!\(test\)|#\[cfg\(test\)\]" tests/integration_tests/ --type rust || echo "None found ✓"
 
-echo -e "\n=== Checking for real filesystem usage ==="
+printf "\n=== Checking for real filesystem usage ===\n"
 rg "std::fs::|TempDir|tempfile::" tests/integration_tests/ --type rust || echo "None found ✓"
 
-echo -e "\n=== Checking for real process execution ==="
+printf "\n=== Checking for real process execution ===\n"
 rg "std::process::Command|Command::new" tests/integration_tests/ --type rust | grep -v "MockProcessExecutor" || echo "None found ✓"
 
-echo -e "\n=== Checking for MemoryWorkspace usage (should be present) ==="
+printf "\n=== Checking for MemoryWorkspace usage (should be present) ===\n"
 workspace_count=$(rg "MemoryWorkspace" tests/integration_tests/ --type rust --count-matches | awk -F: '{sum+=$2} END {print sum}')
 echo "MemoryWorkspace usage count: $workspace_count"
 
-echo -e "\n=== Checking for MockProcessExecutor usage (should be present) ==="
+printf "\n=== Checking for MockProcessExecutor usage (should be present) ===\n"
 mock_count=$(rg "MockProcessExecutor" tests/integration_tests/ --type rust --count-matches | awk -F: '{sum+=$2} END {print sum}')
 echo "MockProcessExecutor usage count: $mock_count"
 
-echo -e "\n=== Files over 1000 lines (should be split) ==="
+printf "\n=== Files over 1000 lines (should be split) ===\n"
 find tests/integration_tests -name "*.rs" -exec wc -l {} \; | awk '$1 > 1000 {print}' || echo "None found ✓"
 
-echo -e "\n=== Checking for internal field assertions ==="
+printf "\n=== Checking for internal field assertions ===\n"
 rg "assert.*\.(internal_|_private|_impl)" tests/integration_tests/ --type rust || echo "None found ✓"
 
-echo -e "\n=== Checking for TestPrinter/VirtualTerminal usage in parser tests ==="
+printf "\n=== Checking for TestPrinter/VirtualTerminal usage in parser tests ===\n"
 parser_files=$(find tests/integration_tests -name "*parser*.rs" -o -name "*streaming*.rs")
 if [ -n "$parser_files" ]; then
     missing_count=0
@@ -45,7 +45,7 @@ else
     echo "No parser test files found"
 fi
 
-echo -e "\n=== Checking for length assertions without content checks ==="
+printf "\n=== Checking for length assertions without content checks ===\n"
 # Find .len() assertions and check if nearby lines have content assertions
 # Exclude test utilities (test_logger, TestPrinter, TestLogger) and explicitly OK cases
 len_issues=$(rg -A 5 "assert.*\.len\(\)" tests/integration_tests/ --type rust | \
@@ -58,7 +58,7 @@ else
     echo "No suspicious length assertions found ✓"
 fi
 
-echo -e "\n=== Checking for tests with implementation-focused names ==="
+printf "\n=== Checking for tests with implementation-focused names ===\n"
 # Tests with "internal_error" are OK (testing error types, not implementation)
 # Tests with "buffer" in test_logger_tests.rs are OK (testing utility behavior)
 impl_names=$(rg "fn test.*(internal_[^e]|_buffer|_cache|_queue)" tests/integration_tests/ --type rust | \
@@ -71,14 +71,14 @@ else
     echo "All test names are behavior-focused ✓"
 fi
 
-echo -e "\n=== Checking for missing test documentation ==="
+printf "\n=== Checking for missing test documentation ===\n"
 # This is a best-effort check - manual review recommended
 total_tests=$(rg "^\s*#\[test\]" tests/integration_tests/ --type rust --count | \
   awk -F: '{sum+=$2} END {print sum}')
 echo "Total #[test] annotations: $total_tests"
 echo "Note: Most tests have documentation - manual spot-checks recommended"
 
-echo -e "\n=== Verifying tests reference integration guide ==="
+printf "\n=== Verifying tests reference integration guide ===\n"
 guide_refs=$(rg "INTEGRATION_TESTS\.md" tests/integration_tests/ --type rust --count-matches | \
   awk -F: '{sum+=$2} END {print sum}')
 echo "Integration guide references: $guide_refs"
@@ -89,4 +89,4 @@ else
   echo "Integration guide well-referenced ✓"
 fi
 
-echo -e "\n=== Audit complete ==="
+printf "\n=== Audit complete ===\n"

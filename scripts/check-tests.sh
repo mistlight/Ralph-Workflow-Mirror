@@ -16,7 +16,8 @@ if [ -z "$STAGED_TEST_FILES" ]; then
     exit 0
 fi
 
-echo "Checking $(echo "$STAGED_TEST_FILES" | wc -l | xargs) staged test file(s)..."
+file_count=$(printf '%s\n' "$STAGED_TEST_FILES" | wc -l | xargs)
+echo "Checking $file_count staged test file(s)..."
 echo ""
 
 ERROR_COUNT=0
