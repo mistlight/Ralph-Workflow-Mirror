@@ -107,7 +107,24 @@ impl Colors {
         }
     }
 
-    /// Create a Colors instance with explicit enabled/disabled state (for tests).
+    /// Create a Colors instance with explicit enabled/disabled state.
+    ///
+    /// This constructor is for test utilities that need explicit control over
+    /// color state, bypassing the automatic detection from `colors_enabled()`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use ralph_workflow::logger::Colors;
+    ///
+    /// // Force colors off for tests checking raw output
+    /// let colors = Colors::with_enabled(false);
+    /// assert_eq!(colors.bold(), ""); // No ANSI codes
+    ///
+    /// // Force colors on for tests checking colored output
+    /// let colors = Colors::with_enabled(true);
+    /// assert_eq!(colors.bold(), "\x1b[1m"); // ANSI bold code
+    /// ```
     #[cfg(any(test, feature = "test-utils"))]
     pub const fn with_enabled(enabled: bool) -> Self {
         Self { enabled }

@@ -237,10 +237,12 @@ fn test_collision_handling_impl() -> Result<()> {
     use ralph_workflow::logging::{RunId, RunLogContext};
     use ralph_workflow::workspace::MemoryWorkspace;
 
-    // MemoryWorkspace is CORRECT here - replaced tempfile::tempdir() and its
-    // instantiation because RunLogContext::for_testing() works with the Workspace
-    // trait interface (workspace.create_dir_all() and workspace.exists()) which
-    // MemoryWorkspace implements. No real filesystem needed for this test.
+    // MemoryWorkspace is CORRECT here - this is an integration test that tests
+    // RunLogContext collision handling through the Workspace trait interface.
+    // The collision detection logic uses workspace.exists() and workspace.create_dir_all()
+    // which MemoryWorkspace implements identically to real filesystem semantics.
+    // This tests the LOGIC of collision numbering (run-1, run-2, etc.), not OS-specific
+    // filesystem behavior. The Workspace trait abstraction ensures correctness.
     let workspace = MemoryWorkspace::new_test();
 
     // Create a fixed run_id that we can use to simulate collision

@@ -473,7 +473,7 @@ Test names should describe **observable behavior**, not implementation details:
 **Fix:** Added `Colors::with_enabled(bool)` constructor method for test use only.
 **Files affected:** `ralph-workflow/src/logger/mod.rs`, `tests/system_tests/git/git_helpers_tests.rs`
 
-**Result:** All 900 tests (771 integration + 129 system) now compile and pass successfully.
+**Result:** All 920 tests (790 integration + 130 system) now compile and pass successfully.
 
 ### Length Assertions with Content Checks
 
@@ -562,10 +562,10 @@ The script checks for:
 
 **Verified audit results (all checks passing):**
 
-**All 900 tests (771 integration + 129 system) comply with behavioral testing principles.**
+**All 920 tests (790 integration + 130 system) comply with behavioral testing principles.**
 
 Confirmed metrics from audit:
-- ✅ 900 total tests passing (771 integration + 129 system)
+- ✅ 920 total tests passing (790 integration + 130 system)
 - ✅ 268 MemoryWorkspace usages (no real filesystem in integration tests)
 - ✅ 35 MockProcessExecutor usages (no real process execution in integration tests)
 - ✅ All parser tests use TestPrinter or VirtualTerminal

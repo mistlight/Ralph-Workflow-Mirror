@@ -75,6 +75,12 @@ pub fn resolve_ccs_agent(
 /// leakage of sensitive credential values. Keys containing patterns like "token",
 /// "key", "secret", "password", "auth" are always filtered out regardless of
 /// their actual value, to protect against custom credential formats.
+///
+/// **IMPORTANT: The two cfg-gated struct definitions below MUST be kept in sync.**
+/// If you add/remove/modify fields, update BOTH variants. This duplication is
+/// necessary to control visibility (pub for test-utils, pub(crate) for production)
+/// while avoiding the need for separate test and production type definitions in
+/// calling code.
 #[cfg(any(test, feature = "test-utils"))]
 pub struct CcsEnvVarDebugSummary {
     pub whitelisted_keys_present: Vec<String>,
