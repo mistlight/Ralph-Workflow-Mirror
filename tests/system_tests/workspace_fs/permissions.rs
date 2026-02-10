@@ -3,7 +3,6 @@
 //! Tests real filesystem permission changes using WorkspaceFs trait implementation.
 //! These tests verify platform-specific behavior (Unix mode bits / Windows readonly attribute).
 
-use ralph_workflow::workspace::Workspace;
 use ralph_workflow::workspace::WorkspaceFs;
 use std::fs;
 use std::path::Path;
