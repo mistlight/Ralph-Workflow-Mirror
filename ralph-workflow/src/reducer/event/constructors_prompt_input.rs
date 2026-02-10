@@ -64,4 +64,9 @@ impl PipelineEvent {
     pub fn prompt_permissions_locked(warning: Option<String>) -> Self {
         PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsLocked { warning })
     }
+
+    /// Create a PromptPermissionsRestoreWarning event.
+    pub fn prompt_permissions_restore_warning(warning: String) -> Self {
+        PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsRestoreWarning { warning })
+    }
 }

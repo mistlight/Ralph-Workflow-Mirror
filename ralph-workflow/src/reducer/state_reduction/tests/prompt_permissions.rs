@@ -159,3 +159,27 @@ fn test_reduce_prompt_permissions_restored_idempotent() {
     assert_eq!(new_state.phase, PipelinePhase::Complete);
     assert!(new_state.prompt_permissions.restored);
 }
+
+#[test]
+fn test_reduce_prompt_permissions_restore_warning_updates_last_warning() {
+    let state = PipelineState {
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..create_test_state()
+    };
+    let warning_msg = "Failed to restore write permissions: permission denied".to_string();
+
+    let event = PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsRestoreWarning {
+        warning: warning_msg.clone(),
+    });
+    let new_state = reduce(state, event);
+
+    assert_eq!(new_state.prompt_permissions.last_warning, Some(warning_msg));
+    assert!(new_state.prompt_permissions.locked);
+    assert!(new_state.prompt_permissions.restore_needed);
+    assert!(!new_state.prompt_permissions.restored);
+}

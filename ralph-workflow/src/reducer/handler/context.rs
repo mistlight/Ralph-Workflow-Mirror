@@ -98,18 +98,25 @@ impl MainEffectHandler {
 
         ctx.logger.info("Restoring PROMPT.md write permissions...");
 
-        if let Some(warning) = make_prompt_writable_with_workspace(ctx.workspace) {
-            ctx.logger.warn(&warning);
+        let warning = make_prompt_writable_with_workspace(ctx.workspace);
+
+        if let Some(ref msg) = warning {
+            ctx.logger.warn(msg);
         }
 
         let event = PipelineEvent::prompt_permissions_restored();
+        let mut result = EffectResult::event(event);
 
-        if self.state.phase == PipelinePhase::Finalizing {
-            return Ok(EffectResult::event(event)
-                .with_ui_event(self.phase_transition_ui(PipelinePhase::Complete)));
+        if let Some(msg) = warning {
+            result = result
+                .with_additional_event(PipelineEvent::prompt_permissions_restore_warning(msg));
         }
 
-        Ok(EffectResult::event(event))
+        if self.state.phase == PipelinePhase::Finalizing {
+            return Ok(result.with_ui_event(self.phase_transition_ui(PipelinePhase::Complete)));
+        }
+
+        Ok(result)
     }
 
     pub(super) fn lock_prompt_permissions(

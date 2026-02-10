@@ -69,5 +69,12 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
             },
             ..state
         },
+        PromptInputEvent::PromptPermissionsRestoreWarning { warning } => PipelineState {
+            prompt_permissions: crate::reducer::state::PromptPermissionsState {
+                last_warning: Some(warning),
+                ..state.prompt_permissions
+            },
+            ..state
+        },
     }
 }

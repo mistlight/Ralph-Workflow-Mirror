@@ -106,4 +106,13 @@ pub enum PromptInputEvent {
         /// Warning if permission change failed (None if successful or file missing).
         warning: Option<String>,
     },
+    /// PROMPT.md permissions restore warning (best-effort).
+    ///
+    /// Emitted by RestorePromptPermissions effect handler when attempting to
+    /// set PROMPT.md back to writable. The pipeline continues, but the warning
+    /// is recorded for observability and resume diagnostics.
+    PromptPermissionsRestoreWarning {
+        /// Warning message when restore fails.
+        warning: String,
+    },
 }
