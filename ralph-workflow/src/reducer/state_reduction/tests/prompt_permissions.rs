@@ -91,6 +91,29 @@ fn test_reduce_prompt_permissions_restored_preserves_interrupted_phase() {
 }
 
 #[test]
+fn test_reduce_prompt_permissions_restored_clears_lock_flags() {
+    // Given: State with permissions locked and restoration pending
+    let state = PipelineState {
+        phase: PipelinePhase::Finalizing,
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..create_test_state()
+    };
+
+    // When: PromptPermissionsRestored event is reduced
+    let new_state = reduce(state, PipelineEvent::prompt_permissions_restored());
+
+    // Then: Lock flags should be cleared after restoration
+    assert!(!new_state.prompt_permissions.locked);
+    assert!(!new_state.prompt_permissions.restore_needed);
+    assert!(new_state.prompt_permissions.restored);
+}
+
+#[test]
 fn test_reduce_prompt_permissions_locked_idempotent() {
     // Given: State already locked
     let state = PipelineState {

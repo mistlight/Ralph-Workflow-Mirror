@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// 1. **Startup**: `locked=false, restore_needed=false, restored=false`
 /// 2. **After LockPromptPermissions effect**: `locked=true, restore_needed=true`
-/// 3. **After RestorePromptPermissions effect**: `restored=true`
+/// 3. **After RestorePromptPermissions effect**: `locked=false, restore_needed=false, restored=true`
 ///
 /// # Resume Safety
 ///

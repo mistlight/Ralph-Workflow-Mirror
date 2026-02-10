@@ -87,8 +87,10 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             PipelineState {
                 phase: new_phase,
                 prompt_permissions: crate::reducer::state::PromptPermissionsState {
+                    locked: false,
+                    restore_needed: false,
                     restored: true,
-                    ..state.prompt_permissions
+                    last_warning: state.prompt_permissions.last_warning,
                 },
                 ..state
             }
