@@ -475,6 +475,13 @@ pub enum Effect {
     /// after Ralph exits.
     RestorePromptPermissions,
 
+    /// Lock PROMPT.md with read-only permissions at pipeline startup.
+    ///
+    /// This effect is emitted before any phase-specific work to protect
+    /// the user prompt from accidental modification during execution.
+    /// Best-effort operation; failures emit warnings but don't block pipeline.
+    LockPromptPermissions,
+
     /// Write continuation context file for next development attempt.
     ///
     /// This effect is emitted when a development iteration returns

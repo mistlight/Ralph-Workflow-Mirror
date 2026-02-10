@@ -210,6 +210,13 @@ pub struct PipelineState {
     /// materialized inputs (or materialize them exactly once per content id).
     #[serde(default)]
     pub prompt_inputs: PromptInputsState,
+
+    /// PROMPT.md permission lifecycle state.
+    ///
+    /// Tracks best-effort read-only protection during execution and restoration
+    /// on all graceful termination paths (success and failure).
+    #[serde(default)]
+    pub prompt_permissions: PromptPermissionsState,
 }
 
 impl PipelineState {
@@ -307,6 +314,7 @@ impl PipelineState {
             dev_fix_triggered: false,
             gitignore_entries_ensured: false,
             prompt_inputs: PromptInputsState::default(),
+            prompt_permissions: PromptPermissionsState::default(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
         }
     }

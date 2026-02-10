@@ -42,13 +42,8 @@ fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()>
         }
     }
 
-    // Make PROMPT.md read-only to protect against accidental deletion.
-    match make_prompt_read_only_with_workspace(&*ctx.workspace) {
-        None => {}
-        Some(warning) => {
-            ctx.logger.warn(&format!("{warning}. Continuing anyway."));
-        }
-    }
+    // Permission locking is now handled by the reducer via LockPromptPermissions effect.
+    // The runner no longer directly manipulates file permissions.
 
     Ok(())
 }

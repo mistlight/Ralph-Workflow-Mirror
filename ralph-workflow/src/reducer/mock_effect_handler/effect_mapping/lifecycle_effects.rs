@@ -20,6 +20,7 @@
 //! ### Finalization
 //! - **ValidateFinalState** - Validate pipeline completed successfully
 //! - **CleanupContext** - Clean up temporary files
+//! - **LockPromptPermissions** - Lock PROMPT.md with read-only permissions at startup
 //! - **RestorePromptPermissions** - Restore file permissions changed during execution
 //! - **EnsureGitignoreEntries** - Ensure required gitignore entries exist
 //!
@@ -175,6 +176,15 @@ impl MockEffectHandler {
                     to: PipelinePhase::Complete,
                 }];
                 Some((PipelineEvent::prompt_permissions_restored(), ui, vec![]))
+            }
+
+            Effect::LockPromptPermissions => {
+                // Mock always succeeds with no warning
+                Some((
+                    PipelineEvent::prompt_permissions_locked(None),
+                    vec![],
+                    vec![],
+                ))
             }
 
             Effect::WriteContinuationContext(ref data) => Some((

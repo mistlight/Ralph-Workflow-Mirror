@@ -96,4 +96,14 @@ pub enum PromptInputEvent {
         /// The typed error event.
         error: ErrorEvent,
     },
+
+    /// PROMPT.md permissions locked (read-only) at pipeline startup.
+    ///
+    /// Emitted by LockPromptPermissions effect handler when attempting to
+    /// set PROMPT.md to read-only. If the operation fails, a warning is included
+    /// but the pipeline continues (best-effort protection).
+    PromptPermissionsLocked {
+        /// Warning if permission change failed (None if successful or file missing).
+        warning: Option<String>,
+    },
 }

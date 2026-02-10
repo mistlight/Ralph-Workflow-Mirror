@@ -3,7 +3,7 @@
 //! This module contains functions that determine when the event loop should
 //! exit based on the current pipeline state. The iteration control ensures:
 //! - Terminal states cause loop exit
-//! - Special cases (checkpoints, dev-fix) get their required iterations
+//! - Special cases (checkpoints, dev-fix, permission restoration) get their required iterations
 //! - Defensive completion markers are written before exit
 
 use crate::reducer::event::PipelinePhase;
@@ -14,6 +14,7 @@ use crate::reducer::state::PipelineState;
 /// Returns true if the state is already complete, with exceptions for:
 /// - Interrupted from AwaitingDevFix without checkpoint (need SaveCheckpoint)
 /// - AwaitingDevFix without dev_fix_triggered (need TriggerDevFixFlow)
+/// - Restoration pending (need RestorePromptPermissions)
 ///
 /// # Rationale
 ///
@@ -42,7 +43,11 @@ pub(super) fn should_exit_before_effect(state: &PipelineState) -> bool {
     let is_awaiting_dev_fix_not_triggered =
         matches!(state.phase, PipelinePhase::AwaitingDevFix) && !state.dev_fix_triggered;
 
-    !should_allow_checkpoint_save && !is_awaiting_dev_fix_not_triggered
+    // Allow one more iteration if restoration is pending (keep loop running)
+    let should_allow_restoration =
+        state.prompt_permissions.restore_needed && !state.prompt_permissions.restored;
+
+    !should_allow_checkpoint_save && !is_awaiting_dev_fix_not_triggered && !should_allow_restoration
 }
 
 /// Determine if we should exit the loop AFTER executing an effect.

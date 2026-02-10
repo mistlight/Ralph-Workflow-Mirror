@@ -51,8 +51,10 @@ use crate::cli::{
 use crate::executor::ProcessExecutor;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
-    create_prompt_backup_with_workspace, make_prompt_read_only_with_workspace,
-    update_status_with_workspace, validate_prompt_md_with_workspace,
+    create_prompt_backup_with_workspace,
+    // make_prompt_read_only_with_workspace no longer used in runner
+    update_status_with_workspace,
+    validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
     abort_rebase, continue_rebase, get_conflicted_files, is_main_or_master_branch, RebaseResult,

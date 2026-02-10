@@ -103,9 +103,32 @@ impl MainEffectHandler {
         }
 
         let event = PipelineEvent::prompt_permissions_restored();
-        let ui_event = self.phase_transition_ui(PipelinePhase::Complete);
 
-        Ok(EffectResult::with_ui(event, vec![ui_event]))
+        // Note: Phase transition UI is emitted by reducer-driven phase changes,
+        // not by individual effect handlers. The reducer will transition
+        // Finalizing→Complete or preserve Interrupted based on context.
+
+        Ok(EffectResult::event(event))
+    }
+
+    pub(super) fn lock_prompt_permissions(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        use crate::files::make_prompt_read_only_with_workspace;
+
+        ctx.logger
+            .info("Locking PROMPT.md (read-only protection during execution)...");
+
+        let warning = make_prompt_read_only_with_workspace(ctx.workspace);
+
+        if let Some(ref msg) = warning {
+            ctx.logger.warn(&format!("{}. Continuing anyway.", msg));
+        }
+
+        let event = PipelineEvent::prompt_permissions_locked(warning);
+
+        Ok(EffectResult::event(event))
     }
 
     pub(super) fn cleanup_continuation_context(

@@ -53,24 +53,5 @@ pub use core::{run_event_loop, run_event_loop_with_handler, StatefulHandler};
 // Re-export for internal use within app module
 pub(crate) use config::create_initial_state_with_config;
 
-// Re-export for testing (tests reference super::extract_error_event)
 #[cfg(test)]
-use error_handling::extract_error_event;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::phases::PhaseContext;
-    use crate::reducer::PipelineState;
-    use anyhow::Result;
-
-    // Re-export internal items for tests
-    use super::config::create_initial_state_with_config;
-    use super::trace::{
-        build_trace_entry, dump_event_loop_trace, EventTraceBuffer, EventTraceEntry,
-    };
-
-    include!("tests_trace_dump.rs");
-    include!("tests_checkpoint.rs");
-    include!("tests_review_flow.rs");
-}
+mod tests_iteration_control;

@@ -73,6 +73,9 @@ use super::{
     MaterializedPromptInput, RebaseState, RunMetrics,
 };
 
+mod prompt_permissions;
+pub use prompt_permissions::PromptPermissionsState;
+
 // Phase-specific validated outcome types
 include!("phase_fields.rs");
 

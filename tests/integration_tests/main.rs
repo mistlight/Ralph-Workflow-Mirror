@@ -61,6 +61,7 @@ mod loop_detection_after_additional_events;
 mod loop_detection_recovery;
 mod opencode_parser_tests;
 mod prompt_path_resolution;
+mod prompt_permissions;
 mod reducer_agent_fallback;
 mod reducer_effect_invariants;
 mod reducer_error_handling;

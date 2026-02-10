@@ -59,5 +59,15 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
             ..state
         },
         PromptInputEvent::HandlerError { error, .. } => super::error::reduce_error(&state, &error),
+
+        PromptInputEvent::PromptPermissionsLocked { warning } => PipelineState {
+            prompt_permissions: crate::reducer::state::PromptPermissionsState {
+                locked: true,
+                restore_needed: true,
+                last_warning: warning,
+                ..state.prompt_permissions
+            },
+            ..state
+        },
     }
 }

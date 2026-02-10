@@ -63,6 +63,16 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         },
         PipelinePhase::Complete | PipelinePhase::Interrupted => {
             use crate::reducer::event::CheckpointTrigger;
+
+            // On Interrupted, check if restoration is pending before checkpoint
+            // (This is the non-AwaitingDevFix path, e.g., user Ctrl+C)
+            if state.phase == PipelinePhase::Interrupted
+                && state.prompt_permissions.restore_needed
+                && !state.prompt_permissions.restored
+            {
+                return Effect::RestorePromptPermissions;
+            }
+
             Effect::SaveCheckpoint {
                 trigger: CheckpointTrigger::Interrupt,
             }

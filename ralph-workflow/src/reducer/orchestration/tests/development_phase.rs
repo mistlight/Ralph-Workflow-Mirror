@@ -427,6 +427,9 @@ fn test_development_runs_exactly_n_iterations() {
                     ),
                 );
             }
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
             _ => panic!("Unexpected effect: {:?}", effect),
         }
     }

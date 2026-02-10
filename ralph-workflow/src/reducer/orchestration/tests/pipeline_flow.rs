@@ -550,6 +550,9 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
                     break;
                 }
             }
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
             _ => panic!("Unexpected effect: {:?}", effect),
         }
     }

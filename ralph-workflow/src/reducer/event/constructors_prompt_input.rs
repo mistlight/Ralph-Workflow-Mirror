@@ -59,4 +59,9 @@ impl PipelineEvent {
             last_output,
         })
     }
+
+    /// Create a PromptPermissionsLocked event.
+    pub fn prompt_permissions_locked(warning: Option<String>) -> Self {
+        PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsLocked { warning })
+    }
 }

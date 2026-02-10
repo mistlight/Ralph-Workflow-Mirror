@@ -37,6 +37,12 @@ fn test_context_prepared_clears_continue_pending_to_prevent_infinite_loop() {
             continuation_attempt: 1,
             ..ContinuationState::default()
         },
+        prompt_permissions: crate::reducer::state::PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
         ..PipelineState::initial(5, 2)
     };
 

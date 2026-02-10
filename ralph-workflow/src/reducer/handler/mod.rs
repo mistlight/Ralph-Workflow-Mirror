@@ -393,6 +393,8 @@ impl MainEffectHandler {
 
             Effect::CleanupContext => self.cleanup_context(ctx),
 
+            Effect::LockPromptPermissions => self.lock_prompt_permissions(ctx),
+
             Effect::RestorePromptPermissions => self.restore_prompt_permissions(ctx),
 
             Effect::WriteContinuationContext(ref data) => {

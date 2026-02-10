@@ -77,3 +77,7 @@ mod metrics;
 // Gitignore entries ensured tests
 #[path = "tests/gitignore_entries.rs"]
 mod gitignore_entries;
+
+// Prompt permissions lifecycle tests
+#[path = "tests/prompt_permissions.rs"]
+mod prompt_permissions;

@@ -7,7 +7,16 @@ use crate::reducer::state::AgentChainState;
 use crate::reducer::{reduce, PipelineEvent};
 
 fn create_test_state() -> PipelineState {
-    PipelineState::initial(5, 2)
+    PipelineState {
+        // Set locked=true so tests don't need to deal with LockPromptPermissions effect
+        prompt_permissions: crate::reducer::state::PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..PipelineState::initial(5, 2)
+    }
 }
 
 // Interrupted phase checkpoint behavior tests
@@ -41,3 +50,7 @@ mod retry_cleans_xml;
 // Resume boundary condition tests
 #[path = "tests/resume_boundary.rs"]
 mod resume_boundary;
+
+// Prompt permissions lifecycle tests
+#[path = "tests/prompt_permissions.rs"]
+mod prompt_permissions;

@@ -74,10 +74,25 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             phase: super::event::PipelinePhase::Finalizing,
             ..state
         },
-        PipelineEvent::PromptPermissionsRestored => PipelineState {
-            phase: super::event::PipelinePhase::Complete,
-            ..state
-        },
+        PipelineEvent::PromptPermissionsRestored => {
+            // Phase-aware transition:
+            // - Finalizing → Complete (success path)
+            // - Interrupted → Interrupted (failure path, keep phase)
+            // - Other phases → unchanged (shouldn't happen, defensive)
+            let new_phase = match state.phase {
+                super::event::PipelinePhase::Finalizing => super::event::PipelinePhase::Complete,
+                _ => state.phase, // Preserve phase (especially Interrupted)
+            };
+
+            PipelineState {
+                phase: new_phase,
+                prompt_permissions: crate::reducer::state::PromptPermissionsState {
+                    restored: true,
+                    ..state.prompt_permissions
+                },
+                ..state
+            }
+        }
         PipelineEvent::LoopRecoveryTriggered { .. } => {
             // Reset all retry and loop state to break the loop
             let continuation = state.continuation.reset().with_artifact(
