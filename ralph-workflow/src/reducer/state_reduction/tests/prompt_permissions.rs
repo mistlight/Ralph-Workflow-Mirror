@@ -91,3 +91,49 @@ fn test_reduce_prompt_permissions_restored_preserves_interrupted_phase() {
     assert_eq!(new_state.phase, PipelinePhase::Interrupted);
     assert!(new_state.prompt_permissions.restored);
 }
+
+#[test]
+fn test_reduce_prompt_permissions_locked_idempotent() {
+    // Given: State already locked
+    let state = PipelineState {
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..create_test_state()
+    };
+
+    // When: Apply PromptPermissionsLocked again
+    let event =
+        PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsLocked { warning: None });
+    let new_state = reduce(state, event);
+
+    // Then: State should remain consistent (idempotent)
+    assert!(new_state.prompt_permissions.locked);
+    assert!(new_state.prompt_permissions.restore_needed);
+    assert!(!new_state.prompt_permissions.restored);
+}
+
+#[test]
+fn test_reduce_prompt_permissions_restored_idempotent() {
+    // Given: State already restored
+    let state = PipelineState {
+        phase: PipelinePhase::Finalizing,
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: true,
+            last_warning: None,
+        },
+        ..create_test_state()
+    };
+
+    // When: Apply PromptPermissionsRestored again
+    let new_state = reduce(state, PipelineEvent::prompt_permissions_restored());
+
+    // Then: Should transition to Complete (or stay Complete if already there)
+    assert_eq!(new_state.phase, PipelinePhase::Complete);
+    assert!(new_state.prompt_permissions.restored);
+}

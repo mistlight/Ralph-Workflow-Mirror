@@ -16,7 +16,19 @@ use crate::reducer::event::{DevelopmentEvent, PipelineEvent, PipelinePhase};
 use crate::reducer::state::{PipelineState, PromptMode};
 
 fn create_test_state() -> PipelineState {
-    PipelineState::initial(5, 2)
+    let mut state = PipelineState::initial(5, 2);
+    // Most tests in this module assume permissions were locked at startup
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+    state
+}
+
+/// Helper to create initial state with locked permissions (for mid-pipeline test scenarios)
+fn initial_with_locked_permissions(dev_iters: u32, review_passes: u32) -> PipelineState {
+    let mut state = PipelineState::initial(dev_iters, review_passes);
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+    state
 }
 
 // Review phase single-task effect chain tests

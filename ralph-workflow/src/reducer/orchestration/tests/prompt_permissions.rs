@@ -120,3 +120,28 @@ fn test_orchestration_saves_checkpoint_after_restore_on_interrupted() {
         effect
     );
 }
+
+#[test]
+fn test_finalizing_always_derives_restore_permissions() {
+    // Given: State in Finalizing phase with restoration pending
+    let state = PipelineState {
+        phase: PipelinePhase::Finalizing,
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..PipelineState::initial(1, 0)
+    };
+
+    // When: Determine next effect
+    let effect = determine_next_effect(&state);
+
+    // Then: Should always derive RestorePromptPermissions
+    assert!(
+        matches!(effect, Effect::RestorePromptPermissions),
+        "Finalizing must derive RestorePromptPermissions, got {:?}",
+        effect
+    );
+}

@@ -124,23 +124,24 @@ fn test_context_prepared_is_idempotent_on_continue_pending() {
 /// Fix: `ReviewEvent::FixPromptPrepared` must clear `fix_continue_pending`.
 #[test]
 fn test_fix_prompt_prepared_clears_fix_continue_pending_to_prevent_infinite_loop() {
-    let state = PipelineState {
-        phase: PipelinePhase::Review,
-        reviewer_pass: 0,
-        total_reviewer_passes: 2,
-        review_issues_found: true,
-        agent_chain: AgentChainState::initial().with_agents(
-            vec!["claude".to_string()],
-            vec![vec![]],
-            AgentRole::Reviewer,
-        ),
-        continuation: ContinuationState {
-            fix_continue_pending: true,
-            fix_continuation_attempt: 1,
-            ..ContinuationState::default()
-        },
-        ..PipelineState::initial(5, 2)
+    let mut state = PipelineState::initial(5, 2);
+    state.phase = PipelinePhase::Review;
+    state.reviewer_pass = 0;
+    state.total_reviewer_passes = 2;
+    state.review_issues_found = true;
+    state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Reviewer,
+    );
+    state.continuation = ContinuationState {
+        fix_continue_pending: true,
+        fix_continuation_attempt: 1,
+        ..ContinuationState::default()
     };
+    // Simulate mid-pipeline (permissions already locked at startup)
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
 
     // Before fix: determine_next_effect returns PrepareFixPrompt
     // (because fix_continue_pending is true and continuations are not exhausted)
@@ -259,6 +260,12 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
 
         // Simulate applying the effect by reducing the corresponding event
         state = match effect {
+            Effect::LockPromptPermissions => {
+                reduce(state, PipelineEvent::prompt_permissions_locked(None))
+            }
+            Effect::RestorePromptPermissions => {
+                reduce(state, PipelineEvent::prompt_permissions_restored())
+            }
             Effect::PrepareDevelopmentContext { iteration } => reduce(
                 state,
                 PipelineEvent::development_context_prepared(iteration),
@@ -386,6 +393,12 @@ fn test_fix_continuation_does_not_cause_infinite_loop_in_event_loop_simulation()
 
         // Simulate applying the effect by reducing the corresponding event
         state = match effect {
+            Effect::LockPromptPermissions => {
+                reduce(state, PipelineEvent::prompt_permissions_locked(None))
+            }
+            Effect::RestorePromptPermissions => {
+                reduce(state, PipelineEvent::prompt_permissions_restored())
+            }
             Effect::PrepareFixPrompt { pass, .. } => {
                 reduce(state, PipelineEvent::fix_prompt_prepared(pass))
             }

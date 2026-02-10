@@ -18,7 +18,7 @@ fn test_review_with_issues_emits_prepare_fix_prompt() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     let effect = determine_next_effect(&state);
@@ -38,7 +38,7 @@ fn test_fix_chain_emits_cleanup_fix_result_xml_after_fix_prompt_prepared() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     let effect = determine_next_effect(&state);
@@ -60,7 +60,7 @@ fn test_fix_chain_emits_extract_fix_result_xml_after_fix_agent_invoked() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     let effect = determine_next_effect(&state);
@@ -83,7 +83,7 @@ fn test_fix_chain_emits_validate_fix_result_xml_after_extracted() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     let effect = determine_next_effect(&state);
@@ -113,7 +113,7 @@ fn test_fix_chain_applies_all_issues_addressed_to_fix_attempt_completed() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     // When: orchestration applies fix outcome
@@ -155,7 +155,7 @@ fn test_fix_chain_emits_archive_fix_result_xml_after_validated() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     let effect = determine_next_effect(&state);
@@ -184,7 +184,7 @@ fn test_fix_chain_emits_apply_fix_outcome_after_fix_result_xml_archived() {
             vec![vec![]],
             AgentRole::Reviewer,
         ),
-        ..PipelineState::initial(1, 1)
+        ..super::initial_with_locked_permissions(1, 1)
     };
 
     let effect = determine_next_effect(&state);

@@ -24,7 +24,7 @@ fn dummy_input(
 
 #[test]
 fn test_review_phase_emits_initialize_chain_then_prepare_review_context() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     // No chain yet => InitializeAgentChain
@@ -57,7 +57,7 @@ fn test_review_phase_emits_prepare_review_context_after_chain_initialized() {
     // This test is the first step in the single-task-effects refactor.
     // Once the reviewer chain is initialized, the reducer should emit a *single-task*
     // context preparation effect, not a macro "run review" effect.
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -79,7 +79,7 @@ fn test_review_phase_emits_prepare_review_context_after_chain_initialized() {
 #[test]
 fn test_review_phase_emits_cleanup_review_issues_xml_after_prompt_prepared() {
     // Single-task effect chain: PrepareReviewContext -> PrepareReviewPrompt -> CleanupReviewIssuesXml
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -111,7 +111,7 @@ fn test_review_phase_emits_cleanup_review_issues_xml_after_prompt_prepared() {
 
 #[test]
 fn test_review_phase_emits_extract_review_issues_xml_after_agent_invoked() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -145,7 +145,7 @@ fn test_review_phase_emits_extract_review_issues_xml_after_agent_invoked() {
 
 #[test]
 fn test_review_phase_emits_validate_review_issues_xml_after_extracted() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -183,7 +183,7 @@ fn test_review_phase_emits_validate_review_issues_xml_after_extracted() {
 
 #[test]
 fn test_review_phase_emits_write_issues_markdown_after_validated() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -228,7 +228,7 @@ fn test_review_phase_emits_write_issues_markdown_after_validated() {
 
 #[test]
 fn test_review_phase_emits_extract_issue_snippets_after_markdown_written() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -277,7 +277,7 @@ fn test_review_phase_emits_extract_issue_snippets_after_markdown_written() {
 
 #[test]
 fn test_review_phase_emits_archive_issues_xml_after_snippets_extracted() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -324,7 +324,7 @@ fn test_review_phase_emits_archive_issues_xml_after_snippets_extracted() {
 
 #[test]
 fn test_review_phase_emits_apply_review_outcome_after_issues_xml_archived() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(
@@ -382,7 +382,7 @@ fn test_review_phase_emits_apply_review_outcome_after_issues_xml_archived() {
 
 #[test]
 fn test_review_phase_emits_prepare_review_prompt_after_context_prepared() {
-    let mut state = PipelineState::initial(1, 1);
+    let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
     let state = reduce(

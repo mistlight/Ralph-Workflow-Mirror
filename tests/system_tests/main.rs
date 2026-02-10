@@ -39,6 +39,4 @@ mod agents;
 mod deduplication;
 mod git;
 mod rebase;
-
-// Future modules:
-// mod workspace_fs;
+mod workspace_fs;

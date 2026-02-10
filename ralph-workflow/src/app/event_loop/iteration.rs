@@ -67,3 +67,68 @@ pub(super) fn should_exit_before_effect(state: &PipelineState) -> bool {
 pub(super) fn should_exit_after_effect(state: &PipelineState) -> bool {
     should_exit_before_effect(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_exit_before_effect_allows_restoration() {
+        // Given: Terminal state (Interrupted) but restoration pending
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Interrupted;
+        state.checkpoint_saved_count = 1; // Already saved
+        state.prompt_permissions.locked = true;
+        state.prompt_permissions.restore_needed = true;
+        state.prompt_permissions.restored = false; // Restoration pending
+
+        // When: Check if should exit
+        let should_exit = should_exit_before_effect(&state);
+
+        // Then: Should NOT exit, must allow restoration to complete
+        assert!(
+            !should_exit,
+            "should_exit_before_effect must return false when restoration pending"
+        );
+
+        // After restoration completes, should allow exit
+        state.prompt_permissions.restored = true;
+        let should_exit_after = should_exit_before_effect(&state);
+        assert!(
+            should_exit_after,
+            "should_exit_before_effect should return true after restoration"
+        );
+    }
+
+    #[test]
+    fn test_should_exit_before_effect_complete_phase_with_restoration_pending() {
+        // Given: Complete phase but restoration pending (edge case, shouldn't happen)
+        let mut state = PipelineState::initial(0, 0);
+        state.phase = PipelinePhase::Complete;
+        state.prompt_permissions.locked = true;
+        state.prompt_permissions.restore_needed = true;
+        state.prompt_permissions.restored = false;
+
+        // When: Check if should exit
+        let should_exit = should_exit_before_effect(&state);
+
+        // Then: Should NOT exit until restoration completes
+        assert!(
+            !should_exit,
+            "Even in Complete phase, must allow restoration if pending"
+        );
+    }
+
+    #[test]
+    fn test_should_exit_after_effect_delegates_to_before() {
+        // Given: Any state
+        let state = PipelineState::initial(1, 0);
+
+        // When/Then: should_exit_after_effect should have same behavior as should_exit_before_effect
+        assert_eq!(
+            should_exit_before_effect(&state),
+            should_exit_after_effect(&state),
+            "should_exit_after_effect should delegate to should_exit_before_effect"
+        );
+    }
+}

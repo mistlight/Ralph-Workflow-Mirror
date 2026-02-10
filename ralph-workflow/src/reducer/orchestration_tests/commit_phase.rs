@@ -8,12 +8,16 @@ use super::*;
 #[test]
 fn test_commit_empty_chain_initializes_agent_chain() {
     // When agent chain is empty, commit phase should request initialization
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::NotStarted,
         agent_chain: crate::reducer::state::AgentChainState::initial(),
         ..create_test_state()
     };
+    // Mark prompt permissions as already locked (prerequisite effects completed)
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+
     let effect = determine_next_effect(&state);
     assert!(matches!(
         effect,
@@ -26,7 +30,7 @@ fn test_commit_empty_chain_initializes_agent_chain() {
 #[test]
 fn test_commit_role_mismatch_initializes_commit_chain() {
     // Regression: Commit phase must not reuse developer/reviewer/analysis chains.
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::NotStarted,
         agent_chain: crate::reducer::state::AgentChainState::initial().with_agents(
@@ -36,6 +40,10 @@ fn test_commit_role_mismatch_initializes_commit_chain() {
         ),
         ..create_test_state()
     };
+    // Mark prompt permissions as already locked (prerequisite effects completed)
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+
     let effect = determine_next_effect(&state);
     assert!(matches!(
         effect,
@@ -49,7 +57,7 @@ fn test_commit_role_mismatch_initializes_commit_chain() {
 fn test_commit_not_started_prepares_prompt() {
     // With initialized agent chain, commit phase should prepare prompt
     use crate::reducer::state::AgentChainState;
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::NotStarted,
         agent_chain: AgentChainState::initial().with_agents(
@@ -59,6 +67,9 @@ fn test_commit_not_started_prepares_prompt() {
         ),
         ..create_test_state()
     };
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::CheckCommitDiff));
 }
@@ -66,7 +77,7 @@ fn test_commit_not_started_prepares_prompt() {
 #[test]
 fn test_commit_checks_diff_before_prompt() {
     use crate::reducer::state::AgentChainState;
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::NotStarted,
         agent_chain: AgentChainState::initial().with_agents(
@@ -76,6 +87,8 @@ fn test_commit_checks_diff_before_prompt() {
         ),
         ..create_test_state()
     };
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
 
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::CheckCommitDiff));
@@ -84,7 +97,7 @@ fn test_commit_checks_diff_before_prompt() {
 #[test]
 fn test_commit_skips_when_diff_empty() {
     use crate::reducer::state::AgentChainState;
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::NotStarted,
         commit_diff_prepared: true,
@@ -96,6 +109,8 @@ fn test_commit_skips_when_diff_empty() {
         ),
         ..create_test_state()
     };
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
 
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::SkipCommit { .. }));
@@ -156,6 +171,9 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
         .diff
         .consumer_signature_sha256 = sig;
 
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::ExtractCommitXml));
 }
@@ -163,7 +181,7 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
 #[test]
 fn test_commit_generated_creates_commit() {
     use crate::reducer::state::AgentChainState;
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::Generated {
             message: "test commit message".to_string(),
@@ -176,6 +194,9 @@ fn test_commit_generated_creates_commit() {
         ),
         ..create_test_state()
     };
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+
     let effect = determine_next_effect(&state);
     match effect {
         Effect::CreateCommit { message } => {
@@ -255,6 +276,9 @@ fn test_commit_diff_prepared_invalidates_materialized_commit_inputs() {
         .diff
         .consumer_signature_sha256 = sig;
 
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+
     // Simulate diff being re-prepared (e.g. working tree changed) for the same attempt.
     state = reduce(
         state,
@@ -320,6 +344,9 @@ fn test_commit_inputs_materialization_invalidated_when_diff_content_id_changes()
         .unwrap()
         .diff
         .consumer_signature_sha256 = sig;
+
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
 
     let effect = determine_next_effect(&state);
     assert!(

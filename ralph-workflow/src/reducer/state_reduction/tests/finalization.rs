@@ -56,10 +56,11 @@ fn test_finalization_orchestration_integration() {
     use crate::reducer::orchestration::determine_next_effect;
 
     // Start in FinalValidation
-    let initial_state = PipelineState {
-        phase: PipelinePhase::FinalValidation,
-        ..PipelineState::initial(5, 2)
-    };
+    let mut initial_state = PipelineState::initial(5, 2);
+    initial_state.phase = PipelinePhase::FinalValidation;
+    // Simulate mid-pipeline (permissions already locked at startup)
+    initial_state.prompt_permissions.locked = true;
+    initial_state.prompt_permissions.restore_needed = true;
 
     let mut handler = MockEffectHandler::new(initial_state.clone());
 

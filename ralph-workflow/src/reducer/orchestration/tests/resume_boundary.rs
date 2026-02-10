@@ -72,7 +72,13 @@ fn create_resume_state(
         dev_fix_triggered: false,
         gitignore_entries_ensured: false,
         prompt_inputs: Default::default(),
-        prompt_permissions: Default::default(),
+        // Simulate that permissions were locked at original startup (resume scenario)
+        prompt_permissions: crate::reducer::state::PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
         metrics: crate::reducer::state::RunMetrics {
             max_dev_iterations: total_iterations,
             max_review_passes: total_reviewer_passes,

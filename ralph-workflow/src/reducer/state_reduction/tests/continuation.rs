@@ -324,6 +324,9 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
     let mut state = PipelineState::initial(5, 3);
     state.agent_chain = agent_chain;
     state.phase = PipelinePhase::Development;
+    // Simulate mid-pipeline (permissions already locked at startup)
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
 
     // Exhaust continuation for agent-a
     state = reduce(

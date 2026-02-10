@@ -329,6 +329,12 @@ fn test_complete_pipeline_flow() {
                     break;
                 }
             }
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
+            Effect::RestorePromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_restored());
+            }
             _ => panic!("Unexpected effect at step {}: {:?}", step, effect),
         }
 
@@ -472,6 +478,12 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                 if state.phase == PipelinePhase::Complete {
                     break;
                 }
+            }
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
+            Effect::RestorePromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_restored());
             }
             _ => panic!("Unexpected effect: {:?}", effect),
         }

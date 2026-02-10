@@ -24,8 +24,13 @@ mod review_phase;
 // ============================================================================
 
 /// Creates a default test state with 5 iterations and 2 reviewer passes.
+/// Permissions are set to locked (simulating mid-pipeline scenario after startup).
 pub fn create_test_state() -> PipelineState {
-    PipelineState::initial(5, 2)
+    let mut state = PipelineState::initial(5, 2);
+    // Tests in this module typically simulate mid-pipeline scenarios
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+    state
 }
 
 /// Creates a test state in a specific phase.

@@ -26,6 +26,12 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
         let effect = determine_next_effect(&state);
 
         match effect {
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
+            Effect::RestorePromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_restored());
+            }
             Effect::EnsureGitignoreEntries => {
                 state = reduce(
                     state,
@@ -552,6 +558,9 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
             }
             Effect::LockPromptPermissions => {
                 state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
+            Effect::RestorePromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_restored());
             }
             _ => panic!("Unexpected effect: {:?}", effect),
         }

@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn test_development_runs_exactly_n_iterations() {
     // When total_iterations=5, should run iterations 0,1,2,3,4 (5 total)
-    let mut state = PipelineState::initial(5, 0);
+    let mut state = super::initial_with_locked_permissions(5, 0);
     state.agent_chain = state.agent_chain.with_agents(
         vec!["claude".to_string()],
         vec![vec![]],
@@ -259,6 +259,12 @@ fn test_development_runs_exactly_n_iterations() {
                     ),
                 );
             }
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
+            Effect::RestorePromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_restored());
+            }
             _ => panic!("Unexpected effect: {:?}", effect),
         }
     }
@@ -284,7 +290,7 @@ fn test_development_runs_exactly_n_iterations() {
 
 #[test]
 fn test_development_continuation_emits_prompt_mode_continuation() {
-    let mut state = PipelineState::initial(1, 0);
+    let mut state = super::initial_with_locked_permissions(1, 0);
     state.phase = PipelinePhase::Development;
     state.iteration = 0;
     state.total_iterations = 1;
@@ -342,7 +348,7 @@ fn test_development_continuation_emits_prompt_mode_continuation() {
 fn test_development_timeout_retry_does_not_use_xsd_retry_prompt_mode() {
     // Timeouts should retry the same agent with timeout-aware guidance, not via XSD retry.
     // This test asserts orchestration does not select PromptMode::XsdRetry after a timeout.
-    let mut state = PipelineState::initial(1, 0);
+    let mut state = super::initial_with_locked_permissions(1, 0);
     state.phase = PipelinePhase::Development;
     state.iteration = 0;
     state.total_iterations = 1;
@@ -436,7 +442,7 @@ fn test_development_initializes_analysis_chain_before_invoking_analysis() {
 
 #[test]
 fn test_development_with_agent_chain_exhaustion() {
-    let mut chain = PipelineState::initial(5, 2)
+    let mut chain = super::initial_with_locked_permissions(5, 2)
         .agent_chain
         .with_agents(
             vec!["claude".to_string()],

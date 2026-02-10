@@ -21,6 +21,12 @@ fn test_review_runs_exactly_n_passes() {
         let effect = determine_next_effect(&state);
 
         match effect {
+            Effect::LockPromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+            }
+            Effect::RestorePromptPermissions => {
+                state = reduce(state, PipelineEvent::prompt_permissions_restored());
+            }
             Effect::InitializeAgentChain { role } => {
                 state = reduce(
                     state,

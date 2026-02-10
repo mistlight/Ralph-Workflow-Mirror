@@ -16,14 +16,16 @@ use crate::reducer::state::RebaseState;
 use crate::reducer::state::SameAgentRetryReason;
 
 fn create_test_state() -> PipelineState {
-    PipelineState {
-        agent_chain: AgentChainState::initial().with_agents(
-            vec!["agent1".to_string(), "agent2".to_string()],
-            vec![vec!["model1".to_string(), "model2".to_string()]],
-            AgentRole::Developer,
-        ),
-        ..PipelineState::initial(5, 2)
-    }
+    let mut state = PipelineState::initial(5, 2);
+    state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec!["model1".to_string(), "model2".to_string()]],
+        AgentRole::Developer,
+    );
+    // Tests typically simulate mid-pipeline scenarios
+    state.prompt_permissions.locked = true;
+    state.prompt_permissions.restore_needed = true;
+    state
 }
 
 // Review phase started tests
