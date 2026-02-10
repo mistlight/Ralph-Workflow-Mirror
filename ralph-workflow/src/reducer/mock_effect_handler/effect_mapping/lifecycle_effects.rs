@@ -171,10 +171,14 @@ impl MockEffectHandler {
             Effect::CleanupContext => Some((PipelineEvent::context_cleaned(), vec![], vec![])),
 
             Effect::RestorePromptPermissions => {
-                let ui = vec![UIEvent::PhaseTransition {
-                    from: Some(self.state.phase),
-                    to: PipelinePhase::Complete,
-                }];
+                let ui = if self.state.phase == PipelinePhase::Finalizing {
+                    vec![UIEvent::PhaseTransition {
+                        from: Some(self.state.phase),
+                        to: PipelinePhase::Complete,
+                    }]
+                } else {
+                    vec![]
+                };
                 Some((PipelineEvent::prompt_permissions_restored(), ui, vec![]))
             }
 

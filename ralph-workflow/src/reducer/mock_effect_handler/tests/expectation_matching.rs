@@ -178,3 +178,23 @@ fn mock_effect_handler_captures_phase_transition_ui() {
         "Should emit phase transition UI event to Finalizing"
     );
 }
+
+#[test]
+fn mock_effect_handler_restore_prompt_permissions_skips_phase_transition_outside_finalizing() {
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::Interrupted;
+    let mut handler = MockEffectHandler::new(state);
+
+    let _result = handler.execute_mock(Effect::RestorePromptPermissions);
+
+    assert!(
+        !handler.was_ui_event_emitted(|e| matches!(
+            e,
+            UIEvent::PhaseTransition {
+                to: PipelinePhase::Complete,
+                ..
+            }
+        )),
+        "RestorePromptPermissions should not emit Complete phase transition outside Finalizing"
+    );
+}

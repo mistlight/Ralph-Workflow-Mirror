@@ -106,7 +106,8 @@ fn test_validate_final_state_emits_phase_transition() {
 #[test]
 fn test_restore_prompt_permissions_emits_phase_transition() {
     with_default_timeout(|| {
-        let state = PipelineState::initial(1, 0);
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Finalizing;
         let mut handler = MockEffectHandler::new(state);
 
         // RestorePromptPermissions should emit phase transition to Complete
