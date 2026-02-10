@@ -104,9 +104,10 @@ impl MainEffectHandler {
 
         let event = PipelineEvent::prompt_permissions_restored();
 
-        // Note: Phase transition UI is emitted by reducer-driven phase changes,
-        // not by individual effect handlers. The reducer will transition
-        // Finalizing→Complete or preserve Interrupted based on context.
+        if self.state.phase == PipelinePhase::Finalizing {
+            return Ok(EffectResult::event(event)
+                .with_ui_event(self.phase_transition_ui(PipelinePhase::Complete)));
+        }
 
         Ok(EffectResult::event(event))
     }

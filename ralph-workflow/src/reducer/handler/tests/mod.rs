@@ -14,6 +14,7 @@ mod gitignore_handler;
 mod invoke_prompt;
 mod planning_markdown;
 mod planning_prompt;
+mod prompt_permissions;
 mod review_prompt;
 mod review_validation;
 mod stale_xml_cleanup;
