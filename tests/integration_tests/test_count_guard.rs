@@ -229,6 +229,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("prompt_path_resolution.rs"),
     },
     SourceFile {
+        path: "prompt_permissions.rs",
+        contents: include_str!("prompt_permissions.rs"),
+    },
+    SourceFile {
         path: "reducer_agent_fallback.rs",
         contents: include_str!("reducer_agent_fallback.rs"),
     },

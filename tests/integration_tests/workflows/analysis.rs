@@ -15,6 +15,7 @@ use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::state_reduction::reduce;
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 /// Test that AnalysisAgentInvoked event type exists and can be constructed.
@@ -70,7 +71,7 @@ fn test_analysis_runs_after_first_iteration_when_multiple_iterations() {
         use ralph_workflow::agents::AgentRole;
 
         // Given: Pipeline with 3 total iterations, first iteration just completed
-        let mut state = PipelineState::initial(3, 2);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 2));
         state.phase = PipelinePhase::Development;
         state.iteration = 0; // First iteration
 
@@ -116,7 +117,7 @@ fn test_analysis_runs_after_every_iteration() {
         // Test across multiple iterations
         for iter in 0..3 {
             // Given: Pipeline with 3 iterations, current iteration just completed
-            let mut state = PipelineState::initial(3, 2);
+            let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 2));
             state.phase = PipelinePhase::Development;
             state.iteration = iter;
 
@@ -159,7 +160,7 @@ fn test_analysis_runs_after_every_iteration() {
 fn test_analysis_does_not_run_before_dev_agent_completes() {
     with_default_timeout(|| {
         // Given: Pipeline where development agent has NOT completed yet
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
         state.development_agent_invoked_iteration = None; // Dev agent not invoked yet
@@ -183,7 +184,7 @@ fn test_analysis_does_not_run_before_dev_agent_completes() {
 fn test_analysis_does_not_run_twice_for_same_iteration() {
     with_default_timeout(|| {
         // Given: Pipeline where both dev and analysis agents have completed for iteration 0
-        let mut state = PipelineState::initial(2, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(2, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
         state.development_agent_invoked_iteration = Some(0);
@@ -208,7 +209,7 @@ fn test_analysis_does_not_run_twice_for_same_iteration() {
 fn test_analysis_agent_invoked_event_updates_state() {
     with_default_timeout(|| {
         // Given: State where analysis should be recorded for iteration 1
-        let mut state = PipelineState::initial(3, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 1;
         state.development_agent_invoked_iteration = Some(1);
@@ -239,7 +240,7 @@ fn test_analysis_agent_invoked_event_updates_state() {
 fn test_analysis_does_not_increment_iteration_counter() {
     with_default_timeout(|| {
         // Given: State at iteration 1 before analysis
-        let mut state = PipelineState::initial(3, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 1;
         state.development_agent_invoked_iteration = Some(1);
@@ -276,7 +277,7 @@ fn test_continuation_triggered_resets_analysis_invoked_tracking() {
         use ralph_workflow::reducer::state::DevelopmentStatus;
 
         // Given: A state where analysis already ran for iteration 0
-        let mut state = PipelineState::initial(3, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
         state.analysis_agent_invoked_iteration = Some(0);
@@ -310,7 +311,7 @@ fn test_development_xsd_retry_reinvokes_analysis_agent() {
         use ralph_workflow::agents::AgentRole;
 
         // Given: Development phase with an XSD retry pending
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
         state.continuation.xsd_retry_pending = true;
@@ -409,7 +410,7 @@ fn test_analysis_xsd_invalid_triggers_retry() {
         use ralph_workflow::agents::AgentRole;
 
         // Given: State after analysis produced invalid XML (missing summary)
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
         state.development_agent_invoked_iteration = Some(0);
@@ -449,7 +450,7 @@ fn test_analysis_uses_agent_chain_fallback() {
         use ralph_workflow::agents::AgentRole;
 
         // Given: State with multiple agents in chain, after repeated failures
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
 
@@ -493,7 +494,7 @@ fn test_complete_pipeline_with_analysis_verification() {
         use ralph_workflow::reducer::state::DevelopmentStatus;
 
         // Given: Initial state in Development phase
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
 
@@ -610,7 +611,7 @@ fn test_complete_pipeline_with_analysis_verification() {
 fn test_developer_iters_3_produces_exactly_3_planning_cycles() {
     with_default_timeout(|| {
         // Given: Pipeline configured for 3 iterations (-D 3)
-        let mut state = PipelineState::initial(3, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
 
         // Simulate iteration 0: Planning -> Development -> Analysis -> Commit
         state.phase = PipelinePhase::Development;
@@ -669,7 +670,7 @@ fn test_continuation_does_not_increment_iteration() {
         use ralph_workflow::reducer::state::DevelopmentStatus;
 
         // Given: State at iteration 0 with partial completion
-        let mut state = PipelineState::initial(2, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(2, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
         state.development_agent_invoked_iteration = Some(0);

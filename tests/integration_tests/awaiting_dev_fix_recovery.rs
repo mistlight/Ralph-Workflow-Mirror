@@ -15,6 +15,7 @@ use ralph_workflow::reducer::event::{AwaitingDevFixEvent, PipelineEvent, Pipelin
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::state_reduction::reduce;
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 /// Test that pipeline transitions to AwaitingDevFix on failure.
@@ -47,7 +48,7 @@ fn test_transitions_to_awaiting_dev_fix_on_failure() {
 #[test]
 fn test_dev_fix_flow_effect_determined() {
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::AwaitingDevFix;
         state.previous_phase = Some(PipelinePhase::Planning);
 

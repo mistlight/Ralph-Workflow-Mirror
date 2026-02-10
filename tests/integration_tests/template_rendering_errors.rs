@@ -15,6 +15,7 @@ use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase, PlanningEvent
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 /// Test that pipeline advances even when prompt preparation might fail.
@@ -33,7 +34,9 @@ fn test_pipeline_advances_after_prompt_preparation() {
             context_cleaned: true,
             gitignore_entries_ensured: true,
             planning_xml_cleaned_iteration: Some(0),
-            ..PipelineState::initial(1, 0)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(1, 0),
+            ))
         };
         state.phase = PipelinePhase::Planning;
         state.iteration = 0;
@@ -58,7 +61,7 @@ fn test_pipeline_advances_after_prompt_preparation() {
 #[test]
 fn test_no_dev_fix_for_prompt_preparation() {
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Planning;
 
         // Prompt preparation succeeds (with or without internal fallback)
@@ -89,7 +92,9 @@ fn test_development_advances_after_prompt_preparation() {
             context_cleaned: true,
             development_context_prepared_iteration: Some(0),
             development_xml_cleaned_iteration: Some(0),
-            ..PipelineState::initial(1, 0)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(1, 0),
+            ))
         };
         state.phase = PipelinePhase::Development;
         state.iteration = 0;
@@ -126,7 +131,9 @@ fn test_review_advances_after_prompt_preparation() {
             context_cleaned: true,
             review_context_prepared_pass: Some(0),
             review_issues_xml_cleaned_pass: Some(0),
-            ..PipelineState::initial(0, 1)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(0, 1),
+            ))
         };
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;

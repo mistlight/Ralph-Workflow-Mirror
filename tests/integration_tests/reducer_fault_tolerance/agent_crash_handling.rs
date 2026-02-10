@@ -17,6 +17,7 @@
 //! - Pure reducer tests require no mocks
 //! - Verify error recovery mechanisms
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
@@ -177,7 +178,9 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let exhausted_state = ralph_workflow::reducer::state_reduction::reduce(
@@ -221,7 +224,9 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         assert_eq!(state.phase, PipelinePhase::Development);
@@ -238,7 +243,7 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
 #[test]
 fn test_retry_cycle_backoff_is_explicit_effect() {
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
         state.agent_chain = AgentChainState::initial()
             .with_agents(
@@ -365,7 +370,7 @@ fn test_xsd_retry_decisions_from_reducer_state_only() {
 
     with_default_timeout(|| {
         // Set up state with multiple agents for fallback
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
@@ -433,7 +438,7 @@ fn test_xsd_retry_exhaustion_complete_flow() {
 
     with_default_timeout(|| {
         // Set up state with two agents
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
@@ -508,7 +513,7 @@ fn test_xsd_retry_state_independent_of_invocation_failures() {
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["agent-1".to_string(), "agent-2".to_string()],
@@ -564,7 +569,7 @@ fn test_planning_xsd_retry_decisions_from_reducer_state() {
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Planning;
         state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
@@ -626,7 +631,7 @@ fn test_planning_xsd_retry_resets_on_phase_transition() {
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Planning;
         state.continuation.invalid_output_attempts = 2;
 
@@ -656,7 +661,7 @@ fn test_planning_xsd_retry_state_persistence() {
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Planning;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["agent-1".to_string()],
@@ -702,7 +707,7 @@ fn test_commit_phase_uses_reviewer_chain_fallback() {
 
     with_default_timeout(|| {
         // Set up state with reviewer agents in commit role (simulating fallback)
-        let mut state = PipelineState::initial(1, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         state.phase = PipelinePhase::CommitMessage;
         // Force immediate exhaustion of XSD retry budget so we exercise agent fallback.
         state.continuation = ContinuationState {

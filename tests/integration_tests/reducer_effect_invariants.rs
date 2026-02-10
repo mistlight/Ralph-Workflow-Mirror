@@ -10,13 +10,16 @@
 //! **CRITICAL:** All tests in this module MUST follow integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::CheckpointTrigger;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::orchestration::determine_next_effect;
-use ralph_workflow::reducer::state::{AgentChainState, CommitState, PipelineState};
+use ralph_workflow::reducer::state::{
+    AgentChainState, CommitState, PipelineState, PromptPermissionsState,
+};
 
 /// Test that development effects are NOT emitted when agent chain is empty.
 ///
@@ -30,7 +33,7 @@ fn test_development_requires_agent_chain() {
             iteration: 0,
             total_iterations: 5,
             agent_chain: AgentChainState::initial(), // Empty
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -56,7 +59,7 @@ fn test_run_review_pass_requires_agent_chain() {
             reviewer_pass: 0,
             total_reviewer_passes: 2,
             agent_chain: AgentChainState::initial(), // Empty
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -83,7 +86,7 @@ fn test_run_fix_attempt_requires_agent_chain() {
             reviewer_pass: 0,
             total_reviewer_passes: 2,
             agent_chain: AgentChainState::initial(), // Empty
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -109,7 +112,7 @@ fn test_planning_prompt_requires_agent_chain() {
             iteration: 0,
             total_iterations: 5,
             agent_chain: AgentChainState::initial(), // Empty
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -141,7 +144,7 @@ fn test_planning_phase_emits_prepare_prompt() {
                 vec![vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -167,7 +170,7 @@ fn test_development_phase_emits_prepare_development_context() {
                 vec![vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -207,7 +210,7 @@ fn test_exhausted_agent_chain_emits_abort_effect() {
             iteration: 0,
             total_iterations: 1,
             agent_chain: chain,
-            ..PipelineState::initial(1, 0)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 0))
         };
         let effect = determine_next_effect(&state);
         assert!(
@@ -234,7 +237,7 @@ fn test_exhausted_agent_chain_emits_abort_effect() {
             reviewer_pass: 0,
             total_reviewer_passes: 1,
             agent_chain: chain,
-            ..PipelineState::initial(1, 1)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 1))
         };
         let effect = determine_next_effect(&state);
         assert!(
@@ -260,7 +263,13 @@ fn test_interrupted_phase_emits_interrupt_checkpoint_save() {
                 vec![vec![]],
                 AgentRole::Reviewer,
             ),
-            ..PipelineState::initial(0, 1)
+            prompt_permissions: PromptPermissionsState {
+                locked: true,
+                restore_needed: true,
+                restored: true,
+                last_warning: None,
+            },
+            ..with_locked_prompt_permissions(PipelineState::initial(0, 1))
         };
 
         let effect = determine_next_effect(&state);
@@ -421,7 +430,7 @@ fn test_commit_phase_requires_agent_chain() {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
             agent_chain: AgentChainState::initial(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         let effect = determine_next_effect(&state_empty_chain);
         assert!(
@@ -458,7 +467,7 @@ fn test_commit_phase_effect_sequence() {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
             agent_chain: commit_chain.clone(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         let effect = determine_next_effect(&state_not_started);
         assert!(
@@ -474,7 +483,7 @@ fn test_commit_phase_effect_sequence() {
             commit_diff_prepared: true,
             commit_diff_content_id_sha256: Some("id".to_string()),
             agent_chain: commit_chain.clone(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         let effect = determine_next_effect(&state_not_started_diff_prepared);
         assert!(
@@ -490,7 +499,7 @@ fn test_commit_phase_effect_sequence() {
                 message: "test".to_string(),
             },
             agent_chain: commit_chain.clone(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         let effect = determine_next_effect(&state_generated);
         assert!(
@@ -506,7 +515,7 @@ fn test_commit_phase_effect_sequence() {
                 hash: "abc".to_string(),
             },
             agent_chain: commit_chain,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         let effect = determine_next_effect(&state_committed);
         assert!(
@@ -533,7 +542,7 @@ fn test_context_cleaned_before_planning() {
                 vec![vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         // First, ensure gitignore entries
@@ -594,7 +603,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
             context_cleaned: true,
             gitignore_entries_ensured: true,
             agent_chain: base_chain.clone(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(
             determine_next_effect(&state),
@@ -607,7 +616,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
             iteration: 0,
             total_iterations: 5,
             agent_chain: base_chain.clone(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(
             determine_next_effect(&state),
@@ -620,7 +629,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
             reviewer_pass: 0,
             total_reviewer_passes: 2,
             agent_chain: reviewer_chain,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(
             determine_next_effect(&state),
@@ -630,7 +639,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
         // FinalValidation -> ValidateFinalState
         let state = PipelineState {
             phase: PipelinePhase::FinalValidation,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(
             determine_next_effect(&state),
@@ -640,7 +649,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
         // Finalizing -> RestorePromptPermissions
         let state = PipelineState {
             phase: PipelinePhase::Finalizing,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(
             determine_next_effect(&state),

@@ -19,6 +19,7 @@ use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, P
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::state_reduction::reduce;
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 #[test]
@@ -63,7 +64,7 @@ fn test_agent_chain_exhausted_transitions_to_interrupted() {
         use ralph_workflow::reducer::effect::Effect;
         use ralph_workflow::reducer::event::AwaitingDevFixEvent;
 
-        let state = PipelineState::initial(1, 1);
+        let state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         assert_eq!(state.phase, PipelinePhase::Planning);
 
         let error_event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {

@@ -194,7 +194,10 @@ dylint:
 		INSTALLED_COMPONENTS="$$(rustup component list --toolchain "$$NIGHTLY_TOOLCHAIN" --installed 2>/dev/null || true)"; \
 		MISSING=""; \
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
-		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
+		if ! echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " \
+			&& ! echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools "; then \
+			MISSING="$$MISSING llvm-tools-preview"; \
+		fi; \
 		if [ -n "$$MISSING" ]; then \
 			if [ "$$DYLINT_QUIET" = "0" ]; then echo "Installing required nightly components:$$MISSING" >&2; fi; \
 			if ! RUSTUP_TERM_QUIET=true rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN" >/dev/null 2>&1; then \
@@ -334,7 +337,10 @@ dylint-verbose:
 		INSTALLED_COMPONENTS="$$(rustup component list --toolchain "$$NIGHTLY_TOOLCHAIN" --installed 2>/dev/null || true)"; \
 		MISSING=""; \
 		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev " || MISSING="$$MISSING rustc-dev"; \
-		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " || MISSING="$$MISSING llvm-tools-preview"; \
+		if ! echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools-preview " \
+			&& ! echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools "; then \
+			MISSING="$$MISSING llvm-tools-preview"; \
+		fi; \
 		if [ -n "$$MISSING" ]; then \
 			if [ "$$DYLINT_QUIET" = "0" ]; then echo "Installing required nightly components:$$MISSING" >&2; fi; \
 			if ! RUSTUP_TERM_QUIET=true rustup component add rustc-dev llvm-tools-preview --toolchain "$$NIGHTLY_TOOLCHAIN" >/dev/null 2>&1; then \

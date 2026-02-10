@@ -9,6 +9,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::{AgentRegistry, AgentRole};
 use ralph_workflow::app::event_loop::{run_event_loop_with_handler, EventLoopConfig};
@@ -38,7 +39,7 @@ fn test_continuation_exhaustion_triggers_agent_fallback() {
             ralph_workflow::agents::AgentRole::Developer,
         );
 
-        let state = PipelineState::initial(5, 3);
+        let state = with_locked_prompt_permissions(PipelineState::initial(5, 3));
         let state = PipelineState {
             agent_chain,
             ..state
@@ -87,7 +88,7 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
             )
             .with_max_cycles(1);
 
-        let mut state = PipelineState::initial(5, 3);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(5, 3));
         state.agent_chain = agent_chain;
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Development;
 
@@ -147,7 +148,7 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
 fn test_agent_chain_exhausted_emits_completion_marker() {
     with_default_timeout(|| {
         // Given: A state where agent chain is exhausted
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Development;
 
         // Create an exhausted agent chain by setting retry_cycle to max_cycles
@@ -236,7 +237,7 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
             ),
         );
 
-        let interrupted_state = reduce(
+        let mut interrupted_state = reduce(
             after_fix_state,
             PipelineEvent::AwaitingDevFix(
                 ralph_workflow::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
@@ -253,6 +254,8 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         );
 
         // When: Orchestration determines next effect for Interrupted phase
+        interrupted_state.prompt_permissions.restored = true;
+
         let final_effect = determine_next_effect(&interrupted_state);
 
         // Then: It should save a checkpoint
@@ -317,7 +320,7 @@ fn test_completion_marker_file_written_on_failure() {
         };
 
         // Given: A state where agent chain will be exhausted immediately
-        let mut initial_state = PipelineState::initial(1, 0);
+        let mut initial_state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         initial_state.phase = PipelinePhase::Development;
 
         // Create an exhausted agent chain
@@ -374,7 +377,7 @@ fn test_budget_exhausted_with_failed_status_transitions_to_awaiting_dev_fix() {
     with_default_timeout(|| {
         // Given: Pipeline in Development Iteration 2 with exhausted continuation budget
         // AND all agents exhausted AND last status is Failed
-        let mut state = PipelineState::initial(3, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 2;
 
@@ -429,7 +432,7 @@ fn test_budget_exhausted_with_completed_status_proceeds_to_commit() {
     with_default_timeout(|| {
         // Given: Pipeline in Development with exhausted continuation budget
         // BUT last status is Completed
-        let mut state = PipelineState::initial(3, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
         state.phase = PipelinePhase::Development;
         state.iteration = 1;
 
@@ -506,7 +509,7 @@ fn test_budget_exhausted_continues_to_completion_via_event_loop() {
         };
 
         // Given: A state where budget will be exhausted immediately
-        let mut initial_state = PipelineState::initial(3, 0);
+        let mut initial_state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
         initial_state.phase = PipelinePhase::Development;
         initial_state.iteration = 2;
 

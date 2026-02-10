@@ -72,6 +72,7 @@ fn save_checkpoint_from_state(
         .with_execution_history(ctx.execution_history.clone())
         .with_prompt_history(ctx.clone_prompt_history())
         .with_prompt_inputs(state.prompt_inputs.clone())
+        .with_prompt_permissions(state.prompt_permissions.clone())
         .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
     if let Some(checkpoint) = builder.build_with_workspace(ctx.workspace) {

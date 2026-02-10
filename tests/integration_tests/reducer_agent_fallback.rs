@@ -10,6 +10,7 @@
 //! **CRITICAL:** All tests in this module MUST follow integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
@@ -28,7 +29,7 @@ fn test_development_phase_with_empty_chain_emits_initialize_effect() {
         let state = PipelineState {
             phase: PipelinePhase::Development,
             agent_chain: AgentChainState::initial(), // Empty chain
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -55,7 +56,7 @@ fn test_planning_phase_with_empty_chain_emits_initialize_effect() {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             agent_chain: AgentChainState::initial(), // Empty chain
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -82,7 +83,7 @@ fn test_review_phase_with_empty_chain_emits_initialize_effect() {
         let state = PipelineState {
             phase: PipelinePhase::Review,
             agent_chain: AgentChainState::initial(), // Empty chain
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -113,7 +114,7 @@ fn test_auth_failure_triggers_reducer_fallback() {
                 vec![vec![], vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         // Initial agent should be agent1
@@ -157,7 +158,7 @@ fn test_agent_chain_clears_on_dev_to_review_transition() {
                 vec![vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         // Transition to Review via commit creation
@@ -189,7 +190,7 @@ fn test_orchestration_requires_initialized_chain_for_development() {
         let state_empty = PipelineState {
             phase: PipelinePhase::Development,
             agent_chain: AgentChainState::initial(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect_empty = determine_next_effect(&state_empty);
@@ -208,7 +209,7 @@ fn test_orchestration_requires_initialized_chain_for_development() {
                 vec![vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect_initialized = determine_next_effect(&state_initialized);
@@ -230,7 +231,7 @@ fn test_orchestration_requires_initialized_chain_for_review() {
         let state_empty = PipelineState {
             phase: PipelinePhase::Review,
             agent_chain: AgentChainState::initial(),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect_empty = determine_next_effect(&state_empty);
@@ -249,7 +250,7 @@ fn test_orchestration_requires_initialized_chain_for_review() {
                 vec![vec![]],
                 AgentRole::Reviewer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect_initialized = determine_next_effect(&state_initialized);
@@ -274,7 +275,7 @@ fn test_chain_initialized_event_populates_state() {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             agent_chain: AgentChainState::initial(), // Empty
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let new_state = reduce(
@@ -329,7 +330,7 @@ fn test_rate_limit_fallback_preserves_prompt() {
                 vec![vec![], vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let new_state = reduce(
@@ -375,7 +376,7 @@ fn test_auth_fallback_switches_agent_without_prompt() {
                 vec![vec![], vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let new_state = reduce(
@@ -430,7 +431,7 @@ fn test_success_clears_continuation_prompt() {
         let state = PipelineState {
             phase: PipelinePhase::Development,
             agent_chain: chain,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let new_state = reduce(
@@ -469,7 +470,7 @@ fn test_exhausted_chain_triggers_checkpoint() {
         let state = PipelineState {
             phase: PipelinePhase::Development,
             agent_chain: chain,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         let effect = determine_next_effect(&state);
@@ -501,7 +502,7 @@ fn test_full_agent_fallback_flow() {
                 vec![vec![], vec![]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
         // Verify we start with first agent

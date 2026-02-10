@@ -7,6 +7,8 @@ use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 
+use crate::common::with_locked_prompt_permissions;
+
 pub(super) fn create_state_with_agent_chain_in_development() -> PipelineState {
     use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
 
@@ -37,6 +39,6 @@ pub(super) fn create_state_with_agent_chain_in_development() -> PipelineState {
         continuation: ContinuationState::new(),
         checkpoint_saved_count: 0,
         execution_history: Vec::new(),
-        ..PipelineState::initial(5, 2)
+        ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
     }
 }

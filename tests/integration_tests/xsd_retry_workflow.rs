@@ -10,6 +10,7 @@
 //! **CRITICAL:** All tests in this module MUST follow integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
@@ -48,7 +49,9 @@ fn test_planning_xsd_retry_triggers_reinvocation() {
                 )
                 .with_session_id(Some("session-123".to_string())),
             context_cleaned: true,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         // Event: XSD validation failed
@@ -117,7 +120,9 @@ fn test_planning_xsd_exhausted_triggers_fallback() {
                 )
                 .with_session_id(Some("session-123".to_string())),
             context_cleaned: true,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         // Event: XSD validation failed (exhausts retries)
@@ -190,7 +195,9 @@ fn test_review_xsd_retry_triggers_reinvocation() {
                     AgentRole::Reviewer,
                 )
                 .with_session_id(Some("review-session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -251,7 +258,9 @@ fn test_review_xsd_exhausted_triggers_fallback() {
                     AgentRole::Reviewer,
                 )
                 .with_session_id(Some("session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -289,7 +298,9 @@ fn test_fix_xsd_retry_triggers_reinvocation() {
             agent_chain: AgentChainState::initial()
                 .with_agents(vec!["fixer".to_string()], vec![vec![]], AgentRole::Reviewer)
                 .with_session_id(Some("fix-session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -340,7 +351,9 @@ fn test_fix_xsd_exhausted_triggers_fallback() {
                     AgentRole::Reviewer,
                 )
                 .with_session_id(Some("session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -382,7 +395,9 @@ fn test_development_xsd_retry_preserves_developer_progress() {
                     AgentRole::Analysis,
                 )
                 .with_session_id(Some("analysis-session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -430,7 +445,9 @@ fn test_development_xsd_exhausted_switches_analysis_agent() {
                     AgentRole::Analysis,
                 )
                 .with_session_id(Some("session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -476,7 +493,9 @@ fn test_commit_xsd_retry_triggers_reinvocation() {
                     AgentRole::Commit,
                 )
                 .with_session_id(Some("commit-session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -529,7 +548,9 @@ fn test_commit_xsd_exhausted_triggers_fallback() {
                     AgentRole::Commit,
                 )
                 .with_session_id(Some("session".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(
@@ -574,7 +595,9 @@ fn test_full_xsd_retry_workflow_planning() {
                 )
                 .with_session_id(Some("session-abc".to_string())),
             context_cleaned: true,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         // Step 2: XSD validation fails
@@ -642,7 +665,9 @@ fn test_full_xsd_exhaustion_to_fallback_success() {
                     AgentRole::Reviewer,
                 )
                 .with_session_id(Some("session-1".to_string())),
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         // XSD fails and exhausts retries
@@ -704,7 +729,9 @@ fn test_missing_xml_triggers_xsd_retry_same_as_validation_failure() {
                 )
                 .with_session_id(Some("session".to_string())),
             context_cleaned: true,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(planning_state, PipelineEvent::planning_xml_missing(0, 0));
@@ -742,7 +769,9 @@ fn test_xsd_exhaustion_resets_same_agent_retry_state() {
                 )
                 .with_session_id(Some("session".to_string())),
             context_cleaned: true,
-            ..PipelineState::initial(5, 2)
+            ..with_locked_prompt_permissions(with_locked_prompt_permissions(
+                PipelineState::initial(5, 2),
+            ))
         };
 
         let new_state = reduce(

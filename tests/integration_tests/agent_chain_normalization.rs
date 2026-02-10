@@ -14,6 +14,7 @@ use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::state::PipelineState;
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 /// Test that agent chain initializes correctly for each phase.
@@ -64,7 +65,7 @@ fn test_same_agent_retry_flag() {
 #[test]
 fn test_checkpoint_replay_consistency() {
     with_default_timeout(|| {
-        let state = PipelineState::initial(1, 0);
+        let state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
 
         // Determine next effect
         let effect1 = determine_next_effect(&state);
@@ -91,7 +92,7 @@ fn test_checkpoint_replay_consistency() {
 fn test_agent_chain_normalization_across_phases() {
     with_default_timeout(|| {
         // Planning phase: Developer role
-        let mut state = PipelineState::initial(1, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         state.phase = PipelinePhase::Planning;
         state.agent_chain.current_role = AgentRole::Developer;
 
@@ -108,7 +109,7 @@ fn test_agent_chain_normalization_across_phases() {
         );
 
         // Review phase: Reviewer role
-        let mut state = PipelineState::initial(0, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(0, 1));
         state.phase = PipelinePhase::Review;
         state.agent_chain.current_role = AgentRole::Reviewer;
 

@@ -165,6 +165,7 @@ where
         base_state.rebase = migrated.rebase;
         base_state.execution_history = migrated.execution_history;
         base_state.prompt_inputs = migrated.prompt_inputs;
+        base_state.prompt_permissions = migrated.prompt_permissions;
         base_state.metrics = migrated.metrics;
 
         base_state

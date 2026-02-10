@@ -49,6 +49,7 @@
 
 use clap::error::ErrorKind;
 use clap::Parser;
+use ralph_workflow::reducer::state::{PipelineState, PromptPermissionsState};
 use std::sync::Arc;
 
 /// Create a MemoryWorkspace from a MockAppEffectHandler.
@@ -162,6 +163,17 @@ fn sync_workspace_to_handler(
             handler.remove_file(path);
         }
     }
+}
+
+/// Mark prompt permissions as already locked for tests that assert phase effects.
+pub fn with_locked_prompt_permissions(mut state: PipelineState) -> PipelineState {
+    state.prompt_permissions = PromptPermissionsState {
+        locked: true,
+        restore_needed: true,
+        restored: false,
+        last_warning: None,
+    };
+    state
 }
 
 /// Run ralph workflow with a custom MockAppEffectHandler.

@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 /// All fields are checkpointed. On resume:
 /// - If locked but not restored, orchestration will derive RestorePromptPermissions
 /// - If already restored, no further action needed
+///
+/// This state is serialized in `PipelineCheckpoint.prompt_permissions` to ensure
+/// pending restores are honored after resume.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
 pub struct PromptPermissionsState {
     /// True if LockPromptPermissions effect has been attempted.

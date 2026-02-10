@@ -123,6 +123,13 @@ pub struct PipelineCheckpoint {
     /// consumer signature are unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_inputs: Option<crate::reducer::state::PromptInputsState>,
+
+    /// Reducer-managed PROMPT.md permission lifecycle state.
+    ///
+    /// This allows resumed pipelines to finish restoring permissions if they
+    /// were interrupted after locking the prompt file.
+    #[serde(default)]
+    pub prompt_permissions: crate::reducer::state::PromptPermissionsState,
 }
 
 impl PipelineCheckpoint {
@@ -167,6 +174,7 @@ impl PipelineCheckpoint {
             prompt_history: None,
             env_snapshot: None,
             prompt_inputs: None,
+            prompt_permissions: crate::reducer::state::PromptPermissionsState::default(),
             log_run_id: None,
         }
     }

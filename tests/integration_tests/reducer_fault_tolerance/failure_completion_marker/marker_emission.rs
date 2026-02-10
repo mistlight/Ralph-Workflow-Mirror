@@ -8,6 +8,7 @@
 //! - Full event loop execution properly emits markers
 
 use super::common::Fixture;
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::app::event_loop::{run_event_loop_with_handler, EventLoopConfig};
@@ -24,7 +25,7 @@ use std::path::Path;
 fn test_agent_chain_exhausted_emits_completion_marker() {
     with_default_timeout(|| {
         // Given: Initial pipeline state
-        let state = PipelineState::initial(1, 1);
+        let state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         assert_eq!(state.phase, PipelinePhase::Planning);
 
         // When: AgentChainExhausted error occurs
@@ -111,7 +112,7 @@ fn test_failed_status_dispatches_dev_fix_agent_and_emits_completion_marker() {
         let mut state = PipelineState {
             phase: PipelinePhase::AwaitingDevFix,
             previous_phase: Some(PipelinePhase::Development),
-            ..PipelineState::initial(1, 1)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 1))
         };
         state.agent_chain = AgentChainState::initial().with_agents(
             vec!["claude".to_string()],
@@ -150,7 +151,7 @@ fn test_completion_marker_written_before_interrupted_transition() {
         let mut fixture = Fixture::new();
         let mut ctx = fixture.ctx();
 
-        let state = PipelineState::initial(1, 1);
+        let state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
 
         // Transition to AwaitingDevFix
         let awaiting_fix_state = reduce(

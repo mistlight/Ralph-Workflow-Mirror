@@ -256,6 +256,40 @@ fn test_pipeline_state_from_checkpoint_preserves_prompt_inputs_when_present() {
 }
 
 #[test]
+fn test_pipeline_state_from_checkpoint_preserves_prompt_permissions() {
+    let mut checkpoint = make_checkpoint_for_state(
+        CheckpointPhase::Development,
+        CheckpointRebaseState::NotStarted,
+    );
+
+    checkpoint.prompt_permissions = crate::reducer::state::PromptPermissionsState {
+        locked: true,
+        restore_needed: true,
+        restored: false,
+        last_warning: Some("locked with warning".to_string()),
+    };
+
+    let state: PipelineState = checkpoint.into();
+
+    assert!(
+        state.prompt_permissions.locked,
+        "expected locked to be restored from checkpoint"
+    );
+    assert!(
+        state.prompt_permissions.restore_needed,
+        "expected restore_needed to be restored from checkpoint"
+    );
+    assert!(
+        !state.prompt_permissions.restored,
+        "expected restored to be false from checkpoint"
+    );
+    assert_eq!(
+        state.prompt_permissions.last_warning.as_deref(),
+        Some("locked with warning")
+    );
+}
+
+#[test]
 fn test_pipeline_state_from_checkpoint_rebase_conflicts() {
     let checkpoint = make_checkpoint_for_state(
         CheckpointPhase::PreRebaseConflict,

@@ -8,6 +8,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::checkpoint::state::{AgentConfigSnapshot, CliArgsSnapshot, RebaseState};
 use ralph_workflow::checkpoint::{
@@ -84,7 +85,7 @@ fn test_resume_at_final_iteration_should_rerun_development() {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 1, 0, 0);
 
         // Convert to PipelineState (this resets all progress flags to None)
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         // Orchestration should derive development work effects, NOT SaveCheckpoint
         let effect = determine_next_effect(&state);
@@ -114,7 +115,7 @@ fn test_resume_iteration_0_total_1_should_run() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 0, 1, 0, 0);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
         let effect = determine_next_effect(&state);
 
         // Should derive development work, not checkpoint
@@ -132,7 +133,7 @@ fn test_resume_mid_development_continues() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 3, 0, 0);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
         let effect = determine_next_effect(&state);
 
         // Should derive development work at iteration 1
@@ -154,7 +155,7 @@ fn test_resume_at_final_review_pass_should_rerun_review() {
         // Create checkpoint at boundary: reviewer_pass=2, total_reviewer_passes=2
         let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 3, 3, 2, 2);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
         let effect = determine_next_effect(&state);
 
         // Should NOT be SaveCheckpoint
@@ -181,7 +182,7 @@ fn test_resume_reviewer_pass_0_total_1_should_run() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 1, 1, 0, 1);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
         let effect = determine_next_effect(&state);
 
         assert!(
@@ -203,7 +204,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         // Start from checkpoint at final iteration (iteration=1, total=1)
         // Configure with 1 review pass so we transition through Review phase
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 1, 0, 1);
-        let mut state = PipelineState::from(checkpoint);
+        let mut state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         // Verify we start in Development phase
         assert_eq!(state.phase, PipelinePhase::Development);

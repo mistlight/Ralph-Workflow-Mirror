@@ -64,8 +64,8 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
             prompt_permissions: crate::reducer::state::PromptPermissionsState {
                 locked: true,
                 restore_needed: true,
+                restored: false,
                 last_warning: warning,
-                ..state.prompt_permissions
             },
             ..state
         },

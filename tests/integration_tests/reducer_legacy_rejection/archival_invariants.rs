@@ -17,6 +17,7 @@
 //! - Use MemoryWorkspace to simulate legacy files
 //! - Verify event-driven architecture
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use std::path::Path;
 
@@ -39,7 +40,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
 
     with_default_timeout(|| {
         // Create state in Development phase with agents initialized
-        let mut state = PipelineState::initial(2, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(2, 1));
         state.phase = PipelinePhase::Development;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
@@ -57,7 +58,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
         );
 
         // Even with max iterations reached, state-based transition should happen
-        let mut state = PipelineState::initial(0, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(0, 1));
         state.phase = PipelinePhase::Review;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
@@ -102,7 +103,7 @@ fn test_legacy_artifact_files_completely_ignored() {
             .with_dir(".agent/logs/planning_1"); // Legacy directory mode
 
         // Create state in Development phase
-        let mut state = PipelineState::initial(2, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(2, 1));
         state.phase = PipelinePhase::Development;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["test-agent".to_string()],

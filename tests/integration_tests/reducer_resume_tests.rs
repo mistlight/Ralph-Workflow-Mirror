@@ -8,6 +8,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::checkpoint::state::{AgentConfigSnapshot, CliArgsSnapshot, RebaseState};
 use ralph_workflow::checkpoint::{
@@ -65,7 +66,7 @@ fn test_pipeline_state_from_checkpoint_at_planning() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Planning, 0, 5, 0);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.phase, PipelinePhase::Planning);
         assert_eq!(state.iteration, 0);
@@ -77,7 +78,7 @@ fn test_pipeline_state_from_checkpoint_at_development() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 3, 5, 0);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.phase, PipelinePhase::Development);
         assert_eq!(state.iteration, 3);
@@ -89,7 +90,7 @@ fn test_pipeline_state_from_checkpoint_at_review() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 5, 5, 1);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.phase, PipelinePhase::Review);
         assert_eq!(state.reviewer_pass, 1);
@@ -102,7 +103,7 @@ fn test_pipeline_state_from_checkpoint_at_commit() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::CommitMessage, 5, 5, 2);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.phase, PipelinePhase::CommitMessage);
         assert_eq!(state.reviewer_pass, 2);
@@ -115,7 +116,7 @@ fn test_pipeline_state_from_complete_checkpoint() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Complete, 5, 5, 2);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.phase, PipelinePhase::Complete);
         assert_eq!(state.reviewer_pass, 2);
@@ -128,7 +129,7 @@ fn test_resume_continues_from_correct_iteration() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 2, 5, 0);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.iteration, 2);
         assert_eq!(state.total_iterations, 5);
@@ -140,7 +141,7 @@ fn test_resume_continues_from_correct_reviewer_pass() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 5, 5, 1);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.reviewer_pass, 1);
         assert_eq!(state.total_reviewer_passes, 2);
@@ -152,7 +153,7 @@ fn test_agent_chain_initialized_across_resume() {
     with_default_timeout(|| {
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 2, 5, 0);
 
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.agent_chain.current_agent_index, 0);
         assert_eq!(state.agent_chain.current_model_index, 0);
@@ -171,7 +172,7 @@ fn test_metrics_preserved_in_checkpoint_serialization() {
         use ralph_workflow::reducer::state_reduction::reduce;
 
         // Build state with non-zero metrics
-        let mut state = PipelineState::initial(5, 2);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(5, 2));
         state = reduce(state, PipelineEvent::development_iteration_started(0));
         state = reduce(state, PipelineEvent::development_agent_invoked(0));
         state = reduce(
@@ -197,7 +198,7 @@ fn test_metrics_preserved_in_checkpoint_serialization() {
 fn test_metrics_default_on_old_checkpoint_without_metrics() {
     with_default_timeout(|| {
         // Create a state, serialize it, remove the metrics field, and deserialize
-        let state = PipelineState::initial(5, 2);
+        let state = with_locked_prompt_permissions(PipelineState::initial(5, 2));
         let mut json: serde_json::Value = serde_json::to_value(&state).unwrap();
 
         // Remove the metrics field to simulate an old checkpoint
@@ -217,7 +218,7 @@ fn test_metrics_default_on_old_checkpoint_without_metrics() {
 #[test]
 fn test_metrics_config_fields_preserved() {
     with_default_timeout(|| {
-        let state = PipelineState::initial(10, 3);
+        let state = with_locked_prompt_permissions(PipelineState::initial(10, 3));
 
         assert_eq!(state.metrics.max_dev_iterations, 10);
         assert_eq!(state.metrics.max_review_passes, 3);
@@ -245,7 +246,7 @@ fn test_metrics_survive_checkpoint_resume() {
         use ralph_workflow::reducer::state::RunMetrics;
 
         // Given: Create PipelineState with metrics partially populated
-        let mut state = PipelineState::initial(5, 3);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(5, 3));
 
         // Manually populate some metrics to simulate mid-run state
         state.metrics = RunMetrics {
@@ -359,7 +360,7 @@ fn test_resume_at_final_iteration_completes_full_pipeline() {
 
         // Given: Checkpoint at final iteration with all progress flags reset
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 1, 0);
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         // Verify initial state
         assert_eq!(state.iteration, 1);
@@ -404,7 +405,7 @@ fn test_resume_mid_pipeline_continues_normally() {
 
         // Given: Checkpoint at iteration 2 of 5
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 2, 5, 0);
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         // Verify initial state
         assert_eq!(state.iteration, 2);
@@ -446,7 +447,7 @@ fn test_resume_at_final_iteration_boundary_runs_development() {
 
         // Given: Checkpoint at iteration=1, total_iterations=1 (final boundary)
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 1, 1, 0);
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.iteration, 1);
         assert_eq!(state.total_iterations, 1);
@@ -489,7 +490,7 @@ fn test_resume_at_final_review_pass_boundary_runs_review() {
         // Given: Checkpoint at reviewer_pass=2, total_reviewer_passes=2 (final boundary)
         // create_test_checkpoint sets total_reviewer_passes=2, and the conversion preserves it.
         let checkpoint = create_test_checkpoint(CheckpointPhase::Review, 3, 3, 2);
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.reviewer_pass, 2);
         assert_eq!(state.total_reviewer_passes, 2);
@@ -530,7 +531,7 @@ fn test_resume_zero_indexed_iteration_boundary() {
 
         // Given: Checkpoint at iteration=0, total_iterations=1
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 0, 1, 0);
-        let state = PipelineState::from(checkpoint);
+        let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
         assert_eq!(state.iteration, 0);
         assert_eq!(state.total_iterations, 1);

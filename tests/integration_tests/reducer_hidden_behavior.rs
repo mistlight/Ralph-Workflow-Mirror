@@ -9,6 +9,7 @@
 //! **CRITICAL:** All tests in this module MUST follow integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
@@ -26,7 +27,7 @@ fn test_handler_cleanup_requires_effect() {
         // Cleanup must be driven by explicit effects (e.g., EnsureGitignoreEntries,
         // CleanupContext, CleanupContinuationContext). Handlers must not perform
         // hidden cleanup beyond the effect being executed.
-        let mut state = PipelineState::initial(2, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(2, 1));
         state.phase = PipelinePhase::Planning;
         state.context_cleaned = false;
         state.gitignore_entries_ensured = false;
@@ -157,7 +158,7 @@ fn test_marker_file_check_is_documented_intentional() {
     with_default_timeout(|| {
         // Marker files must not alter phase progression or retry decisions.
         // Only reducer events may change control flow.
-        let mut state = PipelineState::initial(1, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         state.phase = PipelinePhase::CommitMessage;
         state.commit = ralph_workflow::reducer::state::CommitState::NotStarted;
         state.agent_chain = AgentChainState::initial();

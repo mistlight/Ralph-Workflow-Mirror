@@ -117,6 +117,30 @@ fn test_reduce_prompt_permissions_locked_idempotent() {
 }
 
 #[test]
+fn test_reduce_prompt_permissions_locked_clears_restored_flag() {
+    // Given: State marked restored from a prior run
+    let state = PipelineState {
+        prompt_permissions: PromptPermissionsState {
+            locked: false,
+            restore_needed: false,
+            restored: true,
+            last_warning: None,
+        },
+        ..create_test_state()
+    };
+
+    // When: PromptPermissionsLocked event is reduced
+    let event =
+        PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsLocked { warning: None });
+    let new_state = reduce(state, event);
+
+    // Then: restored should be cleared to ensure restoration runs at exit
+    assert!(!new_state.prompt_permissions.restored);
+    assert!(new_state.prompt_permissions.locked);
+    assert!(new_state.prompt_permissions.restore_needed);
+}
+
+#[test]
 fn test_reduce_prompt_permissions_restored_idempotent() {
     // Given: State already restored
     let state = PipelineState {

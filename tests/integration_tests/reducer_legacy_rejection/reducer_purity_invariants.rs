@@ -13,6 +13,7 @@
 //! - Pure reducer tests require no mocks
 //! - Verify deterministic state transitions
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 // ============================================================================
@@ -31,7 +32,7 @@ fn test_state_transitions_via_reducer_only() {
 
     with_default_timeout(|| {
         // Start at Planning phase with 2 iterations and 1 reviewer pass
-        let state = PipelineState::initial(2, 1);
+        let state = with_locked_prompt_permissions(PipelineState::initial(2, 1));
         assert_eq!(state.phase, PipelinePhase::Planning);
         assert_eq!(state.iteration, 0, "Initial iteration is 0");
 
@@ -115,7 +116,7 @@ fn test_effects_determined_from_state_only() {
 
     with_default_timeout(|| {
         // Initial state needs agent chain initialization
-        let state = PipelineState::initial(3, 1);
+        let state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         let effect = determine_next_effect(&state);
         assert!(
             matches!(
@@ -129,7 +130,7 @@ fn test_effects_determined_from_state_only() {
         );
 
         // State with agents but no gitignore ensured -> ensure gitignore
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -145,7 +146,7 @@ fn test_effects_determined_from_state_only() {
         );
 
         // State with gitignore ensured but no context cleaned -> clean context
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -161,7 +162,7 @@ fn test_effects_determined_from_state_only() {
         );
 
         // State ready for planning
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -177,7 +178,7 @@ fn test_effects_determined_from_state_only() {
         );
 
         // Development phase
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.iteration = 1;
         state.agent_chain = state.agent_chain.with_agents(
@@ -208,7 +209,7 @@ fn test_agent_selection_from_reducer_state() {
 
     with_default_timeout(|| {
         // Set up state with specific agents in chain
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.iteration = 1;
         state.agent_chain = state.agent_chain.with_agents(
@@ -255,7 +256,7 @@ fn test_completion_from_state_not_files() {
 
     with_default_timeout(|| {
         // State at Complete phase
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Complete;
 
         let effect = determine_next_effect(&state);
@@ -291,7 +292,7 @@ fn test_agent_chain_cleared_on_dev_to_review_transition() {
 
     with_default_timeout(|| {
         // Start with populated developer agent chain that has been used
-        let mut state = PipelineState::initial(1, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         state.agent_chain = state.agent_chain.with_agents(
             vec!["dev-primary".to_string(), "dev-fallback".to_string()],
             vec![vec![], vec![]],
@@ -654,7 +655,7 @@ fn test_agent_fallback_only_via_reducer_events() {
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.continuation = ContinuationState::with_limits(2, 3, 2);
         state.agent_chain = state.agent_chain.with_agents(
@@ -728,7 +729,7 @@ fn test_agent_fallback_only_via_reducer_events() {
 
         // InvocationFailed with retriable=true should NOT switch agents (tries next model)
         // Reset to test retriable case
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["primary".to_string(), "fallback".to_string()],
@@ -771,7 +772,7 @@ fn test_effect_determination_is_pure_function_of_state() {
 
     with_default_timeout(|| {
         // Create a specific state
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.iteration = 1;
         state.agent_chain = state.agent_chain.with_agents(
@@ -821,7 +822,7 @@ fn test_review_validation_failure_surfaces_via_event() {
 
     with_default_timeout(|| {
         // Start in Review phase
-        let mut state = PipelineState::initial(0, 3);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(0, 3));
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;
 
@@ -872,7 +873,7 @@ fn test_development_continuation_is_reducer_driven() {
 
     with_default_timeout(|| {
         // Start in Development phase
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
 
         // Simulate a "partial" status from development via reducer event
@@ -920,7 +921,7 @@ fn test_phase_transitions_only_via_reducer_events() {
 
     with_default_timeout(|| {
         // Start at Planning
-        let state = PipelineState::initial(1, 1);
+        let state = with_locked_prompt_permissions(PipelineState::initial(1, 1));
         assert_eq!(state.phase, PipelinePhase::Planning);
 
         // Transition Planning -> Development via event

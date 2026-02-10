@@ -13,6 +13,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
@@ -38,7 +39,7 @@ fn test_gitignore_ensured_before_cleanup() {
                 vec![vec!["test-model".to_string()]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(1, 1)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 1))
         };
 
         // Orchestrator should derive EnsureGitignoreEntries before CleanupContext
@@ -68,7 +69,7 @@ fn test_gitignore_ensured_proceeds_to_cleanup() {
                 vec![vec!["test-model".to_string()]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(1, 1)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 1))
         };
 
         // Should proceed to CleanupContext
@@ -99,7 +100,7 @@ fn test_gitignore_not_rerun_on_resume() {
                 vec![vec!["test-model".to_string()]],
                 AgentRole::Developer,
             ),
-            ..PipelineState::initial(1, 1)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 1))
         };
 
         // Should skip to next effect (cleanup)
@@ -125,7 +126,7 @@ fn test_gitignore_after_agent_chain_init() {
             gitignore_entries_ensured: false,
             context_cleaned: false,
             agent_chain: AgentChainState::initial(), // Empty chain
-            ..PipelineState::initial(1, 1)
+            ..with_locked_prompt_permissions(PipelineState::initial(1, 1))
         };
 
         // Should initialize agent chain first

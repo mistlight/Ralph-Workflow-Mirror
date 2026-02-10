@@ -14,7 +14,7 @@ use crate::checkpoint::RunContext;
 use crate::config::{Config, ReviewDepth};
 use crate::executor::ProcessExecutor;
 use crate::logger::Logger;
-use crate::reducer::state::PromptInputsState;
+use crate::reducer::state::{PromptInputsState, PromptPermissionsState};
 use crate::workspace::Workspace;
 use std::sync::Arc;
 
@@ -53,6 +53,7 @@ pub struct CheckpointBuilder {
     execution_history: Option<ExecutionHistory>,
     prompt_history: Option<std::collections::HashMap<String, String>>,
     prompt_inputs: Option<PromptInputsState>,
+    prompt_permissions: PromptPermissionsState,
     // Process executor for external process execution
     executor: Option<Arc<dyn ProcessExecutor>>,
     // Logging run_id (timestamp-based) for per-run log directory
@@ -87,6 +88,7 @@ impl CheckpointBuilder {
             execution_history: None,
             prompt_history: None,
             prompt_inputs: None,
+            prompt_permissions: PromptPermissionsState::default(),
             executor: None,
             log_run_id: None,
         }
@@ -294,6 +296,12 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Set prompt permission state for resume-safe restoration.
+    pub fn with_prompt_permissions(mut self, prompt_permissions: PromptPermissionsState) -> Self {
+        self.prompt_permissions = prompt_permissions;
+        self
+    }
+
     /// Set the logging run_id (timestamp-based) for per-run log directory.
     ///
     /// This should be set from the RunLogContext.run_id() to ensure resume
@@ -399,6 +407,9 @@ impl CheckpointBuilder {
 
         // Populate reducer prompt input materialization state
         checkpoint.prompt_inputs = self.prompt_inputs;
+
+        // Populate prompt permission lifecycle state
+        checkpoint.prompt_permissions = self.prompt_permissions;
 
         // Populate logging run_id
         checkpoint.log_run_id = self.log_run_id;
