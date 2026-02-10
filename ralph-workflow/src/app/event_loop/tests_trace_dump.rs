@@ -1,3 +1,14 @@
+use anyhow::Result;
+
+use super::error_handling::extract_error_event;
+use super::trace::{build_trace_entry, dump_event_loop_trace, EventTraceBuffer};
+use super::{
+    create_initial_state_with_config, run_event_loop_with_handler, EventLoopConfig,
+    MAX_EVENT_LOOP_ITERATIONS,
+};
+use crate::phases::PhaseContext;
+use crate::reducer::PipelineState;
+
 #[test]
 fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     use crate::agents::AgentRegistry;
@@ -199,8 +210,8 @@ fn test_extract_error_event_searches_anyhow_error_chain() {
         source: ErrorEvent::FixPromptMissing,
     });
 
-    let extracted = super::extract_error_event(&wrapped)
-        .expect("expected ErrorEvent to be found in error chain");
+    let extracted =
+        extract_error_event(&wrapped).expect("expected ErrorEvent to be found in error chain");
     assert!(matches!(extracted, ErrorEvent::FixPromptMissing));
 }
 
@@ -385,6 +396,8 @@ fn test_event_loop_applies_additional_events_in_order() {
     use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::event::PipelinePhase;
+    use crate::reducer::state::PromptPermissionsState;
     use crate::reducer::PipelineEvent;
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
@@ -456,13 +469,22 @@ fn test_event_loop_applies_additional_events_in_order() {
         run_log_context: &run_log_context,
     };
 
-    let state = PipelineState::initial(1, 0);
+    let state = PipelineState {
+        phase: PipelinePhase::Finalizing,
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..PipelineState::initial(1, 0)
+    };
     let mut handler = TestHandler::new(state);
     let loop_config = EventLoopConfig { max_iterations: 10 };
 
     let result = run_event_loop_with_handler(
         &mut ctx,
-        Some(PipelineState::initial(1, 0)),
+        Some(handler.state.clone()),
         loop_config,
         &mut handler,
     )

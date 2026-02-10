@@ -1,3 +1,9 @@
+use anyhow::Result;
+
+use super::{run_event_loop_with_handler, EventLoopConfig};
+use crate::phases::PhaseContext;
+use crate::reducer::PipelineState;
+
 #[test]
 fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled() {
     use crate::agents::AgentRegistry;
@@ -8,6 +14,8 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::event::{PipelineEvent, PipelinePhase};
+    use crate::reducer::state::PromptPermissionsState;
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -15,24 +23,29 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     #[derive(Debug)]
     struct TestHandler {
         state: PipelineState,
+        saw_save_checkpoint: bool,
     }
 
     impl TestHandler {
         fn new(state: PipelineState) -> Self {
-            Self { state }
+            Self {
+                state,
+                saw_save_checkpoint: false,
+            }
         }
     }
 
     impl<'ctx> EffectHandler<'ctx> for TestHandler {
-        fn execute(
-            &mut self,
-            _effect: Effect,
-            _ctx: &mut PhaseContext<'_>,
-        ) -> Result<EffectResult> {
-            // If SaveCheckpoint is executed through the handler, force completion.
-            Ok(EffectResult::event(
-                crate::reducer::PipelineEvent::prompt_permissions_restored(),
-            ))
+        fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+            match effect {
+                Effect::SaveCheckpoint { trigger } => {
+                    self.saw_save_checkpoint = true;
+                    Ok(EffectResult::event(PipelineEvent::checkpoint_saved(
+                        trigger,
+                    )))
+                }
+                unexpected => panic!("unexpected effect: {unexpected:?}"),
+            }
         }
     }
 
@@ -74,20 +87,19 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         run_log_context: &run_log_context,
     };
 
-    // Construct a boundary state that deterministically derives SaveCheckpoint.
-    // Development with iteration >= total_iterations returns SaveCheckpoint.
-    //
-    // With checkpointing disabled, the event loop MUST still execute the effect via the
-    // handler; bypassing it would spin on synthetic CheckpointSaved events.
+    // Construct a terminal state that deterministically derives SaveCheckpoint.
+    // Interrupted from AwaitingDevFix with no checkpoint saved must execute SaveCheckpoint
+    // even if checkpointing is disabled.
     let state = PipelineState {
-        phase: crate::reducer::event::PipelinePhase::Development,
-        iteration: 1,
-        total_iterations: 1,
-        agent_chain: PipelineState::initial(1, 0).agent_chain.with_agents(
-            vec!["test-agent".to_string()],
-            vec![vec![]],
-            crate::agents::AgentRole::Developer,
-        ),
+        phase: PipelinePhase::Interrupted,
+        previous_phase: Some(PipelinePhase::AwaitingDevFix),
+        checkpoint_saved_count: 0,
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: false,
+            restored: true,
+            last_warning: None,
+        },
         ..PipelineState::initial(1, 0)
     };
     let mut handler = TestHandler::new(state);
@@ -103,9 +115,13 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
     .expect("event loop should run");
 
     assert!(
-            result.completed,
-            "expected pipeline to complete; SaveCheckpoint should not be bypassed when checkpointing is disabled"
-        );
+        handler.saw_save_checkpoint,
+        "expected SaveCheckpoint to be executed through the handler"
+    );
+    assert!(
+        result.completed,
+        "expected pipeline to complete after SaveCheckpoint"
+    );
 }
 
 #[test]

@@ -7,10 +7,8 @@ use crate::reducer::state::PromptPermissionsState;
 #[test]
 fn test_reduce_prompt_permissions_locked_sets_flags() {
     // Given: Initial state with no permission tracking
-    let state = PipelineState {
-        phase: PipelinePhase::Planning,
-        ..create_test_state()
-    };
+    let mut state = PipelineState::initial(5, 2);
+    state.phase = PipelinePhase::Planning;
 
     // When: PromptPermissionsLocked event is reduced
     let event =

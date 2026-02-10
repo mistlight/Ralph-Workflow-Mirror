@@ -54,4 +54,10 @@ pub use core::{run_event_loop, run_event_loop_with_handler, StatefulHandler};
 pub(crate) use config::create_initial_state_with_config;
 
 #[cfg(test)]
+mod tests_checkpoint;
+#[cfg(test)]
 mod tests_iteration_control;
+#[cfg(test)]
+mod tests_review_flow;
+#[cfg(test)]
+mod tests_trace_dump;
