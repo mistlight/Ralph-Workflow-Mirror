@@ -91,9 +91,7 @@ tests/system_tests/
 │   ├── edge_cases/
 │   ├── category1_failure_modes.rs
 │   └── ...
-├── git/                 # Real git operation tests
-│   └── mod.rs
-└── workspace_fs/        # WorkspaceFs implementation tests
+└── git/                 # Real git operation tests
     └── mod.rs
 ```
 
