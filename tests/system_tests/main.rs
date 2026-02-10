@@ -38,4 +38,5 @@ mod test_timeout;
 mod agents;
 mod deduplication;
 mod git;
+mod prompt_permissions;
 mod rebase;

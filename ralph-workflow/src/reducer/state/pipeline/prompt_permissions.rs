@@ -3,6 +3,10 @@
 //! This state tracks the permission protection lifecycle for PROMPT.md:
 //! - Locked at pipeline start (best-effort read-only)
 //! - Restored on all graceful termination paths (success and failure)
+//!
+//! Note: Non-graceful termination (SIGKILL, power loss) may leave PROMPT.md
+//! read-only. Manual recovery is required (e.g. `chmod +w PROMPT.md` on Unix
+//! or clearing the read-only attribute on Windows).
 
 use serde::{Deserialize, Serialize};
 
