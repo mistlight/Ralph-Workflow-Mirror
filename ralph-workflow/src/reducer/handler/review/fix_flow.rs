@@ -185,6 +185,7 @@ impl MainEffectHandler {
                     return Err(ErrorEvent::FixContinuationNotSupported.into());
                 }
             };
+        let mut rendered_log = None;
         if should_validate && !was_replayed {
             // Re-generate to get the log for validation
             // Only validate freshly generated prompts, not replayed ones
@@ -221,6 +222,7 @@ impl MainEffectHandler {
                     ),
                 ));
             }
+            rendered_log = Some(rendered.log);
         }
 
         if !was_replayed {
@@ -238,9 +240,17 @@ impl MainEffectHandler {
             ));
         }
 
-        Ok(EffectResult::event(PipelineEvent::fix_prompt_prepared(
-            pass,
-        )))
+        let mut result =
+            EffectResult::event(PipelineEvent::fix_prompt_prepared(pass));
+        if let Some(log) = rendered_log {
+            result = result.with_additional_event(PipelineEvent::template_rendered(
+                crate::reducer::event::PipelinePhase::Review,
+                template_name.to_string(),
+                log,
+            ));
+        }
+
+        Ok(result)
     }
 
     pub(super) fn invoke_fix_agent(

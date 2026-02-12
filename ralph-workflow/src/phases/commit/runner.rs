@@ -42,7 +42,7 @@ pub fn run_commit_attempt(
     // See: reducer/handler/commit.rs::materialize_commit_inputs
 
     let prompt_key = format!("commit_message_attempt_{attempt}");
-    let (prompt, was_replayed) = build_commit_prompt(
+    let (prompt, was_replayed, substitution_log) = build_commit_prompt(
         &prompt_key,
         ctx.template_context,
         model_safe_diff,
@@ -51,9 +51,15 @@ pub fn run_commit_attempt(
     );
 
     // Legacy phase-based code
-    // Template validation now happens via SubstitutionLog::is_complete() in the
-    // reducer/handler architecture. render_with_log records missing variables
-    // in the substitution log; regex-based validation has been removed.
+    // Validate freshly rendered prompts using substitution logs (no regex scanning).
+    if let Some(log) = substitution_log {
+        if !log.is_complete() {
+            return Err(anyhow::anyhow!(
+                "Commit prompt has unresolved placeholders: {:?}",
+                log.unsubstituted
+            ));
+        }
+    }
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &prompt);
@@ -262,13 +268,21 @@ pub fn generate_commit_message(
     }
 
     let prompt_key = "commit_message_attempt_1";
-    let (prompt, was_replayed) = build_commit_prompt(
+    let (prompt, was_replayed, substitution_log) = build_commit_prompt(
         prompt_key,
         template_context,
         &model_safe_diff,
         workspace,
         prompt_history,
     );
+    if let Some(log) = substitution_log {
+        if !log.is_complete() {
+            return Err(anyhow::anyhow!(
+                "Commit prompt has unresolved placeholders: {:?}",
+                log.unsubstituted
+            ));
+        }
+    }
 
     let mut generated_prompts = HashMap::new();
     if !was_replayed {
@@ -375,13 +389,21 @@ pub fn generate_commit_message_with_chain(
 
     for (agent_index, commit_agent) in agents.iter().enumerate() {
         let prompt_key = format!("commit_message_chain_attempt_{}", agent_index + 1);
-        let (prompt, was_replayed) = build_commit_prompt(
+        let (prompt, was_replayed, substitution_log) = build_commit_prompt(
             &prompt_key,
             template_context,
             &model_safe_diff,
             workspace,
             prompt_history,
         );
+        if let Some(log) = substitution_log {
+            if !log.is_complete() {
+                return Err(anyhow::anyhow!(
+                    "Commit prompt has unresolved placeholders: {:?}",
+                    log.unsubstituted
+                ));
+            }
+        }
 
         if !was_replayed {
             generated_prompts.insert(prompt_key.clone(), prompt.clone());

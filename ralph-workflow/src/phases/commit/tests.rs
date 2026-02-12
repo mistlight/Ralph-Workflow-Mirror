@@ -7,10 +7,14 @@ mod tests {
     use crate::executor::{MockProcessExecutor, ProcessExecutor};
     use crate::logger::{Colors, Logger};
     use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::prompts::template_registry::TemplateRegistry;
     use crate::workspace::MemoryWorkspace;
     use std::collections::HashMap;
+    use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
+    use tempfile::tempdir;
 
     #[test]
     fn test_truncate_diff_if_large() {
@@ -234,6 +238,64 @@ mod tests {
         assert!(
             log_content.contains("Diff truncated: YES"),
             "expected truncation marker in log, got:\n{log_content}"
+        );
+    }
+
+    #[test]
+    fn test_run_commit_attempt_errors_on_missing_template_variables() {
+        let tempdir = tempdir().expect("create temp dir");
+        let template_path = tempdir.path().join("commit_message_xml.txt");
+        fs::write(
+            &template_path,
+            "Commit {{DIFF}}\nMissing: {{MISSING}}\n{{COMMIT_MESSAGE_XML_PATH}}\n{{COMMIT_MESSAGE_XSD_PATH}}\n",
+        )
+        .expect("write commit template");
+
+        let workspace = MemoryWorkspace::new_test();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context =
+            TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
+
+        let executor = Arc::new(MockProcessExecutor::new());
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+            run_log_context: &run_log_context,
+        };
+
+        let err = run_commit_attempt(&mut ctx, 1, "diff --git a/a b/a\n+change\n", "claude")
+            .err()
+            .expect("missing template variables should fail validation");
+        assert!(
+            err.to_string().contains("unresolved placeholders"),
+            "expected unresolved placeholder error, got: {err}"
+        );
+        assert!(
+            executor.agent_calls().is_empty(),
+            "agent should not be invoked when template variables are missing"
         );
     }
 

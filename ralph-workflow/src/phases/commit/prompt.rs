@@ -4,14 +4,18 @@ fn build_commit_prompt(
     working_diff: &str,
     workspace: &dyn Workspace,
     prompt_history: &HashMap<String, String>,
-) -> (String, bool) {
-    get_stored_or_generate_prompt(prompt_key, prompt_history, || {
-        prompt_generate_commit_message_with_diff_with_context(
+) -> (String, bool, Option<crate::prompts::SubstitutionLog>) {
+    if let Some(stored_prompt) = prompt_history.get(prompt_key) {
+        (stored_prompt.clone(), true, None)
+    } else {
+        let rendered = crate::prompts::prompt_generate_commit_message_with_diff_with_log(
             template_context,
             working_diff,
             workspace,
-        )
-    })
+            "commit_message_xml",
+        );
+        (rendered.content, false, Some(rendered.log))
+    }
 }
 
 fn stderr_contains_auth_error(stderr: &str) -> bool {

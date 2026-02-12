@@ -13,10 +13,7 @@ use crate::files::llm_output_extraction::{
     try_extract_xml_commit_with_trace, xml_paths, CommitExtractionResult,
 };
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
-use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_generate_commit_message_with_diff_with_context,
-    TemplateContext,
-};
+use crate::prompts::TemplateContext;
 use crate::workspace::Workspace;
 use anyhow::Context as _;
 use std::collections::HashMap;

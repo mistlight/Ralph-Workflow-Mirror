@@ -12,7 +12,7 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::update_status_with_workspace;
 use crate::phases::context::PhaseContext;
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
-use crate::prompts::{get_stored_or_generate_prompt, prompt_fix_xml_with_context, ContextLevel};
+use crate::prompts::{prompt_fix_xml_with_log, ContextLevel};
 
 use std::path::Path;
 use std::time::Instant;
@@ -73,22 +73,32 @@ pub fn run_fix_pass(
     let files_to_modify = extract_file_paths_from_issues(&issues_content);
 
     let prompt_key = format!("fix_{}", j);
-    let (fix_prompt, was_replayed) =
-        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-            prompt_fix_xml_with_context(
+    let (fix_prompt, was_replayed, substitution_log) =
+        if let Some(stored_prompt) = ctx.prompt_history.get(&prompt_key) {
+            (stored_prompt.clone(), true, None)
+        } else {
+            let rendered = prompt_fix_xml_with_log(
                 ctx.template_context,
                 &prompt_content,
                 &plan_content,
                 &issues_content,
                 &files_to_modify,
                 ctx.workspace,
-            )
-        });
+                "fix_mode_xml",
+            );
+            (rendered.content, false, Some(rendered.log))
+        };
 
     // Legacy phase-based code
-    // Template validation now happens via SubstitutionLog::is_complete() in the
-    // reducer/handler architecture. render_with_log records missing variables
-    // in the substitution log; regex-based validation has been removed.
+    // Validate freshly rendered prompts using substitution logs (no regex scanning).
+    if let Some(log) = substitution_log {
+        if !log.is_complete() {
+            return Err(anyhow::anyhow!(
+                "Fix prompt has unresolved placeholders: {:?}",
+                log.unsubstituted
+            ));
+        }
+    }
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &fix_prompt);

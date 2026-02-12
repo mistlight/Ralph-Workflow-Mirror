@@ -6,7 +6,7 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::{PipelineEvent, PipelinePhase, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{PipelineState, PromptMode};
 use crate::workspace::{MemoryWorkspace, Workspace};
@@ -59,6 +59,17 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
         .expect("prepare_fix_prompt should succeed");
 
     assert!(matches!(result.event, PipelineEvent::Review(_)));
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+                phase: PipelinePhase::Review,
+                template_name,
+                log,
+            }) if template_name == "fix_mode_xml" && log.is_complete()
+        )),
+        "expected TemplateRendered event for fix prompt"
+    );
 }
 
 #[test]
