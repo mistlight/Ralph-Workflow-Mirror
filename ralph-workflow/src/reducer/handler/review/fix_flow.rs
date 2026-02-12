@@ -188,15 +188,28 @@ impl MainEffectHandler {
         if should_validate && !was_replayed {
             // Re-generate to get the log for validation
             // Only validate freshly generated prompts, not replayed ones
-            let rendered = crate::prompts::review::prompt_fix_xml_with_log(
-                ctx.template_context,
-                &prompt_content,
-                &plan_content,
-                &issues_content,
-                &[],
-                ctx.workspace,
-                template_name,
-            );
+            let rendered = if matches!(prompt_mode, PromptMode::XsdRetry) {
+                let xsd_error = _xsd_error_for_validation
+                    .as_deref()
+                    .unwrap_or("XML output failed validation. Provide valid XML output.");
+                crate::prompts::review::prompt_fix_xsd_retry_with_log(
+                    ctx.template_context,
+                    xsd_error,
+                    &last_output,
+                    ctx.workspace,
+                    template_name,
+                )
+            } else {
+                crate::prompts::review::prompt_fix_xml_with_log(
+                    ctx.template_context,
+                    &prompt_content,
+                    &plan_content,
+                    &issues_content,
+                    &[],
+                    ctx.workspace,
+                    template_name,
+                )
+            };
 
             if !rendered.log.is_complete() {
                 return Ok(EffectResult::event(

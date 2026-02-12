@@ -554,6 +554,74 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
 }
 
 #[test]
+fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
+    use crate::reducer::event::AgentEvent;
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/ISSUES.md", "Issue\n")
+        .with_file(".agent/tmp/fix_result.xml", "<ralph-fix-result/>")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            last_fix_xsd_error: Some(String::new()),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let result = handler
+        .prepare_fix_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_fix_prompt should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { .. })
+    ));
+    if let PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid {
+        missing_variables, ..
+    }) = result.event
+    {
+        assert!(missing_variables.contains(&"XSD_ERROR".to_string()));
+    }
+}
+
+#[test]
 fn test_prepare_fix_prompt_uses_prompt_history_replay() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")

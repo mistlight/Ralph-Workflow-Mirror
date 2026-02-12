@@ -573,6 +573,21 @@ DIFF:
     }
 
     #[test]
+    fn test_substitution_log_empty_without_default_is_unsubstituted() {
+        let template = Template::new("Hello {{NAME}}");
+        let variables = HashMap::from([("NAME", "".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert_eq!(rendered.content, "Hello {{NAME}}");
+        assert!(rendered.log.substituted.is_empty());
+        assert_eq!(rendered.log.unsubstituted, vec!["NAME".to_string()]);
+        assert!(!rendered.log.is_complete());
+    }
+
+    #[test]
     fn test_substitution_log_jsx_in_value() {
         let template = Template::new("Code: {{CODE}}");
         let variables = HashMap::from([("CODE", "style={{ zIndex: 0 }}".to_string())]);
@@ -587,6 +602,47 @@ DIFF:
             crate::prompts::SubstitutionSource::Value
         );
         assert!(rendered.log.is_complete());
+    }
+
+    #[test]
+    fn test_substitution_log_merges_loop_substitutions() {
+        let template =
+            Template::new("{% for item in ITEMS %}{{item}} {{MISSING}}{% endfor %}");
+        let variables = HashMap::from([("ITEMS", "a,b".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert!(rendered.content.contains("a"));
+        assert!(rendered.content.contains("b"));
+        assert!(
+            rendered
+                .log
+                .substituted
+                .iter()
+                .any(|entry| entry.name == "item")
+        );
+    }
+
+    #[test]
+    fn test_substitution_log_merges_partial_substitutions() {
+        let partials = HashMap::from([("greeting".to_string(), "Hello {{NAME}}".to_string())]);
+        let template = Template::new("{{>greeting}}");
+        let variables = HashMap::from([("NAME", "World".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &partials)
+            .unwrap();
+
+        assert_eq!(rendered.content, "Hello World");
+        assert!(
+            rendered
+                .log
+                .substituted
+                .iter()
+                .any(|entry| entry.name == "NAME")
+        );
     }
 
     #[test]

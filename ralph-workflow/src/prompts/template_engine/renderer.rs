@@ -82,7 +82,22 @@ impl Template {
     ///
     /// The loop variable is available for use in the block content.
     fn process_loops(content: &str, variables: &HashMap<&str, String>) -> String {
+        let (result, _substituted, _unsubstituted) = Self::process_loops_with_log(content, variables);
+        result
+    }
+
+    /// Process loops in the content based on variable values, returning substitution tracking.
+    fn process_loops_with_log(
+        content: &str,
+        variables: &HashMap<&str, String>,
+    ) -> (
+        String,
+        Vec<crate::prompts::SubstitutionEntry>,
+        Vec<String>,
+    ) {
         let mut result = content.to_string();
+        let mut substituted = Vec::new();
+        let mut unsubstituted = Vec::new();
 
         // Find all {% for ... %} blocks
         while let Some(start) = result.find("{% for ") {
@@ -142,9 +157,15 @@ impl Template {
                 // Process conditionals first with loop variables
                 let processed = Self::process_conditionals(&block_template, &loop_vars);
 
-                // Then substitute variables (discard log in loops, errors checked later)
-                let (processed, _substituted, _unsubstituted) =
+                // Then substitute variables (collect log for loop substitutions)
+                let (processed, loop_substituted, loop_unsubstituted) =
                     Self::substitute_variables(&processed, &loop_vars);
+                substituted.extend(loop_substituted);
+                for name in loop_unsubstituted {
+                    if !unsubstituted.contains(&name) {
+                        unsubstituted.push(name);
+                    }
+                }
                 loop_output.push_str(&processed);
             }
 
@@ -152,7 +173,7 @@ impl Template {
             result.replace_range(start..endfor_end, &loop_output);
         }
 
-        result
+        (result, substituted, unsubstituted)
     }
 
     /// Substitute variables in content (simple version without partials or conditionals).
@@ -162,6 +183,22 @@ impl Template {
     fn substitute_variables(
         content: &str,
         variables: &HashMap<&str, String>,
+    ) -> (String, Vec<crate::prompts::SubstitutionEntry>, Vec<String>) {
+        Self::substitute_variables_with_empty_policy(content, variables, true)
+    }
+
+    /// Substitute variables while allowing empty values without marking them missing.
+    fn substitute_variables_allow_empty(
+        content: &str,
+        variables: &HashMap<&str, String>,
+    ) -> (String, Vec<crate::prompts::SubstitutionEntry>, Vec<String>) {
+        Self::substitute_variables_with_empty_policy(content, variables, false)
+    }
+
+    fn substitute_variables_with_empty_policy(
+        content: &str,
+        variables: &HashMap<&str, String>,
+        empty_is_missing: bool,
     ) -> (String, Vec<crate::prompts::SubstitutionEntry>, Vec<String>) {
         use crate::prompts::{SubstitutionEntry, SubstitutionSource};
 
@@ -239,37 +276,33 @@ impl Template {
                         });
 
                     // Look up the variable and track how it was resolved
-                    let (replacement, should_replace, source) =
-                        variables.get(var_name).map_or_else(
-                            || {
-                                default_value.as_ref().map_or_else(
-                                    || {
-                                        // No value AND no default - truly unsubstituted
-                                        unsubstituted.push(var_name.to_string());
-                                        (String::new(), false, None)
-                                    },
-                                    |default| {
-                                        (default.clone(), true, Some(SubstitutionSource::Default))
-                                    },
-                                )
-                            },
-                            |value| {
-                                if !value.is_empty() {
-                                    // Value provided and non-empty
-                                    (value.clone(), true, Some(SubstitutionSource::Value))
-                                } else if let Some(default) = &default_value {
-                                    // Value provided but empty, use default
-                                    (
-                                        default.clone(),
-                                        true,
-                                        Some(SubstitutionSource::EmptyWithDefault),
-                                    )
-                                } else {
-                                    // Variable exists but is empty, and no default - keep placeholder
-                                    (String::new(), false, None)
-                                }
-                            },
-                        );
+                    let (replacement, should_replace, source) = if let Some(value) =
+                        variables.get(var_name)
+                    {
+                        if !value.is_empty() {
+                            // Value provided and non-empty
+                            (value.clone(), true, Some(SubstitutionSource::Value))
+                        } else if let Some(default) = &default_value {
+                            // Value provided but empty, use default
+                            (
+                                default.clone(),
+                                true,
+                                Some(SubstitutionSource::EmptyWithDefault),
+                            )
+                        } else {
+                            // Variable exists but is empty, and no default - treat as missing if configured
+                            if empty_is_missing {
+                                unsubstituted.push(var_name.to_string());
+                            }
+                            (String::new(), false, None)
+                        }
+                    } else if let Some(default) = &default_value {
+                        (default.clone(), true, Some(SubstitutionSource::Default))
+                    } else {
+                        // No value AND no default - truly unsubstituted
+                        unsubstituted.push(var_name.to_string());
+                        (String::new(), false, None)
+                    };
 
                     if should_replace {
                         if let Some(src) = source {
@@ -305,7 +338,7 @@ impl Template {
 
         // Substitute variables (with default values and substitution tracking)
         let (result_after_sub, _substituted, unsubstituted) =
-            Self::substitute_variables(&result, variables);
+            Self::substitute_variables_allow_empty(&result, variables);
 
         // Check for missing variables
         if let Some(first_missing) = unsubstituted.first() {
@@ -388,7 +421,7 @@ impl Template {
 
         // Now substitute variables in the result (using the new method that handles defaults)
         let (result_after_sub, _substituted, unsubstituted) =
-            Self::substitute_variables(&result, variables);
+            Self::substitute_variables_allow_empty(&result, variables);
 
         // Check for missing variables
         if let Some(first_missing) = unsubstituted.first() {
@@ -407,6 +440,12 @@ impl Template {
         visited: &mut Vec<String>,
     ) -> Result<crate::prompts::RenderedTemplate, TemplateError> {
         use crate::prompts::{RenderedTemplate, SubstitutionLog};
+
+        let mut log = SubstitutionLog {
+            template_name: template_name.to_string(),
+            substituted: Vec::new(),
+            unsubstituted: Vec::new(),
+        };
 
         // Process partials (existing logic)
         let mut result = self.content.clone();
@@ -434,10 +473,24 @@ impl Template {
             visited.pop();
 
             result = result.replace(&full_match, &rendered_partial.content);
+            log.substituted.extend(rendered_partial.log.substituted);
+            for name in rendered_partial.log.unsubstituted {
+                if !log.unsubstituted.contains(&name) {
+                    log.unsubstituted.push(name);
+                }
+            }
         }
 
         // Process loops
-        result = Self::process_loops(&result, variables);
+        let (loop_processed, loop_substituted, loop_unsubstituted) =
+            Self::process_loops_with_log(&result, variables);
+        result = loop_processed;
+        log.substituted.extend(loop_substituted);
+        for name in loop_unsubstituted {
+            if !log.unsubstituted.contains(&name) {
+                log.unsubstituted.push(name);
+            }
+        }
 
         // Process conditionals
         result = Self::process_conditionals(&result, variables);
@@ -446,13 +499,16 @@ impl Template {
         let (result_after_sub, substituted, unsubstituted) =
             Self::substitute_variables(&result, variables);
 
+        log.substituted.extend(substituted);
+        for name in unsubstituted {
+            if !log.unsubstituted.contains(&name) {
+                log.unsubstituted.push(name);
+            }
+        }
+
         Ok(RenderedTemplate {
             content: result_after_sub,
-            log: SubstitutionLog {
-                template_name: template_name.to_string(),
-                substituted,
-                unsubstituted,
-            },
+            log,
         })
     }
 }

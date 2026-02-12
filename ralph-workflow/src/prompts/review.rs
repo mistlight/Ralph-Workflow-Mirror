@@ -552,6 +552,125 @@ pub fn prompt_fix_xml_with_log(
     }
 }
 
+/// Generate XSD validation retry prompt for fix with substitution log.
+///
+/// This is the log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_fix_xsd_retry_with_log(
+    context: &TemplateContext,
+    xsd_error: &str,
+    last_output: &str,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> RenderedTemplate {
+    use std::path::Path;
+
+    write_fix_xsd_retry_files(workspace, last_output);
+
+    let schema_path = Path::new(".agent/tmp/fix_result.xsd");
+    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+
+    let schema_exists = workspace.exists(schema_path);
+    let last_output_exists = workspace.exists(last_output_path);
+
+    let mut diagnostic_prefix = String::new();
+    if !schema_exists || !last_output_exists {
+        diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
+        if !schema_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Schema file: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/fix_result.xsd"),
+                workspace.root().display()
+            ));
+        }
+        if !last_output_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Last output: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/last_output.xml"),
+                workspace.root().display()
+            ));
+        }
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
+    }
+
+    let build_manual_log = |template_name: &str, xsd_error: &str| {
+        if xsd_error.is_empty() {
+            SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: Vec::new(),
+                unsubstituted: vec!["XSD_ERROR".to_string()],
+            }
+        } else {
+            SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: Vec::new(),
+            }
+        }
+    };
+
+    if !schema_exists && !last_output_exists {
+        let content = format!(
+            "{}XSD VALIDATION FAILED - FIX ISSUES\n\n\
+             Error: {}\n\n\
+             The schema and previous output files could not be found. \
+             Please fix the issues described in ISSUES.md.\n\n\
+             Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n",
+            diagnostic_prefix, xsd_error
+        );
+        return RenderedTemplate {
+            content,
+            log: build_manual_log(template_name, xsd_error),
+        };
+    }
+
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("fix_mode_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/fix_mode_xsd_retry.txt").to_string());
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "FIX_RESULT_XML_PATH",
+            workspace.absolute_str(".agent/tmp/fix_result.xml"),
+        ),
+        (
+            "FIX_RESULT_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
+        ),
+        (
+            "LAST_OUTPUT_XML_PATH",
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
+        ),
+    ]);
+
+    let template = Template::new(&template_content);
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(mut rendered) => {
+            if !diagnostic_prefix.is_empty() {
+                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
+            }
+            rendered
+        }
+        Err(_) => {
+            let content = format!(
+                "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
+                 Read .agent/tmp/fix_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+                 Rewrite .agent/tmp/fix_result.xml with valid XML.\n"
+            );
+            RenderedTemplate {
+                content,
+                log: build_manual_log(template_name, xsd_error),
+            }
+        }
+    }
+}
+
 /// Generate XML-based fix prompt using template registry.
 ///
 /// This version uses XML output format with XSD validation for reliable parsing.
