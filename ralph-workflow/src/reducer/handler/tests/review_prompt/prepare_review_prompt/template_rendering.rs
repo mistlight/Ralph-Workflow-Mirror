@@ -202,9 +202,9 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
 
+    // Replayed prompts are trusted and not re-validated, so we expect ReviewPromptPrepared
     assert!(matches!(
         result.event,
-        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { template_name, .. })
-            if template_name == "review_xml"
+        PipelineEvent::Review(crate::reducer::event::ReviewEvent::PromptPrepared { .. })
     ));
 }

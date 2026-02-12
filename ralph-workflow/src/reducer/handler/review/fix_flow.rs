@@ -104,7 +104,7 @@ impl MainEffectHandler {
         if is_xsd_retry {
             ignore_sources.push(last_output.as_str());
         }
-        let mut xsd_error_for_validation: Option<String> = None;
+        let mut _xsd_error_for_validation: Option<String> = None;
         let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =
             match prompt_mode {
                 PromptMode::XsdRetry => {
@@ -117,7 +117,7 @@ impl MainEffectHandler {
                         .last_fix_xsd_error
                         .as_deref()
                         .unwrap_or("XML output failed validation. Provide valid XML output.");
-                    xsd_error_for_validation = Some(xsd_error.to_string());
+                    _xsd_error_for_validation = Some(xsd_error.to_string());
                     let (prompt, was_replayed) =
                         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
                             prompt_fix_xsd_retry_with_context(

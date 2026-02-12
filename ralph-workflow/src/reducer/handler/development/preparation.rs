@@ -89,7 +89,7 @@ impl MainEffectHandler {
         let mut ignore_sources_owned: Vec<String> = Vec::new();
         let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
-        let (dev_prompt, template_name, prompt_key, was_replayed, should_validate) =
+        let (dev_prompt, template_name, prompt_key, was_replayed, _should_validate, rendered_log) =
             match prompt_mode {
                 PromptMode::Continuation => {
                     let prompt_key = format!(
@@ -104,12 +104,14 @@ impl MainEffectHandler {
                                 ctx.workspace,
                             )
                         });
+                    // TODO: Continuation mode doesn't use log-based validation yet
                     (
                         prompt,
                         "developer_iteration_continuation_xml",
                         Some(prompt_key),
                         was_replayed,
                         true,
+                        None,
                     )
                 }
                 PromptMode::XsdRetry => {
@@ -202,6 +204,7 @@ impl MainEffectHandler {
                             ));
                         }
                     }
+                    // TODO: XSD retry mode doesn't use log-based validation yet
                     (
                         prompt_developer_iteration_xsd_retry_with_context_files(
                             ctx.template_context,
@@ -212,6 +215,7 @@ impl MainEffectHandler {
                         None,
                         false,
                         true,
+                        None,
                     )
                 }
                 PromptMode::SameAgentRetry => {
@@ -311,12 +315,14 @@ impl MainEffectHandler {
                         "development_{}_same_agent_retry_{}",
                         iteration, continuation_state.same_agent_retry_count
                     );
+                    // TODO: SameAgentRetry mode doesn't use log-based validation yet
                     (
                         prompt,
                         "developer_iteration_xml",
                         Some(prompt_key),
                         false,
                         should_validate,
+                        None,
                     )
                 }
                 PromptMode::Normal => {
@@ -413,7 +419,7 @@ impl MainEffectHandler {
                     );
 
                     // Validate freshly generated prompts (not replayed ones)
-                    if !was_replayed {
+                    let rendered_log = if !was_replayed {
                         let refs = PromptContentReferences {
                             prompt: Some(prompt_ref.clone()),
                             plan: Some(plan_ref.clone()),
@@ -437,7 +443,10 @@ impl MainEffectHandler {
                                 ),
                             ));
                         }
-                    }
+                        Some(rendered.log)
+                    } else {
+                        None
+                    };
 
                     (
                         prompt,
@@ -445,6 +454,7 @@ impl MainEffectHandler {
                         Some(prompt_key),
                         was_replayed,
                         true,
+                        rendered_log,
                     )
                 }
             };
@@ -479,10 +489,23 @@ impl MainEffectHandler {
             ));
         }
 
+        // Build events: DevelopmentPromptPrepared is primary, with additional_events and TemplateRendered as additional
         let mut result = EffectResult::event(PipelineEvent::development_prompt_prepared(iteration));
+
+        // Add any additional events from XSD retry materialization, etc.
         for ev in additional_events {
             result = result.with_additional_event(ev);
         }
+
+        // Add TemplateRendered if we have a log
+        if let Some(log) = rendered_log {
+            result = result.with_additional_event(PipelineEvent::template_rendered(
+                crate::reducer::event::PipelinePhase::Development,
+                template_name.to_string(),
+                log,
+            ));
+        }
+
         Ok(result)
     }
 }

@@ -64,7 +64,16 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
 
     // Verify that {{LITERAL}} braces in PROMPT.md don't cause false positive validation errors
     // With log-based validation, values containing {{ }} are treated as data, not template syntax
-    assert!(matches!(result.event, PipelineEvent::PromptInput(_)));
+    // The primary event should be DevelopmentPromptPrepared (success), and TemplateRendered should be in additional_events
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Development(DevelopmentEvent::PromptPrepared { .. })
+    ));
+    // TemplateRendered should be emitted as an additional event
+    assert!(result.additional_events.iter().any(|ev| matches!(
+        ev,
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+    )));
 }
 
 #[test]

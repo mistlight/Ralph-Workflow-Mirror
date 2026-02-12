@@ -7,7 +7,7 @@ use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::event::{AgentEvent, DevelopmentEvent, PipelineEvent, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode, SameAgentRetryReason};
 use crate::workspace::MemoryWorkspace;

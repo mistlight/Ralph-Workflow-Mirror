@@ -1,3 +1,5 @@
+// Legacy phase-based code - deprecated in favor of reducer/handler architecture
+#[allow(deprecated)]
 use super::super::types::FixPassResult;
 use super::helpers::stderr_contains_auth_error;
 
@@ -44,6 +46,7 @@ use std::time::Instant;
 /// - Agent configuration is missing
 /// - Prompt template contains unresolved placeholders
 /// - Status file cannot be updated
+#[allow(deprecated)]
 pub fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,

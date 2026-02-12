@@ -69,4 +69,20 @@ impl PipelineEvent {
     pub fn prompt_permissions_restore_warning(warning: String) -> Self {
         PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsRestoreWarning { warning })
     }
+
+    /// Create a TemplateRendered event.
+    ///
+    /// Emitted by prompt preparation handlers after template rendering.
+    /// The substitution log enables validation based on tracked substitutions.
+    pub fn template_rendered(
+        phase: PipelinePhase,
+        template_name: String,
+        log: crate::prompts::SubstitutionLog,
+    ) -> Self {
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+            phase,
+            template_name,
+            log,
+        })
+    }
 }

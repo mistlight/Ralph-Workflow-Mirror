@@ -1,3 +1,5 @@
+// Legacy phase-based code - deprecated in favor of reducer/handler architecture
+#[allow(deprecated)]
 use super::super::types::{ParseResult, ReviewPassResult};
 use super::super::xml_processing::extract_and_validate_review_output_xml;
 use super::helpers::{handle_postflight_validation, stderr_contains_auth_error};
@@ -42,6 +44,7 @@ use std::time::Instant;
 /// - Agent configuration is missing
 /// - Prompt template contains unresolved placeholders
 /// - Log file cannot be written
+#[allow(deprecated)]
 pub fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,

@@ -214,36 +214,43 @@ impl MainEffectHandler {
                 }
             }
         }
-        let mut xsd_error_for_validation: Option<String> = None;
-        let (prompt_key, review_prompt_xml, was_replayed, template_name, should_validate) =
-            match prompt_mode {
-                PromptMode::XsdRetry => {
-                    let prompt_key = format!(
-                        "review_{pass}_xsd_retry_{}",
-                        continuation_state.invalid_output_attempts
+        let mut _xsd_error_for_validation: Option<String> = None;
+        let (
+            prompt_key,
+            review_prompt_xml,
+            was_replayed,
+            template_name,
+            _should_validate,
+            rendered_log,
+        ) = match prompt_mode {
+            PromptMode::XsdRetry => {
+                let prompt_key = format!(
+                    "review_{pass}_xsd_retry_{}",
+                    continuation_state.invalid_output_attempts
+                );
+                // Use the actual XSD error from state, or fall back to generic message
+                let xsd_error = continuation_state
+                    .last_review_xsd_error
+                    .as_deref()
+                    .unwrap_or("XML output failed validation. Provide valid XML output.");
+                _xsd_error_for_validation = Some(xsd_error.to_string());
+                let prompt = prompt_review_xsd_retry_with_context_files(
+                    ctx.template_context,
+                    xsd_error,
+                    ctx.workspace,
+                );
+                // XSD retry prompts must not replay potentially stale prompt history content.
+                // TODO: XSD retry mode doesn't use log-based validation yet
+                (prompt_key, prompt, false, "review_xsd_retry", true, None)
+            }
+            PromptMode::SameAgentRetry => {
+                // Same-agent retry: prepend retry guidance to the last prepared prompt for this
+                // phase (preserves XSD retry / normal context if present).
+                let retry_preamble =
+                    crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
+                        continuation_state,
                     );
-                    // Use the actual XSD error from state, or fall back to generic message
-                    let xsd_error = continuation_state
-                        .last_review_xsd_error
-                        .as_deref()
-                        .unwrap_or("XML output failed validation. Provide valid XML output.");
-                    xsd_error_for_validation = Some(xsd_error.to_string());
-                    let prompt = prompt_review_xsd_retry_with_context_files(
-                        ctx.template_context,
-                        xsd_error,
-                        ctx.workspace,
-                    );
-                    // XSD retry prompts must not replay potentially stale prompt history content.
-                    (prompt_key, prompt, false, "review_xsd_retry", true)
-                }
-                PromptMode::SameAgentRetry => {
-                    // Same-agent retry: prepend retry guidance to the last prepared prompt for this
-                    // phase (preserves XSD retry / normal context if present).
-                    let retry_preamble =
-                        crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
-                            continuation_state,
-                        );
-                    let (base_prompt, should_validate) =
+                let (base_prompt, should_validate) =
                     match ctx.workspace.read(Path::new(".agent/tmp/review_prompt.txt")) {
                         Ok(previous_prompt) => (
                             crate::reducer::handler::retry_guidance::strip_existing_same_agent_retry_preamble(&previous_prompt)
@@ -305,110 +312,127 @@ impl MainEffectHandler {
                             )
                         }
                     };
-                    let prompt = format!("{retry_preamble}\n{base_prompt}");
-                    let prompt_key = format!(
-                        "review_{pass}_same_agent_retry_{}",
-                        continuation_state.same_agent_retry_count
-                    );
-                    (prompt_key, prompt, false, "review_xml", should_validate)
-                }
-                PromptMode::Normal => {
-                    let inputs = match materialized_inputs {
-                        Some(inputs) => inputs,
-                        None => {
-                            return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
-                        }
-                    };
-                    let prompt_key = format!("review_{pass}");
-                    let plan_ref = match &inputs.plan.representation {
-                        PromptInputRepresentation::Inline => {
-                            let plan_inline = plan_inline.clone().unwrap_or_else(|| {
-                                Self::sentinel_plan_content(ctx.config.isolation_mode)
-                            });
-                            PlanContentReference::Inline(plan_inline)
-                        }
-                        PromptInputRepresentation::FileReference { path } => {
-                            PlanContentReference::ReadFromFile {
-                                primary_path: path.to_path_buf(),
-                                fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
-                                description: format!(
-                                    "Plan is {} bytes (exceeds {} limit)",
-                                    inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
-                                ),
-                            }
-                        }
-                    };
-                    let diff_ref = match &inputs.diff.representation {
-                        PromptInputRepresentation::Inline => {
-                            let diff_inline = diff_inline.clone().unwrap_or_else(|| {
-                                Self::fallback_diff_instructions(&baseline_oid_for_prompts)
-                            });
-                            DiffContentReference::Inline(diff_inline)
-                        }
-                        PromptInputRepresentation::FileReference { path } => {
-                            DiffContentReference::ReadFromFile {
-                                path: path.to_path_buf(),
-                                start_commit: baseline_oid_for_prompts.clone(),
-                                description: format!(
-                                    "Diff is {} bytes (exceeds {} limit)",
-                                    inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
-                                ),
-                            }
-                        }
-                    };
-                    let (prompt, was_replayed) =
-                        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                            let plan_ref = plan_ref.clone();
-                            let diff_ref = diff_ref.clone();
-
-                            let refs = PromptContentReferences {
-                                prompt: None,
-                                plan: Some(plan_ref),
-                                diff: Some(diff_ref),
-                            };
-                            // Use log-based rendering
-                            let rendered =
-                                crate::prompts::prompt_review_xml_with_references_and_log(
-                                    ctx.template_context,
-                                    &refs,
-                                    ctx.workspace,
-                                    "review_xml",
-                                );
-                            rendered.content
+                let prompt = format!("{retry_preamble}\n{base_prompt}");
+                let prompt_key = format!(
+                    "review_{pass}_same_agent_retry_{}",
+                    continuation_state.same_agent_retry_count
+                );
+                // TODO: SameAgentRetry mode doesn't use log-based validation yet
+                (
+                    prompt_key,
+                    prompt,
+                    false,
+                    "review_xml",
+                    should_validate,
+                    None,
+                )
+            }
+            PromptMode::Normal => {
+                let inputs = match materialized_inputs {
+                    Some(inputs) => inputs,
+                    None => {
+                        return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
+                    }
+                };
+                let prompt_key = format!("review_{pass}");
+                let plan_ref = match &inputs.plan.representation {
+                    PromptInputRepresentation::Inline => {
+                        let plan_inline = plan_inline.clone().unwrap_or_else(|| {
+                            Self::sentinel_plan_content(ctx.config.isolation_mode)
                         });
+                        PlanContentReference::Inline(plan_inline)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        PlanContentReference::ReadFromFile {
+                            primary_path: path.to_path_buf(),
+                            fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
+                            description: format!(
+                                "Plan is {} bytes (exceeds {} limit)",
+                                inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
+                let diff_ref = match &inputs.diff.representation {
+                    PromptInputRepresentation::Inline => {
+                        let diff_inline = diff_inline.clone().unwrap_or_else(|| {
+                            Self::fallback_diff_instructions(&baseline_oid_for_prompts)
+                        });
+                        DiffContentReference::Inline(diff_inline)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        DiffContentReference::ReadFromFile {
+                            path: path.to_path_buf(),
+                            start_commit: baseline_oid_for_prompts.clone(),
+                            description: format!(
+                                "Diff is {} bytes (exceeds {} limit)",
+                                inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        let plan_ref = plan_ref.clone();
+                        let diff_ref = diff_ref.clone();
 
-                    // Validate freshly generated prompts (not replayed ones)
-                    if !was_replayed {
                         let refs = PromptContentReferences {
                             prompt: None,
-                            plan: Some(plan_ref.clone()),
-                            diff: Some(diff_ref.clone()),
+                            plan: Some(plan_ref),
+                            diff: Some(diff_ref),
                         };
+                        // Use log-based rendering
                         let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
                             ctx.template_context,
                             &refs,
                             ctx.workspace,
                             "review_xml",
                         );
+                        rendered.content
+                    });
 
-                        if !rendered.log.is_complete() {
-                            return Ok(EffectResult::event(
-                                PipelineEvent::agent_template_variables_invalid(
-                                    AgentRole::Reviewer,
-                                    "review_xml".to_string(),
-                                    rendered.log.unsubstituted.clone(),
-                                    Vec::new(),
-                                ),
-                            ));
-                        }
+                // Validate freshly generated prompts (not replayed ones)
+                let rendered_log = if !was_replayed {
+                    let refs = PromptContentReferences {
+                        prompt: None,
+                        plan: Some(plan_ref.clone()),
+                        diff: Some(diff_ref.clone()),
+                    };
+                    let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
+                        ctx.template_context,
+                        &refs,
+                        ctx.workspace,
+                        "review_xml",
+                    );
+
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Reviewer,
+                                "review_xml".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
                     }
+                    Some(rendered.log)
+                } else {
+                    None
+                };
 
-                    (prompt_key, prompt, was_replayed, "review_xml", true)
-                }
-                PromptMode::Continuation => {
-                    return Err(ErrorEvent::ReviewContinuationNotSupported.into());
-                }
-            };
+                (
+                    prompt_key,
+                    prompt,
+                    was_replayed,
+                    "review_xml",
+                    true,
+                    rendered_log,
+                )
+            }
+            PromptMode::Continuation => {
+                return Err(ErrorEvent::ReviewContinuationNotSupported.into());
+            }
+        };
 
         if !was_replayed {
             ctx.capture_prompt(&prompt_key, &review_prompt_xml);
@@ -428,10 +452,23 @@ impl MainEffectHandler {
             ));
         }
 
+        // Build events: ReviewPromptPrepared is primary, with additional_events and TemplateRendered as additional
         let mut result = EffectResult::event(PipelineEvent::review_prompt_prepared(pass));
+
+        // Add any additional events from XSD retry materialization, etc.
         for ev in additional_events {
             result = result.with_additional_event(ev);
         }
+
+        // Add TemplateRendered if we have a log
+        if let Some(log) = rendered_log {
+            result = result.with_additional_event(PipelineEvent::template_rendered(
+                crate::reducer::event::PipelinePhase::Review,
+                template_name.to_string(),
+                log,
+            ));
+        }
+
         Ok(result)
     }
 

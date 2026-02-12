@@ -25,6 +25,7 @@ mod template_types;
 // Note: TemplateMetadata and VariableInfo are defined in template_types.rs
 // but not re-exported here because they're not currently used by any consumers.
 // If needed in the future, they can be added to this re-export list.
+#[allow(deprecated)]
 pub use rendered_validation::{
     validate_no_unresolved_placeholders, validate_no_unresolved_placeholders_with_ignored_content,
 };

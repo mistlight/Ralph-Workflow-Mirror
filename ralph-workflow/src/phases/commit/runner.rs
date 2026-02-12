@@ -1,3 +1,5 @@
+// Legacy phase-based code - deprecated in favor of reducer/handler architecture
+#[allow(deprecated)]
 /// Result of commit message generation.
 #[derive(Debug)]
 pub struct CommitMessageResult {
@@ -30,6 +32,7 @@ pub struct CommitAttemptResult {
 /// effective model budget. Use the reducer's `MaterializeCommitInputs` effect
 /// to truncate the diff before calling this function. The reducer writes the
 /// model-safe diff to `.agent/tmp/commit_diff.model_safe.txt`.
+#[allow(deprecated)]
 pub fn run_commit_attempt(
     ctx: &mut PhaseContext<'_>,
     attempt: u32,

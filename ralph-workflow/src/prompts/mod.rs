@@ -101,6 +101,7 @@ pub use commit::{prompt_fix, prompt_generate_commit_message_with_diff};
 pub use developer::{prompt_developer_iteration, prompt_plan};
 pub use template_context::TemplateContext;
 pub use template_engine::Template;
+#[allow(deprecated)]
 pub use template_validator::{
     extract_metadata, extract_partials, extract_variables, validate_no_unresolved_placeholders,
     validate_no_unresolved_placeholders_with_ignored_content, validate_template,

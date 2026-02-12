@@ -31,10 +31,7 @@ use super::current_commit_attempt;
 use crate::agents::AgentRole;
 use crate::phases::PhaseContext;
 use crate::prompts::content_reference::{DiffContentReference, MAX_INLINE_CONTENT_SIZE};
-use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_commit_xsd_retry_with_context,
-    prompt_generate_commit_message_with_diff_with_context,
-};
+use crate::prompts::get_stored_or_generate_prompt;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::ErrorEvent;
 use crate::reducer::event::PipelineEvent;
@@ -113,7 +110,7 @@ impl MainEffectHandler {
 
             // Re-validate if this is a freshly generated prompt (not replayed)
             // For replayed prompts, we trust they were valid when originally generated
-            if !was_replayed {
+            let rendered_log = if !was_replayed {
                 // Generate again to get the log for validation
                 let rendered = crate::prompts::prompt_commit_xsd_retry_with_log(
                     ctx.template_context,
@@ -134,7 +131,10 @@ impl MainEffectHandler {
                 }
 
                 ctx.capture_prompt(&prompt_key, &prompt);
-            }
+                Some(rendered.log)
+            } else {
+                None
+            };
 
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
@@ -160,11 +160,19 @@ impl MainEffectHandler {
                 ));
             }
 
-            return Ok(
-                EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
+            // Build events: CommitPromptPrepared is primary, TemplateRendered is additional (if log exists)
+            let mut result = EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt))
+                .with_ui_event(
                     self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
-                ),
-            );
+                );
+            if let Some(log) = rendered_log {
+                result = result.with_additional_event(PipelineEvent::template_rendered(
+                    crate::reducer::event::PipelinePhase::CommitMessage,
+                    "commit_xsd_retry".to_string(),
+                    log,
+                ));
+            }
+            return Ok(result);
         }
 
         let inputs = self
@@ -259,12 +267,13 @@ impl MainEffectHandler {
                     ),
                     Err(_) => {
                         // Use log-based rendering
-                        let rendered = crate::prompts::prompt_generate_commit_message_with_diff_with_log(
-                            ctx.template_context,
-                            diff_for_prompt,
-                            ctx.workspace,
-                            "commit_message_xml",
-                        );
+                        let rendered =
+                            crate::prompts::prompt_generate_commit_message_with_diff_with_log(
+                                ctx.template_context,
+                                diff_for_prompt,
+                                ctx.workspace,
+                                "commit_message_xml",
+                            );
                         (rendered.content, true)
                     }
                 };
@@ -277,20 +286,18 @@ impl MainEffectHandler {
             }
             PromptMode::Normal => {
                 let prompt_key = format!("commit_message_attempt_{attempt}");
-                let (prompt, was_replayed) = get_stored_or_generate_prompt(
-                    &prompt_key,
-                    &ctx.prompt_history,
-                    || {
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
                         // Use log-based rendering
-                        let rendered = crate::prompts::prompt_generate_commit_message_with_diff_with_log(
-                            ctx.template_context,
-                            diff_for_prompt,
-                            ctx.workspace,
-                            "commit_message_xml",
-                        );
+                        let rendered =
+                            crate::prompts::prompt_generate_commit_message_with_diff_with_log(
+                                ctx.template_context,
+                                diff_for_prompt,
+                                ctx.workspace,
+                                "commit_message_xml",
+                            );
                         rendered.content
-                    },
-                );
+                    });
                 (prompt_key, prompt, was_replayed, true)
             }
             PromptMode::XsdRetry => {
@@ -305,16 +312,15 @@ impl MainEffectHandler {
             }
         };
 
-        if should_validate && !was_replayed {
+        let rendered_log = if should_validate && !was_replayed {
             // Generate again to get the log for validation
             // Only validate freshly generated prompts, not replayed ones
-            let rendered =
-                crate::prompts::prompt_generate_commit_message_with_diff_with_log(
-                    ctx.template_context,
-                    diff_for_prompt,
-                    ctx.workspace,
-                    "commit_message_xml",
-                );
+            let rendered = crate::prompts::prompt_generate_commit_message_with_diff_with_log(
+                ctx.template_context,
+                diff_for_prompt,
+                ctx.workspace,
+                "commit_message_xml",
+            );
 
             if !rendered.log.is_complete() {
                 return Ok(EffectResult::event(
@@ -326,7 +332,10 @@ impl MainEffectHandler {
                     ),
                 ));
             }
-        }
+            Some(rendered.log)
+        } else {
+            None
+        };
 
         if !was_replayed {
             ctx.capture_prompt(&prompt_key, &prompt);
@@ -356,10 +365,18 @@ impl MainEffectHandler {
             ));
         }
 
-        Ok(
-            EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
+        // Build events: CommitPromptPrepared is primary, TemplateRendered is additional (if log exists)
+        let mut result = EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt))
+            .with_ui_event(
                 self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
-            ),
-        )
+            );
+        if let Some(log) = rendered_log {
+            result = result.with_additional_event(PipelineEvent::template_rendered(
+                crate::reducer::event::PipelinePhase::CommitMessage,
+                "commit_message_xml".to_string(),
+                log,
+            ));
+        }
+        Ok(result)
     }
 }

@@ -133,7 +133,9 @@ pub fn prompt_review_xml_with_references_and_log(
         Err(err) => {
             // Extract missing variable from error
             let unsubstituted = match &err {
-                crate::prompts::template_engine::TemplateError::MissingVariable(name) => vec![name.clone()],
+                crate::prompts::template_engine::TemplateError::MissingVariable(name) => {
+                    vec![name.clone()]
+                }
                 _ => vec![],
             };
 
@@ -395,7 +397,9 @@ pub fn prompt_fix_xml_with_log(
         Err(err) => {
             // Extract missing variable from error
             let unsubstituted = match &err {
-                crate::prompts::template_engine::TemplateError::MissingVariable(name) => vec![name.clone()],
+                crate::prompts::template_engine::TemplateError::MissingVariable(name) => {
+                    vec![name.clone()]
+                }
                 _ => vec![],
             };
 

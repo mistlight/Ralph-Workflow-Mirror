@@ -43,6 +43,7 @@ use super::template_types::RenderedPromptError;
     since = "0.7.3",
     note = "Use SubstitutionLog::is_complete() instead. Regex scanning causes false positives."
 )]
+#[allow(deprecated)]
 pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
     validate_no_unresolved_placeholders_with_ignored_content(rendered, &[])
 }
