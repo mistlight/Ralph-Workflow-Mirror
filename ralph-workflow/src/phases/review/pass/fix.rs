@@ -87,8 +87,10 @@ pub fn run_fix_pass(
             )
         });
 
-    // Enforce that the rendered prompt does not contain unresolved template placeholders.
-    // This must happen before any agent invocation.
+    // Legacy phase-based code - uses deprecated validation
+    // TODO: Remove when migration to reducer/handler architecture is complete
+    // The reducer/handler architecture uses log-based validation (SubstitutionLog::is_complete())
+    // This legacy code still uses regex-based validation which can cause false positives.
     if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
         &fix_prompt,
         &[

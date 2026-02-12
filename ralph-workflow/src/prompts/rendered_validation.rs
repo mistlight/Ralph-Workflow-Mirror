@@ -147,6 +147,7 @@ pub fn validate_no_unresolved_placeholders_with_ignored_content(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests for deprecated validation functions
 mod tests {
     use super::*;
 

@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[allow(clippy::too_many_arguments)] // Test helper function
 fn build_context<'a>(
     workspace: &'a MemoryWorkspace,
     repo_root: &'a PathBuf,
