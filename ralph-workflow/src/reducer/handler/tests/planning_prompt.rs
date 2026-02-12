@@ -191,11 +191,11 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
         "Same-agent retry should prepend retry note; got: {prompt}"
     );
     assert!(
-        result.additional_events.iter().any(|ev| matches!(
+        !result.additional_events.iter().any(|ev| matches!(
             ev,
             PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
         )),
-        "Same-agent retry should emit TemplateRendered for log-based validation"
+        "Same-agent retry should not emit TemplateRendered when reusing the stored prompt"
     );
 }
 

@@ -217,7 +217,7 @@ impl MainEffectHandler {
                         "planning_{iteration}_same_agent_retry_{}",
                         continuation_state.same_agent_retry_count
                     );
-                    let rendered_log = {
+                    let rendered_log = if should_validate {
                         let rendered = crate::prompts::prompt_planning_xml_with_references_and_log(
                             ctx.template_context,
                             &prompt_ref,
@@ -235,6 +235,8 @@ impl MainEffectHandler {
                             ));
                         }
                         Some(rendered.log)
+                    } else {
+                        None
                     };
                     (
                         prompt,

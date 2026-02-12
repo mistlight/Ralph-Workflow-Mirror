@@ -337,29 +337,34 @@ impl MainEffectHandler {
                     "review_{pass}_same_agent_retry_{}",
                     continuation_state.same_agent_retry_count
                 );
-                let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
-                    ctx.template_context,
-                    &refs,
-                    ctx.workspace,
-                    "review_xml",
-                );
-                if !rendered.log.is_complete() {
-                    return Ok(EffectResult::event(
-                        PipelineEvent::agent_template_variables_invalid(
-                            AgentRole::Reviewer,
-                            "review_xml".to_string(),
-                            rendered.log.unsubstituted.clone(),
-                            Vec::new(),
-                        ),
-                    ));
-                }
+                let rendered_log = if should_validate {
+                    let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
+                        ctx.template_context,
+                        &refs,
+                        ctx.workspace,
+                        "review_xml",
+                    );
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Reviewer,
+                                "review_xml".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
+                    }
+                    Some(rendered.log)
+                } else {
+                    None
+                };
                 (
                     prompt_key,
                     prompt,
                     false,
                     "review_xml",
                     should_validate,
-                    Some(rendered.log),
+                    rendered_log,
                 )
             }
             PromptMode::Normal => {

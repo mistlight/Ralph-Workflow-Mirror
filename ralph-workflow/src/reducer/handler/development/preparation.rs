@@ -105,29 +105,34 @@ impl MainEffectHandler {
                                 ctx.workspace,
                             )
                         });
-                    let rendered = prompt_developer_iteration_continuation_xml_with_log(
-                        ctx.template_context,
-                        continuation_state,
-                        ctx.workspace,
-                        "developer_iteration_continuation_xml",
-                    );
-                    if !rendered.log.is_complete() {
-                        return Ok(EffectResult::event(
-                            PipelineEvent::agent_template_variables_invalid(
-                                AgentRole::Developer,
-                                "developer_iteration_continuation_xml".to_string(),
-                                rendered.log.unsubstituted.clone(),
-                                Vec::new(),
-                            ),
-                        ));
-                    }
+                    let rendered_log = if !was_replayed {
+                        let rendered = prompt_developer_iteration_continuation_xml_with_log(
+                            ctx.template_context,
+                            continuation_state,
+                            ctx.workspace,
+                            "developer_iteration_continuation_xml",
+                        );
+                        if !rendered.log.is_complete() {
+                            return Ok(EffectResult::event(
+                                PipelineEvent::agent_template_variables_invalid(
+                                    AgentRole::Developer,
+                                    "developer_iteration_continuation_xml".to_string(),
+                                    rendered.log.unsubstituted.clone(),
+                                    Vec::new(),
+                                ),
+                            ));
+                        }
+                        Some(rendered.log)
+                    } else {
+                        None
+                    };
                     (
                         prompt,
                         "developer_iteration_continuation_xml",
                         Some(prompt_key),
                         was_replayed,
-                        true,
-                        Some(rendered.log),
+                        !was_replayed,
+                        rendered_log,
                     )
                 }
                 PromptMode::XsdRetry => {
@@ -335,30 +340,35 @@ impl MainEffectHandler {
                         "development_{}_same_agent_retry_{}",
                         iteration, continuation_state.same_agent_retry_count
                     );
-                    let rendered =
-                        crate::prompts::prompt_developer_iteration_xml_with_references_and_log(
-                            ctx.template_context,
-                            &refs,
-                            ctx.workspace,
-                            "developer_iteration_xml",
-                        );
-                    if !rendered.log.is_complete() {
-                        return Ok(EffectResult::event(
-                            PipelineEvent::agent_template_variables_invalid(
-                                AgentRole::Developer,
-                                "developer_iteration_xml".to_string(),
-                                rendered.log.unsubstituted.clone(),
-                                Vec::new(),
-                            ),
-                        ));
-                    }
+                    let rendered_log = if should_validate {
+                        let rendered =
+                            crate::prompts::prompt_developer_iteration_xml_with_references_and_log(
+                                ctx.template_context,
+                                &refs,
+                                ctx.workspace,
+                                "developer_iteration_xml",
+                            );
+                        if !rendered.log.is_complete() {
+                            return Ok(EffectResult::event(
+                                PipelineEvent::agent_template_variables_invalid(
+                                    AgentRole::Developer,
+                                    "developer_iteration_xml".to_string(),
+                                    rendered.log.unsubstituted.clone(),
+                                    Vec::new(),
+                                ),
+                            ));
+                        }
+                        Some(rendered.log)
+                    } else {
+                        None
+                    };
                     (
                         prompt,
                         "developer_iteration_xml",
                         Some(prompt_key),
                         false,
                         should_validate,
-                        Some(rendered.log),
+                        rendered_log,
                     )
                 }
                 PromptMode::Normal => {

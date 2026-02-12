@@ -141,11 +141,11 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
         "Same-agent retry should prepend retry note; got: {prompt}"
     );
     assert!(
-        result.additional_events.iter().any(|ev| matches!(
+        !result.additional_events.iter().any(|ev| matches!(
             ev,
             PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
         )),
-        "Same-agent retry should emit TemplateRendered for log-based validation"
+        "Same-agent retry should not emit TemplateRendered when replaying the stored prompt"
     );
 }
 
@@ -299,6 +299,73 @@ fn test_prepare_development_prompt_continuation_emits_template_rendered() {
             PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
         )),
         "Continuation prompt should emit TemplateRendered for log-based validation"
+    );
+}
+
+#[test]
+fn test_prepare_development_prompt_continuation_replay_skips_template_rendered() {
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert(
+        "development_0_continuation_1".to_string(),
+        "stored continuation prompt".to_string(),
+    );
+
+    let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history,
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            continuation_attempt: 1,
+            previous_status: Some(crate::reducer::state::DevelopmentStatus::Partial),
+            previous_summary: Some("Partial summary".to_string()),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(1, 0)
+    });
+
+    let result = handler
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::Continuation)
+        .expect("prepare_development_prompt should succeed");
+
+    assert!(
+        !result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Continuation prompt replay should skip TemplateRendered emission"
     );
 }
 
