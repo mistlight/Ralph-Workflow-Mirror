@@ -87,25 +87,11 @@ pub fn run_fix_pass(
             )
         });
 
-    // Legacy phase-based code - uses deprecated validation
-    // TODO: Remove when migration to reducer/handler architecture is complete
-    // The reducer/handler architecture uses log-based validation (SubstitutionLog::is_complete())
-    // This legacy code still uses regex-based validation which can cause false positives.
-    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-        &fix_prompt,
-        &[
-            prompt_content.as_str(),
-            plan_content.as_str(),
-            issues_content.as_str(),
-        ],
-    ) {
-        return Err(crate::prompts::TemplateVariablesInvalidError {
-            template_name: "fix_mode_xml".to_string(),
-            missing_variables: Vec::new(),
-            unresolved_placeholders: err.unresolved_placeholders,
-        }
-        .into());
-    }
+    // Legacy phase-based code
+    // Template validation now happens via SubstitutionLog::is_complete() in the
+    // reducer/handler architecture. The template engine's render_with_log fails
+    // early with MissingVariable error for truly missing required variables.
+    // Regex-based validation has been removed to fix false positives with JSX.
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &fix_prompt);

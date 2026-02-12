@@ -81,21 +81,11 @@ pub fn run_review_pass(
             prompt_review_xml_with_references(ctx.template_context, &refs, ctx.workspace)
         });
 
-    // Legacy phase-based code - uses deprecated validation
-    // TODO: Remove when migration to reducer/handler architecture is complete
-    // The reducer/handler architecture uses log-based validation (SubstitutionLog::is_complete())
-    // This legacy code still uses regex-based validation which can cause false positives.
-    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-        &review_prompt_xml,
-        &[plan_content.as_str(), changes_content.as_str()],
-    ) {
-        return Err(crate::prompts::TemplateVariablesInvalidError {
-            template_name: "review_xml".to_string(),
-            missing_variables: Vec::new(),
-            unresolved_placeholders: err.unresolved_placeholders,
-        }
-        .into());
-    }
+    // Legacy phase-based code
+    // Template validation now happens via SubstitutionLog::is_complete() in the
+    // reducer/handler architecture. The template engine's render_with_log fails
+    // early with MissingVariable error for truly missing required variables.
+    // Regex-based validation has been removed to fix false positives with JSX.
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &review_prompt_xml);
