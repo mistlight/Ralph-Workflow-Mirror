@@ -120,14 +120,21 @@ impl MainEffectHandler {
                 );
 
                 if !rendered.log.is_complete() {
-                    return Ok(EffectResult::event(
+                    let missing = rendered.log.unsubstituted.clone();
+                    let result = EffectResult::event(PipelineEvent::template_rendered(
+                        crate::reducer::event::PipelinePhase::CommitMessage,
+                        "commit_xsd_retry".to_string(),
+                        rendered.log,
+                    ))
+                    .with_additional_event(
                         PipelineEvent::agent_template_variables_invalid(
                             AgentRole::Commit,
                             "commit_xsd_retry".to_string(),
-                            rendered.log.unsubstituted.clone(),
+                            missing,
                             Vec::new(),
                         ),
-                    ));
+                    );
+                    return Ok(result);
                 }
 
                 ctx.capture_prompt(&prompt_key, &prompt);
@@ -323,14 +330,21 @@ impl MainEffectHandler {
             );
 
             if !rendered.log.is_complete() {
-                return Ok(EffectResult::event(
+                let missing = rendered.log.unsubstituted.clone();
+                let result = EffectResult::event(PipelineEvent::template_rendered(
+                    crate::reducer::event::PipelinePhase::CommitMessage,
+                    "commit_message_xml".to_string(),
+                    rendered.log,
+                ))
+                .with_additional_event(
                     PipelineEvent::agent_template_variables_invalid(
                         AgentRole::Commit,
                         "commit_message_xml".to_string(),
-                        rendered.log.unsubstituted.clone(),
+                        missing,
                         Vec::new(),
                     ),
-                ));
+                );
+                return Ok(result);
             }
             Some(rendered.log)
         } else {

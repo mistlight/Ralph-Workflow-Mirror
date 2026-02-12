@@ -213,14 +213,19 @@ impl MainEffectHandler {
             };
 
             if !rendered.log.is_complete() {
-                return Ok(EffectResult::event(
-                    PipelineEvent::agent_template_variables_invalid(
-                        AgentRole::Reviewer,
-                        template_name.to_string(),
-                        rendered.log.unsubstituted.clone(),
-                        Vec::new(),
-                    ),
+                let missing = rendered.log.unsubstituted.clone();
+                let result = EffectResult::event(PipelineEvent::template_rendered(
+                    crate::reducer::event::PipelinePhase::Review,
+                    template_name.to_string(),
+                    rendered.log,
+                ))
+                .with_additional_event(PipelineEvent::agent_template_variables_invalid(
+                    AgentRole::Reviewer,
+                    template_name.to_string(),
+                    missing,
+                    Vec::new(),
                 ));
+                return Ok(result);
             }
             rendered_log = Some(rendered.log);
         }

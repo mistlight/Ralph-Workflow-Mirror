@@ -6,7 +6,8 @@ use crate::executor::{MockProcessExecutor, ProcessExecutor};
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::PipelineEvent;
+use crate::prompts::template_registry::TemplateRegistry;
+use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{
     AgentChainState, CommitState, ContinuationState, MaterializedCommitInputs,
@@ -16,8 +17,10 @@ use crate::reducer::state::{
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::tempdir;
 
 #[test]
 fn test_prepare_commit_prompt_does_not_emit_generation_started() {
@@ -80,6 +83,87 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
             PipelineEvent::Commit(crate::reducer::event::CommitEvent::GenerationStarted)
         )),
         "prepare commit prompt should not emit commit_generation_started"
+    );
+}
+
+#[test]
+fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
+    let tempdir = tempdir().expect("create temp dir");
+    let template_path = tempdir.path().join("commit_message_xml.txt");
+    fs::write(&template_path, "Diff:\n{{DIFF}}\nMissing: {{MISSING}}\n")
+        .expect("write commit template");
+
+    let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context =
+        TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    let result = handler
+        .prepare_commit_prompt_with_diff_and_mode(
+            &mut ctx,
+            "diff --git a/a b/a\n+change\n",
+            PromptMode::Normal,
+        )
+        .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
+
+    match result.event {
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+            phase,
+            template_name,
+            log,
+        }) => {
+            assert_eq!(phase, PipelinePhase::CommitMessage);
+            assert_eq!(template_name, "commit_message_xml");
+            assert!(log.unsubstituted.contains(&"MISSING".to_string()));
+        }
+        other => panic!("expected TemplateRendered event, got {other:?}"),
+    }
+
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { missing_variables, .. })
+                if missing_variables.contains(&"MISSING".to_string())
+        )),
+        "expected TemplateVariablesInvalid with missing variables"
     );
 }
 

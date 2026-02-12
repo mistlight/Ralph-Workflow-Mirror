@@ -6,7 +6,8 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::{PipelineEvent, PromptInputEvent};
+use crate::prompts::template_registry::TemplateRegistry;
+use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{
     AgentChainState, ContinuationState, PipelineState, PromptMode, SameAgentRetryReason,
@@ -14,9 +15,11 @@ use crate::reducer::state::{
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tempfile::tempdir;
 
 #[derive(Debug)]
 struct WriteFailingWorkspace {
@@ -196,6 +199,102 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
             PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
         )),
         "Same-agent retry should not emit TemplateRendered when reusing the stored prompt"
+    );
+}
+
+#[test]
+fn test_prepare_planning_prompt_emits_template_rendered_on_validation_failure() {
+    let tempdir = tempdir().expect("create temp dir");
+    let template_path = tempdir.path().join("planning_xml.txt");
+    fs::write(
+        &template_path,
+        "Prompt:\n{{PROMPT}}\nMissing: {{MISSING}}\n",
+    )
+    .expect("write planning template");
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "# Prompt\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context =
+        TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["dev-agent".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Developer,
+    );
+    handler.state.prompt_inputs.planning =
+        Some(crate::reducer::state::MaterializedPlanningInputs {
+            iteration: 0,
+            prompt: crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Prompt,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: handler.state.agent_chain.consumer_signature_sha256(),
+                original_bytes: 0,
+                final_bytes: 0,
+                model_budget_bytes: None,
+                inline_budget_bytes: Some(crate::prompts::MAX_INLINE_CONTENT_SIZE as u64),
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+        });
+
+    let result = handler
+        .prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_planning_prompt should succeed");
+
+    match result.event {
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+            phase,
+            template_name,
+            log,
+        }) => {
+            assert_eq!(phase, PipelinePhase::Planning);
+            assert_eq!(template_name, "planning_xml");
+            assert!(log.unsubstituted.contains(&"MISSING".to_string()));
+        }
+        other => panic!("expected TemplateRendered event, got {other:?}"),
+    }
+
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { missing_variables, .. })
+                if missing_variables.contains(&"MISSING".to_string())
+        )),
+        "expected TemplateVariablesInvalid with missing variables"
     );
 }
 

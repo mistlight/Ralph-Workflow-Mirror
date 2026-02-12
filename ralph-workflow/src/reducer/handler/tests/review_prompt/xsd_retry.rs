@@ -6,7 +6,9 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::{PipelineEvent, ReviewEvent};
+use crate::reducer::event::{
+    AgentEvent, PipelineEvent, PipelinePhase, PromptInputEvent, ReviewEvent,
+};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode};
 use crate::workspace::MemoryWorkspace;
@@ -555,8 +557,6 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
-    use crate::reducer::event::AgentEvent;
-
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -609,16 +609,27 @@ fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_fix_prompt should succeed");
 
-    assert!(matches!(
-        result.event,
-        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { .. })
-    ));
-    if let PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid {
-        missing_variables, ..
-    }) = result.event
-    {
-        assert!(missing_variables.contains(&"XSD_ERROR".to_string()));
+    match result.event {
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+            phase,
+            template_name,
+            log,
+        }) => {
+            assert_eq!(phase, PipelinePhase::Review);
+            assert_eq!(template_name, "fix_mode_xsd_retry");
+            assert!(log.unsubstituted.contains(&"XSD_ERROR".to_string()));
+        }
+        other => panic!("expected TemplateRendered event, got {other:?}"),
     }
+
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { missing_variables, .. })
+                if missing_variables.contains(&"XSD_ERROR".to_string())
+        )),
+        "expected TemplateVariablesInvalid with missing variables"
+    );
 }
 
 #[test]

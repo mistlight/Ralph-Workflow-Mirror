@@ -11,13 +11,16 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::PipelineEvent;
+use crate::prompts::template_registry::TemplateRegistry;
+use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode};
 use crate::workspace::{MemoryWorkspace, Workspace};
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tempfile::tempdir;
 
 #[test]
 fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
@@ -82,6 +85,91 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
     assert!(
         prompt.contains("<ralph-issues>"),
         "review prompt should include XML output instructions"
+    );
+}
+
+#[test]
+fn test_prepare_review_prompt_emits_template_rendered_on_validation_failure() {
+    let tempdir = tempdir().expect("create temp dir");
+    let template_path = tempdir.path().join("review_xml.txt");
+    fs::write(
+        &template_path,
+        "Plan:\n{{PLAN}}\nChanges:\n{{CHANGES}}\nMissing: {{MISSING}}\n",
+    )
+    .expect("write review template");
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context =
+        TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_review_prompt should succeed");
+
+    match result.event {
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+            phase,
+            template_name,
+            log,
+        }) => {
+            assert_eq!(phase, PipelinePhase::Review);
+            assert_eq!(template_name, "review_xml");
+            assert!(log.unsubstituted.contains(&"MISSING".to_string()));
+        }
+        other => panic!("expected TemplateRendered event, got {other:?}"),
+    }
+
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { missing_variables, .. })
+                if missing_variables.contains(&"MISSING".to_string())
+        )),
+        "expected TemplateVariablesInvalid with missing variables"
     );
 }
 

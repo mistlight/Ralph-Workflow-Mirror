@@ -140,14 +140,21 @@ impl MainEffectHandler {
                         );
 
                     if !rendered.log.is_complete() {
-                        return Ok(EffectResult::event(
+                        let missing = rendered.log.unsubstituted.clone();
+                        let result = EffectResult::event(PipelineEvent::template_rendered(
+                            PipelinePhase::Planning,
+                            "planning_xsd_retry".to_string(),
+                            rendered.log,
+                        ))
+                        .with_additional_event(
                             PipelineEvent::agent_template_variables_invalid(
                                 AgentRole::Developer,
                                 "planning_xsd_retry".to_string(),
-                                rendered.log.unsubstituted.clone(),
+                                missing,
                                 Vec::new(),
                             ),
-                        ));
+                        );
+                        return Ok(result);
                     }
 
                     (
@@ -225,14 +232,21 @@ impl MainEffectHandler {
                             "planning_xml",
                         );
                         if !rendered.log.is_complete() {
-                            return Ok(EffectResult::event(
+                            let missing = rendered.log.unsubstituted.clone();
+                            let result = EffectResult::event(PipelineEvent::template_rendered(
+                                PipelinePhase::Planning,
+                                "planning_xml".to_string(),
+                                rendered.log,
+                            ))
+                            .with_additional_event(
                                 PipelineEvent::agent_template_variables_invalid(
                                     AgentRole::Developer,
                                     "planning_xml".to_string(),
-                                    rendered.log.unsubstituted.clone(),
+                                    missing,
                                     Vec::new(),
                                 ),
-                            ));
+                            );
+                            return Ok(result);
                         }
                         Some(rendered.log)
                     } else {
@@ -301,14 +315,21 @@ impl MainEffectHandler {
                         );
 
                         if !rendered.log.is_complete() {
-                            return Ok(EffectResult::event(
+                            let missing = rendered.log.unsubstituted.clone();
+                            let result = EffectResult::event(PipelineEvent::template_rendered(
+                                PipelinePhase::Planning,
+                                "planning_xml".to_string(),
+                                rendered.log,
+                            ))
+                            .with_additional_event(
                                 PipelineEvent::agent_template_variables_invalid(
                                     AgentRole::Developer,
                                     "planning_xml".to_string(),
-                                    rendered.log.unsubstituted.clone(),
+                                    missing,
                                     Vec::new(),
                                 ),
-                            ));
+                            );
+                            return Ok(result);
                         }
                         Some(rendered.log)
                     } else {

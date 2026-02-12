@@ -1,4 +1,8 @@
 use super::*;
+use crate::prompts::template_registry::TemplateRegistry;
+use crate::reducer::event::{AgentEvent, PipelinePhase};
+use std::fs;
+use tempfile::tempdir;
 
 #[test]
 fn test_prepare_development_prompt_emits_template_invalid_event() {
@@ -74,6 +78,92 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
         ev,
         PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
     )));
+}
+
+#[test]
+fn test_prepare_development_prompt_emits_template_rendered_on_validation_failure() {
+    let tempdir = tempdir().expect("create temp dir");
+    let template_path = tempdir.path().join("developer_iteration_xml.txt");
+    fs::write(
+        &template_path,
+        "Prompt:\n{{PROMPT}}\nPlan:\n{{PLAN}}\nMissing: {{MISSING}}\n",
+    )
+    .expect("write developer template");
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "Prompt content")
+        .with_file(".agent/PLAN.md", "Plan content")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context =
+        TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let materialize = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let result = handler
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_development_prompt should succeed");
+
+    match result.event {
+        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+            phase,
+            template_name,
+            log,
+        }) => {
+            assert_eq!(phase, PipelinePhase::Development);
+            assert_eq!(template_name, "developer_iteration_xml");
+            assert!(log.unsubstituted.contains(&"MISSING".to_string()));
+        }
+        other => panic!("expected TemplateRendered event, got {other:?}"),
+    }
+
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { missing_variables, .. })
+                if missing_variables.contains(&"MISSING".to_string())
+        )),
+        "expected TemplateVariablesInvalid with missing variables"
+    );
 }
 
 #[test]
