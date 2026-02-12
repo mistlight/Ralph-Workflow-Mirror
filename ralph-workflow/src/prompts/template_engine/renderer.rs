@@ -446,11 +446,6 @@ impl Template {
         let (result_after_sub, substituted, unsubstituted) =
             Self::substitute_variables(&result, variables);
 
-        // Check for missing variables
-        if let Some(first_missing) = unsubstituted.first() {
-            return Err(TemplateError::MissingVariable(first_missing.clone()));
-        }
-
         Ok(RenderedTemplate {
             content: result_after_sub,
             log: SubstitutionLog {

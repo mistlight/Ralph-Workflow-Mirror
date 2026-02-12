@@ -80,6 +80,8 @@ fn create_resume_state(
             last_warning: None,
         },
         last_substitution_log: None,
+        template_validation_failed: false,
+        template_validation_unsubstituted: Vec::new(),
         metrics: crate::reducer::state::RunMetrics {
             max_dev_iterations: total_iterations,
             max_review_passes: total_reviewer_passes,

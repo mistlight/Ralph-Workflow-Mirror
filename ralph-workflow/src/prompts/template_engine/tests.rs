@@ -562,14 +562,14 @@ DIFF:
         let template = Template::new("Hello {{NAME}}");
         let variables = HashMap::new();
 
-        let result = template.render_with_log("test", &variables, &HashMap::new());
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .expect("render_with_log should succeed even when variables are missing");
 
-        // Should error due to missing required variable
-        assert!(result.is_err());
-        match result {
-            Err(TemplateError::MissingVariable(name)) => assert_eq!(name, "NAME"),
-            _ => panic!("Expected MissingVariable error"),
-        }
+        assert_eq!(rendered.content, "Hello {{NAME}}");
+        assert!(rendered.log.substituted.is_empty());
+        assert_eq!(rendered.log.unsubstituted, vec!["NAME".to_string()]);
+        assert!(!rendered.log.is_complete());
     }
 
     #[test]

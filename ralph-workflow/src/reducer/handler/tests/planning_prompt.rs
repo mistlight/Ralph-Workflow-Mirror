@@ -6,7 +6,7 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::{PipelineEvent, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{
     AgentChainState, ContinuationState, PipelineState, PromptMode, SameAgentRetryReason,
@@ -166,7 +166,15 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
         ..PipelineState::initial(1, 0)
     });
 
-    handler
+    let materialize = handler
+        .materialize_planning_inputs(&mut ctx, 0)
+        .expect("materialize_planning_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let result = handler
         .prepare_planning_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
         .expect("prepare_planning_prompt should succeed");
 
@@ -181,6 +189,13 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
     assert!(
         prompt.contains("## Retry Note (attempt 1)"),
         "Same-agent retry should prepend retry note; got: {prompt}"
+    );
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Same-agent retry should emit TemplateRendered for log-based validation"
     );
 }
 
@@ -238,6 +253,14 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
         },
         ..PipelineState::initial(1, 0)
     });
+
+    let materialize = handler
+        .materialize_planning_inputs(&mut ctx, 0)
+        .expect("materialize_planning_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
 
     // Per AC #5: Write failure should NOT return an error; it should succeed
     // with a warning logged instead.
@@ -304,6 +327,14 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
         },
         ..PipelineState::initial(1, 0)
     });
+
+    let materialize = handler
+        .materialize_planning_inputs(&mut ctx, 0)
+        .expect("materialize_planning_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
 
     handler
         .prepare_planning_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
@@ -633,6 +664,13 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
             })
         )),
         "Expected OversizeDetected event for PromptInputKind::LastOutput during planning XSD retry"
+    );
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Planning XSD retry should emit TemplateRendered for log-based validation"
     );
 }
 

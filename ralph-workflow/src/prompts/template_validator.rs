@@ -5,15 +5,12 @@
 //!
 //! This module is organized into sub-modules:
 //! - `template_types`: Type definitions for validation results and errors
-//! - `rendered_validation`: Validation of rendered prompts for unresolved placeholders
 //! - `template_extraction`: Extraction of variables, partials, and metadata
 //! - `syntax_validation`: Syntax checking for template structure
 
 use std::collections::HashSet;
 
 // Sub-modules
-#[path = "rendered_validation.rs"]
-mod rendered_validation;
 #[path = "syntax_validation.rs"]
 mod syntax_validation;
 #[path = "template_extraction.rs"]
@@ -25,10 +22,6 @@ mod template_types;
 // Note: TemplateMetadata and VariableInfo are defined in template_types.rs
 // but not re-exported here because they're not currently used by any consumers.
 // If needed in the future, they can be added to this re-export list.
-#[allow(deprecated)]
-pub use rendered_validation::{
-    validate_no_unresolved_placeholders, validate_no_unresolved_placeholders_with_ignored_content,
-};
 pub use syntax_validation::validate_syntax;
 pub use template_extraction::{extract_metadata, extract_partials, extract_variables};
 pub use template_types::{

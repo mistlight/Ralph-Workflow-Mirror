@@ -89,6 +89,13 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
         )),
         "Expected OversizeDetected event for PromptInputKind::LastOutput during review XSD retry"
     );
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Review XSD retry should emit TemplateRendered for log-based validation"
+    );
 }
 
 #[test]

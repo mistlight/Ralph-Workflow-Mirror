@@ -7,6 +7,11 @@ impl From<PipelineCheckpoint> for PipelineState {
     fn from(checkpoint: PipelineCheckpoint) -> Self {
         let rebase_state = map_checkpoint_rebase_state(&checkpoint.rebase_state);
         let agent_chain = AgentChainState::initial();
+        let last_substitution_log = checkpoint.last_substitution_log.clone();
+        let (template_validation_failed, template_validation_unsubstituted) =
+            last_substitution_log.as_ref().map_or((false, Vec::new()), |log| {
+                (!log.is_complete(), log.unsubstituted.clone())
+            });
 
         PipelineState {
             phase: map_checkpoint_phase(checkpoint.phase),
@@ -78,7 +83,9 @@ impl From<PipelineCheckpoint> for PipelineState {
             gitignore_entries_ensured: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
             prompt_permissions: checkpoint.prompt_permissions,
-            last_substitution_log: None,
+            last_substitution_log,
+            template_validation_failed,
+            template_validation_unsubstituted,
             metrics: {
                 let continuation = ContinuationState::new();
                 RunMetrics {

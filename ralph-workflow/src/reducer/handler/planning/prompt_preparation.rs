@@ -12,10 +12,7 @@ use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
 use crate::prompts::content_reference::{PromptContentReference, MAX_INLINE_CONTENT_SIZE};
-use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_planning_xml_with_references,
-    prompt_planning_xsd_retry_with_context_files,
-};
+use crate::prompts::{get_stored_or_generate_prompt, prompt_planning_xml_with_references};
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, WorkspaceIoErrorKind};
 use crate::reducer::prompt_inputs::sha256_hex_str;
@@ -134,25 +131,67 @@ impl MainEffectHandler {
                             ));
                         }
                     }
-                    // TODO: XSD retry mode doesn't use log-based validation yet
+                    let rendered =
+                        crate::prompts::prompt_planning_xsd_retry_with_context_files_and_log(
+                            ctx.template_context,
+                            "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
+                            ctx.workspace,
+                            "planning_xsd_retry",
+                        );
+
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Developer,
+                                "planning_xsd_retry".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
+                    }
+
                     (
-                    prompt_planning_xsd_retry_with_context_files(
-                        ctx.template_context,
-                        "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
-                        ctx.workspace,
-                    ),
-                    "planning_xsd_retry",
-                    None,
-                    false,
-                    true,
-                    None,
-                )
+                        rendered.content,
+                        "planning_xsd_retry",
+                        None,
+                        false,
+                        true,
+                        Some(rendered.log),
+                    )
                 }
                 PromptMode::SameAgentRetry => {
                     // Same-agent retry: prepend retry guidance to the last prepared prompt for this
                     // phase (preserves XSD retry / continuation context if present).
                     let retry_preamble =
                         super::super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                    let inputs = self
+                        .state
+                        .prompt_inputs
+                        .planning
+                        .as_ref()
+                        .filter(|p| p.iteration == iteration)
+                        .ok_or(ErrorEvent::PlanningInputsNotMaterialized { iteration })?;
+
+                    let prompt_ref = match &inputs.prompt.representation {
+                        PromptInputRepresentation::Inline => {
+                            let prompt_md =
+                                ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
+                                    ErrorEvent::WorkspaceReadFailed {
+                                        path: "PROMPT.md".to_string(),
+                                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                                    }
+                                })?;
+                            ignore_sources_owned.push(prompt_md.clone());
+                            PromptContentReference::inline(prompt_md)
+                        }
+                        PromptInputRepresentation::FileReference { path } => {
+                            PromptContentReference::file_path(
+                                path.to_path_buf(),
+                                "Original user requirements from PROMPT.md",
+                            )
+                        }
+                    };
+
                     let (base_prompt, should_validate) = match ctx
                         .workspace
                         .read(Path::new(PLANNING_PROMPT_PATH))
@@ -164,62 +203,46 @@ impl MainEffectHandler {
                             .to_string(),
                             false,
                         ),
-                        Err(_) => {
-                            let inputs = self
-                                .state
-                                .prompt_inputs
-                                .planning
-                                .as_ref()
-                                .filter(|p| p.iteration == iteration)
-                                .ok_or(ErrorEvent::PlanningInputsNotMaterialized { iteration })?;
-
-                            let prompt_ref = match &inputs.prompt.representation {
-                                PromptInputRepresentation::Inline => {
-                                    let prompt_md = ctx
-                                        .workspace
-                                        .read(Path::new("PROMPT.md"))
-                                        .map_err(|err| ErrorEvent::WorkspaceReadFailed {
-                                            path: "PROMPT.md".to_string(),
-                                            kind: WorkspaceIoErrorKind::from_io_error_kind(
-                                                err.kind(),
-                                            ),
-                                        })?;
-                                    ignore_sources_owned.push(prompt_md.clone());
-                                    PromptContentReference::inline(prompt_md)
-                                }
-                                PromptInputRepresentation::FileReference { path } => {
-                                    PromptContentReference::file_path(
-                                        path.to_path_buf(),
-                                        "Original user requirements from PROMPT.md",
-                                    )
-                                }
-                            };
-                            (
-                                prompt_planning_xml_with_references(
-                                    ctx.template_context,
-                                    &prompt_ref,
-                                    ctx.workspace,
-                                ),
-                                true,
-                            )
-                        }
+                        Err(_) => (
+                            prompt_planning_xml_with_references(
+                                ctx.template_context,
+                                &prompt_ref,
+                                ctx.workspace,
+                            ),
+                            true,
+                        ),
                     };
                     let prompt = format!("{retry_preamble}\n{base_prompt}");
                     let prompt_key = format!(
                         "planning_{iteration}_same_agent_retry_{}",
                         continuation_state.same_agent_retry_count
                     );
-                    // If we reused a previously prepared prompt, it was already validated at the time
-                    // it was prepared. Re-validating can introduce false positives (e.g., XSD retry
-                    // prompts include last output, which may contain literal placeholders).
-                    // TODO: SameAgentRetry mode doesn't use log-based validation yet
+                    let rendered_log = {
+                        let rendered = crate::prompts::prompt_planning_xml_with_references_and_log(
+                            ctx.template_context,
+                            &prompt_ref,
+                            ctx.workspace,
+                            "planning_xml",
+                        );
+                        if !rendered.log.is_complete() {
+                            return Ok(EffectResult::event(
+                                PipelineEvent::agent_template_variables_invalid(
+                                    AgentRole::Developer,
+                                    "planning_xml".to_string(),
+                                    rendered.log.unsubstituted.clone(),
+                                    Vec::new(),
+                                ),
+                            ));
+                        }
+                        Some(rendered.log)
+                    };
                     (
                         prompt,
                         "planning_xml",
                         Some(prompt_key),
                         false,
                         should_validate,
-                        None,
+                        rendered_log,
                     )
                 }
                 PromptMode::Normal => {

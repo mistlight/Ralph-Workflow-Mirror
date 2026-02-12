@@ -3,9 +3,8 @@
 //! These tests verify that the reducer correctly handles TemplateRendered events
 //! and stores substitution logs in state for validation and observability.
 //!
-//! Per the reducer architecture, validation happens in handlers before emitting
-//! the event, so these tests focus on verifying that the reducer correctly
-//! stores the log in state.
+//! Per the reducer architecture, validation is reducer-owned and derived from
+//! the substitution log when the TemplateRendered event is reduced.
 
 use crate::prompts::{SubstitutionEntry, SubstitutionLog, SubstitutionSource};
 use crate::reducer::event::{PipelineEvent, PipelinePhase, PromptInputEvent};
@@ -44,6 +43,14 @@ fn test_reduce_template_rendered_complete_with_defaults() {
     assert!(
         new_state.last_substitution_log.is_some(),
         "Substitution log should be stored in state"
+    );
+    assert!(
+        !new_state.template_validation_failed,
+        "Complete substitution log should not mark validation as failed"
+    );
+    assert!(
+        new_state.template_validation_unsubstituted.is_empty(),
+        "No unsubstituted placeholders should be recorded for complete logs"
     );
 
     let stored_log = new_state.last_substitution_log.unwrap();
@@ -104,6 +111,15 @@ fn test_reduce_template_rendered_incomplete() {
     assert!(
         new_state.last_substitution_log.is_some(),
         "Substitution log should be stored in state even if incomplete"
+    );
+    assert!(
+        new_state.template_validation_failed,
+        "Incomplete substitution log should mark validation as failed"
+    );
+    assert_eq!(
+        new_state.template_validation_unsubstituted,
+        vec!["B".to_string(), "C".to_string()],
+        "Unsubstituted placeholders should be recorded for validation failures"
     );
 
     let stored_log = new_state.last_substitution_log.unwrap();

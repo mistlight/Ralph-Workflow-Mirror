@@ -381,6 +381,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("template_rendering_errors.rs"),
     },
     SourceFile {
+        path: "template_validation_jsx.rs",
+        contents: include_str!("template_validation_jsx.rs"),
+    },
+    SourceFile {
         path: "ui_events.rs",
         contents: include_str!("ui_events.rs"),
     },

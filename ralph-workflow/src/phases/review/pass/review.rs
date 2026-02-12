@@ -1,5 +1,4 @@
 // Legacy phase-based code - deprecated in favor of reducer/handler architecture
-#[allow(deprecated)]
 use super::super::types::{ParseResult, ReviewPassResult};
 use super::super::xml_processing::extract_and_validate_review_output_xml;
 use super::helpers::{handle_postflight_validation, stderr_contains_auth_error};
@@ -44,7 +43,6 @@ use std::time::Instant;
 /// - Agent configuration is missing
 /// - Prompt template contains unresolved placeholders
 /// - Log file cannot be written
-#[allow(deprecated)]
 pub fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
@@ -83,9 +81,8 @@ pub fn run_review_pass(
 
     // Legacy phase-based code
     // Template validation now happens via SubstitutionLog::is_complete() in the
-    // reducer/handler architecture. The template engine's render_with_log fails
-    // early with MissingVariable error for truly missing required variables.
-    // Regex-based validation has been removed to fix false positives with JSX.
+    // reducer/handler architecture. render_with_log records missing variables
+    // in the substitution log; regex-based validation has been removed.
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &review_prompt_xml);

@@ -225,6 +225,14 @@ pub struct PipelineState {
     /// regex scanning rendered output.
     #[serde(default)]
     pub last_substitution_log: Option<crate::prompts::SubstitutionLog>,
+
+    /// Whether the last template validation failed based on the substitution log.
+    #[serde(default)]
+    pub template_validation_failed: bool,
+
+    /// Unsubstituted placeholders from the last rendered template.
+    #[serde(default)]
+    pub template_validation_unsubstituted: Vec<String>,
 }
 
 impl PipelineState {
@@ -324,6 +332,8 @@ impl PipelineState {
             prompt_inputs: PromptInputsState::default(),
             prompt_permissions: PromptPermissionsState::default(),
             last_substitution_log: None,
+            template_validation_failed: false,
+            template_validation_unsubstituted: Vec::new(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
         }
     }

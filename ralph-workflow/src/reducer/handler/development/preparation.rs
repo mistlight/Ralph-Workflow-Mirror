@@ -81,8 +81,9 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
+            prompt_developer_iteration_continuation_xml_with_log,
             prompt_developer_iteration_xml_with_references,
-            prompt_developer_iteration_xsd_retry_with_context_files,
+            prompt_developer_iteration_xsd_retry_with_context_files_and_log,
         };
 
         let continuation_state = &self.state.continuation;
@@ -104,14 +105,29 @@ impl MainEffectHandler {
                                 ctx.workspace,
                             )
                         });
-                    // TODO: Continuation mode doesn't use log-based validation yet
+                    let rendered = prompt_developer_iteration_continuation_xml_with_log(
+                        ctx.template_context,
+                        continuation_state,
+                        ctx.workspace,
+                        "developer_iteration_continuation_xml",
+                    );
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Developer,
+                                "developer_iteration_continuation_xml".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
+                    }
                     (
                         prompt,
                         "developer_iteration_continuation_xml",
                         Some(prompt_key),
                         was_replayed,
                         true,
-                        None,
+                        Some(rendered.log),
                     )
                 }
                 PromptMode::XsdRetry => {
@@ -204,18 +220,31 @@ impl MainEffectHandler {
                             ));
                         }
                     }
-                    // TODO: XSD retry mode doesn't use log-based validation yet
+                    let rendered = prompt_developer_iteration_xsd_retry_with_context_files_and_log(
+                        ctx.template_context,
+                        "XML output failed validation. Provide valid XML output.",
+                        ctx.workspace,
+                        "developer_iteration_xsd_retry",
+                    );
+
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Developer,
+                                "developer_iteration_xsd_retry".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
+                    }
+
                     (
-                        prompt_developer_iteration_xsd_retry_with_context_files(
-                            ctx.template_context,
-                            "XML output failed validation. Provide valid XML output.",
-                            ctx.workspace,
-                        ),
+                        rendered.content,
                         "developer_iteration_xsd_retry",
                         None,
                         false,
                         true,
-                        None,
+                        Some(rendered.log),
                     )
                 }
                 PromptMode::SameAgentRetry => {
@@ -223,6 +252,64 @@ impl MainEffectHandler {
                     // phase (preserves XSD retry / continuation context if present).
                     let retry_preamble =
                         super::super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                    let inputs = self
+                        .state
+                        .prompt_inputs
+                        .development
+                        .as_ref()
+                        .filter(|p| p.iteration == iteration)
+                        .ok_or(ErrorEvent::DevelopmentInputsNotMaterialized { iteration })?;
+
+                    let prompt_ref = match &inputs.prompt.representation {
+                        PromptInputRepresentation::Inline => {
+                            let prompt_md =
+                                ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
+                                    ErrorEvent::WorkspaceReadFailed {
+                                        path: "PROMPT.md".to_string(),
+                                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                                    }
+                                })?;
+                            ignore_sources_owned.push(prompt_md.clone());
+                            PromptContentReference::inline(prompt_md)
+                        }
+                        PromptInputRepresentation::FileReference { path } => {
+                            PromptContentReference::file_path(
+                                path.to_path_buf(),
+                                "Original user requirements from PROMPT.md",
+                            )
+                        }
+                    };
+
+                    let plan_ref = match &inputs.plan.representation {
+                        PromptInputRepresentation::Inline => {
+                            let plan_md =
+                                ctx.workspace
+                                    .read(Path::new(".agent/PLAN.md"))
+                                    .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                                        path: ".agent/PLAN.md".to_string(),
+                                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                                    })?;
+                            ignore_sources_owned.push(plan_md.clone());
+                            PlanContentReference::Inline(plan_md)
+                        }
+                        PromptInputRepresentation::FileReference { path } => {
+                            PlanContentReference::ReadFromFile {
+                                primary_path: path.to_path_buf(),
+                                fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
+                                description: format!(
+                                    "Plan is {} bytes (exceeds {} limit)",
+                                    inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                                ),
+                            }
+                        }
+                    };
+
+                    let refs = PromptContentReferences {
+                        prompt: Some(prompt_ref.clone()),
+                        plan: Some(plan_ref.clone()),
+                        diff: None,
+                    };
+
                     let (base_prompt, should_validate) = match ctx
                         .workspace
                         .read(Path::new(".agent/tmp/development_prompt.txt"))
@@ -234,95 +321,44 @@ impl MainEffectHandler {
                             .to_string(),
                             false,
                         ),
-                        Err(_) => {
-                            let inputs = self
-                                .state
-                                .prompt_inputs
-                                .development
-                                .as_ref()
-                                .filter(|p| p.iteration == iteration)
-                                .ok_or(ErrorEvent::DevelopmentInputsNotMaterialized {
-                                    iteration,
-                                })?;
-
-                            let prompt_ref = match &inputs.prompt.representation {
-                                PromptInputRepresentation::Inline => {
-                                    let prompt_md = ctx
-                                        .workspace
-                                        .read(Path::new("PROMPT.md"))
-                                        .map_err(|err| ErrorEvent::WorkspaceReadFailed {
-                                            path: "PROMPT.md".to_string(),
-                                            kind: WorkspaceIoErrorKind::from_io_error_kind(
-                                                err.kind(),
-                                            ),
-                                        })?;
-                                    ignore_sources_owned.push(prompt_md.clone());
-                                    PromptContentReference::inline(prompt_md)
-                                }
-                                PromptInputRepresentation::FileReference { path } => {
-                                    PromptContentReference::file_path(
-                                        path.to_path_buf(),
-                                        "Original user requirements from PROMPT.md",
-                                    )
-                                }
-                            };
-
-                            let plan_ref = match &inputs.plan.representation {
-                                PromptInputRepresentation::Inline => {
-                                    let plan_md =
-                                        ctx.workspace.read(Path::new(".agent/PLAN.md")).map_err(
-                                            |err| ErrorEvent::WorkspaceReadFailed {
-                                                path: ".agent/PLAN.md".to_string(),
-                                                kind: WorkspaceIoErrorKind::from_io_error_kind(
-                                                    err.kind(),
-                                                ),
-                                            },
-                                        )?;
-                                    ignore_sources_owned.push(plan_md.clone());
-                                    PlanContentReference::Inline(plan_md)
-                                }
-                                PromptInputRepresentation::FileReference { path } => {
-                                    PlanContentReference::ReadFromFile {
-                                        primary_path: path.to_path_buf(),
-                                        fallback_path: Some(
-                                            Path::new(".agent/tmp/plan.xml").to_path_buf(),
-                                        ),
-                                        description: format!(
-                                            "Plan is {} bytes (exceeds {} limit)",
-                                            inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
-                                        ),
-                                    }
-                                }
-                            };
-
-                            let refs = PromptContentReferences {
-                                prompt: Some(prompt_ref),
-                                plan: Some(plan_ref),
-                                diff: None,
-                            };
-                            (
-                                prompt_developer_iteration_xml_with_references(
-                                    ctx.template_context,
-                                    &refs,
-                                    ctx.workspace,
-                                ),
-                                true,
-                            )
-                        }
+                        Err(_) => (
+                            prompt_developer_iteration_xml_with_references(
+                                ctx.template_context,
+                                &refs,
+                                ctx.workspace,
+                            ),
+                            true,
+                        ),
                     };
                     let prompt = format!("{retry_preamble}\n{base_prompt}");
                     let prompt_key = format!(
                         "development_{}_same_agent_retry_{}",
                         iteration, continuation_state.same_agent_retry_count
                     );
-                    // TODO: SameAgentRetry mode doesn't use log-based validation yet
+                    let rendered =
+                        crate::prompts::prompt_developer_iteration_xml_with_references_and_log(
+                            ctx.template_context,
+                            &refs,
+                            ctx.workspace,
+                            "developer_iteration_xml",
+                        );
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Developer,
+                                "developer_iteration_xml".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
+                    }
                     (
                         prompt,
                         "developer_iteration_xml",
                         Some(prompt_key),
                         false,
                         should_validate,
-                        None,
+                        Some(rendered.log),
                     )
                 }
                 PromptMode::Normal => {

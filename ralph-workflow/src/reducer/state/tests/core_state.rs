@@ -256,6 +256,41 @@ fn test_pipeline_state_from_checkpoint_preserves_prompt_inputs_when_present() {
 }
 
 #[test]
+fn test_pipeline_state_from_checkpoint_restores_substitution_log() {
+    use crate::prompts::{SubstitutionEntry, SubstitutionLog, SubstitutionSource};
+
+    let mut checkpoint = make_checkpoint_for_state(
+        CheckpointPhase::Development,
+        CheckpointRebaseState::NotStarted,
+    );
+    let log = SubstitutionLog {
+        template_name: "planning_xml".to_string(),
+        substituted: vec![SubstitutionEntry {
+            name: "PROMPT".to_string(),
+            source: SubstitutionSource::Value,
+        }],
+        unsubstituted: vec!["PLAN".to_string()],
+    };
+
+    checkpoint.last_substitution_log = Some(log.clone());
+
+    let state: PipelineState = checkpoint.into();
+    let restored_log = state
+        .last_substitution_log
+        .expect("substitution log should be restored from checkpoint");
+    assert_eq!(restored_log.template_name, "planning_xml");
+    assert_eq!(restored_log.unsubstituted, vec!["PLAN".to_string()]);
+    assert!(
+        state.template_validation_failed,
+        "state should derive validation failure from restored log"
+    );
+    assert_eq!(
+        state.template_validation_unsubstituted,
+        vec!["PLAN".to_string()]
+    );
+}
+
+#[test]
 fn test_pipeline_state_from_checkpoint_preserves_prompt_permissions() {
     let mut checkpoint = make_checkpoint_for_state(
         CheckpointPhase::Development,

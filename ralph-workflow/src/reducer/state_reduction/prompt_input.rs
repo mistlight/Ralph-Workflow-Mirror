@@ -82,9 +82,16 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
             log,
         } => {
             // Store the substitution log for validation and observability
-            // Validation happens in handlers before emitting this event
+            let validation_failed = !log.is_complete();
+            let unsubstituted = if validation_failed {
+                log.unsubstituted.clone()
+            } else {
+                Vec::new()
+            };
             PipelineState {
                 last_substitution_log: Some(log),
+                template_validation_failed: validation_failed,
+                template_validation_unsubstituted: unsubstituted,
                 ..state
             }
         }

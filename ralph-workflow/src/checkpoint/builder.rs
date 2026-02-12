@@ -54,6 +54,7 @@ pub struct CheckpointBuilder {
     prompt_history: Option<std::collections::HashMap<String, String>>,
     prompt_inputs: Option<PromptInputsState>,
     prompt_permissions: PromptPermissionsState,
+    last_substitution_log: Option<crate::prompts::SubstitutionLog>,
     // Process executor for external process execution
     executor: Option<Arc<dyn ProcessExecutor>>,
     // Logging run_id (timestamp-based) for per-run log directory
@@ -89,6 +90,7 @@ impl CheckpointBuilder {
             prompt_history: None,
             prompt_inputs: None,
             prompt_permissions: PromptPermissionsState::default(),
+            last_substitution_log: None,
             executor: None,
             log_run_id: None,
         }
@@ -119,6 +121,15 @@ impl CheckpointBuilder {
     /// Set the CLI arguments snapshot.
     pub fn cli_args(mut self, args: CliArgsSnapshot) -> Self {
         self.cli_args = Some(args);
+        self
+    }
+
+    /// Set the last template substitution log for validation and observability.
+    pub fn with_last_substitution_log(
+        mut self,
+        log: Option<crate::prompts::SubstitutionLog>,
+    ) -> Self {
+        self.last_substitution_log = log;
         self
     }
 
@@ -410,6 +421,9 @@ impl CheckpointBuilder {
 
         // Populate prompt permission lifecycle state
         checkpoint.prompt_permissions = self.prompt_permissions;
+
+        // Populate last substitution log
+        checkpoint.last_substitution_log = self.last_substitution_log;
 
         // Populate logging run_id
         checkpoint.log_run_id = self.log_run_id;

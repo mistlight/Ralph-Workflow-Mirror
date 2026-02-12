@@ -393,6 +393,127 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
     }
 }
 
+/// Generate XSD validation retry prompt for developer iteration with substitution log.
+///
+/// This variant assumes `.agent/tmp/last_output.xml` is already materialized.
+pub fn prompt_developer_iteration_xsd_retry_with_context_files_and_log(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> crate::prompts::RenderedTemplate {
+    use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
+    use std::path::Path;
+
+    let partials = get_shared_partials();
+    // Ensure schema file exists; last_output.xml is expected to already be present.
+    write_dev_iteration_xsd_retry_schema_files(workspace);
+
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/development_result.xsd");
+    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+
+    let schema_exists = workspace.exists(schema_path);
+    let last_output_exists = workspace.exists(last_output_path);
+
+    // Build diagnostic prefix for missing files (per acceptance criteria #3)
+    let mut diagnostic_prefix = String::new();
+    if !schema_exists || !last_output_exists {
+        diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
+        if !schema_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Schema file: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/development_result.xsd"),
+                workspace.root().display()
+            ));
+        }
+        if !last_output_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Last output: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/last_output.xml"),
+                workspace.root().display()
+            ));
+        }
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
+    }
+
+    // If both files are missing, return fallback prompt with diagnostics (per AC #5)
+    if !schema_exists && !last_output_exists {
+        let content = format!(
+            "{}XSD VALIDATION FAILED - CONTINUE IMPLEMENTATION\n\n\
+             Error: {}\n\n\
+             The schema and previous output files could not be found. \
+             Please continue the implementation based on PROMPT.md and PLAN.md.\n\n\
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
+            diagnostic_prefix, xsd_error
+        );
+        return RenderedTemplate {
+            content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: vec![],
+            },
+        };
+    }
+
+    // Proceed with normal XSD retry prompt generation if at least schema exists
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xsd_retry")
+        .unwrap_or_else(|_| {
+            include_str!("../templates/developer_iteration_xsd_retry.txt").to_string()
+        });
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "DEVELOPMENT_RESULT_XML_PATH",
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
+        ),
+        (
+            "DEVELOPMENT_RESULT_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
+        ),
+        (
+            "LAST_OUTPUT_XML_PATH",
+            workspace.absolute_str(".agent/tmp/last_output.xml"),
+        ),
+    ]);
+
+    let template = Template::new(&template_content);
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(mut rendered) => {
+            if !diagnostic_prefix.is_empty() {
+                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
+            }
+            rendered
+        }
+        Err(_) => {
+            let content = format!(
+                "Your previous development status failed XSD validation.\n\nError: {}\n\n\
+                 Read .agent/tmp/development_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+                 Please resend your status in valid XML format conforming to the XSD schema.\n",
+                xsd_error
+            );
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![SubstitutionEntry {
+                        name: "XSD_ERROR".to_string(),
+                        source: SubstitutionSource::Value,
+                    }],
+                    unsubstituted: vec![],
+                },
+            }
+        }
+    }
+}
+
 /// Generate continuation prompt for development iteration.
 ///
 /// Used when the previous attempt returned status="partial" or "failed".
@@ -482,4 +603,112 @@ pub fn prompt_developer_iteration_continuation_xml(
                 summary
             )
         })
+}
+
+/// Generate continuation prompt for development iteration with substitution log.
+pub fn prompt_developer_iteration_continuation_xml_with_log(
+    context: &TemplateContext,
+    continuation_state: &crate::reducer::state::ContinuationState,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> crate::prompts::RenderedTemplate {
+    use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
+
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_continuation_xml")
+        .unwrap_or_else(|_| {
+            include_str!("../templates/developer_iteration_continuation_xml.txt").to_string()
+        });
+    let template = Template::new(&template_content);
+    let partials = get_shared_partials();
+
+    let previous_status = continuation_state
+        .previous_status
+        .as_ref()
+        .map_or("unknown".to_string(), |s| format!("{}", s));
+
+    let previous_summary = continuation_state
+        .previous_summary
+        .clone()
+        .unwrap_or_else(|| "No summary available".to_string());
+
+    let previous_files_changed = continuation_state
+        .previous_files_changed
+        .as_ref()
+        .map(|files| files.join("\n"));
+
+    let previous_next_steps = continuation_state.previous_next_steps.clone();
+
+    let mut variables: HashMap<&str, String> = HashMap::new();
+    variables.insert("PROMPT_PATH", "PROMPT.md".to_string());
+    variables.insert("PLAN_PATH", ".agent/PLAN.md".to_string());
+    variables.insert("PREVIOUS_STATUS", previous_status);
+    variables.insert("PREVIOUS_SUMMARY", previous_summary);
+    variables.insert(
+        "CONTINUATION_ATTEMPT",
+        continuation_state.continuation_attempt.to_string(),
+    );
+    variables.insert(
+        "DEVELOPMENT_RESULT_XML_PATH",
+        workspace.absolute_str(".agent/tmp/development_result.xml"),
+    );
+    variables.insert(
+        "DEVELOPMENT_RESULT_XSD_PATH",
+        workspace.absolute_str(".agent/tmp/development_result.xsd"),
+    );
+
+    // Optional fields - add if present
+    if let Some(files) = previous_files_changed {
+        variables.insert("PREVIOUS_FILES_CHANGED", files);
+    }
+    if let Some(next_steps) = previous_next_steps {
+        variables.insert("PREVIOUS_NEXT_STEPS", next_steps);
+    }
+
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(rendered) => rendered,
+        Err(_) => {
+            let status = continuation_state
+                .previous_status
+                .as_ref()
+                .map_or("unknown", |s| match s {
+                    crate::reducer::state::DevelopmentStatus::Completed => "completed",
+                    crate::reducer::state::DevelopmentStatus::Partial => "partial",
+                    crate::reducer::state::DevelopmentStatus::Failed => "failed",
+                });
+            let summary = continuation_state
+                .previous_summary
+                .as_ref()
+                .map_or("No summary", |s| s.as_str());
+            let content = format!(
+                "CONTINUATION MODE\n\n\
+                 This is continuation attempt #{}. Previous status: {}\n\n\
+                 Previous summary: {}\n\n\
+                 Continue the implementation from where you left off.\n\
+                 Read PROMPT.md and .agent/PLAN.md for the full context.\n\n\
+                 Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
+                continuation_state.continuation_attempt,
+                status,
+                summary
+            );
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![
+                        SubstitutionEntry {
+                            name: "PREVIOUS_STATUS".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                        SubstitutionEntry {
+                            name: "PREVIOUS_SUMMARY".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                    ],
+                    unsubstituted: vec![],
+                },
+            }
+        }
+    }
 }

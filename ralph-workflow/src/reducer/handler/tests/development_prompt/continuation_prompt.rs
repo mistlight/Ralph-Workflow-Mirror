@@ -44,7 +44,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    handler
+    let result = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_development_prompt should succeed");
 
@@ -54,6 +54,13 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
     assert_eq!(
         last_output, invalid_xml,
         "XSD retry should capture the actual invalid XML as last_output.xml"
+    );
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "XSD retry should emit TemplateRendered for log-based validation"
     );
 }
 
@@ -109,7 +116,15 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
         ..PipelineState::initial(1, 1)
     });
 
-    handler
+    let materialize = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let result = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
         .expect("prepare_development_prompt should succeed");
 
@@ -124,6 +139,13 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
     assert!(
         prompt.contains("## Retry Note (attempt 1)"),
         "Same-agent retry should prepend retry note; got: {prompt}"
+    );
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Same-agent retry should emit TemplateRendered for log-based validation"
     );
 }
 
@@ -179,6 +201,14 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
         ..PipelineState::initial(1, 1)
     });
 
+    let materialize = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
     handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
         .expect("prepare_development_prompt should succeed");
@@ -208,6 +238,67 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
     assert!(
         !prompt.contains("## Retry Note (attempt 1)"),
         "Expected previous retry note to be replaced, got: {prompt}"
+    );
+}
+
+#[test]
+fn test_prepare_development_prompt_continuation_emits_template_rendered() {
+    let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            continuation_attempt: 1,
+            previous_status: Some(crate::reducer::state::DevelopmentStatus::Partial),
+            previous_summary: Some("Partial summary".to_string()),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(1, 0)
+    });
+
+    let result = handler
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::Continuation)
+        .expect("prepare_development_prompt should succeed");
+
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Continuation prompt should emit TemplateRendered for log-based validation"
     );
 }
 

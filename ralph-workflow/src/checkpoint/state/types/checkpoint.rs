@@ -130,6 +130,10 @@ pub struct PipelineCheckpoint {
     /// were interrupted after locking the prompt file.
     #[serde(default)]
     pub prompt_permissions: crate::reducer::state::PromptPermissionsState,
+
+    /// Last template substitution log for validation and observability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_substitution_log: Option<crate::prompts::SubstitutionLog>,
 }
 
 impl PipelineCheckpoint {
@@ -176,6 +180,7 @@ impl PipelineCheckpoint {
             prompt_inputs: None,
             prompt_permissions: crate::reducer::state::PromptPermissionsState::default(),
             log_run_id: None,
+            last_substitution_log: None,
         }
     }
 

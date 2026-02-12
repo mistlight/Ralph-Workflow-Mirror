@@ -1,5 +1,4 @@
 // Legacy phase-based code - deprecated in favor of reducer/handler architecture
-#[allow(deprecated)]
 /// Result of commit message generation.
 #[derive(Debug)]
 pub struct CommitMessageResult {
@@ -32,7 +31,6 @@ pub struct CommitAttemptResult {
 /// effective model budget. Use the reducer's `MaterializeCommitInputs` effect
 /// to truncate the diff before calling this function. The reducer writes the
 /// model-safe diff to `.agent/tmp/commit_diff.model_safe.txt`.
-#[allow(deprecated)]
 pub fn run_commit_attempt(
     ctx: &mut PhaseContext<'_>,
     attempt: u32,
@@ -54,9 +52,8 @@ pub fn run_commit_attempt(
 
     // Legacy phase-based code
     // Template validation now happens via SubstitutionLog::is_complete() in the
-    // reducer/handler architecture. The template engine's render_with_log fails
-    // early with MissingVariable error for truly missing required variables.
-    // Regex-based validation has been removed to fix false positives with JSX.
+    // reducer/handler architecture. render_with_log records missing variables
+    // in the substitution log; regex-based validation has been removed.
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &prompt);

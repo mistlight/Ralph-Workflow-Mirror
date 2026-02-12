@@ -16,8 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[allow(clippy::too_many_arguments)] // Test helper function
-fn build_context<'a>(
+struct ContextDeps<'a> {
     workspace: &'a MemoryWorkspace,
     repo_root: &'a PathBuf,
     executor: &'a Arc<MockProcessExecutor>,
@@ -26,27 +25,31 @@ fn build_context<'a>(
     logger: &'a Logger,
     colors: &'a Colors,
     template_context: &'a TemplateContext,
-    timer: &'a mut Timer,
     run_log_context: &'a crate::logging::RunLogContext,
+}
+
+fn build_context<'a>(
+    deps: ContextDeps<'a>,
+    timer: &'a mut Timer,
 ) -> crate::phases::PhaseContext<'a> {
     crate::phases::PhaseContext {
-        config,
-        registry,
-        logger,
-        colors,
+        config: deps.config,
+        registry: deps.registry,
+        logger: deps.logger,
+        colors: deps.colors,
         timer,
         developer_agent: "test-developer",
         reviewer_agent: "test-reviewer",
         review_guidelines: None,
-        template_context,
+        template_context: deps.template_context,
         run_context: RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: HashMap::new(),
-        executor: &**executor,
-        executor_arc: Arc::clone(executor) as Arc<dyn crate::executor::ProcessExecutor>,
-        repo_root,
-        workspace,
-        run_log_context,
+        executor: &**deps.executor,
+        executor_arc: Arc::clone(deps.executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: deps.repo_root,
+        workspace: deps.workspace,
+        run_log_context: deps.run_log_context,
     }
 }
 
@@ -64,16 +67,18 @@ fn restore_prompt_permissions_emits_complete_transition_in_finalizing() {
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
-        &workspace,
-        &repo_root,
-        &executor,
-        &config,
-        &registry,
-        &logger,
-        &colors,
-        &template_context,
+        ContextDeps {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            run_log_context: &run_log_context,
+        },
         &mut timer,
-        &run_log_context,
     );
 
     let mut state = PipelineState::initial(1, 0);

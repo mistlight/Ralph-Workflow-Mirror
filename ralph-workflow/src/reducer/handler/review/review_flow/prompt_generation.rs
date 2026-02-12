@@ -37,7 +37,7 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_review_xml_with_references,
-            prompt_review_xsd_retry_with_context_files,
+            prompt_review_xsd_retry_with_context_files_and_log,
         };
         use std::path::Path;
 
@@ -234,14 +234,31 @@ impl MainEffectHandler {
                     .as_deref()
                     .unwrap_or("XML output failed validation. Provide valid XML output.");
                 _xsd_error_for_validation = Some(xsd_error.to_string());
-                let prompt = prompt_review_xsd_retry_with_context_files(
+                let rendered = prompt_review_xsd_retry_with_context_files_and_log(
                     ctx.template_context,
                     xsd_error,
                     ctx.workspace,
+                    "review_xsd_retry",
                 );
+                if !rendered.log.is_complete() {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Reviewer,
+                            "review_xsd_retry".to_string(),
+                            rendered.log.unsubstituted.clone(),
+                            Vec::new(),
+                        ),
+                    ));
+                }
                 // XSD retry prompts must not replay potentially stale prompt history content.
-                // TODO: XSD retry mode doesn't use log-based validation yet
-                (prompt_key, prompt, false, "review_xsd_retry", true, None)
+                (
+                    prompt_key,
+                    rendered.content,
+                    false,
+                    "review_xsd_retry",
+                    true,
+                    Some(rendered.log),
+                )
             }
             PromptMode::SameAgentRetry => {
                 // Same-agent retry: prepend retry guidance to the last prepared prompt for this
@@ -250,6 +267,53 @@ impl MainEffectHandler {
                     crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
                         continuation_state,
                     );
+                let inputs = match materialized_inputs {
+                    Some(inputs) => inputs,
+                    None => {
+                        return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
+                    }
+                };
+                let plan_ref = match &inputs.plan.representation {
+                    PromptInputRepresentation::Inline => {
+                        let plan_inline = plan_inline.clone().unwrap_or_else(|| {
+                            Self::sentinel_plan_content(ctx.config.isolation_mode)
+                        });
+                        PlanContentReference::Inline(plan_inline)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        PlanContentReference::ReadFromFile {
+                            primary_path: path.to_path_buf(),
+                            fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
+                            description: format!(
+                                "Plan is {} bytes (exceeds {} limit)",
+                                inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
+                let diff_ref = match &inputs.diff.representation {
+                    PromptInputRepresentation::Inline => {
+                        let diff_inline = diff_inline.clone().unwrap_or_else(|| {
+                            Self::fallback_diff_instructions(&baseline_oid_for_prompts)
+                        });
+                        DiffContentReference::Inline(diff_inline)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        DiffContentReference::ReadFromFile {
+                            path: path.to_path_buf(),
+                            start_commit: baseline_oid_for_prompts.clone(),
+                            description: format!(
+                                "Diff is {} bytes (exceeds {} limit)",
+                                inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
+                let refs = PromptContentReferences {
+                    prompt: None,
+                    plan: Some(plan_ref),
+                    diff: Some(diff_ref),
+                };
                 let (base_prompt, should_validate) =
                     match ctx.workspace.read(Path::new(".agent/tmp/review_prompt.txt")) {
                         Ok(previous_prompt) => (
@@ -258,56 +322,12 @@ impl MainEffectHandler {
                             false,
                         ),
                         Err(_) => {
-                            let inputs = match materialized_inputs {
-                                Some(inputs) => inputs,
-                                None => {
-                                    return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
-                                }
-                            };
-                            let plan_ref = match &inputs.plan.representation {
-                                PromptInputRepresentation::Inline => {
-                                    let plan_inline = plan_inline.clone().unwrap_or_else(||
-                                        Self::sentinel_plan_content(ctx.config.isolation_mode)
-                                    );
-                                    PlanContentReference::Inline(plan_inline)
-                                }
-                                PromptInputRepresentation::FileReference { path } => {
-                                    PlanContentReference::ReadFromFile {
-                                        primary_path: path.to_path_buf(),
-                                        fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
-                                        description: format!(
-                                            "Plan is {} bytes (exceeds {} limit)",
-                                            inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
-                                        ),
-                                    }
-                                }
-                            };
-                            let diff_ref = match &inputs.diff.representation {
-                                PromptInputRepresentation::Inline => {
-                                    let diff_inline = diff_inline.clone().unwrap_or_else(||
-                                        Self::fallback_diff_instructions(&baseline_oid_for_prompts)
-                                    );
-                                    DiffContentReference::Inline(diff_inline)
-                                }
-                                PromptInputRepresentation::FileReference { path } => {
-                                    DiffContentReference::ReadFromFile {
-                                        path: path.to_path_buf(),
-                                        start_commit: baseline_oid_for_prompts.clone(),
-                                        description: format!(
-                                            "Diff is {} bytes (exceeds {} limit)",
-                                            inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
-                                        ),
-                                    }
-                                }
-                            };
-
-                            let refs = PromptContentReferences {
-                                prompt: None,
-                                plan: Some(plan_ref),
-                                diff: Some(diff_ref),
-                            };
                             (
-                                prompt_review_xml_with_references(ctx.template_context, &refs, ctx.workspace),
+                                prompt_review_xml_with_references(
+                                    ctx.template_context,
+                                    &refs,
+                                    ctx.workspace,
+                                ),
                                 true,
                             )
                         }
@@ -317,14 +337,29 @@ impl MainEffectHandler {
                     "review_{pass}_same_agent_retry_{}",
                     continuation_state.same_agent_retry_count
                 );
-                // TODO: SameAgentRetry mode doesn't use log-based validation yet
+                let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
+                    ctx.template_context,
+                    &refs,
+                    ctx.workspace,
+                    "review_xml",
+                );
+                if !rendered.log.is_complete() {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Reviewer,
+                            "review_xml".to_string(),
+                            rendered.log.unsubstituted.clone(),
+                            Vec::new(),
+                        ),
+                    ));
+                }
                 (
                     prompt_key,
                     prompt,
                     false,
                     "review_xml",
                     should_validate,
-                    None,
+                    Some(rendered.log),
                 )
             }
             PromptMode::Normal => {

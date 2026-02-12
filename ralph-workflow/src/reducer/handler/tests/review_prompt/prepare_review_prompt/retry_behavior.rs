@@ -11,6 +11,7 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
+use crate::reducer::event::{PipelineEvent, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode, SameAgentRetryReason};
 use crate::workspace::{MemoryWorkspace, Workspace};
@@ -68,7 +69,14 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         },
         ..PipelineState::initial(0, 1)
     });
-    let _ = handler
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+    let result = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
         .expect("prepare_review_prompt should succeed");
 
@@ -83,6 +91,13 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     assert!(
         prompt.contains("## Retry Note (attempt 1)"),
         "Same-agent retry should prepend retry note; got: {prompt}"
+    );
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered { .. })
+        )),
+        "Same-agent retry should emit TemplateRendered for log-based validation"
     );
 }
 
@@ -136,6 +151,13 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
         },
         ..PipelineState::initial(0, 1)
     });
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
 
     let _ = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
