@@ -626,6 +626,27 @@ DIFF:
     }
 
     #[test]
+    fn test_substitution_log_loop_value_with_braces() {
+        let template = Template::new("{% for item in ITEMS %}Item: {{item}}{% endfor %}");
+        let variables = HashMap::from([("ITEMS", "style={{ zIndex: 0 }}".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert!(rendered.content.contains("{{ zIndex: 0 }}"));
+        assert!(
+            rendered
+                .log
+                .substituted
+                .iter()
+                .any(|entry| entry.name == "item")
+        );
+        assert!(rendered.log.unsubstituted.is_empty());
+        assert!(rendered.log.is_complete());
+    }
+
+    #[test]
     fn test_substitution_log_merges_partial_substitutions() {
         let partials = HashMap::from([("greeting".to_string(), "Hello {{NAME}}".to_string())]);
         let template = Template::new("{{>greeting}}");

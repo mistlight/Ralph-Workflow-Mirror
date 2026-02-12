@@ -1,5 +1,16 @@
 // Template rendering logic: variable substitution, conditional expansion, loops.
 
+struct LiteralSegment {
+    token: String,
+    content: String,
+}
+
+struct LoopRenderLog {
+    token: String,
+    substituted: Vec<crate::prompts::SubstitutionEntry>,
+    unsubstituted: Vec<String>,
+}
+
 impl Template {
     /// Process conditionals in the content based on variable values.
     ///
@@ -75,29 +86,14 @@ impl Template {
         value.is_some_and(|v| !v.is_empty())
     }
 
-    /// Process loops in the content based on variable values.
-    ///
-    /// Supports:
-    /// - `{% for item in ITEMS %}...{% endfor %}` - iterate over comma-separated ITEMS
-    ///
-    /// The loop variable is available for use in the block content.
-    fn process_loops(content: &str, variables: &HashMap<&str, String>) -> String {
-        let (result, _substituted, _unsubstituted) = Self::process_loops_with_log(content, variables);
-        result
-    }
-
     /// Process loops in the content based on variable values, returning substitution tracking.
     fn process_loops_with_log(
         content: &str,
         variables: &HashMap<&str, String>,
-    ) -> (
-        String,
-        Vec<crate::prompts::SubstitutionEntry>,
-        Vec<String>,
-    ) {
+        literal_segments: &mut Vec<LiteralSegment>,
+    ) -> (String, Vec<LoopRenderLog>) {
         let mut result = content.to_string();
-        let mut substituted = Vec::new();
-        let mut unsubstituted = Vec::new();
+        let mut loop_logs = Vec::new();
 
         // Find all {% for ... %} blocks
         while let Some(start) = result.find("{% for ") {
@@ -149,6 +145,8 @@ impl Template {
 
             // Build the loop output
             let mut loop_output = String::new();
+            let mut substituted = Vec::new();
+            let mut unsubstituted = Vec::new();
             for item in items {
                 // Create a temporary variable map with the loop variable
                 let mut loop_vars: HashMap<&str, String> = variables.clone();
@@ -170,10 +168,21 @@ impl Template {
             }
 
             // Replace the entire for block with the loop output
-            result.replace_range(start..endfor_end, &loop_output);
+            let token = Self::next_literal_token(&result, &loop_output, literal_segments);
+            literal_segments.push(LiteralSegment {
+                token: token.clone(),
+                content: loop_output,
+            });
+            result.replace_range(start..endfor_end, &token);
+
+            loop_logs.push(LoopRenderLog {
+                token,
+                substituted,
+                unsubstituted,
+            });
         }
 
-        (result, substituted, unsubstituted)
+        (result, loop_logs)
     }
 
     /// Substitute variables in content (simple version without partials or conditionals).
@@ -328,10 +337,40 @@ impl Template {
         (result, substituted, unsubstituted)
     }
 
+    fn next_literal_token(
+        result: &str,
+        content: &str,
+        literal_segments: &[LiteralSegment],
+    ) -> String {
+        let mut index = literal_segments.len();
+        loop {
+            let token = format!("__RALPH_TEMPLATE_LITERAL_{}__", index);
+            if !result.contains(&token) && !content.contains(&token) {
+                return token;
+            }
+            index += 1;
+        }
+    }
+
+    fn restore_literal_segments(
+        mut content: String,
+        literal_segments: &[LiteralSegment],
+    ) -> String {
+        for segment in literal_segments.iter().rev() {
+            content = content.replace(&segment.token, &segment.content);
+        }
+        content
+    }
+
     /// Render the template with the provided variables.
     pub fn render(&self, variables: &HashMap<&str, String>) -> Result<String, TemplateError> {
+        let mut literal_segments = Vec::new();
         // Process loops first (they may generate new variable references)
-        let mut result = Self::process_loops(&self.content, variables);
+        let (mut result, loop_logs) = Self::process_loops_with_log(
+            &self.content,
+            variables,
+            &mut literal_segments,
+        );
 
         // Process conditionals
         result = Self::process_conditionals(&result, variables);
@@ -341,11 +380,26 @@ impl Template {
             Self::substitute_variables_allow_empty(&result, variables);
 
         // Check for missing variables
-        if let Some(first_missing) = unsubstituted.first() {
+        let mut missing = Vec::new();
+        for loop_log in loop_logs {
+            if result.contains(&loop_log.token) {
+                for name in loop_log.unsubstituted {
+                    if !missing.contains(&name) {
+                        missing.push(name);
+                    }
+                }
+            }
+        }
+        for name in unsubstituted {
+            if !missing.contains(&name) {
+                missing.push(name);
+            }
+        }
+        if let Some(first_missing) = missing.first() {
             return Err(TemplateError::MissingVariable(first_missing.clone()));
         }
 
-        Ok(result_after_sub)
+        Ok(Self::restore_literal_segments(result_after_sub, &literal_segments))
     }
 
     /// Render the template with variables and partials support.
@@ -383,6 +437,7 @@ impl Template {
         visited: &mut Vec<String>,
     ) -> Result<String, TemplateError> {
         // First, extract and resolve all partials in this template
+        let mut literal_segments = Vec::new();
         let mut result = self.content.clone();
 
         // Find all {{> partial}} references
@@ -410,11 +465,21 @@ impl Template {
             visited.pop();
 
             // Replace the partial reference with rendered content
-            result = result.replace(&full_match, &rendered_partial);
+            let token = Self::next_literal_token(&result, &rendered_partial, &literal_segments);
+            literal_segments.push(LiteralSegment {
+                token: token.clone(),
+                content: rendered_partial,
+            });
+            result = result.replace(&full_match, &token);
         }
 
         // Process loops (they may generate new variable references)
-        result = Self::process_loops(&result, variables);
+        let (loop_processed, loop_logs) = Self::process_loops_with_log(
+            &result,
+            variables,
+            &mut literal_segments,
+        );
+        result = loop_processed;
 
         // Process conditionals
         result = Self::process_conditionals(&result, variables);
@@ -424,11 +489,29 @@ impl Template {
             Self::substitute_variables_allow_empty(&result, variables);
 
         // Check for missing variables
-        if let Some(first_missing) = unsubstituted.first() {
+        let mut missing = Vec::new();
+        for loop_log in loop_logs {
+            if result.contains(&loop_log.token) {
+                for name in loop_log.unsubstituted {
+                    if !missing.contains(&name) {
+                        missing.push(name);
+                    }
+                }
+            }
+        }
+        for name in unsubstituted {
+            if !missing.contains(&name) {
+                missing.push(name);
+            }
+        }
+        if let Some(first_missing) = missing.first() {
             return Err(TemplateError::MissingVariable(first_missing.clone()));
         }
 
-        Ok(result_after_sub)
+        Ok(Self::restore_literal_segments(
+            result_after_sub,
+            &literal_segments,
+        ))
     }
 
     /// Internal recursive rendering with log tracking.
@@ -446,6 +529,7 @@ impl Template {
             substituted: Vec::new(),
             unsubstituted: Vec::new(),
         };
+        let mut literal_segments = Vec::new();
 
         // Process partials (existing logic)
         let mut result = self.content.clone();
@@ -472,7 +556,16 @@ impl Template {
             )?;
             visited.pop();
 
-            result = result.replace(&full_match, &rendered_partial.content);
+            let token = Self::next_literal_token(
+                &result,
+                &rendered_partial.content,
+                &literal_segments,
+            );
+            literal_segments.push(LiteralSegment {
+                token: token.clone(),
+                content: rendered_partial.content,
+            });
+            result = result.replace(&full_match, &token);
             log.substituted.extend(rendered_partial.log.substituted);
             for name in rendered_partial.log.unsubstituted {
                 if !log.unsubstituted.contains(&name) {
@@ -482,18 +575,27 @@ impl Template {
         }
 
         // Process loops
-        let (loop_processed, loop_substituted, loop_unsubstituted) =
-            Self::process_loops_with_log(&result, variables);
+        let (loop_processed, loop_logs) =
+            Self::process_loops_with_log(
+                &result,
+                variables,
+                &mut literal_segments,
+            );
         result = loop_processed;
-        log.substituted.extend(loop_substituted);
-        for name in loop_unsubstituted {
-            if !log.unsubstituted.contains(&name) {
-                log.unsubstituted.push(name);
-            }
-        }
 
         // Process conditionals
         result = Self::process_conditionals(&result, variables);
+
+        for loop_log in loop_logs {
+            if result.contains(&loop_log.token) {
+                log.substituted.extend(loop_log.substituted);
+                for name in loop_log.unsubstituted {
+                    if !log.unsubstituted.contains(&name) {
+                        log.unsubstituted.push(name);
+                    }
+                }
+            }
+        }
 
         // Substitute variables WITH log tracking
         let (result_after_sub, substituted, unsubstituted) =
@@ -507,7 +609,7 @@ impl Template {
         }
 
         Ok(RenderedTemplate {
-            content: result_after_sub,
+            content: Self::restore_literal_segments(result_after_sub, &literal_segments),
             log,
         })
     }
