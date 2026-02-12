@@ -5,6 +5,7 @@
 use crate::prompts::partials::get_shared_partials;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
+use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
 use crate::workspace::Workspace;
 use std::collections::HashMap;
 use std::path::Path;
@@ -98,18 +99,78 @@ pub fn prompt_review_xml_with_context(
         })
 }
 
+/// Generate review prompt with size-aware content references and substitution log.
+///
+/// This is the new log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_review_xml_with_references_and_log(
+    context: &TemplateContext,
+    refs: &crate::prompts::content_builder::PromptContentReferences,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> RenderedTemplate {
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("review_xml")
+        .unwrap_or_else(|_| include_str!("templates/review_xml.txt").to_string());
+
+    let variables = HashMap::from([
+        ("PLAN", refs.plan_for_template()),
+        ("CHANGES", refs.diff_for_template()),
+        (
+            "ISSUES_XML_PATH",
+            workspace.absolute_str(".agent/tmp/issues.xml"),
+        ),
+        (
+            "ISSUES_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/issues.xsd"),
+        ),
+    ]);
+
+    match Template::new(&template_content).render_with_log(template_name, &variables, &partials) {
+        Ok(rendered) => rendered,
+        Err(err) => {
+            // Extract missing variable from error
+            let unsubstituted = match &err {
+                crate::prompts::template_engine::TemplateError::MissingVariable(name) => vec![name.clone()],
+                _ => vec![],
+            };
+
+            let plan = refs.plan_for_template();
+            let changes = refs.diff_for_template();
+            let content = format!("REVIEW MODE\n\nPLAN:\n{plan}\n\nCHANGES:\n{changes}\n");
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![
+                        SubstitutionEntry {
+                            name: "PLAN".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                        SubstitutionEntry {
+                            name: "CHANGES".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                    ],
+                    unsubstituted,
+                },
+            }
+        }
+    }
+}
+
 /// Generate review prompt with size-aware content references.
 ///
 /// This version uses `PromptContentReferences` which automatically handles
-/// oversized PLAN and DIFF content by referencing file paths or git commands.
-///
-/// Note: The reviewer is still instructed to read `.agent/PROMPT.md.backup` directly
-/// for the original requirements.
+/// oversized content by referencing file paths instead of embedding inline.
+/// Use this when content may exceed CLI argument limits.
 ///
 /// # Arguments
 ///
 /// * `context` - Template context containing the template registry
-/// * `refs` - Content references for PLAN and CHANGES (DIFF)
+/// * `refs` - Content references for PLAN and CHANGES (diff)
 /// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_review_xml_with_references(
     context: &TemplateContext,
@@ -294,6 +355,78 @@ fn format_files_section_xml(files: &[String]) -> String {
                 .map(|f| format!("- {f}"))
                 .collect::<Vec<_>>()
                 .join("\n"))
+    }
+}
+
+/// Generate fix prompt with substitution log.
+///
+/// This is the new log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_fix_xml_with_log(
+    context: &TemplateContext,
+    prompt_content: &str,
+    plan_content: &str,
+    issues_content: &str,
+    files_to_modify: &[String],
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> RenderedTemplate {
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("fix_mode_xml")
+        .unwrap_or_else(|_| include_str!("templates/fix_mode_xml.txt").to_string());
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("ISSUES", issues_content.to_string()),
+        ("FILES_TO_MODIFY", format_files_section_xml(files_to_modify)),
+        (
+            "FIX_RESULT_XML_PATH",
+            workspace.absolute_str(".agent/tmp/fix_result.xml"),
+        ),
+        (
+            "FIX_RESULT_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/fix_result.xsd"),
+        ),
+    ]);
+    match Template::new(&template_content).render_with_log(template_name, &variables, &partials) {
+        Ok(rendered) => rendered,
+        Err(err) => {
+            // Extract missing variable from error
+            let unsubstituted = match &err {
+                crate::prompts::template_engine::TemplateError::MissingVariable(name) => vec![name.clone()],
+                _ => vec![],
+            };
+
+            let content = format!(
+                "FIX MODE\n\nFix the issues:\n\n{}\n\n\
+                 Based on requirements:\n{}\n\nPlan:\n{}\n\n\
+                 Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n",
+                issues_content, prompt_content, plan_content
+            );
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![
+                        SubstitutionEntry {
+                            name: "PROMPT".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                        SubstitutionEntry {
+                            name: "PLAN".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                        SubstitutionEntry {
+                            name: "ISSUES".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                    ],
+                    unsubstituted,
+                },
+            }
+        }
     }
 }
 

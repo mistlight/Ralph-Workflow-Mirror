@@ -83,3 +83,7 @@ mod gitignore_entries;
 // Prompt permissions lifecycle tests
 #[path = "tests/prompt_permissions.rs"]
 mod prompt_permissions;
+
+// Template rendering substitution log validation tests
+#[path = "tests/template_validation.rs"]
+mod template_validation;

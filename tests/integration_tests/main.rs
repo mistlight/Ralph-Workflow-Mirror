@@ -75,6 +75,7 @@ mod reducer_state_machine;
 mod review_output_validation;
 mod review_xml_validation;
 mod template_rendering_errors;
+mod template_validation_jsx;
 mod test_count_guard;
 mod test_timeout;
 mod test_traits;

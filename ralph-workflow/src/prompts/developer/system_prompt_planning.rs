@@ -120,7 +120,82 @@ pub fn prompt_planning_xml_with_context(
         })
 }
 
+/// Generate planning prompt with size-aware content references and substitution log.
+///
+/// This is the new log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_planning_xml_with_references_and_log(
+    context: &TemplateContext,
+    prompt_ref: &super::content_reference::PromptContentReference,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> crate::prompts::RenderedTemplate {
+    use crate::prompts::{
+        RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource,
+    };
+
+    let partials = get_shared_partials();
+    // Write the XSD schema file so it's available for the agent to reference
+    write_planning_xsd_schema_file(workspace);
+
+    let template_content = context
+        .registry()
+        .get_template("planning_xml")
+        .unwrap_or_else(|_| include_str!("../templates/planning_xml.txt").to_string());
+    let template = Template::new(&template_content);
+
+    let variables = HashMap::from([
+        ("PROMPT", prompt_ref.render_for_template()),
+        (
+            "PLAN_XML_PATH",
+            workspace.absolute_str(".agent/tmp/plan.xml"),
+        ),
+        (
+            "PLAN_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/plan.xsd"),
+        ),
+    ]);
+
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(rendered) => rendered,
+        Err(err) => {
+            // Extract missing variable from error
+            let unsubstituted = match &err {
+                crate::prompts::template_engine::TemplateError::MissingVariable(name) => {
+                    vec![name.clone()]
+                }
+                _ => vec![],
+            };
+
+            let prompt = prompt_ref.render_for_template();
+            let content =
+                format!("PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt}\n");
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![SubstitutionEntry {
+                        name: "PROMPT".to_string(),
+                        source: SubstitutionSource::Value,
+                    }],
+                    unsubstituted,
+                },
+            }
+        }
+    }
+}
+
 /// Generate planning prompt with size-aware content references.
+///
+/// This version uses `PromptContentReference` which automatically handles
+/// oversized content by referencing file paths instead of embedding inline.
+/// Use this when content may exceed CLI argument limits.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_ref` - Content reference for PROMPT
+/// * `workspace` - Workspace for resolving absolute paths
 pub fn prompt_planning_xml_with_references(
     context: &TemplateContext,
     prompt_ref: &super::content_reference::PromptContentReference,
@@ -199,9 +274,8 @@ pub fn prompt_planning_xsd_retry_with_context_files(
                 workspace.root().display()
             ));
         }
-        diagnostic_prefix.push_str(
-            "This likely indicates CWD != workspace.root() path mismatch.\n\n",
-        );
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
     }
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)

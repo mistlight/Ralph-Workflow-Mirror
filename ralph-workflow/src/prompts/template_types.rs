@@ -117,3 +117,67 @@ pub struct TemplateMetadata {
     /// Template purpose description
     pub purpose: Option<String>,
 }
+
+// =========================================================================
+// Substitution Log Types (for log-based validation)
+// =========================================================================
+
+/// How a placeholder was resolved during template rendering.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SubstitutionSource {
+    /// Value was provided by the caller.
+    Value,
+    /// Used the default value from template (e.g., {{VAR|default="x"}}).
+    Default,
+    /// Variable was provided but empty, used default.
+    EmptyWithDefault,
+}
+
+/// Record of a single placeholder substitution.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SubstitutionEntry {
+    /// The placeholder name (e.g., "DIFF", "NAME").
+    pub name: String,
+    /// How it was resolved.
+    pub source: SubstitutionSource,
+}
+
+/// Record of template substitution - stored in reducer state for validation.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SubstitutionLog {
+    /// Name of the template that was rendered.
+    pub template_name: String,
+    /// Placeholders that were successfully substituted (with source).
+    pub substituted: Vec<SubstitutionEntry>,
+    /// Placeholders that had no value AND no default (truly missing).
+    pub unsubstituted: Vec<String>,
+}
+
+impl SubstitutionLog {
+    /// Check if all required placeholders were substituted.
+    /// Returns true if no placeholders are left unsubstituted.
+    pub fn is_complete(&self) -> bool {
+        self.unsubstituted.is_empty()
+    }
+
+    /// Get names of placeholders that used their default values.
+    pub fn defaults_used(&self) -> Vec<&str> {
+        self.substituted
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.source,
+                    SubstitutionSource::Default | SubstitutionSource::EmptyWithDefault
+                )
+            })
+            .map(|e| e.name.as_str())
+            .collect()
+    }
+}
+
+/// Result of template rendering with substitution log.
+#[derive(Debug, Clone)]
+pub struct RenderedTemplate {
+    pub content: String,
+    pub log: SubstitutionLog,
+}

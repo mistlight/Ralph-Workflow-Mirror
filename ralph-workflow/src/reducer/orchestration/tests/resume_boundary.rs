@@ -79,6 +79,7 @@ fn create_resume_state(
             restored: false,
             last_warning: None,
         },
+        last_substitution_log: None,
         metrics: crate::reducer::state::RunMetrics {
             max_dev_iterations: total_iterations,
             max_review_passes: total_reviewer_passes,

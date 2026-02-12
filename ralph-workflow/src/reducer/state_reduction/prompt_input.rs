@@ -76,5 +76,17 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
             },
             ..state
         },
+        PromptInputEvent::TemplateRendered {
+            phase: _,
+            template_name: _,
+            log,
+        } => {
+            // Store the substitution log for validation and observability
+            // Validation happens in handlers before emitting this event
+            PipelineState {
+                last_substitution_log: Some(log),
+                ..state
+            }
+        }
     }
 }

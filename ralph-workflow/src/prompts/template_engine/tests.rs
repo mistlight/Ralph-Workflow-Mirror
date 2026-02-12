@@ -495,4 +495,153 @@ DIFF:
         let rendered = template.render(&variables).unwrap();
         assert_eq!(rendered, "apple cherry ");
     }
+
+    // =========================================================================
+    // Substitution Log Tests
+    // =========================================================================
+
+    #[test]
+    fn test_substitution_log_value_provided() {
+        let template = Template::new("Hello {{NAME}}");
+        let variables = HashMap::from([("NAME", "Alice".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert_eq!(rendered.content, "Hello Alice");
+        assert_eq!(rendered.log.template_name, "test");
+        assert_eq!(rendered.log.substituted.len(), 1);
+        assert_eq!(rendered.log.substituted[0].name, "NAME");
+        assert_eq!(
+            rendered.log.substituted[0].source,
+            crate::prompts::SubstitutionSource::Value
+        );
+        assert!(rendered.log.is_complete());
+        assert!(rendered.log.unsubstituted.is_empty());
+    }
+
+    #[test]
+    fn test_substitution_log_default_used() {
+        let template = Template::new("Hello {{NAME|default=\"Guest\"}}");
+        let variables = HashMap::new();
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert_eq!(rendered.content, "Hello Guest");
+        assert_eq!(rendered.log.substituted.len(), 1);
+        assert_eq!(rendered.log.substituted[0].name, "NAME");
+        assert_eq!(
+            rendered.log.substituted[0].source,
+            crate::prompts::SubstitutionSource::Default
+        );
+        assert!(rendered.log.is_complete());
+    }
+
+    #[test]
+    fn test_substitution_log_empty_with_default() {
+        let template = Template::new("Hello {{NAME|default=\"Guest\"}}");
+        let variables = HashMap::from([("NAME", "".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert_eq!(rendered.content, "Hello Guest");
+        assert_eq!(
+            rendered.log.substituted[0].source,
+            crate::prompts::SubstitutionSource::EmptyWithDefault
+        );
+        assert!(rendered.log.is_complete());
+    }
+
+    #[test]
+    fn test_substitution_log_truly_missing() {
+        let template = Template::new("Hello {{NAME}}");
+        let variables = HashMap::new();
+
+        let result = template.render_with_log("test", &variables, &HashMap::new());
+
+        // Should error due to missing required variable
+        assert!(result.is_err());
+        match result {
+            Err(TemplateError::MissingVariable(name)) => assert_eq!(name, "NAME"),
+            _ => panic!("Expected MissingVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_substitution_log_jsx_in_value() {
+        let template = Template::new("Code: {{CODE}}");
+        let variables = HashMap::from([("CODE", "style={{ zIndex: 0 }}".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert!(rendered.content.contains("{{ zIndex: 0 }}"));
+        assert_eq!(
+            rendered.log.substituted[0].source,
+            crate::prompts::SubstitutionSource::Value
+        );
+        assert!(rendered.log.is_complete());
+    }
+
+    #[test]
+    fn test_defaults_used_helper() {
+        let template = Template::new("{{A}} {{B|default=\"x\"}} {{C|default=\"y\"}}");
+        let variables = HashMap::from([("A", "a".to_string())]);
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        let defaults = rendered.log.defaults_used();
+        assert_eq!(defaults.len(), 2);
+        assert!(defaults.contains(&"B"));
+        assert!(defaults.contains(&"C"));
+        assert!(!defaults.contains(&"A"));
+    }
+
+    #[test]
+    fn test_substitution_log_mixed() {
+        let template = Template::new("{{A}} {{B|default=\"b\"}} {{C}}");
+        let variables = HashMap::from([("A", "a".to_string()), ("C", "c".to_string())]);
+        // B will use default
+
+        let rendered = template
+            .render_with_log("test", &variables, &HashMap::new())
+            .unwrap();
+
+        assert_eq!(rendered.content, "a b c");
+        assert_eq!(rendered.log.substituted.len(), 3);
+        assert!(rendered.log.is_complete());
+
+        // Check specific sources
+        let a_entry = rendered
+            .log
+            .substituted
+            .iter()
+            .find(|e| e.name == "A")
+            .unwrap();
+        assert_eq!(a_entry.source, crate::prompts::SubstitutionSource::Value);
+
+        let b_entry = rendered
+            .log
+            .substituted
+            .iter()
+            .find(|e| e.name == "B")
+            .unwrap();
+        assert_eq!(b_entry.source, crate::prompts::SubstitutionSource::Default);
+
+        let c_entry = rendered
+            .log
+            .substituted
+            .iter()
+            .find(|e| e.name == "C")
+            .unwrap();
+        assert_eq!(c_entry.source, crate::prompts::SubstitutionSource::Value);
+    }
 }

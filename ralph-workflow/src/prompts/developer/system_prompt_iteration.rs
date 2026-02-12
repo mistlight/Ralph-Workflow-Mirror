@@ -145,6 +145,78 @@ pub fn prompt_developer_iteration_xml_with_context(
         })
 }
 
+/// Generate developer iteration prompt with size-aware content references and substitution log.
+///
+/// This is the new log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_developer_iteration_xml_with_references_and_log(
+    context: &TemplateContext,
+    refs: &super::content_builder::PromptContentReferences,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> crate::prompts::RenderedTemplate {
+    use crate::prompts::{
+        RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource,
+    };
+
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xml")
+        .unwrap_or_else(|_| include_str!("../templates/developer_iteration_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let variables = HashMap::from([
+        ("PROMPT", refs.prompt_for_template()),
+        ("PLAN", refs.plan_for_template()),
+        (
+            "DEVELOPMENT_RESULT_XML_PATH",
+            workspace.absolute_str(".agent/tmp/development_result.xml"),
+        ),
+        (
+            "DEVELOPMENT_RESULT_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/development_result.xsd"),
+        ),
+    ]);
+
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(rendered) => rendered,
+        Err(err) => {
+            // Extract missing variable from error
+            let unsubstituted = match &err {
+                crate::prompts::template_engine::TemplateError::MissingVariable(name) => {
+                    vec![name.clone()]
+                }
+                _ => vec![],
+            };
+
+            let prompt = refs.prompt_for_template();
+            let plan = refs.plan_for_template();
+            let content = format!(
+                "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt}\n\n\
+             IMPLEMENTATION PLAN:\n{plan}\n\n\
+             Output format: <ralph-development-result>...</ralph-development-result>\n"
+            );
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![
+                        SubstitutionEntry {
+                            name: "PROMPT".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                        SubstitutionEntry {
+                            name: "PLAN".to_string(),
+                            source: SubstitutionSource::Value,
+                        },
+                    ],
+                    unsubstituted,
+                },
+            }
+        }
+    }
+}
+
 /// Generate developer iteration prompt with size-aware content references.
 ///
 /// This version uses `PromptContentReferences` which automatically handles
@@ -263,9 +335,8 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
                 workspace.root().display()
             ));
         }
-        diagnostic_prefix.push_str(
-            "This likely indicates CWD != workspace.root() path mismatch.\n\n",
-        );
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
     }
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)

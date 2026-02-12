@@ -78,6 +78,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             gitignore_entries_ensured: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
             prompt_permissions: checkpoint.prompt_permissions,
+            last_substitution_log: None,
             metrics: {
                 let continuation = ContinuationState::new();
                 RunMetrics {

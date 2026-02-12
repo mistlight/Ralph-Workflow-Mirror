@@ -366,39 +366,49 @@ impl MainEffectHandler {
                                 plan: Some(plan_ref),
                                 diff: Some(diff_ref),
                             };
-                            prompt_review_xml_with_references(
-                                ctx.template_context,
-                                &refs,
-                                ctx.workspace,
-                            )
+                            // Use log-based rendering
+                            let rendered =
+                                crate::prompts::prompt_review_xml_with_references_and_log(
+                                    ctx.template_context,
+                                    &refs,
+                                    ctx.workspace,
+                                    "review_xml",
+                                );
+                            rendered.content
                         });
+
+                    // Validate freshly generated prompts (not replayed ones)
+                    if !was_replayed {
+                        let refs = PromptContentReferences {
+                            prompt: None,
+                            plan: Some(plan_ref.clone()),
+                            diff: Some(diff_ref.clone()),
+                        };
+                        let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
+                            ctx.template_context,
+                            &refs,
+                            ctx.workspace,
+                            "review_xml",
+                        );
+
+                        if !rendered.log.is_complete() {
+                            return Ok(EffectResult::event(
+                                PipelineEvent::agent_template_variables_invalid(
+                                    AgentRole::Reviewer,
+                                    "review_xml".to_string(),
+                                    rendered.log.unsubstituted.clone(),
+                                    Vec::new(),
+                                ),
+                            ));
+                        }
+                    }
+
                     (prompt_key, prompt, was_replayed, "review_xml", true)
                 }
                 PromptMode::Continuation => {
                     return Err(ErrorEvent::ReviewContinuationNotSupported.into());
                 }
             };
-        if let Some(xsd_error) = xsd_error_for_validation {
-            ignore_sources_owned.push(xsd_error);
-        }
-        let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
-        if should_validate {
-            if let Err(err) =
-                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-                    &review_prompt_xml,
-                    &ignore_sources,
-                )
-            {
-                return Ok(EffectResult::event(
-                    PipelineEvent::agent_template_variables_invalid(
-                        AgentRole::Reviewer,
-                        template_name.to_string(),
-                        Vec::new(),
-                        err.unresolved_placeholders,
-                    ),
-                ));
-            }
-        }
 
         if !was_replayed {
             ctx.capture_prompt(&prompt_key, &review_prompt_xml);

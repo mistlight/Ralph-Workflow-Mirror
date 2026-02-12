@@ -390,8 +390,10 @@ impl MainEffectHandler {
                             }
                         }
                     };
-                    let (prompt, was_replayed) =
-                        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    let (prompt, was_replayed) = get_stored_or_generate_prompt(
+                        &prompt_key,
+                        &ctx.prompt_history,
+                        || {
                             let prompt_ref = prompt_ref.clone();
                             let plan_ref = plan_ref.clone();
                             let refs = PromptContentReferences {
@@ -399,12 +401,44 @@ impl MainEffectHandler {
                                 plan: Some(plan_ref),
                                 diff: None,
                             };
-                            prompt_developer_iteration_xml_with_references(
+                            // Use log-based rendering
+                            let rendered = crate::prompts::prompt_developer_iteration_xml_with_references_and_log(
                                 ctx.template_context,
                                 &refs,
                                 ctx.workspace,
-                            )
-                        });
+                                "developer_iteration_xml",
+                            );
+                            rendered.content
+                        },
+                    );
+
+                    // Validate freshly generated prompts (not replayed ones)
+                    if !was_replayed {
+                        let refs = PromptContentReferences {
+                            prompt: Some(prompt_ref.clone()),
+                            plan: Some(plan_ref.clone()),
+                            diff: None,
+                        };
+                        let rendered =
+                            crate::prompts::prompt_developer_iteration_xml_with_references_and_log(
+                                ctx.template_context,
+                                &refs,
+                                ctx.workspace,
+                                "developer_iteration_xml",
+                            );
+
+                        if !rendered.log.is_complete() {
+                            return Ok(EffectResult::event(
+                                PipelineEvent::agent_template_variables_invalid(
+                                    AgentRole::Developer,
+                                    "developer_iteration_xml".to_string(),
+                                    rendered.log.unsubstituted.clone(),
+                                    Vec::new(),
+                                ),
+                            ));
+                        }
+                    }
+
                     (
                         prompt,
                         "developer_iteration_xml",
@@ -414,24 +448,6 @@ impl MainEffectHandler {
                     )
                 }
             };
-        let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
-        if should_validate {
-            if let Err(err) =
-                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-                    &dev_prompt,
-                    &ignore_sources,
-                )
-            {
-                return Ok(EffectResult::event(
-                    PipelineEvent::agent_template_variables_invalid(
-                        AgentRole::Developer,
-                        template_name.to_string(),
-                        Vec::new(),
-                        err.unresolved_placeholders,
-                    ),
-                ));
-            }
-        }
 
         if let Some(prompt_key) = prompt_key {
             if !was_replayed {

@@ -63,16 +63,19 @@ pub use resume_note::{generate_resume_note, BriefDescription};
 
 // Re-export public items for API convenience
 pub use commit::prompt_commit_xsd_retry_with_context;
+pub use commit::prompt_commit_xsd_retry_with_log;
 pub use commit::prompt_fix_with_context;
 pub use commit::prompt_generate_commit_message_with_diff_with_context;
+pub use commit::prompt_generate_commit_message_with_diff_with_log;
 
 pub use developer::{
     prompt_developer_iteration_continuation_xml, prompt_developer_iteration_xml_with_context,
     prompt_developer_iteration_xml_with_references,
+    prompt_developer_iteration_xml_with_references_and_log,
     prompt_developer_iteration_xsd_retry_with_context,
     prompt_developer_iteration_xsd_retry_with_context_files, prompt_planning_xml_with_context,
-    prompt_planning_xml_with_references, prompt_planning_xsd_retry_with_context,
-    prompt_planning_xsd_retry_with_context_files,
+    prompt_planning_xml_with_references, prompt_planning_xml_with_references_and_log,
+    prompt_planning_xsd_retry_with_context, prompt_planning_xsd_retry_with_context_files,
 };
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use rebase::{
@@ -80,10 +83,10 @@ pub use rebase::{
     FileConflict,
 };
 pub use review::{
-    prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
+    prompt_fix_xml_with_context, prompt_fix_xml_with_log, prompt_fix_xsd_retry_with_context,
     prompt_fix_xsd_retry_with_context_files, prompt_review_xml_with_context,
-    prompt_review_xml_with_references, prompt_review_xsd_retry_with_context,
-    prompt_review_xsd_retry_with_context_files,
+    prompt_review_xml_with_references, prompt_review_xml_with_references_and_log,
+    prompt_review_xsd_retry_with_context, prompt_review_xsd_retry_with_context_files,
 };
 
 pub use rebase::build_enhanced_conflict_resolution_prompt;
@@ -101,7 +104,8 @@ pub use template_engine::Template;
 pub use template_validator::{
     extract_metadata, extract_partials, extract_variables, validate_no_unresolved_placeholders,
     validate_no_unresolved_placeholders_with_ignored_content, validate_template,
-    RenderedPromptError, TemplateVariablesInvalidError, ValidationError, ValidationWarning,
+    RenderedPromptError, RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource,
+    TemplateVariablesInvalidError, ValidationError, ValidationWarning,
 };
 pub use types::ContextLevel;
 pub use types::{Action, Role};

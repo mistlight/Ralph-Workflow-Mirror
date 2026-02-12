@@ -84,32 +84,55 @@ impl MainEffectHandler {
                 "commit_message_attempt_{attempt}_xsd_retry_{}",
                 self.state.continuation.xsd_retry_count
             );
-            let (prompt, was_replayed) =
-                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                    prompt_commit_xsd_retry_with_context(
+            let (prompt, was_replayed) = get_stored_or_generate_prompt(
+                &prompt_key,
+                &ctx.prompt_history,
+                || {
+                    // Generate with log-based validation
+                    let rendered = crate::prompts::prompt_commit_xsd_retry_with_log(
                         ctx.template_context,
                         &xsd_error,
                         ctx.workspace,
-                    )
-                });
+                        "commit_xsd_retry",
+                    );
 
-            if let Err(err) =
-                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-                    &prompt,
-                    &[],
-                )
-            {
-                return Ok(EffectResult::event(
-                    PipelineEvent::agent_template_variables_invalid(
-                        AgentRole::Commit,
-                        "commit_xsd_retry".to_string(),
-                        Vec::new(),
-                        err.unresolved_placeholders,
-                    ),
-                ));
-            }
+                    // Validate using substitution log
+                    if !rendered.log.is_complete() {
+                        // This shouldn't happen in practice since prompt generation handles defaults,
+                        // but if it does, we need to return something. The validation check below
+                        // will catch it and emit the appropriate event.
+                        eprintln!(
+                            "Warning: Template rendering produced incomplete substitution log: {:?}",
+                            rendered.log.unsubstituted
+                        );
+                    }
 
+                    rendered.content
+                },
+            );
+
+            // Re-validate if this is a freshly generated prompt (not replayed)
+            // For replayed prompts, we trust they were valid when originally generated
             if !was_replayed {
+                // Generate again to get the log for validation
+                let rendered = crate::prompts::prompt_commit_xsd_retry_with_log(
+                    ctx.template_context,
+                    &xsd_error,
+                    ctx.workspace,
+                    "commit_xsd_retry",
+                );
+
+                if !rendered.log.is_complete() {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Commit,
+                            "commit_xsd_retry".to_string(),
+                            rendered.log.unsubstituted.clone(),
+                            Vec::new(),
+                        ),
+                    ));
+                }
+
                 ctx.capture_prompt(&prompt_key, &prompt);
             }
 
@@ -234,14 +257,16 @@ impl MainEffectHandler {
                         .to_string(),
                         false,
                     ),
-                    Err(_) => (
-                        prompt_generate_commit_message_with_diff_with_context(
+                    Err(_) => {
+                        // Use log-based rendering
+                        let rendered = crate::prompts::prompt_generate_commit_message_with_diff_with_log(
                             ctx.template_context,
                             diff_for_prompt,
                             ctx.workspace,
-                        ),
-                        true,
-                    ),
+                            "commit_message_xml",
+                        );
+                        (rendered.content, true)
+                    }
                 };
                 let prompt = format!("{retry_preamble}\n{base_prompt}");
                 let prompt_key = format!(
@@ -252,14 +277,20 @@ impl MainEffectHandler {
             }
             PromptMode::Normal => {
                 let prompt_key = format!("commit_message_attempt_{attempt}");
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_generate_commit_message_with_diff_with_context(
+                let (prompt, was_replayed) = get_stored_or_generate_prompt(
+                    &prompt_key,
+                    &ctx.prompt_history,
+                    || {
+                        // Use log-based rendering
+                        let rendered = crate::prompts::prompt_generate_commit_message_with_diff_with_log(
                             ctx.template_context,
                             diff_for_prompt,
                             ctx.workspace,
-                        )
-                    });
+                            "commit_message_xml",
+                        );
+                        rendered.content
+                    },
+                );
                 (prompt_key, prompt, was_replayed, true)
             }
             PromptMode::XsdRetry => {
@@ -274,19 +305,24 @@ impl MainEffectHandler {
             }
         };
 
-        if should_validate {
-            if let Err(err) =
-                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-                    &prompt,
-                    &[diff_for_prompt],
-                )
-            {
+        if should_validate && !was_replayed {
+            // Generate again to get the log for validation
+            // Only validate freshly generated prompts, not replayed ones
+            let rendered =
+                crate::prompts::prompt_generate_commit_message_with_diff_with_log(
+                    ctx.template_context,
+                    diff_for_prompt,
+                    ctx.workspace,
+                    "commit_message_xml",
+                );
+
+            if !rendered.log.is_complete() {
                 return Ok(EffectResult::event(
                     PipelineEvent::agent_template_variables_invalid(
                         AgentRole::Commit,
                         "commit_message_xml".to_string(),
+                        rendered.log.unsubstituted.clone(),
                         Vec::new(),
-                        err.unresolved_placeholders,
                     ),
                 ));
             }

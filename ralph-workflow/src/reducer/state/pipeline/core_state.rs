@@ -217,6 +217,14 @@ pub struct PipelineState {
     /// on all graceful termination paths (success and failure).
     #[serde(default)]
     pub prompt_permissions: PromptPermissionsState,
+
+    /// Last template substitution log for validation and observability.
+    ///
+    /// Updated when TemplateRendered event is reduced. Used by the reducer
+    /// to validate templates based on tracked substitutions rather than
+    /// regex scanning rendered output.
+    #[serde(default)]
+    pub last_substitution_log: Option<crate::prompts::SubstitutionLog>,
 }
 
 impl PipelineState {
@@ -315,6 +323,7 @@ impl PipelineState {
             gitignore_entries_ensured: false,
             prompt_inputs: PromptInputsState::default(),
             prompt_permissions: PromptPermissionsState::default(),
+            last_substitution_log: None,
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
         }
     }

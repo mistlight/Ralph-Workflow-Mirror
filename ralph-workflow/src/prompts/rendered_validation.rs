@@ -6,42 +6,60 @@ use super::template_types::RenderedPromptError;
 
 /// Validate that a rendered prompt has no unresolved placeholders.
 ///
-/// This should be called AFTER template rendering to ensure no `{{...}}`
-/// patterns remain in the output. Unresolved placeholders indicate either
-/// missing template variables or template rendering failures.
+/// # Deprecation Notice
 ///
-/// Per the reducer fallback spec, Ralph must validate templates before
-/// invoking an agent and emit `TEMPLATE_VARIABLES_INVALID` if validation fails.
+/// **This function is deprecated.** Use substitution log-based validation instead,
+/// which tracks what was actually substituted during rendering rather than
+/// scanning for `{{}}` patterns in output. Regex scanning causes false positives
+/// when substituted values contain `{{}}` (e.g., JSX code, React components).
 ///
-/// # Arguments
+/// **Replacement approach:**
+/// ```ignore
+/// // Old (deprecated):
+/// let rendered = template.render(&variables)?;
+/// validate_no_unresolved_placeholders(&rendered)?;
 ///
-/// * `rendered` - The rendered prompt string to validate
+/// // New (correct):
+/// let rendered = template.render_with_log("template_name", &variables, &partials)?;
+/// if !rendered.log.is_complete() {
+///     return Err(...); // Use unsubstituted list from log
+/// }
+/// ```
 ///
-/// # Returns
+/// See `SubstitutionLog::is_complete()` for the replacement approach.
 ///
-/// * `Ok(())` if no unresolved placeholders are found
-/// * `Err(RenderedPromptError)` with the list of unresolved placeholders
+/// # Why This is Deprecated
 ///
-/// # Trade-offs
-///
-/// This validation uses a simple regex that may have false positives if the
+/// This validation uses regex scanning which has false positives when the
 /// rendered prompt legitimately contains literal `{{...}}` patterns, such as:
+/// - JSX/React code: `style={{ zIndex: 0 }}`
+/// - Code examples that demonstrate templates
 /// - Documentation that explains template syntax
-/// - Code examples that demonstrate Handlebars/Jinja templates
 ///
-/// This is an intentional trade-off: it's safer to reject rare legitimate content
-/// than to allow prompts with unresolved template variables to reach agents.
-/// If templates need to include literal `{{...}}` patterns as content, they
-/// should be escaped appropriately during rendering (e.g., using `\{{` or `{{{{`).
+/// The original comment said "this is an intentional trade-off" but it's actually
+/// a bug - we're parsing DATA as CODE. The correct approach is to track substitutions
+/// during rendering (like SQL prepared statements) rather than scanning output.
+#[deprecated(
+    since = "0.7.3",
+    note = "Use SubstitutionLog::is_complete() instead. Regex scanning causes false positives."
+)]
 pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
     validate_no_unresolved_placeholders_with_ignored_content(rendered, &[])
 }
 
 /// Validate that a rendered prompt has no unresolved placeholders, ignoring known content.
 ///
-/// This variant allows callers to provide trusted content (e.g., diff/plan text)
-/// that may contain literal `{{...}}` patterns. Any placeholder that appears
-/// inside one of the ignored content strings will be skipped.
+/// # Deprecation Notice
+///
+/// **This function is deprecated.** The `ignored_content` parameter was a workaround
+/// for the fundamental flaw in regex-based validation. Use substitution log-based
+/// validation instead via `SubstitutionLog::is_complete()`.
+///
+/// See deprecation notice on `validate_no_unresolved_placeholders` for details.
+#[deprecated(
+    since = "0.7.3",
+    note = "Use SubstitutionLog::is_complete() instead. Regex scanning causes false positives."
+)]
 pub fn validate_no_unresolved_placeholders_with_ignored_content(
     rendered: &str,
     ignored_content: &[&str],

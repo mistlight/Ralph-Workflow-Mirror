@@ -167,14 +167,17 @@ impl MainEffectHandler {
                     let prompt_key = format!("fix_{pass}");
                     let (prompt, was_replayed) =
                         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                            prompt_fix_xml_with_context(
+                            // Use log-based rendering
+                            let rendered = crate::prompts::review::prompt_fix_xml_with_log(
                                 ctx.template_context,
                                 &prompt_content,
                                 &plan_content,
                                 &issues_content,
                                 &[],
                                 ctx.workspace,
-                            )
+                                "fix_mode_xml",
+                            );
+                            rendered.content
                         });
                     (prompt_key, prompt, was_replayed, "fix_mode_xml", true)
                 }
@@ -182,22 +185,26 @@ impl MainEffectHandler {
                     return Err(ErrorEvent::FixContinuationNotSupported.into());
                 }
             };
-        if let Some(xsd_error) = xsd_error_for_validation.as_deref() {
-            ignore_sources.push(xsd_error);
-        }
-        if should_validate {
-            if let Err(err) =
-                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-                    &fix_prompt,
-                    &ignore_sources,
-                )
-            {
+        if should_validate && !was_replayed {
+            // Re-generate to get the log for validation
+            // Only validate freshly generated prompts, not replayed ones
+            let rendered = crate::prompts::review::prompt_fix_xml_with_log(
+                ctx.template_context,
+                &prompt_content,
+                &plan_content,
+                &issues_content,
+                &[],
+                ctx.workspace,
+                template_name,
+            );
+
+            if !rendered.log.is_complete() {
                 return Ok(EffectResult::event(
                     PipelineEvent::agent_template_variables_invalid(
                         AgentRole::Reviewer,
                         template_name.to_string(),
+                        rendered.log.unsubstituted.clone(),
                         Vec::new(),
-                        err.unresolved_placeholders,
                     ),
                 ));
             }

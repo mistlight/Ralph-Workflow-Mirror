@@ -5,6 +5,7 @@
 use crate::prompts::partials::get_shared_partials;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
+use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
 use crate::workspace::Workspace;
 use std::collections::HashMap;
 
@@ -255,6 +256,84 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     })
 }
 
+/// Generate prompt for commit message from diff with substitution log.
+///
+/// This is the new log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_generate_commit_message_with_diff_with_log(
+    context: &TemplateContext,
+    diff: &str,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> RenderedTemplate {
+    // Ensure the commit XSD schema is available on disk for agents to reference.
+    let tmp_dir = std::path::Path::new(".agent/tmp");
+    let _ = workspace.create_dir_all(tmp_dir);
+    let _ = workspace.write(
+        &tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    );
+
+    // Check if diff is empty or whitespace-only
+    let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
+
+    if !has_changes {
+        let content = "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
+        return RenderedTemplate {
+            content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![],
+                unsubstituted: vec![],
+            },
+        };
+    }
+
+    let template_content = context
+        .registry()
+        .get_template("commit_message_xml")
+        .unwrap_or_else(|_| include_str!("templates/commit_message_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let partials = get_shared_partials();
+    let variables = HashMap::from([
+        ("DIFF", diff_content.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+        ),
+    ]);
+
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            eprintln!("Warning: Failed to render commit template: {e}");
+            // Last resort: simple inline prompt with manual log
+            let content = format!(
+                "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
+                 Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
+            );
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![SubstitutionEntry {
+                        name: "DIFF".to_string(),
+                        source: SubstitutionSource::Value,
+                    }],
+                    unsubstituted: vec![],
+                },
+            }
+        }
+    }
+}
+
 /// Generate prompt for creating commit message from provided diff using template registry.
 ///
 /// This version uses the template registry which supports user template overrides.
@@ -318,6 +397,164 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
              Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
         )
     })
+}
+
+/// Generate XSD validation retry prompt for commit message XML with substitution log.
+///
+/// This is the new log-based version that returns both content and substitution tracking.
+/// Use this version in handlers to enable log-based validation.
+pub fn prompt_commit_xsd_retry_with_log(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+    template_name: &str,
+) -> RenderedTemplate {
+    use std::path::Path;
+
+    // Ensure the schema file is present.
+    let tmp_dir = Path::new(".agent/tmp");
+    let _ = workspace.create_dir_all(tmp_dir);
+    let _ = workspace.write(
+        &tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    );
+
+    // Check that required files exist
+    let schema_path = Path::new(".agent/tmp/commit_message.xsd");
+    let canonical_output_path = Path::new(".agent/tmp/commit_message.xml");
+    let processed_output_path = Path::new(".agent/tmp/commit_message.xml.processed");
+
+    let schema_exists = workspace.exists(schema_path);
+    let canonical_output_exists = workspace.exists(canonical_output_path);
+    let processed_output_exists = workspace.exists(processed_output_path);
+
+    // If canonical file was archived, try using the .processed file as fallback
+    let (last_output_path, last_output_exists, used_processed) =
+        if !canonical_output_exists && processed_output_exists {
+            (processed_output_path, true, true)
+        } else {
+            (canonical_output_path, canonical_output_exists, false)
+        };
+
+    // Build diagnostic prefix for missing files
+    let mut diagnostic_prefix = String::new();
+    if !schema_exists || !last_output_exists {
+        diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
+        if !schema_exists {
+            diagnostic_prefix.push_str(&format!(
+                "  - Schema file: {} (workspace.root() = {})\n",
+                workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+                workspace.root().display()
+            ));
+        }
+        if !last_output_exists {
+            if used_processed {
+                diagnostic_prefix.push_str(&format!(
+                    "  - Last output: Neither canonical nor processed file exists:\n\
+                     \t  Tried: {}\n\
+                     \t  Tried: {}\n\
+                     \t  (workspace.root() = {})\n",
+                    workspace.absolute_str(".agent/tmp/commit_message.xml"),
+                    workspace.absolute_str(".agent/tmp/commit_message.xml.processed"),
+                    workspace.root().display()
+                ));
+            } else {
+                let processed_note = if processed_output_exists {
+                    " (note: .processed file exists but canonical file is missing)"
+                } else {
+                    ""
+                };
+                diagnostic_prefix.push_str(&format!(
+                    "  - Last output: {}{}\n\
+                     \t  (workspace.root() = {})\n",
+                    workspace.absolute_str(
+                        canonical_output_path
+                            .to_str()
+                            .unwrap_or(".agent/tmp/commit_message.xml")
+                    ),
+                    processed_note,
+                    workspace.root().display()
+                ));
+            }
+        }
+        diagnostic_prefix
+            .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
+    }
+
+    // If both files are missing, return fallback with manual log
+    if !schema_exists && !last_output_exists {
+        let content = format!(
+            "{}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
+             Error: {}\n\n\
+             The schema and previous output files could not be found. \
+             Please generate a conventional commit message for the current changes.\n\n\
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n",
+            diagnostic_prefix, xsd_error
+        );
+        return RenderedTemplate {
+            content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: vec![],
+            },
+        };
+    }
+
+    // Proceed with normal XSD retry prompt generation using render_with_log
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("commit_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            workspace.absolute_str(
+                last_output_path
+                    .to_str()
+                    .unwrap_or(".agent/tmp/commit_message.xml"),
+            ),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+        ),
+    ]);
+
+    let template = Template::new(&template_content);
+    match template.render_with_log(template_name, &variables, &partials) {
+        Ok(mut rendered) => {
+            // Prepend diagnostic prefix if files were missing but we continued anyway
+            if !diagnostic_prefix.is_empty() {
+                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
+            }
+            rendered
+        }
+        Err(_) => {
+            // Fallback with manual log
+            let content = format!(
+                "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
+                 Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
+                 Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
+            );
+            RenderedTemplate {
+                content,
+                log: SubstitutionLog {
+                    template_name: template_name.to_string(),
+                    substituted: vec![SubstitutionEntry {
+                        name: "XSD_ERROR".to_string(),
+                        source: SubstitutionSource::Value,
+                    }],
+                    unsubstituted: vec![],
+                },
+            }
+        }
+    }
 }
 
 /// Generate XSD validation retry prompt for commit message XML.
@@ -449,7 +686,8 @@ pub fn prompt_commit_xsd_retry_with_context(
         ),
     ]);
 
-    let rendered_prompt = Template::new(&template_content)
+    let template = Template::new(&template_content);
+    let rendered_prompt = template
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(

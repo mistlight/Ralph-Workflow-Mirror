@@ -31,8 +31,8 @@ pub use rendered_validation::{
 pub use syntax_validation::validate_syntax;
 pub use template_extraction::{extract_metadata, extract_partials, extract_variables};
 pub use template_types::{
-    RenderedPromptError, TemplateVariablesInvalidError, ValidationError, ValidationResult,
-    ValidationWarning,
+    RenderedPromptError, RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource,
+    TemplateVariablesInvalidError, ValidationError, ValidationResult, ValidationWarning,
 };
 
 /// Validate a complete template.

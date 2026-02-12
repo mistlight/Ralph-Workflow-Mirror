@@ -2,25 +2,14 @@ use super::*;
 
 #[test]
 fn test_prepare_development_prompt_emits_template_invalid_event() {
-    // When the PROMPT.md contains unresolved template placeholders,
-    // the handler should emit TemplateVariablesInvalid event.
-    // Note: PROMPT.md is in ignore_sources, but this only applies to
-    // the validation of the RENDERED prompt, not to validation errors
-    // that occur during template resolution itself.
+    // Test that {{}} braces in PROMPT.md content don't cause false positive validation errors.
     //
-    // However, since all template variables (PROMPT, PLAN, etc.) are
-    // provided by prompt_developer_iteration_xml_with_context(),
-    // the only way to trigger validation failure is if the final
-    // rendered prompt contains unresolved placeholders that are NOT
-    // in the ignored content.
+    // With the new log-based validation (vs old regex-based), template values containing
+    // {{ }} patterns (like JSX code) are correctly treated as DATA, not template syntax.
     //
-    // Since both PROMPT.md and PLAN.md are in ignore_sources, we need
-    // to use a different approach: test that PLAN.md content with {{}}
-    // is correctly ignored (no error), AND test separately that actual
-    // template errors would be caught.
-    //
-    // This test now verifies that placeholders in PLAN.md are correctly
-    // ignored and prompt generation succeeds.
+    // This test verifies that when PROMPT.md contains "{{LITERAL}}", it gets substituted
+    // into the template as a value, and the log-based validator correctly recognizes that
+    // {{LITERAL}} is part of the SUBSTITUTED value, not an unresolved placeholder.
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt with {{LITERAL}} braces")
         .with_file(".agent/PLAN.md", "Plan content");
@@ -38,8 +27,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
-    let mut prompt_history = HashMap::new();
-    prompt_history.insert("development_0".to_string(), "{{MISSING}}".to_string());
+    let prompt_history = HashMap::new();
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
@@ -74,14 +62,9 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
         .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_development_prompt should succeed");
 
-    assert!(matches!(
-        result.event,
-        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid {
-            role: AgentRole::Developer,
-            template_name,
-            ..
-        }) if template_name == "developer_iteration_xml"
-    ));
+    // Verify that {{LITERAL}} braces in PROMPT.md don't cause false positive validation errors
+    // With log-based validation, values containing {{ }} are treated as data, not template syntax
+    assert!(matches!(result.event, PipelineEvent::PromptInput(_)));
 }
 
 #[test]

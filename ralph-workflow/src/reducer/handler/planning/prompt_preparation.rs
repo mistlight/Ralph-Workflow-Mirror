@@ -246,36 +246,43 @@ impl MainEffectHandler {
                 let prompt_ref_for_template = prompt_ref.clone();
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_planning_xml_with_references(
+                        // Use log-based rendering
+                        let rendered = crate::prompts::prompt_planning_xml_with_references_and_log(
                             ctx.template_context,
                             &prompt_ref_for_template,
                             ctx.workspace,
-                        )
+                            "planning_xml",
+                        );
+                        rendered.content
                     });
+
+                // Validate freshly generated prompts (not replayed ones)
+                if !was_replayed {
+                    let rendered = crate::prompts::prompt_planning_xml_with_references_and_log(
+                        ctx.template_context,
+                        &prompt_ref,
+                        ctx.workspace,
+                        "planning_xml",
+                    );
+
+                    if !rendered.log.is_complete() {
+                        return Ok(EffectResult::event(
+                            PipelineEvent::agent_template_variables_invalid(
+                                AgentRole::Developer,
+                                "planning_xml".to_string(),
+                                rendered.log.unsubstituted.clone(),
+                                Vec::new(),
+                            ),
+                        ));
+                    }
+                }
+
                 (prompt, "planning_xml", Some(prompt_key), was_replayed, true)
             }
             PromptMode::Continuation => {
                 return Err(ErrorEvent::PlanningContinuationNotSupported.into());
             }
         };
-        let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
-        if should_validate {
-            if let Err(err) =
-                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-                    &prompt,
-                    &ignore_sources,
-                )
-            {
-                return Ok(EffectResult::event(
-                    PipelineEvent::agent_template_variables_invalid(
-                        AgentRole::Developer,
-                        template_name.to_string(),
-                        Vec::new(),
-                        err.unresolved_placeholders,
-                    ),
-                ));
-            }
-        }
 
         if let Some(prompt_key) = prompt_key {
             if !was_replayed {

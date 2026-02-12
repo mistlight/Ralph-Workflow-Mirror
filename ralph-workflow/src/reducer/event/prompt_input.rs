@@ -115,4 +115,18 @@ pub enum PromptInputEvent {
         /// Warning message when restore fails.
         warning: String,
     },
+
+    /// Template was rendered, carrying substitution log.
+    ///
+    /// Emitted by prompt preparation handlers after template rendering.
+    /// The substitution log enables validation based on tracked substitutions
+    /// rather than regex scanning the rendered output.
+    TemplateRendered {
+        /// Pipeline phase during which the template was rendered.
+        phase: PipelinePhase,
+        /// Template name (e.g., "commit_message_xml").
+        template_name: String,
+        /// Detailed substitution log from rendering.
+        log: crate::prompts::SubstitutionLog,
+    },
 }
