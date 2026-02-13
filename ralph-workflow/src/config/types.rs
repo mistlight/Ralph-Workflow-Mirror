@@ -246,7 +246,16 @@ pub struct Config {
     pub(crate) review_format_retries: u32,
     /// Maximum continuation attempts when developer returns "partial" or "failed".
     /// Higher values allow more attempts to complete complex tasks within a single plan.
-    /// Default: 2 (initial attempt + 1 continuation = 2 total attempts per iteration).
+    ///
+    /// # Semantics
+    ///
+    /// This value counts *continuation attempts* beyond the initial attempt.
+    /// Total valid attempts per iteration is `1 + max_dev_continuations`.
+    ///
+    /// - `0` = no continuations (1 total attempt)
+    /// - `2` = two continuations (3 total attempts)
+    ///
+    /// Default: 2 continuations (3 total attempts per iteration).
     pub max_dev_continuations: Option<u32>,
     /// Maximum XSD retry attempts when agent output fails XML validation.
     /// Higher values allow more attempts to fix XML formatting before agent fallback.

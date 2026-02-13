@@ -147,7 +147,7 @@ fn test_unified_config_exists_with_env_returns_true_when_file_exists() {
 
 #[test]
 #[serial]
-fn test_max_dev_continuations_zero_falls_back_to_default() {
+fn test_max_dev_continuations_zero_is_valid() {
     let toml_str = r#"
 [general]
 verbosity = 4
@@ -164,12 +164,13 @@ max_dev_continuations = 0
         panic!("load_config_from_path_with_env should succeed");
     };
 
-    assert_eq!(config.max_dev_continuations, Some(2));
+    // 0 is valid and means "no continuations" (total attempts = 1).
+    assert_eq!(config.max_dev_continuations, Some(0));
     assert!(
-        warnings
+        !warnings
             .iter()
-            .any(|w: &String| w.contains("max_dev_continuations") && w.contains(">= 1")),
-        "Expected warning about invalid max_dev_continuations, got: {:?}",
+            .any(|w: &String| w.contains("max_dev_continuations")),
+        "Should not warn about max_dev_continuations=0, got: {:?}",
         warnings
     );
 }

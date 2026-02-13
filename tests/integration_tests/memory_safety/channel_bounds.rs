@@ -283,24 +283,3 @@ fn test_streaming_output_channel_pattern() {
         assert_eq!(received, 100, "Should receive all streamed data");
     });
 }
-
-#[test]
-fn test_file_monitor_channel_event_rate() {
-    with_default_timeout(|| {
-        // The file watcher is fed by OS-level events (notify crate). Under rapid filesystem
-        // activity the queue must remain bounded to prevent memory pressure.
-        //
-        // This is a source-level guard: the channel construction is not observable via
-        // MemoryWorkspace (real OS watcher), so we assert on the implementation pattern.
-        let src = include_str!("../../../ralph-workflow/src/files/protection/monitoring.rs");
-
-        assert!(
-            src.contains("mpsc::sync_channel") || src.contains("sync_channel("),
-            "expected file monitor to use bounded sync_channel"
-        );
-        assert!(
-            !src.contains("mpsc::channel()") && !src.contains("mpsc::channel();"),
-            "expected file monitor to avoid unbounded mpsc::channel"
-        );
-    });
-}

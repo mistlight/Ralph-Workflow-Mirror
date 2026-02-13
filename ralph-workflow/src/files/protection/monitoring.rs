@@ -41,6 +41,10 @@ use std::time::Duration;
 
 const NOTIFY_EVENT_QUEUE_CAPACITY: usize = 1024;
 
+fn bounded_event_queue<T>() -> (std::sync::mpsc::SyncSender<T>, std::sync::mpsc::Receiver<T>) {
+    std::sync::mpsc::sync_channel(NOTIFY_EVENT_QUEUE_CAPACITY)
+}
+
 /// File system monitor for detecting PROMPT.md deletion events.
 ///
 /// The monitor watches for deletion events and automatically restores
@@ -144,7 +148,7 @@ impl PromptMonitor {
         // We cap the in-memory queue to avoid unbounded growth; when full, we drop
         // events because PROMPT.md deletion protection is best-effort and repeated
         // events are coalescable (the polling fallback also covers missed events).
-        let (tx, rx) = std::sync::mpsc::sync_channel(NOTIFY_EVENT_QUEUE_CAPACITY);
+        let (tx, rx) = bounded_event_queue();
         let event_sender = tx.clone();
 
         // Create a watcher for the current directory
@@ -535,6 +539,21 @@ mod tests {
 
         assert!(monitor.check_and_restore());
         assert!(!monitor.check_and_restore());
+    }
+
+    #[test]
+    fn test_notify_event_queue_is_bounded() {
+        let (tx, _rx) = bounded_event_queue::<u8>();
+
+        for i in 0..NOTIFY_EVENT_QUEUE_CAPACITY {
+            tx.try_send((i % 255) as u8)
+                .expect("expected send within capacity");
+        }
+
+        assert!(
+            matches!(tx.try_send(0), Err(std::sync::mpsc::TrySendError::Full(_))),
+            "expected bounded queue to apply backpressure when full"
+        );
     }
 
     #[cfg(unix)]

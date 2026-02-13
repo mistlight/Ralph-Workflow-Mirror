@@ -288,19 +288,19 @@ Rather than testing unsafe code directly, tests verify **observable behavior**:
 
 #### 1. Non-blocking I/O (fcntl)
 
-**Test:** `test_nonblocking_io_setup` (executor/tests/safety.rs)
+**Test:** `test_nonblocking_io_setup_succeeds` (`ralph-workflow/src/executor/mod.rs` in `tests::safety`)
 
 **Verifies:** File descriptors are properly configured for non-blocking reads
 
 #### 2. Process Termination (kill SIGTERM/SIGKILL)
 
-**Test:** `test_process_cleanup_terminates_correctly` (executor/tests/safety.rs)
+**Test:** `test_process_termination_cleanup_works` (`ralph-workflow/src/executor/mod.rs` in `tests::safety`)
 
 **Verifies:** Processes are properly terminated when requested
 
 #### 3. Process Group Isolation (setpgid)
 
-**Test:** `test_process_group_isolation` (executor/tests/safety.rs)
+**Test:** `test_process_group_creation_succeeds` (`ralph-workflow/src/executor/mod.rs` in `tests::safety`)
 
 **Verifies:** Agent processes run in separate process groups
 
@@ -477,7 +477,7 @@ cargo test -p ralph-workflow --lib executor::tests::safety
 
 - **Benchmark tests**: `ralph-workflow/src/benchmarks/`
 - **Integration tests**: `tests/integration_tests/memory_safety/`
-- **Unsafe code tests**: `ralph-workflow/src/executor/tests/safety.rs`
+- **Unsafe code tests**: `ralph-workflow/src/executor/mod.rs` (`tests::safety` module)
 
 ### Implementation Files
 

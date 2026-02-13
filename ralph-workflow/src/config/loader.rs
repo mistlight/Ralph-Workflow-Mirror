@@ -344,15 +344,9 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
     use super::types::{BehavioralFlags, FeatureFlags};
 
     let general = &unified.general;
-    let max_dev_continuations = if general.max_dev_continuations >= 1 {
-        general.max_dev_continuations
-    } else {
-        warnings.push(
-            "Invalid max_dev_continuations in config; must be a positive integer (>= 1). Falling back to default."
-                .to_string(),
-        );
-        2
-    };
+    // max_dev_continuations of 0 is valid and means "no continuations" (total attempts = 1).
+    // Any non-negative value is accepted; max_dev_continuations comes from a u32 so can't be negative.
+    let max_dev_continuations = general.max_dev_continuations;
     // max_xsd_retries of 0 is valid and means "disable XSD retries" (immediate agent fallback).
     // Any non-negative value is accepted; max_xsd_retries comes from a u32 so can't be negative.
     let max_xsd_retries = general.max_xsd_retries;
@@ -452,8 +446,10 @@ pub(super) fn default_config() -> Config {
         git_user_email: None,
         show_streaming_metrics: false,
         review_format_retries: 5,
-        max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
-        max_xsd_retries: Some(10),      // Default to 10 retries before agent fallback
+        // Semantics: max_dev_continuations counts continuations beyond the initial attempt.
+        // Default to 2 continuations (3 total attempts).
+        max_dev_continuations: Some(2),
+        max_xsd_retries: Some(10), // Default to 10 retries before agent fallback
         max_same_agent_retries: Some(2), // Default to 2 failures (initial + 1 retry) before agent fallback
         execution_history_limit: 1000,   // Default to 1000 entries (ring buffer)
     }

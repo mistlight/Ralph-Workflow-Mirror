@@ -5,8 +5,8 @@
 //!
 //! # Thresholds
 //!
-//! - **Warning threshold**: 1.5 MB (log warning, continue operation)
-//! - **Error threshold**: 2 MB (hard limit enforced by tests)
+//! - **Warning threshold**: 1.5 MiB (log warning, continue operation)
+//! - **Error threshold**: 2 MiB (hard limit enforced by tests)
 //!
 //! These thresholds are based on observed checkpoint sizes with bounded
 //! execution history (default 1000 entries ≈ 363 KB serialized).
@@ -25,9 +25,9 @@ pub enum SizeAlert {
 /// Checkpoint size thresholds in bytes.
 #[derive(Debug, Clone)]
 pub struct SizeThresholds {
-    /// Warning threshold in bytes (default: 1.5 MB)
+    /// Warning threshold in bytes (default: 1.5 MiB)
     pub warn_threshold: usize,
-    /// Error threshold in bytes (default: 2 MB)
+    /// Error threshold in bytes (default: 2 MiB)
     pub error_threshold: usize,
 }
 
@@ -38,11 +38,11 @@ impl SizeThresholds {
     ///
     /// - Default execution history limit: 1000 entries
     /// - Measured checkpoint size: ~363 KB for 1000 entries
-    /// - Warning threshold: 1.5 MB (4x baseline, allows growth headroom)
-    /// - Error threshold: 2 MB (hard limit enforced by CI)
+    /// - Warning threshold: 1.5 MiB (4x baseline, allows growth headroom)
+    /// - Error threshold: 2 MiB (hard limit enforced by CI)
     pub const DEFAULT: Self = Self {
-        warn_threshold: 1_500_000,  // 1.5 MB
-        error_threshold: 2_048_000, // 2 MB
+        warn_threshold: 1_572_864,  // 1.5 MiB
+        error_threshold: 2_097_152, // 2 MiB
     };
 
     /// Create custom thresholds.
@@ -94,9 +94,12 @@ impl CheckpointSizeMonitor {
                 (size_bytes as u128 * 100) / (self.thresholds.error_threshold as u128)
             };
             SizeAlert::Warning(format!(
-                "Checkpoint size {} bytes approaching limit {} bytes. \
-                 Current size is {}% of error threshold.",
-                size_bytes, self.thresholds.warn_threshold, pct_of_error_threshold
+                "Checkpoint size {} bytes exceeds warning threshold {} bytes; \
+                 current size is {}% of hard limit {} bytes.",
+                size_bytes,
+                self.thresholds.warn_threshold,
+                pct_of_error_threshold,
+                self.thresholds.error_threshold
             ))
         } else {
             SizeAlert::Ok
@@ -148,7 +151,8 @@ mod tests {
         match alert {
             SizeAlert::Warning(msg) => {
                 assert!(msg.contains("1600000"));
-                assert!(msg.contains("approaching limit"));
+                assert!(msg.contains("warning threshold"));
+                assert!(msg.contains("hard limit"));
             }
             _ => panic!("Expected Warning, got {alert:?}"),
         }
@@ -217,8 +221,8 @@ mod tests {
     #[test]
     fn test_thresholds_default() {
         let thresholds = SizeThresholds::default();
-        assert_eq!(thresholds.warn_threshold, 1_500_000);
-        assert_eq!(thresholds.error_threshold, 2_048_000);
+        assert_eq!(thresholds.warn_threshold, 1_572_864);
+        assert_eq!(thresholds.error_threshold, 2_097_152);
     }
 
     #[test]
