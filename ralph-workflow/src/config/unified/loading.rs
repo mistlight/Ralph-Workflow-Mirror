@@ -382,6 +382,13 @@ impl UnifiedConfig {
             } else {
                 self.general.max_same_agent_retries
             },
+            execution_history_limit: if local.general.execution_history_limit
+                != defaults.execution_history_limit
+            {
+                local.general.execution_history_limit
+            } else {
+                self.general.execution_history_limit
+            },
         };
 
         // Merge CCS config - empty string means use global
@@ -593,6 +600,11 @@ impl UnifiedConfig {
                 local_parsed.general.max_same_agent_retries
             } else {
                 self.general.max_same_agent_retries
+            },
+            execution_history_limit: if has_field("execution_history_limit") {
+                local_parsed.general.execution_history_limit
+            } else {
+                self.general.execution_history_limit
             },
         };
 

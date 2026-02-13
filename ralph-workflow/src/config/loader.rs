@@ -415,6 +415,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         max_dev_continuations: Some(max_dev_continuations),
         max_xsd_retries: Some(max_xsd_retries),
         max_same_agent_retries: Some(max_same_agent_retries),
+        execution_history_limit: general.execution_history_limit,
     }
 }
 
@@ -460,6 +461,7 @@ fn default_config() -> Config {
         max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
         max_xsd_retries: Some(10),      // Default to 10 retries before agent fallback
         max_same_agent_retries: Some(2), // Default to 2 failures (initial + 1 retry) before agent fallback
+        execution_history_limit: 1000,   // Default to 1000 entries (ring buffer)
     }
 }
 

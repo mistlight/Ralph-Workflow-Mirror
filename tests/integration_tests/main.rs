@@ -59,6 +59,7 @@ mod logger;
 mod logging_per_run;
 mod loop_detection_after_additional_events;
 mod loop_detection_recovery;
+mod memory_safety;
 mod opencode_parser_tests;
 mod opencode_usage_limit_detection;
 mod prompt_path_resolution;

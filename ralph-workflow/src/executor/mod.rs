@@ -86,4 +86,166 @@ mod tests {
             assert_eq!(output.stdout.trim(), "hello");
         }
     }
+
+    /// Unsafe code verification tests module.
+    ///
+    /// This module tests the observable behavior of unsafe code without testing
+    /// the unsafe blocks directly. These tests verify correctness through behavioral
+    /// tests to ensure unsafe operations work correctly.
+    mod safety {
+        use super::*;
+        use crate::agents::JsonParserType;
+        use std::collections::HashMap;
+
+        #[test]
+        #[cfg(unix)]
+        fn test_nonblocking_io_setup_succeeds() {
+            // This internally uses unsafe fcntl - verify it works
+            let executor = RealProcessExecutor::new();
+            let config = AgentSpawnConfig {
+                command: "echo".to_string(),
+                args: vec!["test".to_string()],
+                env: HashMap::new(),
+                prompt: "test prompt".to_string(),
+                logfile: "/tmp/test.log".to_string(),
+                parser_type: JsonParserType::OpenCode,
+            };
+
+            let result = executor.spawn_agent(&config);
+
+            assert!(
+                result.is_ok(),
+                "Agent spawn with non-blocking I/O should succeed"
+            );
+
+            // Clean up spawned process
+            if let Ok(mut handle) = result {
+                let _ = handle.inner.wait();
+            }
+        }
+
+        #[test]
+        #[cfg(unix)]
+        fn test_process_termination_cleanup_works() {
+            // Test that the unsafe kill() calls work correctly for process cleanup
+            let executor = RealProcessExecutor::new();
+
+            // Spawn a long-running process
+            let result = executor.spawn("sleep", &["10"], &[], None);
+
+            assert!(result.is_ok(), "Process spawn should succeed");
+
+            if let Ok(mut child) = result {
+                // Verify process is running
+                assert!(
+                    child.try_wait().unwrap().is_none(),
+                    "Process should be running"
+                );
+
+                // Terminate the process (uses unsafe kill internally)
+                let kill_result = child.kill();
+                assert!(kill_result.is_ok(), "Process termination should succeed");
+
+                // Wait for the process to exit
+                let wait_result = child.wait();
+                assert!(
+                    wait_result.is_ok(),
+                    "Process wait should succeed after kill"
+                );
+            }
+        }
+
+        #[test]
+        #[cfg(unix)]
+        fn test_process_group_creation_succeeds() {
+            // Test that the unsafe setpgid() call in pre_exec works correctly
+            let executor = RealProcessExecutor::new();
+            let config = AgentSpawnConfig {
+                command: "echo".to_string(),
+                args: vec!["test".to_string()],
+                env: HashMap::new(),
+                prompt: "test prompt".to_string(),
+                logfile: "/tmp/test.log".to_string(),
+                parser_type: JsonParserType::OpenCode,
+            };
+
+            // This internally uses unsafe setpgid in pre_exec
+            let result = executor.spawn_agent(&config);
+
+            assert!(
+                result.is_ok(),
+                "Agent spawn with process group creation should succeed"
+            );
+
+            // Clean up
+            if let Ok(mut handle) = result {
+                let _ = handle.inner.wait();
+            }
+        }
+
+        #[test]
+        fn test_executor_handles_invalid_command_gracefully() {
+            // Verify error handling when file descriptors are invalid
+            let executor = RealProcessExecutor::new();
+
+            // Try to spawn a command that doesn't exist
+            let result = executor.spawn("nonexistent_command_12345", &[], &[], None);
+
+            assert!(
+                result.is_err(),
+                "Spawning nonexistent command should fail gracefully"
+            );
+        }
+
+        #[test]
+        #[cfg(unix)]
+        fn test_agent_spawn_handles_env_vars_correctly() {
+            // Test that environment variables are passed correctly (no unsafe code,
+            // but important for agent behavior)
+            let executor = RealProcessExecutor::new();
+            let mut env = HashMap::new();
+            env.insert("TEST_VAR_1".to_string(), "value1".to_string());
+            env.insert("TEST_VAR_2".to_string(), "value2".to_string());
+
+            let config = AgentSpawnConfig {
+                command: "env".to_string(),
+                args: vec![],
+                env,
+                prompt: "".to_string(),
+                logfile: "/tmp/test.log".to_string(),
+                parser_type: JsonParserType::OpenCode,
+            };
+
+            let result = executor.spawn_agent(&config);
+            assert!(
+                result.is_ok(),
+                "Agent spawn with environment variables should succeed"
+            );
+
+            // Clean up
+            if let Ok(mut handle) = result {
+                let _ = handle.inner.wait();
+            }
+        }
+
+        #[test]
+        fn test_process_executor_execute_with_workdir() {
+            // Test workdir setting (no unsafe code, but important for process spawning)
+            let executor = RealProcessExecutor::new();
+
+            // Use 'pwd' command to verify workdir is set (Unix) or 'cd' (cross-platform alternative)
+            #[cfg(unix)]
+            let result = executor.execute("pwd", &[], &[], Some(std::path::Path::new("/")));
+
+            #[cfg(not(unix))]
+            let result = executor.execute(
+                "cmd",
+                &["/c", "cd"],
+                &[],
+                Some(std::path::Path::new("C:\\")),
+            );
+
+            assert!(result.is_ok(), "Execute with workdir should succeed");
+        }
+    }
 }

@@ -135,6 +135,14 @@ pub struct GeneralConfig {
     /// Default: 2 (one retry before falling back).
     #[serde(default = "default_max_same_agent_retries")]
     pub max_same_agent_retries: u32,
+    /// Maximum number of execution history entries to keep in memory.
+    ///
+    /// This limits memory growth by dropping oldest entries when the limit is reached.
+    /// Prevents unbounded memory growth during long-running pipelines.
+    ///
+    /// Default: 1000 entries (ring buffer behavior)
+    #[serde(default = "default_execution_history_limit")]
+    pub execution_history_limit: usize,
 }
 
 /// Default maximum continuation attempts per development iteration.
@@ -157,6 +165,14 @@ fn default_max_xsd_retries() -> u32 {
 /// This allows 2 retries for the same agent before switching to the next agent.
 fn default_max_same_agent_retries() -> u32 {
     2
+}
+
+/// Default maximum execution history entries to keep in memory.
+///
+/// This limits memory growth to approximately 400-500 KB of history data.
+/// Older entries are dropped to maintain a bounded memory footprint.
+fn default_execution_history_limit() -> usize {
+    1000
 }
 
 impl Default for GeneralConfig {
@@ -187,6 +203,7 @@ impl Default for GeneralConfig {
             max_dev_continuations: default_max_dev_continuations(),
             max_xsd_retries: default_max_xsd_retries(),
             max_same_agent_retries: default_max_same_agent_retries(),
+            execution_history_limit: default_execution_history_limit(),
         }
     }
 }

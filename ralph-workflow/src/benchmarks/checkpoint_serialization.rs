@@ -1,0 +1,288 @@
+//! Checkpoint serialization performance benchmarks
+//!
+//! These benchmarks measure serialization/deserialization performance for checkpoints
+//! with various state sizes. They establish baseline metrics for:
+//! - Serialization time for different history sizes
+//! - Checkpoint file size growth
+//! - Deserialization time
+//!
+//! **These are measurement benchmarks, not pass/fail tests.**
+//! Run with `--nocapture` to see output.
+
+use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+use crate::reducer::state::PipelineState;
+use std::time::Instant;
+
+/// Helper function to create a test execution step.
+fn create_test_step(iteration: u32) -> ExecutionStep {
+    ExecutionStep::new(
+        "Development",
+        iteration,
+        "agent_invoked",
+        StepOutcome::success(
+            Some("Test output from agent".to_string()),
+            vec!["src/file1.rs".to_string(), "src/file2.rs".to_string()],
+        ),
+    )
+    .with_agent("test-agent")
+    .with_duration(5)
+}
+
+/// Create a test pipeline state with N execution history entries.
+fn create_test_pipeline_state(
+    iterations: u32,
+    review_passes: u32,
+    history_size: usize,
+) -> PipelineState {
+    let mut state = PipelineState::initial(iterations, review_passes);
+
+    for i in 0..history_size {
+        state.execution_history.push(create_test_step(i as u32));
+    }
+
+    state
+}
+
+#[test]
+fn benchmark_checkpoint_serialization_empty_state() {
+    let state = create_test_pipeline_state(10, 5, 0);
+    let start = Instant::now();
+
+    let json = serde_json::to_string(&state).expect("Serialization should succeed");
+
+    let duration = start.elapsed();
+    let size_bytes = json.len();
+    let size_kb = size_bytes / 1024;
+
+    println!("\n=== Checkpoint Serialization (Empty State) ===");
+    println!("Serialization time: {:?}", duration);
+    println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
+    println!(
+        "Execution history entries: {}",
+        state.execution_history.len()
+    );
+
+    // Verify serialization works
+    assert!(!json.is_empty());
+
+    // Document baseline - not a failure
+    assert!(
+        duration.as_millis() < 1000,
+        "Serialization should complete in reasonable time"
+    );
+}
+
+#[test]
+fn benchmark_checkpoint_serialization_small_state() {
+    let state = create_test_pipeline_state(10, 5, 10);
+    let start = Instant::now();
+
+    let json = serde_json::to_string(&state).expect("Serialization should succeed");
+
+    let duration = start.elapsed();
+    let size_bytes = json.len();
+    let size_kb = size_bytes / 1024;
+
+    println!("\n=== Checkpoint Serialization (Small State - 10 steps) ===");
+    println!("Serialization time: {:?}", duration);
+    println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
+    println!(
+        "Execution history entries: {}",
+        state.execution_history.len()
+    );
+    println!(
+        "Bytes per history entry: ~{}",
+        size_bytes / state.execution_history.len().max(1)
+    );
+
+    // Verify serialization works
+    assert_eq!(state.execution_history.len(), 10);
+
+    // Document baseline
+    assert!(
+        duration.as_millis() < 1000,
+        "Serialization should complete in reasonable time"
+    );
+}
+
+#[test]
+fn benchmark_checkpoint_serialization_medium_state() {
+    let state = create_test_pipeline_state(100, 20, 100);
+    let start = Instant::now();
+
+    let json = serde_json::to_string(&state).expect("Serialization should succeed");
+
+    let duration = start.elapsed();
+    let size_bytes = json.len();
+    let size_kb = size_bytes / 1024;
+
+    println!("\n=== Checkpoint Serialization (Medium State - 100 steps) ===");
+    println!("Serialization time: {:?}", duration);
+    println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
+    println!(
+        "Execution history entries: {}",
+        state.execution_history.len()
+    );
+    println!(
+        "Bytes per history entry: ~{}",
+        size_bytes / state.execution_history.len()
+    );
+
+    // Verify serialization works
+    assert_eq!(state.execution_history.len(), 100);
+
+    // This establishes baseline - may be slow initially
+    // After bounding implementation (step 11), should improve
+}
+
+#[test]
+fn benchmark_checkpoint_serialization_large_state() {
+    let state = create_test_pipeline_state(100, 20, 1000);
+    let start = Instant::now();
+
+    let json = serde_json::to_string(&state).expect("Serialization should succeed");
+
+    let duration = start.elapsed();
+    let size_bytes = json.len();
+    let size_kb = size_bytes / 1024;
+    let size_mb = size_kb / 1024;
+
+    println!("\n=== Checkpoint Serialization (Large State - 1000 steps) ===");
+    println!("Serialization time: {:?}", duration);
+    println!(
+        "Checkpoint size: {} bytes ({} KB, {} MB)",
+        size_bytes, size_kb, size_mb
+    );
+    println!(
+        "Execution history entries: {}",
+        state.execution_history.len()
+    );
+    println!(
+        "Bytes per history entry: ~{}",
+        size_bytes / state.execution_history.len()
+    );
+
+    // Verify serialization works
+    assert_eq!(state.execution_history.len(), 1000);
+
+    // This demonstrates serialization performance with large history
+    // After bounding implementation, history will be capped at limit (default 1000)
+}
+
+#[test]
+fn benchmark_checkpoint_deserialization_small_state() {
+    let state = create_test_pipeline_state(10, 5, 10);
+    let json = serde_json::to_string(&state).expect("Serialization should succeed");
+
+    let start = Instant::now();
+    let deserialized: PipelineState =
+        serde_json::from_str(&json).expect("Deserialization should succeed");
+    let duration = start.elapsed();
+
+    println!("\n=== Checkpoint Deserialization (Small State - 10 steps) ===");
+    println!("Deserialization time: {:?}", duration);
+    println!("Checkpoint size: {} bytes", json.len());
+    println!(
+        "Execution history entries: {}",
+        deserialized.execution_history.len()
+    );
+
+    // Verify deserialization works correctly
+    assert_eq!(deserialized.execution_history.len(), 10);
+
+    // Document baseline
+    assert!(
+        duration.as_millis() < 1000,
+        "Deserialization should complete in reasonable time"
+    );
+}
+
+#[test]
+fn benchmark_checkpoint_deserialization_large_state() {
+    let state = create_test_pipeline_state(100, 20, 1000);
+    let json = serde_json::to_string(&state).expect("Serialization should succeed");
+
+    let start = Instant::now();
+    let deserialized: PipelineState =
+        serde_json::from_str(&json).expect("Deserialization should succeed");
+    let duration = start.elapsed();
+
+    let size_kb = json.len() / 1024;
+
+    println!("\n=== Checkpoint Deserialization (Large State - 1000 steps) ===");
+    println!("Deserialization time: {:?}", duration);
+    println!("Checkpoint size: {} KB", size_kb);
+    println!(
+        "Execution history entries: {}",
+        deserialized.execution_history.len()
+    );
+
+    // Verify deserialization works correctly
+    assert_eq!(deserialized.execution_history.len(), 1000);
+}
+
+#[test]
+fn benchmark_checkpoint_round_trip() {
+    let original = create_test_pipeline_state(50, 10, 100);
+
+    let serialize_start = Instant::now();
+    let json = serde_json::to_string(&original).expect("Serialization should succeed");
+    let serialize_duration = serialize_start.elapsed();
+
+    let deserialize_start = Instant::now();
+    let restored: PipelineState =
+        serde_json::from_str(&json).expect("Deserialization should succeed");
+    let deserialize_duration = deserialize_start.elapsed();
+
+    let total_duration = serialize_duration + deserialize_duration;
+    let size_kb = json.len() / 1024;
+
+    println!("\n=== Checkpoint Round Trip (100 steps) ===");
+    println!("Serialize time: {:?}", serialize_duration);
+    println!("Deserialize time: {:?}", deserialize_duration);
+    println!("Total time: {:?}", total_duration);
+    println!("Checkpoint size: {} KB", size_kb);
+    println!(
+        "Execution history entries: {}",
+        restored.execution_history.len()
+    );
+
+    // Verify round-trip correctness
+    assert_eq!(
+        restored.execution_history.len(),
+        original.execution_history.len()
+    );
+    assert_eq!(restored.iteration, original.iteration);
+    assert_eq!(restored.phase, original.phase);
+}
+
+#[test]
+fn benchmark_serialization_scaling() {
+    let sizes = vec![10, 50, 100, 500, 1000];
+    let mut results = Vec::new();
+
+    for size in &sizes {
+        let state = create_test_pipeline_state(100, 20, *size);
+
+        let start = Instant::now();
+        let json = serde_json::to_string(&state).expect("Serialization should succeed");
+        let duration = start.elapsed();
+
+        let size_kb = json.len() / 1024;
+        results.push((*size, duration, size_kb));
+    }
+
+    println!("\n=== Serialization Scaling ===");
+    println!("History Size | Serialize Time | Checkpoint Size");
+    println!("-------------|----------------|----------------");
+
+    for (size, duration, kb) in &results {
+        println!("{:12} | {:14?} | {:12} KB", size, duration, kb);
+    }
+
+    // Verify we tested all sizes
+    assert_eq!(results.len(), sizes.len());
+
+    // This demonstrates how serialization time scales with history size
+    // Helps identify if there are performance cliffs at certain sizes
+}

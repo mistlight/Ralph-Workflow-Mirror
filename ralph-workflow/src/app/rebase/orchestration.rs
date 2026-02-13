@@ -101,7 +101,9 @@ fn record_rebase_start(phase_ctx: &mut PhaseContext<'_>) {
         "pre_rebase_start",
         StepOutcome::success(None, vec![]),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 }
 
 /// Save checkpoint at the start of pre-rebase phase.
@@ -139,7 +141,9 @@ fn handle_rebase_success(
         "pre_rebase_complete",
         StepOutcome::success(None, vec![]),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 
     save_post_rebase_checkpoint(phase_ctx, run_context);
     Ok(())
@@ -161,7 +165,9 @@ fn handle_rebase_noop(
         "pre_rebase_skipped",
         StepOutcome::skipped(reason.to_string()),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 
     save_post_rebase_checkpoint(phase_ctx, run_context);
     Ok(())
@@ -233,7 +239,9 @@ fn record_conflict_detected(phase_ctx: &mut PhaseContext<'_>, conflict_count: us
             format!("{conflict_count} conflicts detected"),
         ),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 }
 
 /// Save checkpoint for conflict state.
@@ -279,7 +287,9 @@ fn handle_conflicts_resolved(
                 "pre_rebase_resolution",
                 StepOutcome::success(None, vec![]),
             );
-            phase_ctx.execution_history.add_step(step);
+            phase_ctx
+                .execution_history
+                .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 
             save_post_rebase_checkpoint(phase_ctx, run_context);
             Ok(())
@@ -299,7 +309,9 @@ fn handle_conflicts_resolved(
                     format!("Failed to continue rebase: {e}"),
                 ),
             );
-            phase_ctx.execution_history.add_step(step);
+            phase_ctx
+                .execution_history
+                .add_step_bounded(step, phase_ctx.config.execution_history_limit);
             Ok(()) // Continue anyway - conflicts were resolved
         }
     }
@@ -321,7 +333,9 @@ fn handle_resolution_failed(
         "pre_rebase_resolution",
         StepOutcome::failure("AI conflict resolution failed".to_string(), true),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
     Ok(()) // Continue pipeline - don't block on rebase failure
 }
 
@@ -342,7 +356,9 @@ fn handle_resolution_error(
         "pre_rebase_resolution",
         StepOutcome::failure(format!("Conflict resolution error: {e}"), true),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
     Ok(()) // Continue pipeline
 }
 
@@ -360,7 +376,9 @@ fn handle_rebase_failed(
         "pre_rebase_failed",
         StepOutcome::failure(format!("Rebase failed: {err}"), true),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
     Ok(()) // Continue pipeline despite failure
 }
 
@@ -376,7 +394,9 @@ fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: std::io::Error) -> a
         "pre_rebase_error",
         StepOutcome::failure(format!("Rebase error: {e}"), true),
     );
-    phase_ctx.execution_history.add_step(step);
+    phase_ctx
+        .execution_history
+        .add_step_bounded(step, phase_ctx.config.execution_history_limit);
     Ok(())
 }
 

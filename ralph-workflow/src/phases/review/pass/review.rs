@@ -217,7 +217,8 @@ pub fn run_review_pass(
             )
             .with_agent(active_agent)
             .with_duration(attempt_start.elapsed().as_secs());
-            ctx.execution_history.add_step(step);
+            ctx.execution_history
+                .add_step_bounded(step, ctx.config.execution_history_limit);
 
             Ok(ReviewPassResult {
                 early_exit: false,
@@ -244,7 +245,8 @@ pub fn run_review_pass(
             )
             .with_agent(active_agent)
             .with_duration(attempt_start.elapsed().as_secs());
-            ctx.execution_history.add_step(step);
+            ctx.execution_history
+                .add_step_bounded(step, ctx.config.execution_history_limit);
 
             Ok(ReviewPassResult {
                 early_exit: true,

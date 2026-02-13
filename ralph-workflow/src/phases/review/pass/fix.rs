@@ -232,7 +232,8 @@ pub fn run_fix_pass(
             )
             .with_agent(active_agent)
             .with_duration(fix_start_time.elapsed().as_secs());
-            ctx.execution_history.add_step(step);
+            ctx.execution_history
+                .add_step_bounded(step, ctx.config.execution_history_limit);
 
             Ok(FixPassResult {
                 auth_failure: false,

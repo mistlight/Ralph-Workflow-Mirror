@@ -113,6 +113,9 @@ pub mod review_metrics;
 pub mod templates;
 pub mod workspace;
 
+#[cfg(test)]
+mod benchmarks;
+
 // Re-export XML extraction and validation functions for use in integration tests.
 // These functions parse and validate XML output from agent responses (plan, issues, fix results).
 pub use files::llm_output_extraction::extract_development_result_xml;

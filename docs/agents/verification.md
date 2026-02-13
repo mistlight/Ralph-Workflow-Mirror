@@ -27,6 +27,9 @@ cargo test -p ralph-workflow --lib --all-features
 # Integration tests
 cargo test -p ralph-workflow-tests
 
+# Memory safety verification (bounded growth, thread cleanup, Arc patterns)
+bash scripts/verify_memory_safety.sh
+
 # Per-run logging tests (when changing logging infrastructure)
 cargo test -p ralph-workflow-tests logging_per_run
 
