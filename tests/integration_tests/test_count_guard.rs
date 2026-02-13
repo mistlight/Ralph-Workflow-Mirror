@@ -327,24 +327,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         ),
     },
     SourceFile {
-        path: "reducer_fault_tolerance/failure_completion_marker/state_transitions.rs",
-        contents: include_str!(
-            "reducer_fault_tolerance/failure_completion_marker/state_transitions.rs"
-        ),
-    },
-    SourceFile {
-        path: "reducer_fault_tolerance/failure_completion_marker/marker_emission.rs",
-        contents: include_str!(
-            "reducer_fault_tolerance/failure_completion_marker/marker_emission.rs"
-        ),
-    },
-    SourceFile {
-        path: "reducer_fault_tolerance/failure_completion_marker/error_handling.rs",
-        contents: include_str!(
-            "reducer_fault_tolerance/failure_completion_marker/error_handling.rs"
-        ),
-    },
-    SourceFile {
         path: "reducer_hidden_behavior.rs",
         contents: include_str!("reducer_hidden_behavior.rs"),
     },
@@ -623,6 +605,28 @@ fn module_dir_from_path(path: &str) -> String {
     } else {
         String::new()
     }
+}
+
+#[test]
+fn integration_test_sources_have_unique_paths() {
+    with_default_timeout(|| {
+        let mut seen = HashSet::new();
+        let mut duplicates = Vec::new();
+
+        for source in INTEGRATION_TEST_SOURCES {
+            if !seen.insert(source.path) {
+                duplicates.push(source.path);
+            }
+        }
+
+        duplicates.sort();
+        duplicates.dedup();
+
+        assert!(
+            duplicates.is_empty(),
+            "INTEGRATION_TEST_SOURCES contains duplicate paths: {duplicates:?}"
+        );
+    });
 }
 
 /// Best-effort source scan of literal `#[test]` annotations.

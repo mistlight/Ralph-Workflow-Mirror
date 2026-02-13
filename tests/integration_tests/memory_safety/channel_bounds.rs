@@ -287,34 +287,20 @@ fn test_streaming_output_channel_pattern() {
 #[test]
 fn test_file_monitor_channel_event_rate() {
     with_default_timeout(|| {
-        // Verify file monitor uses unbounded channel (monitoring.rs:129)
-        // This is acceptable because:
-        // 1. File system event rate is low
-        // 2. Events come from external notify library
-        // 3. Monitor thread lifetime is tied to pipeline run
+        // The file watcher is fed by OS-level events (notify crate). Under rapid filesystem
+        // activity the queue must remain bounded to prevent memory pressure.
+        //
+        // This is a source-level guard: the channel construction is not observable via
+        // MemoryWorkspace (real OS watcher), so we assert on the implementation pattern.
+        let src = include_str!("../../../ralph-workflow/src/files/protection/monitoring.rs");
 
-        use std::sync::mpsc;
-
-        // Simulate file monitor event pattern
-        let (tx, rx) = mpsc::channel();
-
-        // Simulate low-rate file system events
-        for i in 0..10 {
-            tx.send(format!("file_event_{}", i))
-                .expect("Should send file events");
-        }
-
-        drop(tx);
-
-        // Drain events
-        let mut count = 0;
-        while let Ok(_event) = rx.try_recv() {
-            count += 1;
-        }
-
-        assert_eq!(count, 10, "Should receive all file events");
-
-        // Low event rate means unbounded channel is safe
-        // Even if 1000 events occurred, that's negligible memory
+        assert!(
+            src.contains("mpsc::sync_channel") || src.contains("sync_channel("),
+            "expected file monitor to use bounded sync_channel"
+        );
+        assert!(
+            !src.contains("mpsc::channel()") && !src.contains("mpsc::channel();"),
+            "expected file monitor to avoid unbounded mpsc::channel"
+        );
     });
 }

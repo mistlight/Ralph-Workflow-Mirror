@@ -32,11 +32,14 @@
 //! - **Windows**: `ReadDirectoryChangesW` via `notify` crate
 
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+
+const NOTIFY_EVENT_QUEUE_CAPACITY: usize = 1024;
 
 /// File system monitor for detecting PROMPT.md deletion events.
 ///
@@ -125,30 +128,20 @@ impl PromptMonitor {
     fn monitor_thread_main(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
         use notify::Watcher;
 
-        // UNBOUNDED CHANNEL JUSTIFICATION (monitoring.rs:129):
+        // Bounded queue for notify events.
         //
-        // This channel receives filesystem events from the notify watcher.
-        // Unbounded is safe here because:
-        //
-        // 1. Event rate bound: Filesystem events are rare (only PROMPT.md changes)
-        // 2. Expected rate: <10 events per hour in typical usage
-        // 3. Worst case: Even under attack (rapid create/delete), event rate limited by OS
-        // 4. Fallback protection: If watcher fails, falls back to polling
-        // 5. Thread lifecycle: Monitor thread is joined on shutdown (no leak)
-        //
-        // Alternative considered: sync_channel(100)
-        // Rejected because: Would add unnecessary complexity for extremely low event rate
-        // and could theoretically drop events under rapid filesystem activity.
-        //
-        // The notify crate's recommended_watcher() returns a channel-based interface;
-        // using unbounded matches the notify crate's design and is safe given the
-        // low event rate.
-        //
-        // See: tests/integration_tests/memory_safety/channel_bounds.rs for verification
-        let (tx, rx) = std::sync::mpsc::channel();
+        // The notify crate can emit bursts of events under heavy filesystem activity.
+        // We cap the in-memory queue to avoid unbounded growth; when full, we drop
+        // events because PROMPT.md deletion protection is best-effort and repeated
+        // events are coalescable (the polling fallback also covers missed events).
+        let (tx, rx) = std::sync::mpsc::sync_channel(NOTIFY_EVENT_QUEUE_CAPACITY);
+        let event_sender = tx.clone();
 
         // Create a watcher for the current directory
-        let mut watcher = match notify::recommended_watcher(tx) {
+        let mut watcher = match notify::recommended_watcher(move |res| {
+            // Drop if full to keep memory bounded.
+            let _ = event_sender.try_send(res);
+        }) {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("Warning: Failed to create file system watcher: {e}");
@@ -179,6 +172,17 @@ impl PromptMonitor {
                         restoration_detected,
                         &mut prompt_existed_last_check,
                     );
+
+                    // Drain any queued events to coalesce bursts.
+                    while let Ok(next) = rx.try_recv() {
+                        if let Ok(next_event) = next {
+                            Self::handle_fs_event(
+                                &next_event,
+                                restoration_detected,
+                                &mut prompt_existed_last_check,
+                            );
+                        }
+                    }
                 }
                 Ok(Err(_)) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     // Error in watcher or timeout - continue anyway
@@ -249,64 +253,19 @@ impl PromptMonitor {
             Path::new(".agent/PROMPT.md.backup.2"),
         ];
 
+        let prompt_path = Path::new("PROMPT.md");
+
         for backup_path in &backup_paths {
-            // Use std::fs::File::open to atomically open the file, avoiding TOCTOU
-            // race conditions where the file could be replaced between exists() check
-            // and read operation
-            let backup_content = match std::fs::File::open(backup_path) {
-                Ok(mut file) => {
-                    // Verify it's a regular file, not a symlink or special file
-                    match file.metadata() {
-                        Ok(metadata) if metadata.is_file() => {
-                            // Read the content
-                            let mut buffer = String::new();
-                            match std::io::Read::read_to_string(&mut file, &mut buffer) {
-                                Ok(_) => buffer,
-                                Err(_) => continue,
-                            }
-                        }
-                        _ => continue, // Not a regular file, skip
-                    }
-                }
-                Err(_) => continue, // File doesn't exist or can't be opened
+            let Some(backup_content) = read_backup_content_secure(backup_path) else {
+                continue;
             };
 
             if backup_content.trim().is_empty() {
                 continue;
             }
 
-            // Restore from backup - ensure parent directory exists
-            let prompt_path = Path::new("PROMPT.md");
-            if let Some(parent) = prompt_path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    eprintln!("Failed to create parent directory for PROMPT.md: {e}");
-                    continue;
-                }
-            }
-
-            if fs::write(prompt_path, backup_content).is_err() {
-                eprintln!("Failed to write PROMPT.md from backup");
+            if restore_prompt_content_atomic(prompt_path, backup_content.as_bytes()).is_err() {
                 continue;
-            }
-
-            // Set read-only permissions
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(metadata) = fs::metadata(prompt_path) {
-                    let mut perms = metadata.permissions();
-                    perms.set_mode(0o444);
-                    let _ = fs::set_permissions(prompt_path, perms);
-                }
-            }
-
-            #[cfg(windows)]
-            {
-                if let Ok(metadata) = fs::metadata(prompt_path) {
-                    let mut perms = metadata.permissions();
-                    perms.set_readonly(true);
-                    let _ = fs::set_permissions(prompt_path, perms);
-                }
             }
 
             return true;
@@ -373,6 +332,123 @@ impl PromptMonitor {
     }
 }
 
+fn read_backup_content_secure(path: &Path) -> Option<String> {
+    // Defense-in-depth against symlink/hardlink attacks:
+    // - Reject symlink backups (symlink_metadata)
+    // - On Unix, open with O_NOFOLLOW and reject nlink != 1
+    // - Ensure it's a regular file
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
+        let mut file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .ok()?;
+
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() {
+            return None;
+        }
+        if metadata.nlink() != 1 {
+            return None;
+        }
+
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).ok()?;
+        Some(buf)
+    }
+
+    #[cfg(not(unix))]
+    {
+        use std::io::Read;
+
+        let meta = fs::symlink_metadata(path).ok()?;
+        if meta.file_type().is_symlink() {
+            return None;
+        }
+        if !meta.is_file() {
+            return None;
+        }
+
+        let mut file = std::fs::File::open(path).ok()?;
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).ok()?;
+        Some(buf)
+    }
+}
+
+fn restore_prompt_content_atomic(prompt_path: &Path, content: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    // Ensure destination is not a directory.
+    if let Ok(meta) = fs::symlink_metadata(prompt_path) {
+        if meta.is_dir() {
+            return Err(std::io::Error::other("PROMPT.md path is a directory"));
+        }
+    }
+
+    let temp_name = unique_temp_name();
+    let temp_path = Path::new(&temp_name);
+
+    // Create temp file in the same directory to keep rename on same filesystem.
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp_path)?;
+    file.write_all(content)?;
+    file.flush()?;
+    let _ = file.sync_all();
+    drop(file);
+
+    // Make the temp file read-only before publishing it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(temp_path)?.permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(temp_path, perms)?;
+    }
+
+    #[cfg(windows)]
+    {
+        let mut perms = fs::metadata(temp_path)?.permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(temp_path, perms)?;
+    }
+
+    // Rename is symlink-safe: it replaces the directory entry rather than following
+    // a symlink target.
+    #[cfg(windows)]
+    {
+        // std::fs::rename does not replace existing destinations on Windows.
+        if prompt_path.exists() {
+            let _ = fs::remove_file(prompt_path);
+        }
+    }
+
+    let rename_result = fs::rename(temp_path, prompt_path);
+    if let Err(e) = rename_result {
+        let _ = fs::remove_file(temp_path);
+        return Err(e);
+    }
+
+    Ok(())
+}
+
+fn unique_temp_name() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = std::process::id();
+    format!(".prompt_restore_tmp_{pid}_{nanos}")
+}
+
 fn is_prompt_md_path(path: &Path) -> bool {
     matches!(path.file_name(), Some(name) if name == "PROMPT.md")
 }
@@ -391,6 +467,7 @@ impl Drop for PromptMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_helpers::with_temp_cwd;
 
     #[test]
     fn test_is_prompt_md_path_matches_by_file_name() {
@@ -413,5 +490,75 @@ mod tests {
 
         assert!(monitor.check_and_restore());
         assert!(!monitor.check_and_restore());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_from_backup_does_not_follow_prompt_symlink() {
+        use std::os::unix::fs as unix_fs;
+
+        with_temp_cwd(|_dir| {
+            std::fs::create_dir_all(".agent").expect("create .agent dir");
+            std::fs::write(".agent/PROMPT.md.backup", "SAFE\n").expect("write backup");
+
+            // If restore follows symlinks, this victim file gets overwritten.
+            std::fs::write("victim.txt", "SECRET\n").expect("write victim");
+            unix_fs::symlink("victim.txt", "PROMPT.md").expect("create PROMPT.md symlink");
+
+            assert!(std::fs::symlink_metadata("PROMPT.md").is_ok());
+            let before = std::fs::read_to_string("victim.txt").expect("read victim");
+            assert!(before.contains("SECRET"));
+
+            let restored = PromptMonitor::restore_from_backup();
+            assert!(restored, "expected restore to succeed from backup");
+
+            let after = std::fs::read_to_string("victim.txt").expect("read victim");
+            assert_eq!(after, before, "restore must not overwrite symlink target");
+
+            // PROMPT.md should end up as a regular file with backup content.
+            let meta = std::fs::symlink_metadata("PROMPT.md").expect("stat PROMPT.md");
+            assert!(meta.is_file(), "PROMPT.md should be a regular file");
+            let prompt = std::fs::read_to_string("PROMPT.md").expect("read PROMPT.md");
+            assert!(prompt.contains("SAFE"));
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_from_backup_rejects_symlink_backup_file() {
+        use std::os::unix::fs as unix_fs;
+
+        with_temp_cwd(|_dir| {
+            std::fs::create_dir_all(".agent").expect("create .agent dir");
+            std::fs::write("source.txt", "MALICIOUS\n").expect("write source");
+            unix_fs::symlink("source.txt", ".agent/PROMPT.md.backup")
+                .expect("create backup symlink");
+
+            std::fs::write("PROMPT.md", "ORIGINAL\n").expect("write prompt");
+
+            let restored = PromptMonitor::restore_from_backup();
+            assert!(!restored, "expected restore to skip symlink backups");
+            let prompt = std::fs::read_to_string("PROMPT.md").expect("read PROMPT.md");
+            assert!(prompt.contains("ORIGINAL"));
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_from_backup_rejects_hardlinked_backup_file() {
+        with_temp_cwd(|_dir| {
+            std::fs::create_dir_all(".agent").expect("create .agent dir");
+            std::fs::write("victim.txt", "SECRET\n").expect("write victim");
+            std::fs::hard_link("victim.txt", ".agent/PROMPT.md.backup")
+                .expect("create hardlink backup");
+
+            let restored = PromptMonitor::restore_from_backup();
+            assert!(!restored, "expected restore to skip hardlinked backups");
+
+            assert!(
+                !Path::new("PROMPT.md").exists(),
+                "PROMPT.md should not be created"
+            );
+        });
     }
 }

@@ -9,6 +9,9 @@
 //! This module is only available when the `monitoring` feature is enabled.
 
 use serde::{Deserialize, Serialize};
+use std::rc::Rc;
+
+const DEFAULT_MAX_SNAPSHOTS: usize = 1024;
 
 /// Memory usage snapshot at a point in time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +102,13 @@ impl MemoryMetricsCollector {
         }
     }
 
+    fn enforce_snapshot_limit(&mut self) {
+        if self.snapshots.len() > DEFAULT_MAX_SNAPSHOTS {
+            let excess = self.snapshots.len() - DEFAULT_MAX_SNAPSHOTS;
+            self.snapshots.drain(0..excess);
+        }
+    }
+
     /// Record a snapshot if at snapshot interval.
     pub fn maybe_record(&mut self, state: &crate::reducer::PipelineState) {
         if self.snapshot_interval == 0 {
@@ -114,6 +124,7 @@ impl MemoryMetricsCollector {
         if state.iteration == 1 || state.iteration.is_multiple_of(self.snapshot_interval) {
             self.snapshots
                 .push(MemorySnapshot::from_pipeline_state(state));
+            self.enforce_snapshot_limit();
         }
     }
 
@@ -145,6 +156,7 @@ impl MemoryMetricsCollector {
             let snapshot = MemorySnapshot::from_pipeline_state(state);
             backend.emit_snapshot(&snapshot);
             self.snapshots.push(snapshot);
+            self.enforce_snapshot_limit();
         }
     }
 }
@@ -176,10 +188,10 @@ impl TelemetryBackend for NoOpBackend {
 
 /// Logging-based telemetry backend.
 ///
-/// Writes metrics to stdout/stderr for development and debugging.
-#[derive(Debug)]
+/// Routes metrics through the project's logger implementation.
 pub struct LoggingBackend {
     warn_threshold_bytes: usize,
+    logger: Rc<dyn crate::logger::Loggable>,
 }
 
 impl LoggingBackend {
@@ -187,19 +199,31 @@ impl LoggingBackend {
     pub fn new(warn_threshold_bytes: usize) -> Self {
         Self {
             warn_threshold_bytes,
+            logger: Rc::new(crate::logger::Logger::default()),
+        }
+    }
+
+    /// Create a logging backend that writes via the provided logger.
+    pub fn with_logger(
+        warn_threshold_bytes: usize,
+        logger: Rc<dyn crate::logger::Loggable>,
+    ) -> Self {
+        Self {
+            warn_threshold_bytes,
+            logger,
         }
     }
 }
 
 impl TelemetryBackend for LoggingBackend {
     fn emit_snapshot(&mut self, snapshot: &MemorySnapshot) {
-        eprintln!(
+        self.logger.info(&format!(
             "[METRICS] iteration={} history_len={} heap_bytes={} checkpoint_count={}",
             snapshot.iteration,
             snapshot.execution_history_len,
             snapshot.execution_history_heap_bytes,
             snapshot.checkpoint_count
-        );
+        ));
 
         if snapshot.execution_history_heap_bytes > self.warn_threshold_bytes {
             self.emit_warning(&format!(
@@ -210,7 +234,7 @@ impl TelemetryBackend for LoggingBackend {
     }
 
     fn emit_warning(&mut self, message: &str) {
-        eprintln!("[METRICS WARNING] {message}");
+        self.logger.warn(&format!("[METRICS WARNING] {message}"));
     }
 
     fn flush(&mut self) {
@@ -222,6 +246,7 @@ impl TelemetryBackend for LoggingBackend {
 mod tests {
     use super::*;
     use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+    use crate::logger::output::TestLogger;
     use crate::reducer::PipelineState;
 
     #[test]
@@ -265,6 +290,37 @@ mod tests {
         state.iteration = 10;
         collector.maybe_record(&state);
         assert_eq!(collector.snapshots().len(), 2);
+    }
+
+    #[test]
+    fn test_metrics_collector_retains_bounded_snapshots_by_default() {
+        let mut collector = MemoryMetricsCollector::new(1);
+        let mut state = PipelineState::initial(100, 5);
+
+        for i in 1..=2000 {
+            state.iteration = i;
+            collector.maybe_record(&state);
+        }
+
+        let snapshots = collector.snapshots();
+        assert!(
+            snapshots.len() <= 1024,
+            "expected default snapshot retention to be bounded"
+        );
+        assert_eq!(
+            snapshots
+                .last()
+                .expect("should record at least one snapshot")
+                .iteration,
+            2000
+        );
+        assert_eq!(
+            snapshots
+                .first()
+                .expect("should record at least one snapshot")
+                .iteration,
+            2000 - snapshots.len() as u32 + 1
+        );
     }
 
     #[test]
@@ -323,7 +379,8 @@ mod tests {
 
     #[test]
     fn test_logging_backend_emits_warnings_above_threshold() {
-        let mut backend = LoggingBackend::new(100); // 100 byte threshold
+        let logger = Rc::new(TestLogger::new());
+        let mut backend = LoggingBackend::with_logger(100, logger.clone()); // 100 byte threshold
         let mut state = PipelineState::initial(100, 5);
 
         // Add enough history to exceed threshold
@@ -347,7 +404,20 @@ mod tests {
 
         // This should emit both snapshot and warning
         backend.emit_snapshot(&snapshot);
-        // Warning is emitted to stderr - no way to capture in unit test,
-        // but we verify no panic occurs
+        let logs = logger.get_logs();
+        assert!(logs.iter().any(|l| l.contains("[METRICS]")));
+        assert!(logs.iter().any(|l| l.contains("[METRICS WARNING]")));
+    }
+
+    #[test]
+    fn test_memory_metrics_library_code_does_not_write_directly_to_stderr() {
+        // Writing to stderr from library code bypasses the project's logger and
+        // can spam output in production. Logging should route through Loggable.
+        let src = include_str!("memory_metrics.rs");
+        assert!(
+            !src.contains("eprintln!(\"[METRICS]")
+                && !src.contains("eprintln!(\"[METRICS WARNING]"),
+            "memory_metrics.rs should not use eprintln! in library code"
+        );
     }
 }

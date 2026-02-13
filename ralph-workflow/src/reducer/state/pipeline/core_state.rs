@@ -389,7 +389,7 @@ impl PipelineState {
     /// # Memory Behavior
     ///
     /// With default limit of 1000 entries:
-    /// - Memory usage: ~400-500 KB (based on benchmark measurements)
+    /// - Memory usage: ~51 KB heap (based on recorded baseline measurements)
     /// - Checkpoint size: ~375 KB serialized
     /// - Growth: Bounded (oldest entries dropped when limit reached)
     pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
