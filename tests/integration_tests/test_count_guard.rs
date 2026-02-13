@@ -241,6 +241,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("memory_safety/channel_bounds.rs"),
     },
     SourceFile {
+        path: "memory_safety/long_running_pipeline.rs",
+        contents: include_str!("memory_safety/long_running_pipeline.rs"),
+    },
+    SourceFile {
+        path: "memory_safety/unsafe_patterns.rs",
+        contents: include_str!("memory_safety/unsafe_patterns.rs"),
+    },
+    SourceFile {
         path: "opencode_parser_tests.rs",
         contents: include_str!("opencode_parser_tests.rs"),
     },

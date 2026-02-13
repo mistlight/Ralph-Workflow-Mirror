@@ -103,6 +103,7 @@ pub mod json_parser;
 pub mod language_detector;
 pub mod logger;
 pub mod logging;
+pub mod monitoring;
 pub mod phases;
 pub mod pipeline;
 pub mod platform;
@@ -113,8 +114,9 @@ pub mod review_metrics;
 pub mod templates;
 pub mod workspace;
 
-#[cfg(test)]
-mod benchmarks;
+// Benchmarks module - only baselines are public for integration tests
+#[cfg(any(test, feature = "test-utils"))]
+pub mod benchmarks;
 
 // Re-export XML extraction and validation functions for use in integration tests.
 // These functions parse and validate XML output from agent responses (plan, issues, fix results).

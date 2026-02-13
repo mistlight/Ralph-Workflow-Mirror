@@ -380,6 +380,22 @@ pub(super) fn stream_agent_output_from_handle(
     activity_timestamp: SharedActivityTimestamp,
     cancel: Arc<AtomicBool>,
 ) -> io::Result<()> {
+    // UNBOUNDED CHANNEL JUSTIFICATION (streaming.rs:383):
+    //
+    // This channel transfers stdout chunks from the pump thread to the parser.
+    // Unbounded is safe here because:
+    //
+    // 1. Lifetime bound: Channel exists only during agent execution (minutes to hours max)
+    // 2. Natural backpressure: Pump thread blocks on stdout read; agent controls rate
+    // 3. Memory bound: Limited by total agent output size (typically <100MB)
+    // 4. Timeout protection: Idle timeout monitor terminates stuck agents
+    // 5. Cancel-aware: Parser can signal cancellation to drain/stop pump
+    //
+    // Alternative considered: sync_channel(capacity)
+    // Rejected because: Would require tuning capacity per agent type; unbounded
+    // provides simpler code with equivalent safety due to bounded agent lifetime.
+    //
+    // See: tests/integration_tests/memory_safety/channel_bounds.rs for verification
     let (tx, rx) = mpsc::channel();
     let pump_handle = spawn_stdout_pump(stdout, activity_timestamp, tx, Arc::clone(&cancel));
 

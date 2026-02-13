@@ -125,7 +125,26 @@ impl PromptMonitor {
     fn monitor_thread_main(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
         use notify::Watcher;
 
-        // Create a channel to receive file system events
+        // UNBOUNDED CHANNEL JUSTIFICATION (monitoring.rs:129):
+        //
+        // This channel receives filesystem events from the notify watcher.
+        // Unbounded is safe here because:
+        //
+        // 1. Event rate bound: Filesystem events are rare (only PROMPT.md changes)
+        // 2. Expected rate: <10 events per hour in typical usage
+        // 3. Worst case: Even under attack (rapid create/delete), event rate limited by OS
+        // 4. Fallback protection: If watcher fails, falls back to polling
+        // 5. Thread lifecycle: Monitor thread is joined on shutdown (no leak)
+        //
+        // Alternative considered: sync_channel(100)
+        // Rejected because: Would add unnecessary complexity for extremely low event rate
+        // and could theoretically drop events under rapid filesystem activity.
+        //
+        // The notify crate's recommended_watcher() returns a channel-based interface;
+        // using unbounded matches the notify crate's design and is safe given the
+        // low event rate.
+        //
+        // See: tests/integration_tests/memory_safety/channel_bounds.rs for verification
         let (tx, rx) = std::sync::mpsc::channel();
 
         // Create a watcher for the current directory

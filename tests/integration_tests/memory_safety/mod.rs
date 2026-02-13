@@ -18,5 +18,6 @@
 mod arc_patterns;
 mod bounded_growth;
 mod channel_bounds;
+mod long_running_pipeline;
 mod thread_lifecycle;
 mod unsafe_patterns;

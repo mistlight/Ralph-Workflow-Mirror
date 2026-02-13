@@ -20,3 +20,6 @@ mod memory_usage;
 
 #[cfg(test)]
 mod checkpoint_serialization;
+
+// Baselines module is public for use in integration tests
+pub mod baselines;

@@ -546,3 +546,95 @@ fn test_bounded_growth_with_mixed_phase_operations() {
         );
     });
 }
+
+#[test]
+fn test_execution_history_heap_size_within_baseline() {
+    with_default_timeout(|| {
+        use ralph_workflow::benchmarks::baselines::ExecutionHistoryBaseline;
+        use ralph_workflow::checkpoint::execution_history::StepOutcome;
+
+        let mut state = PipelineState::initial(1000, 5);
+        let limit = 1000;
+
+        // Fill history to limit
+        for i in 0..1000 {
+            state.add_execution_step(create_test_step(i), limit);
+        }
+
+        // Measure heap size
+        let heap_size: usize = state
+            .execution_history
+            .iter()
+            .map(|step| {
+                let base_size = step.phase.capacity()
+                    + step.step_type.capacity()
+                    + step.timestamp.capacity()
+                    + step.agent.as_ref().map_or(0, |s| s.capacity());
+
+                let outcome_size = match &step.outcome {
+                    StepOutcome::Success {
+                        output,
+                        files_modified,
+                        ..
+                    } => {
+                        output.as_ref().map_or(0, |s| s.capacity())
+                            + files_modified.iter().map(|s| s.capacity()).sum::<usize>()
+                    }
+                    StepOutcome::Failure { error, signals, .. } => {
+                        error.capacity() + signals.iter().map(|s| s.capacity()).sum::<usize>()
+                    }
+                    StepOutcome::Partial {
+                        completed,
+                        remaining,
+                        ..
+                    } => completed.capacity() + remaining.capacity(),
+                    StepOutcome::Skipped { reason } => reason.capacity(),
+                };
+
+                base_size + outcome_size
+            })
+            .sum();
+
+        // Verify against baseline
+        let baseline = ExecutionHistoryBaseline::ENTRIES_1000;
+        baseline
+            .check_heap_size(heap_size)
+            .expect("Heap size should be within baseline");
+
+        println!(
+            "✓ Heap size {} bytes within baseline {} bytes (tolerance {}x)",
+            heap_size, baseline.heap_size_bytes, baseline.tolerance
+        );
+    });
+}
+
+#[test]
+fn test_checkpoint_serialized_size_within_baseline() {
+    with_default_timeout(|| {
+        use ralph_workflow::benchmarks::baselines::ExecutionHistoryBaseline;
+
+        let mut state = PipelineState::initial(1000, 5);
+        let limit = 1000;
+
+        // Fill history to limit
+        for i in 0..1000 {
+            state.add_execution_step(create_test_step(i), limit);
+        }
+
+        // Serialize state
+        let serialized = serde_json::to_string(&state).expect("Should serialize");
+
+        let size_bytes = serialized.len();
+
+        // Verify against baseline
+        let baseline = ExecutionHistoryBaseline::ENTRIES_1000;
+        baseline
+            .check_serialized_size(size_bytes)
+            .expect("Serialized size should be within baseline");
+
+        println!(
+            "✓ Serialized size {} bytes within baseline {} bytes (tolerance {}x)",
+            size_bytes, baseline.serialized_size_bytes, baseline.tolerance
+        );
+    });
+}
