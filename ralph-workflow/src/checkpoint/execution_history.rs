@@ -384,32 +384,32 @@ impl ExecutionHistory {
         Self::default()
     }
 
-    /// Add an execution step with automatic bounding.
+    /// Add an execution step WITHOUT bounding (DEPRECATED - use add_step_bounded instead).
     ///
-    /// This method implements a ring buffer strategy: when the history exceeds
-    /// the configured limit, the oldest entries are dropped to maintain a bounded
-    /// memory footprint. This prevents unbounded memory growth during long-running
-    /// pipelines while preserving recent execution context for debugging.
+    /// **WARNING:** This method allows unbounded growth and should NOT be used
+    /// in production code. Use `add_step_bounded(step, limit)` instead.
     ///
-    /// # Arguments
+    /// This method exists only for backward compatibility during migration.
+    /// All production code should use the bounded version to prevent memory leaks.
     ///
-    /// * `step` - The execution step to add
-    /// * `limit` - Maximum number of entries to keep (from config)
+    /// # Migration
     ///
-    /// # Memory Behavior
+    /// Replace:
+    /// ```ignore
+    /// history.add_step(step);
+    /// ```
     ///
-    /// With default limit of 1000 entries:
-    /// - Memory usage: ~400-500 KB (based on benchmark measurements)
-    /// - Checkpoint size: ~375 KB serialized
-    /// - Growth: Bounded (oldest entries dropped when limit reached)
-    ///
-    /// # Backward Compatibility
-    ///
-    /// Old code calling `add_step(step)` without limit will get unbounded behavior
-    /// until migrated to `add_step_bounded(step, limit)`.
+    /// With:
+    /// ```ignore
+    /// history.add_step_bounded(step, ctx.config.execution_history_limit);
+    /// ```
+    #[deprecated(
+        since = "0.7.3",
+        note = "Use add_step_bounded(step, limit) to prevent unbounded memory growth"
+    )]
     pub fn add_step(&mut self, step: ExecutionStep) {
-        // Default behavior for backward compatibility - unbounded
-        // TODO: Once all callsites are migrated to add_step_bounded, remove this method
+        // Unbounded behavior - kept only for backward compatibility
+        // All production callsites have been migrated to add_step_bounded
         self.steps.push(step);
     }
 

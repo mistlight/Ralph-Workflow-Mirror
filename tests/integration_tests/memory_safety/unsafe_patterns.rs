@@ -157,18 +157,20 @@ fn test_process_kill_safety() {
 #[cfg(not(unix))]
 #[test]
 fn test_unsafe_code_is_unix_only() {
-    // On non-Unix platforms, verify that the code still compiles and works
-    // even though unsafe blocks are platform-specific
+    with_default_timeout(|| {
+        // On non-Unix platforms, verify that the code still compiles and works
+        // even though unsafe blocks are platform-specific
 
-    use ralph_workflow::executor::{ProcessExecutor, RealProcessExecutor};
+        use ralph_workflow::executor::{ProcessExecutor, RealProcessExecutor};
 
-    let executor = RealProcessExecutor::new();
+        let executor = RealProcessExecutor::new();
 
-    let result = executor.execute("echo", &["test"], &[], None);
+        let result = executor.execute("echo", &["test"], &[], None);
 
-    // Should work on all platforms
-    assert!(
-        result.is_ok(),
-        "Basic execution should work on all platforms"
-    );
+        // Should work on all platforms
+        assert!(
+            result.is_ok(),
+            "Basic execution should work on all platforms"
+        );
+    });
 }
