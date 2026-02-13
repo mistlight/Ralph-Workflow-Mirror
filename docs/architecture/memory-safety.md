@@ -10,12 +10,14 @@ Ralph uses a bounded execution history to prevent unbounded memory growth during
 
 ### Execution History Bounds
 
-- **Default limit:** 1000 entries (configurable via `add_execution_step(step, limit)`)
-- **Memory per entry:** ~400-500 bytes (heap + stack)
-- **Total execution history memory:** ~400-500 KB at limit
+- **Default limit:** 1000 entries (config: `execution_history_limit`)
+- **Memory per entry (history heap):** ~53 bytes (measured baseline)
+- **Total execution history heap at limit:** ~51 KB (1000 entries)
 - **Checkpoint size with bounded history:** ~375 KB serialized (1000 entries)
 
-**Rationale:** Execution history grows with every pipeline step (agent invocations, state transitions, validation steps). Without bounds, a pipeline with 10,000 iterations would consume ~5 MB just for history. The 1000-entry limit provides sufficient debugging context while keeping memory bounded.
+Note: these memory numbers describe the heap used by the execution history buffer itself. Total process memory also includes the rest of `PipelineState`, parser buffers, and other runtime allocations. See `docs/performance/memory-budget.md` for the full measured breakdown.
+
+**Rationale:** Execution history grows with every pipeline step (agent invocations, state transitions, validation steps). Without bounds, a pipeline with 10,000 steps would consume ~530 KB of additional heap just for the history buffer (based on the ~53 bytes/entry baseline). The 1000-entry limit provides sufficient debugging context while keeping memory bounded.
 
 **Implementation:** `PipelineState::add_execution_step(step, limit)` enforces the limit by dropping oldest entries when capacity is reached (ring buffer behavior).
 

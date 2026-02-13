@@ -166,6 +166,13 @@ fn cleanup_stdout_pump(
     runtime: &PipelineRuntime<'_>,
     parse_result: &io::Result<()>,
 ) {
+    // If parsing fails, ensure we proactively signal cancellation so the pump thread
+    // stops reading as soon as possible (rather than continuing to enqueue chunks
+    // while the parser has stopped consuming).
+    if parse_result.is_err() {
+        cancel.store(true, Ordering::Release);
+    }
+
     let should_detach = cancel.load(Ordering::Acquire) || parse_result.is_err();
     if should_detach {
         // Best-effort: avoid leaking a live pump thread after cancellation.
@@ -555,6 +562,11 @@ pub(super) fn stream_agent_output_from_handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+    use crate::executor::{MockProcessExecutor, ProcessExecutor};
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::Timer;
+    use crate::workspace::MemoryWorkspace;
     use crate::workspace::Workspace;
 
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -614,6 +626,39 @@ mod tests {
         if let Err(payload) = test_result {
             std::panic::resume_unwind(payload);
         }
+    }
+
+    #[test]
+    fn cleanup_stdout_pump_sets_cancel_on_parse_error() {
+        let colors = Colors::with_enabled(false);
+        let logger = Logger::new(colors);
+        let config = Config::default();
+        let workspace = MemoryWorkspace::new_test();
+
+        let executor_arc: Arc<dyn ProcessExecutor> = Arc::new(MockProcessExecutor::new());
+        let executor: &dyn ProcessExecutor = executor_arc.as_ref();
+
+        let mut timer = Timer::new();
+        let runtime = PipelineRuntime {
+            timer: &mut timer,
+            logger: &logger,
+            colors: &colors,
+            config: &config,
+            executor,
+            executor_arc: Arc::clone(&executor_arc),
+            workspace: &workspace,
+        };
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let pump_handle = std::thread::spawn(|| {});
+        let parse_result: io::Result<()> = Err(io::Error::other("parse error"));
+
+        cleanup_stdout_pump(pump_handle, &cancel, &runtime, &parse_result);
+
+        assert!(
+            cancel.load(Ordering::Acquire),
+            "cancel should be set on parse error to stop the pump thread promptly"
+        );
     }
 
     #[test]

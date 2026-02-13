@@ -52,7 +52,8 @@ The execution history maintains a bounded ring buffer that drops the oldest entr
 **Configuration override**:
 
 ```toml
-# .ralph/config.toml
+# ~/.config/ralph-workflow.toml
+# (Optional per-repo override: .agent/ralph-workflow.toml)
 execution_history_limit = 2000  # Increase for deeper history
 ```
 
