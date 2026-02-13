@@ -204,6 +204,15 @@ fn test_is_rate_limit_error() {
 }
 
 #[test]
+fn test_error_preview_truncates_on_char_boundary() {
+    let message = "Error 🚫: usage limit reached";
+    let preview = build_error_preview(message, 10);
+
+    assert!(message.starts_with(&preview));
+    assert!(preview.chars().count() <= 10);
+}
+
+#[test]
 fn test_is_auth_error() {
     // Only Authentication should match
     assert!(is_auth_error(&AgentErrorKind::Authentication));

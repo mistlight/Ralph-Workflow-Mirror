@@ -26,6 +26,8 @@ pub use error_classification::{
     is_retriable_agent_error, is_timeout_error,
 };
 
+const ERROR_PREVIEW_MAX_CHARS: usize = 100;
+
 /// Result of executing an agent.
 ///
 /// Contains the pipeline event and optional session_id for session continuation.
@@ -242,12 +244,10 @@ fn try_agent_execution(
                     .as_deref()
                     .or(Some(result.stderr.as_str()))
                     .unwrap_or("");
-                let preview_len = error_preview.len().min(100);
+                let preview = build_error_preview(error_preview, ERROR_PREVIEW_MAX_CHARS);
                 runtime.logger.info(&format!(
                     "[OpenCode] Rate limit detected for agent '{}' (source: {}): {}",
-                    config.agent_name,
-                    error_source,
-                    &error_preview[..preview_len]
+                    config.agent_name, error_source, preview
                 ));
 
                 return Ok(AgentExecutionResult {
@@ -327,4 +327,8 @@ fn try_agent_execution(
             })
         }
     }
+}
+
+fn build_error_preview(message: &str, max_chars: usize) -> String {
+    message.chars().take(max_chars).collect()
 }
