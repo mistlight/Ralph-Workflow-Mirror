@@ -9,35 +9,64 @@
 //! providers (OpenAI, Anthropic, Google, etc.) hit quota/usage limits. This module
 //! provides comprehensive detection for all OpenCode error formats:
 //!
-//! ## Supported Error Patterns
+//! ## Detection Methods (Priority Order)
 //!
-//! 1. **Message-based patterns** (stderr or stdout):
-//!    - "usage limit has been reached [retryin]"
-//!    - "usage limit reached"
-//!    - "usage limit exceeded"
-//!    - "OpenCode Zen usage limit" / "opencode usage limit"
+//! 1. **Structured error codes** (JSON in stdout logfile):
+//!    - Primary: `usage_limit_exceeded`, `quota_exceeded`, `insufficient_quota`
+//!    - Extracted via `extract_error_message_from_logfile()`
+//!    - Most reliable when available
+//!
+//! 2. **Message patterns** (stderr or extracted from JSON):
+//!    - "usage limit has been reached", "usage limit reached", "usage limit exceeded"
+//!    - "OpenCode Zen usage limit", "opencode usage limit"
 //!    - Provider-prefixed: "anthropic: usage limit reached"
 //!
-//! 2. **Structured error codes** (JSON):
-//!    - `usage_limit_exceeded`
-//!    - `quota_exceeded`
-//!    - `usage_limit_reached`
-//!    - `rate_limit_exceeded`
+//! 3. **Exit codes**: OpenCode uses generic exit code 1 for most errors.
+//!    - Exit codes are NOT reliable for usage limit detection
+//!    - No specific exit codes for rate limits vs other errors
+//!    - Exit code-based detection NOT implemented to avoid false positives
 //!
-//! 3. **Provider-specific formats** (JSON):
-//!    - `{"provider": "anthropic", "message": "usage limit reached"}`
+//! ## Error Emission Behavior
 //!
-//! ## Verification Steps
+//! Based on OpenCode source analysis (2026-02-12):
+//!
+//! - **Primary channel**: JSON events to stdout via `--format json` logfile
+//!   - Format: `{"type":"error","error":{"code":"usage_limit_exceeded"}}`
+//!   - Written to `.agent/logs/*.log`
+//!
+//! - **Secondary channel**: stderr for some error messages
+//!   - Used as fallback when logfile unavailable
+//!
+//! - **Exit codes**: Generic (exit code 1 for all errors)
+//!   - Source: `/packages/opencode/src/cli/cmd/run.ts`
+//!   - Cannot distinguish usage limits from other errors
+//!
+//! - **Retry logic**: `/packages/opencode/src/session/retry.ts`
+//!   - Checks for `FreeUsageLimitError` in response body
+//!   - Checks for `json.error?.code?.includes("rate_limit")`
+//!
+//! ## Edge Cases and Limitations
+//!
+//! - **Silent failures**: If OpenCode exits before writing error logs, detection
+//!   may fall back to logging a warning about potential undetected usage limits
+//! - **Empty logfiles**: Can occur if process terminates during initialization
+//! - **Timing issues**: Error may appear in stderr but not in logfile if process
+//!   exits before flushing stdout buffer
+//! - **No heuristics**: Exit code-based detection NOT implemented because OpenCode
+//!   uses exit code 1 for all errors (would cause false positives)
+//!
+//! ## Verification and Maintenance
+//!
+//! Last Verified: 2026-02-12
+//! Last Updated: 2026-02-12
 //!
 //! To verify patterns remain accurate as OpenCode evolves:
-//!
 //! 1. Check OpenCode source: <https://github.com/anomalyco/opencode>
 //! 2. Review `/packages/opencode/src/cli/cmd/run.ts` for error emission
 //! 3. Review `/packages/opencode/src/session/message-v2.ts` for error formats
-//! 4. Test with OpenCode CLI near usage limit to observe actual messages
-//! 5. Update patterns in this file if format changes
-//!
-//! Last Verified: 2026-02-12
+//! 4. Review `/packages/opencode/src/session/retry.ts` for retry logic
+//! 5. Test with OpenCode CLI near usage limit to observe actual messages
+//! 6. Update patterns in this file if format changes
 
 use crate::reducer::event::AgentErrorKind;
 use serde_json::Value;

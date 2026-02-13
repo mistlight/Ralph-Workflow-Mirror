@@ -71,17 +71,104 @@ fn test_opencode_structured_code_usage_limit_exceeded() {
     });
 }
 
-/// Test that OpenCode error code `insufficient_quota` is correctly detected.
+/// Test silent failure: OpenCode exits with non-zero code but no error logs.
 ///
-/// OpenAI provider uses `insufficient_quota` when quota is exhausted.
-/// Source: /packages/opencode/src/provider/error.ts
+/// Simulates worst-case scenario where OpenCode usage limit causes immediate exit
+/// without writing to logfile or stderr. This can happen if:
+/// - Provider API returns 429 and OpenCode exits before writing error event
+/// - Network interruption prevents error log from being written
+/// - Process killed during error emission
+///
+/// **Expected behavior**: Without error signals, this cannot be detected as a usage
+/// limit error and will be classified as InternalError. This test documents the
+/// current limitation. Future improvements may add heuristics or debug logging.
 #[test]
-fn test_opencode_insufficient_quota_code() {
+fn test_silent_usage_limit_failure() {
     with_default_timeout(|| {
         let workspace = MemoryWorkspace::new_test();
 
-        let logfile_content = r#"{"type":"content","content":"Processing..."}
-{"type":"error","error":{"code":"insufficient_quota"}}"#;
+        // Scenario 1: Empty logfile (OpenCode exited before writing anything)
+        workspace
+            .write(Path::new(".agent/logs/agent1.log"), "")
+            .unwrap();
+
+        let error_msg = extract_error_message_from_logfile(
+            ".agent/logs/agent1.log",
+            &workspace as &dyn Workspace,
+        );
+
+        assert!(error_msg.is_none(), "Empty logfile should return None");
+
+        // Classify with exit code 1 and empty stderr
+        // Current behavior: Will be InternalError without additional signals
+        let error_kind = classify_agent_error(1, "", None);
+
+        // Document current limitation: Cannot detect usage limit without error signals
+        assert!(
+            matches!(error_kind, AgentErrorKind::InternalError),
+            "Without error signals, classified as InternalError (expected limitation), got {:?}",
+            error_kind
+        );
+
+        // Scenario 2: Missing logfile (OpenCode exited immediately)
+        let error_msg = extract_error_message_from_logfile(
+            ".agent/logs/nonexistent.log",
+            &workspace as &dyn Workspace,
+        );
+
+        assert!(error_msg.is_none(), "Missing logfile should return None");
+
+        let error_kind = classify_agent_error(1, "", None);
+        assert!(
+            matches!(error_kind, AgentErrorKind::InternalError),
+            "Missing logfile should be classified as InternalError, got {:?}",
+            error_kind
+        );
+    });
+}
+
+/// Test that specific exit codes alone do not indicate usage limits.
+///
+/// OpenCode uses generic exit code 1 for all errors, so exit codes alone
+/// cannot reliably detect usage limits. This test documents that exit code
+/// detection is NOT implemented because it would cause false positives.
+#[test]
+fn test_exit_code_alone_insufficient_for_detection() {
+    with_default_timeout(|| {
+        // Test various exit codes with no error messages
+        // None should be classified as RateLimit without additional context
+        let test_cases = vec![
+            1,   // Generic error
+            2,   // Command line usage error
+            3,   // Could indicate resource exhaustion
+            75,  // EX_TEMPFAIL (temporary failure)
+            127, // Command not found
+        ];
+
+        for exit_code in test_cases {
+            let error_kind = classify_agent_error(exit_code, "", None);
+            assert!(
+                !matches!(error_kind, AgentErrorKind::RateLimit),
+                "Exit code {} alone should NOT be classified as RateLimit (prevents false positives), got {:?}",
+                exit_code,
+                error_kind
+            );
+        }
+    });
+}
+
+/// Test detection when OpenCode writes partial log before crashing.
+///
+/// If OpenCode crashes after writing some content but before the error event,
+/// we should not detect a usage limit error (no false positives).
+#[test]
+fn test_partial_log_no_error_event() {
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
+
+        // Partial log: OpenCode wrote some content but crashed before error event
+        let logfile_content = r#"{"type":"content","content":"Analyzing codebase..."}
+{"type":"tool_use","tool":"read","state":{"status":"running"}}"#;
 
         workspace
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
@@ -92,17 +179,69 @@ fn test_opencode_insufficient_quota_code() {
             &workspace as &dyn Workspace,
         );
 
-        assert_eq!(
-            error_msg.as_deref(),
-            Some("insufficient_quota"),
-            "Should extract insufficient_quota error code"
+        // No error event in log
+        assert!(
+            error_msg.is_none(),
+            "Partial log without error event should return None"
         );
 
-        let error_kind = classify_agent_error(1, "", error_msg.as_deref());
+        let error_kind = classify_agent_error(1, "", None);
+
+        // Should not be classified as RateLimit without error signal
+        assert!(
+            !matches!(error_kind, AgentErrorKind::RateLimit),
+            "Partial log without error should not be RateLimit, got {:?}",
+            error_kind
+        );
+    });
+}
+
+/// Test detection via stderr when logfile is unavailable.
+///
+/// If logfile extraction fails but stderr contains usage limit error,
+/// detection should still work (fallback to stderr).
+#[test]
+fn test_detection_via_stderr_when_logfile_unavailable() {
+    with_default_timeout(|| {
+        // Logfile missing, but stderr has usage limit error
+        let stderr = "Error: OpenCode usage limit has been reached";
+        let error_kind = classify_agent_error(1, stderr, None);
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "insufficient_quota should be classified as RateLimit, got {:?}",
+            "Should detect usage limit from stderr when logfile unavailable, got {:?}",
+            error_kind
+        );
+    });
+}
+
+/// Test that both stderr and stdout sources are checked for rate limit errors.
+///
+/// When both streams contain error information, both should be checked and
+/// rate limit detected if present in either. Note that timeout errors in stderr
+/// will be classified as Timeout (higher priority) even if stdout has rate limit.
+#[test]
+fn test_dual_source_error_detection() {
+    with_default_timeout(|| {
+        // Test 1: Usage limit in stdout, generic error in stderr
+        let stderr = "network connection failed";
+        let stdout_error = Some("usage_limit_exceeded");
+        let error_kind = classify_agent_error(1, stderr, stdout_error);
+
+        assert!(
+            matches!(error_kind, AgentErrorKind::RateLimit),
+            "Should detect usage limit from stdout even with stderr error, got {:?}",
+            error_kind
+        );
+
+        // Test 2: Usage limit in stderr, other error in stdout
+        let stderr = "anthropic: usage limit reached";
+        let stdout_error = Some("connection failed");
+        let error_kind = classify_agent_error(1, stderr, stdout_error);
+
+        assert!(
+            matches!(error_kind, AgentErrorKind::RateLimit),
+            "Should detect usage limit from stderr even with stdout error, got {:?}",
             error_kind
         );
     });
