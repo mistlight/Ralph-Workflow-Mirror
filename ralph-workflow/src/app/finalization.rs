@@ -44,7 +44,9 @@ pub fn finalize_pipeline(
 ) {
     // Stop the PROMPT.md monitor if it was started
     if let Some(monitor) = prompt_monitor {
-        monitor.stop();
+        for warning in monitor.stop() {
+            ctx.logger.warn(&warning);
+        }
     }
 
     // End agent phase and clean up

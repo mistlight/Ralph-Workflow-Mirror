@@ -184,18 +184,18 @@ Established from memory safety benchmark tests (`ralph-workflow/src/benchmarks/`
 
 | Metric | Value |
 |--------|-------|
-| Growth per entry (unbounded) | ~500 bytes |
+| Growth per entry (unbounded, heap estimate) | ~53 bytes |
 | Growth per entry (bounded at 1000) | 0 bytes (after limit) |
-| Memory for 1000 entries | ~500 KB |
-| Memory for 10,000 entries (unbounded) | ~5 MB |
+| Memory for 1000 entries (heap estimate) | ~51 KB |
+| Memory for 10,000 entries (unbounded, heap estimate) | ~530 KB |
 
 ### Checkpoint Serialization Performance
 
 | State Size | Serialization Time | Checkpoint Size |
 |------------|-------------------|-----------------|
-| Small (10 iterations, 5 passes) | <10 ms | ~50 KB |
-| Medium (100 iterations, 20 passes) | <100 ms | ~375 KB |
-| Large (1000 entries) | <500 ms | ~5 MB |
+| Small (10 steps) | <1 ms | ~8 KB |
+| Medium (100 steps) | <5 ms | ~41 KB |
+| Large (1000 steps) | <25 ms | ~375 KB |
 
 **Note**: These are baseline measurements, not performance requirements. Actual times vary by hardware.
 

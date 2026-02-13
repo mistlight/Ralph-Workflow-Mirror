@@ -181,7 +181,7 @@ fn try_agent_execution(
             //    - Structured codes: insufficient_quota, usage_limit_exceeded, quota_exceeded
             //    - Message patterns: "usage limit reached", "anthropic: usage limit", etc.
             // 4. If detected, emit AgentEvent::RateLimited for immediate agent fallback
-            let stdout_error = crate::pipeline::extract_error_message_from_logfile(
+            let stdout_error = crate::pipeline::extract_error_identifier_from_logfile(
                 config.logfile,
                 runtime.workspace,
             );

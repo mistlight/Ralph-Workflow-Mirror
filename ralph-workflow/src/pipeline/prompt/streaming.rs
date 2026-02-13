@@ -226,7 +226,7 @@ fn extract_session_id_from_json_line(line: &str) -> Option<String> {
     None
 }
 
-/// Extract error message from a logfile containing agent JSON output.
+/// Extract a human-readable error message from a logfile containing agent JSON output.
 ///
 /// This function searches for error events in the logfile (typically from stdout)
 /// and extracts the error message. This is critical for agents like OpenCode that
@@ -236,7 +236,10 @@ fn extract_session_id_from_json_line(line: &str) -> Option<String> {
 /// - OpenCode: `{"type":"error","error":{"message":"usage limit reached"}}`
 /// - OpenCode: `{"type":"error","error":{"data":{"message":"Invalid API key"}}}`
 /// - Claude: `{"type":"error","message":"Rate limit exceeded"}`
-/// - Generic: Any JSON with "error" or "message" fields
+///
+/// Note: For safety, this extractor only considers lines explicitly marked as
+/// error events (`{"type":"error", ...}`). It will ignore JSON that merely
+/// contains an `error` object but is not tagged as an error event.
 ///
 /// # Arguments
 ///
@@ -257,14 +260,48 @@ pub fn extract_error_message_from_logfile(
     // Error events are typically emitted near the end, but we search all lines
     // to handle cases where multiple attempts are logged to the same file
     for line in content.lines().rev().take(50) {
-        if let Some(error_msg) = extract_error_from_json_line(line) {
+        if let Some(error_msg) = extract_error_message_from_json_line(line) {
             return Some(error_msg);
         }
     }
     None
 }
 
-/// Extract error message from a single JSON line.
+/// Extract an error identifier from a logfile containing agent JSON output.
+///
+/// This is intended for programmatic classification (rate limit, quota, auth),
+/// and prefers stable error codes when available.
+pub fn extract_error_identifier_from_logfile(
+    logfile: &str,
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<String> {
+    let logfile_path = Path::new(logfile);
+    let content = workspace.read(logfile_path).ok()?;
+
+    for line in content.lines().rev().take(50) {
+        if let Some(id) = extract_error_identifier_from_json_line(line) {
+            return Some(id);
+        }
+    }
+    None
+}
+
+fn is_explicit_error_event(value: &serde_json::Value) -> bool {
+    matches!(value.get("type").and_then(|v| v.as_str()), Some("error"))
+}
+
+fn error_code_to_human_message(code: &str) -> Option<&'static str> {
+    // Keep these short and user-facing; callers that need stable identifiers
+    // should use `extract_error_identifier_from_logfile`.
+    match code {
+        "usage_limit_exceeded" | "usage_limit_reached" => Some("usage limit reached"),
+        "rate_limit_exceeded" => Some("rate limit exceeded"),
+        "quota_exceeded" | "insufficient_quota" => Some("quota exceeded"),
+        _ => None,
+    }
+}
+
+/// Extract a human-readable error message from a single JSON line.
 ///
 /// Supports multiple agent error formats:
 /// - OpenCode: `{"type":"error","error":{"message":"..."}}`
@@ -273,7 +310,9 @@ pub fn extract_error_message_from_logfile(
 /// - OpenCode: `{"type":"error","error":{"code":"usage_limit_exceeded"}}`
 /// - OpenCode: `{"type":"error","error":{"provider":"anthropic","message":"..."}}`
 /// - Claude: `{"type":"error","message":"..."}`
-/// - Generic: `{"error":{"message":"..."}}`
+///
+/// This extractor requires an explicit error marker (`type == "error"`) to avoid
+/// false positives from non-error events that include an `error` object.
 ///
 /// # OpenCode Error Code Detection
 ///
@@ -310,40 +349,19 @@ pub fn extract_error_message_from_logfile(
 ///
 /// This format captures provider-specific usage limit errors that should trigger
 /// agent fallback.
-fn extract_error_from_json_line(line: &str) -> Option<String> {
-    // Try to parse as JSON
+fn extract_error_message_from_json_line(line: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
-
-    // Check if this is an error event (type == "error")
-    if let Some(event_type) = value.get("type").and_then(|v| v.as_str()) {
-        if event_type != "error" {
-            return None;
-        }
+    if !is_explicit_error_event(&value) {
+        return None;
     }
 
-    // PRIORITY 1: OpenCode format: {"error": {"code": "usage_limit_exceeded"}}
-    // Error codes are stable and more reliable than message text for detection.
-    // Check error codes FIRST before falling back to message extraction.
-    //
-    // Supported codes: insufficient_quota, usage_limit_exceeded, quota_exceeded,
-    // rate_limit_exceeded, usage_limit_reached
-    if let Some(error_code) = value.pointer("/error/code").and_then(|v| v.as_str()) {
-        return Some(error_code.to_string());
-    }
-
-    // PRIORITY 2: OpenCode multi-provider gateway format: {"error": {"provider": "...", "message": "..."}}
-    // This captures provider-specific usage limit errors (e.g., "anthropic: usage limit reached")
-    // Check provider-specific format BEFORE generic message extraction to preserve provider context.
-    //
-    // Examples: {"error": {"provider": "openai", "message": "usage limit exceeded"}}
-    //           {"error": {"provider": "anthropic", "message": "usage limit reached"}}
+    // Prefer human-readable messages over codes.
     if let Some(provider) = value.pointer("/error/provider").and_then(|v| v.as_str()) {
         if let Some(msg) = value.pointer("/error/message").and_then(|v| v.as_str()) {
             return Some(format!("{}: {}", provider, msg));
         }
     }
 
-    // PRIORITY 3: OpenCode format: {"error": {"data": {"message": "..."}}}
     if let Some(data_message) = value
         .pointer("/error/data/message")
         .and_then(|v| v.as_str())
@@ -351,22 +369,66 @@ fn extract_error_from_json_line(line: &str) -> Option<String> {
         return Some(data_message.to_string());
     }
 
-    // PRIORITY 4: OpenCode format: {"error": {"message": "..."}}
     if let Some(error_message) = value.pointer("/error/message").and_then(|v| v.as_str()) {
         return Some(error_message.to_string());
     }
 
-    // PRIORITY 5: OpenCode format: {"error": {"name": "APIError"}}
-    if let Some(error_name) = value.pointer("/error/name").and_then(|v| v.as_str()) {
-        return Some(error_name.to_string());
-    }
-
-    // PRIORITY 6: Claude format: {"message": "..."}
+    // Claude format: {"type":"error","message":"..."}
     if let Some(message) = value.get("message").and_then(|v| v.as_str()) {
         return Some(message.to_string());
     }
 
-    None
+    // If we only have a code, map it to a short human message when possible.
+    if let Some(code) = value.pointer("/error/code").and_then(|v| v.as_str()) {
+        if let Some(mapped) = error_code_to_human_message(code) {
+            return Some(mapped.to_string());
+        }
+    }
+
+    // Fallback: error name, if present.
+    value
+        .pointer("/error/name")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
+fn extract_error_identifier_from_json_line(line: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if !is_explicit_error_event(&value) {
+        return None;
+    }
+
+    // Prefer stable error codes when available.
+    if let Some(code) = value.pointer("/error/code").and_then(|v| v.as_str()) {
+        return Some(code.to_string());
+    }
+
+    // Next best: provider-qualified message.
+    if let Some(provider) = value.pointer("/error/provider").and_then(|v| v.as_str()) {
+        if let Some(msg) = value.pointer("/error/message").and_then(|v| v.as_str()) {
+            return Some(format!("{}: {}", provider, msg));
+        }
+    }
+
+    // Then: plain message forms.
+    if let Some(data_message) = value
+        .pointer("/error/data/message")
+        .and_then(|v| v.as_str())
+    {
+        return Some(data_message.to_string());
+    }
+    if let Some(error_message) = value.pointer("/error/message").and_then(|v| v.as_str()) {
+        return Some(error_message.to_string());
+    }
+    if let Some(message) = value.get("message").and_then(|v| v.as_str()) {
+        return Some(message.to_string());
+    }
+
+    // Last: error name.
+    value
+        .pointer("/error/name")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
 }
 
 /// Stream agent output from an AgentChildHandle.
@@ -555,44 +617,53 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_error_from_json_line_opencode_usage_limit() {
+    fn test_extract_error_message_from_json_line_opencode_usage_limit() {
         let line = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_123","error":{"message":"usage limit reached"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(result, Some("usage limit reached".to_string()));
     }
 
     #[test]
-    fn test_extract_error_from_json_line_opencode_data_message() {
+    fn test_extract_error_message_from_json_line_opencode_data_message() {
         let line = r#"{"type":"error","error":{"data":{"message":"Invalid API key"}}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(result, Some("Invalid API key".to_string()));
     }
 
     #[test]
-    fn test_extract_error_from_json_line_opencode_error_name() {
+    fn test_extract_error_message_from_json_line_opencode_error_name() {
         let line = r#"{"type":"error","error":{"name":"APIError"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(result, Some("APIError".to_string()));
     }
 
     #[test]
-    fn test_extract_error_from_json_line_claude_format() {
+    fn test_extract_error_message_from_json_line_claude_format() {
         let line = r#"{"type":"error","message":"Rate limit exceeded"}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(result, Some("Rate limit exceeded".to_string()));
     }
 
     #[test]
-    fn test_extract_error_from_json_line_not_error_event() {
+    fn test_extract_error_message_from_json_line_not_error_event() {
         let line = r#"{"type":"init","session_id":"abc123"}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(result, None);
     }
 
     #[test]
-    fn test_extract_error_from_json_line_invalid_json() {
+    fn test_extract_error_message_from_json_line_invalid_json() {
         let line = "This is not JSON";
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_error_message_from_json_line_requires_explicit_error_type() {
+        // Regression test: JSON without a top-level type marker should not be treated
+        // as an error event, even if it contains an `error` object.
+        let line = r#"{"error":{"message":"not actually an error event"}}"#;
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(result, None);
     }
 
@@ -759,7 +830,7 @@ mod tests {
         // Test extraction of OpenCode error codes (usage_limit_exceeded, etc.)
         // Error codes are more stable than message text for detection
         let line = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_123","error":{"code":"usage_limit_exceeded","message":"Usage limit reached"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("usage_limit_exceeded".to_string()));
     }
 
@@ -768,7 +839,7 @@ mod tests {
         // Test extraction of quota_exceeded error code
         let line =
             r#"{"type":"error","error":{"code":"quota_exceeded","message":"Quota limit reached"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("quota_exceeded".to_string()));
     }
 
@@ -776,7 +847,7 @@ mod tests {
     fn test_extract_error_from_json_line_opencode_usage_limit_reached_code() {
         // Test extraction of usage_limit_reached error code
         let line = r#"{"type":"error","error":{"code":"usage_limit_reached"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("usage_limit_reached".to_string()));
     }
 
@@ -785,7 +856,7 @@ mod tests {
         // Test extraction of provider-specific errors (e.g., "anthropic: usage limit reached")
         // OpenCode multi-provider gateway forwards errors with provider prefix
         let line = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_123","error":{"provider":"anthropic","message":"usage limit reached"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("anthropic: usage limit reached".to_string()));
     }
 
@@ -794,7 +865,7 @@ mod tests {
         // Test provider-specific error for OpenAI
         let line =
             r#"{"type":"error","error":{"provider":"openai","message":"usage limit exceeded"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("openai: usage limit exceeded".to_string()));
     }
 
@@ -802,7 +873,7 @@ mod tests {
     fn test_extract_error_from_json_line_opencode_provider_error_google() {
         // Test provider-specific error for Google
         let line = r#"{"type":"error","error":{"provider":"google","message":"quota exceeded"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("google: quota exceeded".to_string()));
     }
 
@@ -810,7 +881,7 @@ mod tests {
     fn test_extract_error_from_json_line_opencode_zen_error() {
         // Test OpenCode Zen usage limit error
         let line = r#"{"type":"error","timestamp":1768191346712,"error":{"message":"OpenCode Zen usage limit has been reached"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_message_from_json_line(line);
         assert_eq!(
             result,
             Some("OpenCode Zen usage limit has been reached".to_string())
@@ -822,7 +893,7 @@ mod tests {
         // Test that error codes are extracted even when message is present
         // Error codes should have priority as they're more stable
         let line = r#"{"type":"error","error":{"code":"usage_limit_exceeded","message":"The usage limit has been reached [retryin]"}}"#;
-        let result = extract_error_from_json_line(line);
+        let result = extract_error_identifier_from_json_line(line);
         assert_eq!(result, Some("usage_limit_exceeded".to_string()));
     }
 
@@ -844,6 +915,23 @@ mod tests {
         workspace.write(logfile_path, log_content).unwrap();
 
         let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("Usage limit reached".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_identifier_from_logfile_prefers_code() {
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/test.log");
+
+        let log_content = r#"{"type":"error","error":{"code":"usage_limit_exceeded","message":"Usage limit reached"}}"#;
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result =
+            extract_error_identifier_from_logfile(logfile_path.to_str().unwrap(), &workspace);
 
         assert_eq!(result, Some("usage_limit_exceeded".to_string()));
     }

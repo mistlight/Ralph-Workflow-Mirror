@@ -30,7 +30,8 @@ mod prompt;
 mod types;
 
 pub use prompt::{
-    extract_error_message_from_logfile, run_with_prompt, PipelineRuntime, PromptCommand,
+    extract_error_identifier_from_logfile, extract_error_message_from_logfile, run_with_prompt,
+    PipelineRuntime, PromptCommand,
 };
 pub use types::AgentPhaseGuard;
 

@@ -21,7 +21,7 @@
 //! - Pure reducer tests require no mocks
 
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::pipeline::extract_error_message_from_logfile;
+use ralph_workflow::pipeline::extract_error_identifier_from_logfile;
 use ralph_workflow::reducer::event::AgentErrorKind;
 use ralph_workflow::reducer::fault_tolerant_executor::classify_agent_error;
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
@@ -45,7 +45,7 @@ fn test_opencode_structured_code_usage_limit_exceeded() {
             .unwrap();
 
         // Extract error from logfile
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -92,7 +92,7 @@ fn test_silent_usage_limit_failure() {
             .write(Path::new(".agent/logs/agent1.log"), "")
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -111,7 +111,7 @@ fn test_silent_usage_limit_failure() {
         );
 
         // Scenario 2: Missing logfile (OpenCode exited immediately)
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/nonexistent.log",
             &workspace as &dyn Workspace,
         );
@@ -174,7 +174,7 @@ fn test_partial_log_no_error_event() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -261,7 +261,7 @@ fn test_opencode_quota_exceeded_code() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -294,7 +294,7 @@ fn test_opencode_provider_specific_anthropic_usage_limit() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -340,7 +340,7 @@ fn test_opencode_provider_specific_openai_usage_limit() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -374,7 +374,7 @@ fn test_opencode_zen_usage_limit_message() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -409,7 +409,7 @@ fn test_opencode_usage_limit_message() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -440,7 +440,7 @@ fn test_generic_usage_limit_reached_message() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -472,7 +472,7 @@ fn test_usage_limit_has_been_reached_message() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -514,7 +514,7 @@ fn test_error_extraction_searches_last_50_lines() {
             .write(Path::new(".agent/logs/agent1.log"), &logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -545,7 +545,7 @@ fn test_non_error_events_ignored() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -574,7 +574,7 @@ fn test_malformed_json_skipped() {
             .write(Path::new(".agent/logs/agent1.log"), logfile_content)
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -597,7 +597,7 @@ fn test_empty_logfile_returns_none() {
             .write(Path::new(".agent/logs/agent1.log"), "")
             .unwrap();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/agent1.log",
             &workspace as &dyn Workspace,
         );
@@ -612,7 +612,7 @@ fn test_missing_logfile_returns_none() {
     with_default_timeout(|| {
         let workspace = MemoryWorkspace::new_test();
 
-        let error_msg = extract_error_message_from_logfile(
+        let error_msg = extract_error_identifier_from_logfile(
             ".agent/logs/nonexistent.log",
             &workspace as &dyn Workspace,
         );

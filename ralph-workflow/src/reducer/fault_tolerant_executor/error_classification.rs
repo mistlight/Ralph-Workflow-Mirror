@@ -13,7 +13,7 @@
 //!
 //! 1. **Structured error codes** (JSON in stdout logfile):
 //!    - Primary: `usage_limit_exceeded`, `quota_exceeded`, `insufficient_quota`
-//!    - Extracted via `extract_error_message_from_logfile()`
+//!    - Extracted via `extract_error_identifier_from_logfile()`
 //!    - Most reliable when available
 //!
 //! 2. **Message patterns** (stderr or extracted from JSON):
@@ -209,7 +209,7 @@ fn is_rate_limit_error_from_any_source(
 
 fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // PRIORITY 1: Check if input is a direct error code (from JSON extraction)
-    // When extract_error_message_from_logfile extracts error codes from OpenCode JSON,
+    // When extract_error_identifier_from_logfile extracts error codes from OpenCode JSON,
     // it returns the bare code string (e.g., "usage_limit_exceeded", not the full JSON).
     // We must check for these codes directly before trying to parse JSON.
     if is_direct_error_code(stderr_raw) {
@@ -376,7 +376,7 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
 
 /// Check if input is a direct error code (not wrapped in JSON).
 ///
-/// When `extract_error_message_from_logfile` extracts error codes from OpenCode JSON logfiles,
+/// When `extract_error_identifier_from_logfile` extracts error codes from OpenCode JSON logfiles,
 /// it returns the bare error code string (e.g., `"usage_limit_exceeded"`), not the full JSON.
 ///
 /// This function detects these bare error codes so they are properly classified as RateLimit.

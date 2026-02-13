@@ -16,6 +16,7 @@ mod streaming_line_reader;
 mod types;
 
 pub use run::run_with_prompt;
+pub use streaming::extract_error_identifier_from_logfile;
 pub use streaming::extract_error_message_from_logfile;
 pub use types::{PipelineRuntime, PromptCommand};
 

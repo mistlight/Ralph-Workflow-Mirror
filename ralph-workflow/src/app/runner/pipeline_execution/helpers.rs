@@ -197,6 +197,10 @@ fn check_prompt_restoration(
     phase: &str,
 ) {
     if let Some(ref mut monitor) = prompt_monitor {
+        for warning in monitor.drain_warnings() {
+            ctx.logger
+                .warn(&format!("PROMPT.md monitor warning: {warning}"));
+        }
         if monitor.check_and_restore() {
             ctx.logger.warn(&format!(
                 "PROMPT.md was deleted and restored during {phase} phase"

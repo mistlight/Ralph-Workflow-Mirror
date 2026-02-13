@@ -140,7 +140,8 @@ impl ConfigValidationError {
 ///
 /// Returns a tuple of `(Config, Vec<String>)` where the second element
 /// contains any deprecation warnings to be displayed to the user.
-pub fn load_config() -> (Config, Option<UnifiedConfig>, Vec<String>) {
+pub fn load_config(
+) -> Result<(Config, Option<UnifiedConfig>, Vec<String>), ConfigLoadWithValidationError> {
     load_config_from_path(None)
 }
 
@@ -160,18 +161,11 @@ pub fn load_config() -> (Config, Option<UnifiedConfig>, Vec<String>) {
 ///
 /// # Panics
 ///
-/// Panics if config validation fails. This should be handled at the CLI layer in production.
+/// This function does not panic. Validation errors are returned to the caller.
 pub fn load_config_from_path(
     config_path: Option<&std::path::Path>,
-) -> (Config, Option<UnifiedConfig>, Vec<String>) {
-    match load_config_from_path_with_env(config_path, &super::path_resolver::RealConfigEnvironment)
-    {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("{}", e.format_errors());
-            panic!("Configuration validation failed - cannot continue");
-        }
-    }
+) -> Result<(Config, Option<UnifiedConfig>, Vec<String>), ConfigLoadWithValidationError> {
+    load_config_from_path_with_env(config_path, &super::path_resolver::RealConfigEnvironment)
 }
 
 /// Load configuration from a specific path or the default location using a [`ConfigEnvironment`].
@@ -420,7 +414,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
 }
 
 /// Default configuration when no config file is found.
-fn default_config() -> Config {
+pub(super) fn default_config() -> Config {
     use super::types::{BehavioralFlags, FeatureFlags};
 
     Config {

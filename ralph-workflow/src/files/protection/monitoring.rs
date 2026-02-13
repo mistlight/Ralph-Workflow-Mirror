@@ -35,7 +35,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -71,6 +71,10 @@ pub struct PromptMonitor {
     stop_signal: Arc<AtomicBool>,
     /// Handle to the monitor thread (None if not started)
     monitor_thread: Option<thread::JoinHandle<()>>,
+    /// Warnings emitted by the monitor thread.
+    ///
+    /// This avoids printing directly from library/background thread code.
+    warnings: Arc<Mutex<Vec<String>>>,
 }
 
 impl PromptMonitor {
@@ -92,6 +96,7 @@ impl PromptMonitor {
             restoration_detected: Arc::new(AtomicBool::new(false)),
             stop_signal: Arc::new(AtomicBool::new(false)),
             monitor_thread: None,
+            warnings: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -112,9 +117,10 @@ impl PromptMonitor {
 
         let restoration_flag = Arc::clone(&self.restoration_detected);
         let stop_signal = Arc::clone(&self.stop_signal);
+        let warnings = Arc::clone(&self.warnings);
 
         let handle = thread::spawn(move || {
-            Self::monitor_thread_main(&restoration_flag, &stop_signal);
+            Self::monitor_thread_main(&restoration_flag, &stop_signal, &warnings);
         });
 
         self.monitor_thread = Some(handle);
@@ -125,7 +131,11 @@ impl PromptMonitor {
     ///
     /// This thread watches the current directory for deletion events on
     /// PROMPT.md and restores from backup when detected.
-    fn monitor_thread_main(restoration_detected: &Arc<AtomicBool>, stop_signal: &Arc<AtomicBool>) {
+    fn monitor_thread_main(
+        restoration_detected: &Arc<AtomicBool>,
+        stop_signal: &Arc<AtomicBool>,
+        warnings: &Arc<Mutex<Vec<String>>>,
+    ) {
         use notify::Watcher;
 
         // Bounded queue for notify events.
@@ -144,8 +154,12 @@ impl PromptMonitor {
         }) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("Warning: Failed to create file system watcher: {e}");
-                eprintln!("Falling back to periodic polling for PROMPT.md protection");
+                push_warning(
+                    warnings,
+                    format!(
+                        "Failed to create file system watcher: {e}. Falling back to periodic polling for PROMPT.md protection."
+                    ),
+                );
                 // Fallback to polling if watcher creation fails
                 Self::polling_monitor(restoration_detected, stop_signal);
                 return;
@@ -154,8 +168,12 @@ impl PromptMonitor {
 
         // Watch the current directory for events
         if let Err(e) = watcher.watch(Path::new("."), notify::RecursiveMode::NonRecursive) {
-            eprintln!("Warning: Failed to watch current directory: {e}");
-            eprintln!("Falling back to periodic polling for PROMPT.md protection");
+            push_warning(
+                warnings,
+                format!(
+                    "Failed to watch current directory: {e}. Falling back to periodic polling for PROMPT.md protection."
+                ),
+            );
             Self::polling_monitor(restoration_detected, stop_signal);
             return;
         }
@@ -294,10 +312,15 @@ impl PromptMonitor {
         self.restoration_detected.swap(false, Ordering::AcqRel)
     }
 
+    /// Drain any warnings produced by the monitor thread.
+    pub fn drain_warnings(&self) -> Vec<String> {
+        drain_warnings(&self.warnings)
+    }
+
     /// Stop monitoring and cleanup resources.
     ///
     /// Signals the monitor thread to stop and waits for it to complete.
-    pub fn stop(mut self) {
+    pub fn stop(mut self) -> Vec<String> {
         // Signal the thread to stop
         self.stop_signal.store(true, Ordering::Release);
 
@@ -326,10 +349,31 @@ impl PromptMonitor {
                             std::any::type_name_of_val(&panic_payload)
                         )
                     });
-                eprintln!("Warning: File monitoring thread panicked: {panic_msg}");
+                push_warning(
+                    &self.warnings,
+                    format!("File monitoring thread panicked: {panic_msg}"),
+                );
             }
         }
+
+        self.drain_warnings()
     }
+}
+
+fn push_warning(warnings: &Arc<Mutex<Vec<String>>>, warning: String) {
+    let mut guard = match warnings.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.push(warning);
+}
+
+fn drain_warnings(warnings: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
+    let mut guard = match warnings.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    std::mem::take(&mut *guard)
 }
 
 fn read_backup_content_secure(path: &Path) -> Option<String> {
@@ -486,6 +530,7 @@ mod tests {
             restoration_detected: Arc::new(AtomicBool::new(true)),
             stop_signal: Arc::new(AtomicBool::new(false)),
             monitor_thread: None,
+            warnings: Arc::new(Mutex::new(Vec::new())),
         };
 
         assert!(monitor.check_and_restore());
@@ -560,5 +605,26 @@ mod tests {
                 "PROMPT.md should not be created"
             );
         });
+    }
+
+    #[test]
+    fn test_stop_reports_monitor_thread_panic_as_warning() {
+        let handle = std::thread::spawn(|| panic!("boom"));
+        let monitor = PromptMonitor {
+            restoration_detected: Arc::new(AtomicBool::new(false)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            monitor_thread: Some(handle),
+            warnings: Arc::new(Mutex::new(Vec::new())),
+        };
+
+        let warnings = monitor.stop();
+        assert!(
+            warnings.iter().any(|w| w.contains("panicked")),
+            "expected a warning about thread panic"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("boom")),
+            "expected panic payload to be captured"
+        );
     }
 }

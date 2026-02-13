@@ -387,6 +387,6 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        super::loader::load_config().0
+        super::loader::default_config()
     }
 }

@@ -2,6 +2,7 @@ use super::*;
 use crate::config::path_resolver::MemoryConfigEnvironment;
 use serial_test::serial;
 use std::path::Path;
+use test_helpers::with_temp_cwd;
 
 #[test]
 #[serial]
@@ -115,6 +116,24 @@ fn test_unified_config_exists_with_env_returns_false_when_file_missing() {
     let env =
         MemoryConfigEnvironment::new().with_unified_config_path("/test/config/ralph-workflow.toml");
     assert!(!unified_config_exists_with_env(&env));
+}
+
+#[test]
+#[serial]
+fn test_load_config_from_path_does_not_print_or_panic_on_validation_failure() {
+    // Regression test: library-facing config loaders should return a typed error.
+    // They must not print to stderr or panic on validation failures.
+    with_temp_cwd(|_dir| {
+        std::fs::create_dir_all(".agent").expect("create .agent");
+        std::fs::write(".agent/ralph-workflow.toml", "this is not valid toml = [")
+            .expect("write invalid config");
+
+        let result = std::panic::catch_unwind(|| load_config_from_path(None));
+        assert!(result.is_ok(), "load_config_from_path must not panic");
+
+        let loaded = result.unwrap();
+        assert!(loaded.is_err(), "expected validation error");
+    });
 }
 
 #[test]

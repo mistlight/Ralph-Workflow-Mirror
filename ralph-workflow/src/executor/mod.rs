@@ -97,18 +97,21 @@ mod tests {
         use super::*;
         use crate::agents::JsonParserType;
         use std::collections::HashMap;
+        use tempfile::tempdir;
 
         #[test]
         #[cfg(unix)]
         fn test_nonblocking_io_setup_succeeds() {
             // This internally uses unsafe fcntl - verify it works
             let executor = RealProcessExecutor::new();
+            let tempdir = tempdir().expect("create tempdir for logfile");
+            let logfile_path = tempdir.path().join("opencode_agent.log");
             let config = AgentSpawnConfig {
                 command: "echo".to_string(),
                 args: vec!["test".to_string()],
                 env: HashMap::new(),
                 prompt: "test prompt".to_string(),
-                logfile: "/tmp/test.log".to_string(),
+                logfile: logfile_path.to_string_lossy().to_string(),
                 parser_type: JsonParserType::OpenCode,
             };
 
@@ -161,12 +164,14 @@ mod tests {
         fn test_process_group_creation_succeeds() {
             // Test that the unsafe setpgid() call in pre_exec works correctly
             let executor = RealProcessExecutor::new();
+            let tempdir = tempdir().expect("create tempdir for logfile");
+            let logfile_path = tempdir.path().join("opencode_agent.log");
             let config = AgentSpawnConfig {
                 command: "echo".to_string(),
                 args: vec!["test".to_string()],
                 env: HashMap::new(),
                 prompt: "test prompt".to_string(),
-                logfile: "/tmp/test.log".to_string(),
+                logfile: logfile_path.to_string_lossy().to_string(),
                 parser_type: JsonParserType::OpenCode,
             };
 
@@ -208,12 +213,15 @@ mod tests {
             env.insert("TEST_VAR_1".to_string(), "value1".to_string());
             env.insert("TEST_VAR_2".to_string(), "value2".to_string());
 
+            let tempdir = tempdir().expect("create tempdir for logfile");
+            let logfile_path = tempdir.path().join("opencode_agent.log");
+
             let config = AgentSpawnConfig {
                 command: "env".to_string(),
                 args: vec![],
                 env,
                 prompt: "".to_string(),
-                logfile: "/tmp/test.log".to_string(),
+                logfile: logfile_path.to_string_lossy().to_string(),
                 parser_type: JsonParserType::OpenCode,
             };
 

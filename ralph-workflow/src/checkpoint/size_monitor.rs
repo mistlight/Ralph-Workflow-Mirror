@@ -88,12 +88,15 @@ impl CheckpointSizeMonitor {
                 size_bytes, self.thresholds.error_threshold
             ))
         } else if size_bytes >= self.thresholds.warn_threshold {
+            let pct_of_error_threshold: u128 = if self.thresholds.error_threshold == 0 {
+                100
+            } else {
+                (size_bytes as u128 * 100) / (self.thresholds.error_threshold as u128)
+            };
             SizeAlert::Warning(format!(
                 "Checkpoint size {} bytes approaching limit {} bytes. \
                  Current size is {}% of error threshold.",
-                size_bytes,
-                self.thresholds.warn_threshold,
-                (size_bytes * 100) / self.thresholds.error_threshold
+                size_bytes, self.thresholds.warn_threshold, pct_of_error_threshold
             ))
         } else {
             SizeAlert::Ok
@@ -194,6 +197,20 @@ mod tests {
         // Large JSON - should return Warning
         let large_json = "x".repeat(1_600_000); // 1.6 MB
         let alert = monitor.check_json(&large_json);
+        assert!(matches!(alert, SizeAlert::Warning(_)));
+    }
+
+    #[test]
+    fn test_warning_percentage_calculation_does_not_overflow() {
+        // Regression test for overflow in `(size_bytes * 100) / error_threshold`.
+        // With large sizes and thresholds, `usize` multiplication can overflow in debug builds.
+        let thresholds = SizeThresholds::new(1, usize::MAX);
+        let monitor = CheckpointSizeMonitor::with_thresholds(thresholds);
+
+        let result = std::panic::catch_unwind(|| monitor.check_size(usize::MAX - 1));
+        assert!(result.is_ok(), "check_size must not panic on large inputs");
+
+        let alert = result.unwrap();
         assert!(matches!(alert, SizeAlert::Warning(_)));
     }
 

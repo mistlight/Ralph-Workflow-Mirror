@@ -19,7 +19,7 @@ Ralph uses a bounded execution history to prevent unbounded memory growth during
 
 **Implementation:** `PipelineState::add_execution_step(step, limit)` enforces the limit by dropping oldest entries when capacity is reached (ring buffer behavior).
 
-**Location:** `ralph-workflow/src/reducer/state/pipeline/core_state.rs:168`
+**Location:** `ralph-workflow/src/reducer/state/pipeline/core_state.rs:395`
 
 ### Performance Baselines
 
@@ -298,7 +298,7 @@ Potential enhancements for long-running pipeline monitoring:
 
 ## References
 
-- **Bounded execution history implementation:** `ralph-workflow/src/reducer/state/pipeline/core_state.rs:168`
+- **Bounded execution history implementation:** `ralph-workflow/src/reducer/state/pipeline/core_state.rs:395`
 - **Checkpoint serialization:** `ralph-workflow/src/checkpoint/execution_history.rs`
 - **Arc patterns:** All usage of `Arc<dyn Trait>` follows dependency injection pattern
 - **Channel usage:** `json_parser/event_queue/bounded_queue.rs`, `pipeline/prompt/streaming.rs`, `files/protection/monitoring.rs`
