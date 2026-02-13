@@ -2,6 +2,42 @@
 //!
 //! This module provides functions to classify errors from agent execution
 //! into categories that determine retry vs fallback behavior.
+//!
+//! # OpenCode Usage Limit Detection
+//!
+//! OpenCode and multi-provider gateways emit usage limit errors when underlying
+//! providers (OpenAI, Anthropic, Google, etc.) hit quota/usage limits. This module
+//! provides comprehensive detection for all OpenCode error formats:
+//!
+//! ## Supported Error Patterns
+//!
+//! 1. **Message-based patterns** (stderr or stdout):
+//!    - "usage limit has been reached [retryin]"
+//!    - "usage limit reached"
+//!    - "usage limit exceeded"
+//!    - "OpenCode Zen usage limit" / "opencode usage limit"
+//!    - Provider-prefixed: "anthropic: usage limit reached"
+//!
+//! 2. **Structured error codes** (JSON):
+//!    - `usage_limit_exceeded`
+//!    - `quota_exceeded`
+//!    - `usage_limit_reached`
+//!    - `rate_limit_exceeded`
+//!
+//! 3. **Provider-specific formats** (JSON):
+//!    - `{"provider": "anthropic", "message": "usage limit reached"}`
+//!
+//! ## Verification Steps
+//!
+//! To verify patterns remain accurate as OpenCode evolves:
+//!
+//! 1. Check OpenCode source: <https://github.com/anomalyco/opencode>
+//! 2. Review `/packages/opencode/src/cli/cmd/run.ts` for error emission
+//! 3. Review `/packages/opencode/src/session/message-v2.ts` for error formats
+//! 4. Test with OpenCode CLI near usage limit to observe actual messages
+//! 5. Update patterns in this file if format changes
+//!
+//! Last Verified: 2026-02-12
 
 use crate::reducer::event::AgentErrorKind;
 use serde_json::Value;
@@ -143,7 +179,15 @@ fn is_rate_limit_error_from_any_source(
 }
 
 fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
-    // Prefer structured formats when available.
+    // PRIORITY 1: Check if input is a direct error code (from JSON extraction)
+    // When extract_error_message_from_logfile extracts error codes from OpenCode JSON,
+    // it returns the bare code string (e.g., "usage_limit_exceeded", not the full JSON).
+    // We must check for these codes directly before trying to parse JSON.
+    if is_direct_error_code(stderr_raw) {
+        return true;
+    }
+
+    // PRIORITY 2: Prefer structured JSON formats when available.
     if is_structured_rate_limit_error(stderr_raw) {
         return true;
     }
@@ -175,8 +219,13 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     }
 
     // Quota exhaustion patterns - align with agents/error.rs
+    //
+    // Source: /packages/opencode/src/provider/error.ts
+    // OpenCode emits "Quota exceeded. Check your plan and billing details."
+    // for insufficient_quota errors (verified 2026-02-12)
     if stderr_lower.contains("exceeded your current quota")
         || stderr_lower.contains("quota exceeded")
+        || stderr_lower.contains("insufficient_quota")
     {
         return true;
     }
@@ -190,16 +239,19 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // The "[retryin]" suffix is misleading - the agent is actually unavailable
     // due to quota exhaustion and should trigger immediate agent fallback, not retry.
     //
-    // Detection: Match three patterns:
+    // Detection: Match multiple patterns:
     // 1. "usage limit has been reached" - Full phrase with timeout suffix
     // 2. "usage limit reached" - Shorter variant
-    // 3. Bare "usage limit" - With API error context to avoid false positives
+    // 3. "usage limit exceeded" - Alternative wording variant
+    // 4. OpenCode Zen/OpenCode-specific patterns with provider context
+    // 5. Multi-provider gateway forwarding pattern (e.g., "anthropic: usage limit reached")
+    // 6. Bare "usage limit" - With API error context to avoid false positives
     //
     // For the bare "usage limit" pattern, we require API error context to avoid
     // false positives from filenames (e.g., "usage_limit.rs") or non-error text.
     // Context markers: "error:" prefix, sentence punctuation, or HTTP status codes.
     //
-    // Last Verified: 2026-02-07
+    // Last Verified: 2026-02-12
     // Source: OpenCode production logs and multi-provider gateway behavior
     // How to verify:
     //   1. Check OpenCode source at https://github.com/anomalyco/opencode
@@ -213,6 +265,37 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
         || stderr_lower.contains("usage limit reached")
     {
         return true;
+    }
+
+    // OpenCode alternative wording: "usage limit exceeded"
+    // Some providers use "exceeded" instead of "reached"
+    if stderr_lower.contains("usage limit exceeded") {
+        return true;
+    }
+
+    // OpenCode Zen/OpenCode-specific patterns with provider context
+    // Pattern: "zen usage limit" or "opencode usage limit"
+    // These indicate usage limit errors from OpenCode Zen or OpenCode gateway
+    if (stderr_lower.contains("zen") || stderr_lower.contains("opencode"))
+        && stderr_lower.contains("usage limit")
+    {
+        return true;
+    }
+
+    // Multi-provider gateway forwarding pattern
+    // Pattern: "<provider>: usage limit" (e.g., "anthropic: usage limit reached")
+    // OpenCode multi-provider gateway forwards errors from underlying providers
+    // with a provider prefix to distinguish error sources.
+    //
+    // IMPORTANT: This check must exclude filename patterns to avoid false positives.
+    // The pattern "error: usage limit.rs file not found" should NOT match because
+    // "usage limit" is followed by a file extension, not additional error context.
+    if stderr_lower.contains(": usage limit") {
+        // Exclude patterns where "usage limit" is followed by a file extension
+        // (e.g., "error: usage limit.rs file not found")
+        if !is_followed_by_file_extension_generic(stderr_lower, "usage limit") {
+            return true;
+        }
     }
 
     // Bare "usage limit" pattern with context requirements
@@ -262,16 +345,78 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     false
 }
 
+/// Check if input is a direct error code (not wrapped in JSON).
+///
+/// When `extract_error_message_from_logfile` extracts error codes from OpenCode JSON logfiles,
+/// it returns the bare error code string (e.g., `"usage_limit_exceeded"`), not the full JSON.
+///
+/// This function detects these bare error codes so they are properly classified as RateLimit.
+///
+/// Supported codes:
+/// - `usage_limit_exceeded`: Usage/quota limit reached
+/// - `quota_exceeded`: Quota exhausted
+/// - `usage_limit_reached`: Alternative usage limit code
+/// - `insufficient_quota`: OpenAI quota exhaustion
+/// - `rate_limit_exceeded`: Standard rate limit error
+fn is_direct_error_code(text: &str) -> bool {
+    // Trim whitespace to handle cases where the code might have surrounding whitespace
+    let trimmed = text.trim();
+
+    // Check if the entire string is exactly one of the known error codes
+    // This avoids false positives from JSON or other text containing these codes
+    matches!(
+        trimmed,
+        "usage_limit_exceeded"
+            | "quota_exceeded"
+            | "usage_limit_reached"
+            | "insufficient_quota"
+            | "rate_limit_exceeded"
+    )
+}
+
 fn is_structured_rate_limit_error(stderr: &str) -> bool {
     // OpenCode (and some providers) emit structured JSON errors containing a stable code.
     // Example observed in CI:
     //   "✗ Error: {\"type\":\"error\",...,\"error\":{\"code\":\"rate_limit_exceeded\",...}}"
+    //
+    // Supported error codes:
+    // - rate_limit_exceeded: Standard rate limit error (HTTP 429)
+    // - usage_limit_exceeded: Usage/quota limit reached (OpenCode-specific)
+    // - quota_exceeded: Quota exhausted (provider-specific)
+    // - usage_limit_reached: Alternative usage limit code (OpenCode-specific)
+    //
+    // Error codes are more stable than message text and should be preferred
+    // for detection when available.
     let Some(value) = try_parse_json_object(stderr) else {
         return false;
     };
 
     let code = extract_error_code(&value);
-    matches!(code.as_deref(), Some("rate_limit_exceeded"))
+
+    // Standard rate limit code
+    if matches!(code.as_deref(), Some("rate_limit_exceeded")) {
+        return true;
+    }
+
+    // OpenCode-specific usage limit error codes
+    // These indicate quota/usage exhaustion from underlying providers
+    //
+    // Source: /packages/opencode/src/provider/error.ts in OpenCode repository
+    // - insufficient_quota: OpenAI quota exhaustion (verified 2026-02-12)
+    // - usage_limit_exceeded: Generic usage limit (OpenCode gateway)
+    // - quota_exceeded: Provider quota exhaustion
+    // - usage_limit_reached: Alternative usage limit code
+    if matches!(
+        code.as_deref(),
+        Some("usage_limit_exceeded")
+            | Some("quota_exceeded")
+            | Some("usage_limit_reached")
+            | Some("insufficient_quota")
+    ) {
+        return true;
+    }
+
+    false
 }
 
 fn try_parse_json_object(text: &str) -> Option<Value> {

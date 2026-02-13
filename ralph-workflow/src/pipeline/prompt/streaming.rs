@@ -270,8 +270,46 @@ pub fn extract_error_message_from_logfile(
 /// - OpenCode: `{"type":"error","error":{"message":"..."}}`
 /// - OpenCode: `{"type":"error","error":{"data":{"message":"..."}}}`
 /// - OpenCode: `{"type":"error","error":{"name":"APIError"}}`
+/// - OpenCode: `{"type":"error","error":{"code":"usage_limit_exceeded"}}`
+/// - OpenCode: `{"type":"error","error":{"provider":"anthropic","message":"..."}}`
 /// - Claude: `{"type":"error","message":"..."}`
 /// - Generic: `{"error":{"message":"..."}}`
+///
+/// # OpenCode Error Code Detection
+///
+/// OpenCode (and some providers) emit structured JSON errors with stable error codes.
+/// Error codes are more reliable than message text for detection because they don't
+/// change across OpenCode versions or provider updates.
+///
+/// Supported error codes (verified 2026-02-12 against OpenCode source):
+/// - `usage_limit_exceeded`: Usage/quota limit reached
+/// - `rate_limit_exceeded`: Rate limit reached
+/// - `quota_exceeded`: Quota exhausted
+/// - `insufficient_quota`: OpenAI quota exhaustion (source: /packages/opencode/src/provider/error.ts)
+/// - `usage_limit_reached`: Alternative usage limit code
+///
+/// Source: https://github.com/anomalyco/opencode
+/// - /packages/opencode/src/cli/cmd/run.ts (error emission)
+/// - /packages/opencode/src/session/message-v2.ts (error format definitions)
+/// - /packages/opencode/src/provider/error.ts (error code parsing)
+///
+/// # Provider-Specific Error Format
+///
+/// OpenCode multi-provider gateway forwards errors from underlying providers
+/// (OpenAI, Anthropic, Google, etc.) with a `provider` field:
+///
+/// ```json
+/// {
+///   "type": "error",
+///   "error": {
+///     "provider": "anthropic",
+///     "message": "usage limit reached"
+///   }
+/// }
+/// ```
+///
+/// This format captures provider-specific usage limit errors that should trigger
+/// agent fallback.
 fn extract_error_from_json_line(line: &str) -> Option<String> {
     // Try to parse as JSON
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
@@ -283,7 +321,29 @@ fn extract_error_from_json_line(line: &str) -> Option<String> {
         }
     }
 
-    // Try OpenCode format: {"error": {"data": {"message": "..."}}}
+    // PRIORITY 1: OpenCode format: {"error": {"code": "usage_limit_exceeded"}}
+    // Error codes are stable and more reliable than message text for detection.
+    // Check error codes FIRST before falling back to message extraction.
+    //
+    // Supported codes: insufficient_quota, usage_limit_exceeded, quota_exceeded,
+    // rate_limit_exceeded, usage_limit_reached
+    if let Some(error_code) = value.pointer("/error/code").and_then(|v| v.as_str()) {
+        return Some(error_code.to_string());
+    }
+
+    // PRIORITY 2: OpenCode multi-provider gateway format: {"error": {"provider": "...", "message": "..."}}
+    // This captures provider-specific usage limit errors (e.g., "anthropic: usage limit reached")
+    // Check provider-specific format BEFORE generic message extraction to preserve provider context.
+    //
+    // Examples: {"error": {"provider": "openai", "message": "usage limit exceeded"}}
+    //           {"error": {"provider": "anthropic", "message": "usage limit reached"}}
+    if let Some(provider) = value.pointer("/error/provider").and_then(|v| v.as_str()) {
+        if let Some(msg) = value.pointer("/error/message").and_then(|v| v.as_str()) {
+            return Some(format!("{}: {}", provider, msg));
+        }
+    }
+
+    // PRIORITY 3: OpenCode format: {"error": {"data": {"message": "..."}}}
     if let Some(data_message) = value
         .pointer("/error/data/message")
         .and_then(|v| v.as_str())
@@ -291,17 +351,17 @@ fn extract_error_from_json_line(line: &str) -> Option<String> {
         return Some(data_message.to_string());
     }
 
-    // Try OpenCode format: {"error": {"message": "..."}}
+    // PRIORITY 4: OpenCode format: {"error": {"message": "..."}}
     if let Some(error_message) = value.pointer("/error/message").and_then(|v| v.as_str()) {
         return Some(error_message.to_string());
     }
 
-    // Try OpenCode format: {"error": {"name": "APIError"}}
+    // PRIORITY 5: OpenCode format: {"error": {"name": "APIError"}}
     if let Some(error_name) = value.pointer("/error/name").and_then(|v| v.as_str()) {
         return Some(error_name.to_string());
     }
 
-    // Try Claude format: {"message": "..."}
+    // PRIORITY 6: Claude format: {"message": "..."}
     if let Some(message) = value.get("message").and_then(|v| v.as_str()) {
         return Some(message.to_string());
     }
@@ -676,5 +736,144 @@ mod tests {
         let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
 
         assert_eq!(result, Some("Nested error message".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_error_code() {
+        // Test extraction of OpenCode error codes (usage_limit_exceeded, etc.)
+        // Error codes are more stable than message text for detection
+        let line = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_123","error":{"code":"usage_limit_exceeded","message":"Usage limit reached"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("usage_limit_exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_quota_exceeded_code() {
+        // Test extraction of quota_exceeded error code
+        let line =
+            r#"{"type":"error","error":{"code":"quota_exceeded","message":"Quota limit reached"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("quota_exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_usage_limit_reached_code() {
+        // Test extraction of usage_limit_reached error code
+        let line = r#"{"type":"error","error":{"code":"usage_limit_reached"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("usage_limit_reached".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_provider_error() {
+        // Test extraction of provider-specific errors (e.g., "anthropic: usage limit reached")
+        // OpenCode multi-provider gateway forwards errors with provider prefix
+        let line = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_123","error":{"provider":"anthropic","message":"usage limit reached"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("anthropic: usage limit reached".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_provider_error_openai() {
+        // Test provider-specific error for OpenAI
+        let line =
+            r#"{"type":"error","error":{"provider":"openai","message":"usage limit exceeded"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("openai: usage limit exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_provider_error_google() {
+        // Test provider-specific error for Google
+        let line = r#"{"type":"error","error":{"provider":"google","message":"quota exceeded"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("google: quota exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_opencode_zen_error() {
+        // Test OpenCode Zen usage limit error
+        let line = r#"{"type":"error","timestamp":1768191346712,"error":{"message":"OpenCode Zen usage limit has been reached"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(
+            result,
+            Some("OpenCode Zen usage limit has been reached".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_error_from_json_line_error_code_priority() {
+        // Test that error codes are extracted even when message is present
+        // Error codes should have priority as they're more stable
+        let line = r#"{"type":"error","error":{"code":"usage_limit_exceeded","message":"The usage limit has been reached [retryin]"}}"#;
+        let result = extract_error_from_json_line(line);
+        assert_eq!(result, Some("usage_limit_exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_multiple_formats() {
+        // Test that we correctly extract errors from logs with multiple event types
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/test.log");
+
+        let log_content = r#"{"type":"text","text":"Processing request..."}
+{"type":"tool_use","tool":"read","state":{"status":"completed"}}
+{"type":"error","error":{"code":"usage_limit_exceeded","message":"Usage limit reached"}}
+{"type":"text","text":"Operation failed"}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("usage_limit_exceeded".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_provider_specific() {
+        // Test extraction of provider-specific error from logfile
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        let log_content = r#"{"type":"init","sessionID":"ses_123"}
+{"type":"message","content":"Working..."}
+{"type":"error","error":{"provider":"anthropic","message":"usage limit reached"}}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(result, Some("anthropic: usage limit reached".to_string()));
+    }
+
+    #[test]
+    fn test_extract_error_message_from_logfile_opencode_zen() {
+        // Test extraction of OpenCode Zen usage limit error from logfile
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new(PathBuf::from("/tmp/test"));
+        let logfile_path = std::path::Path::new(".agent/tmp/opencode.log");
+
+        let log_content = r#"{"type":"init","sessionID":"ses_123"}
+{"type":"message","content":"Processing..."}
+{"type":"error","error":{"message":"OpenCode Zen usage limit has been reached"}}
+"#;
+
+        workspace.write(logfile_path, log_content).unwrap();
+
+        let result = extract_error_message_from_logfile(logfile_path.to_str().unwrap(), &workspace);
+
+        assert_eq!(
+            result,
+            Some("OpenCode Zen usage limit has been reached".to_string())
+        );
     }
 }

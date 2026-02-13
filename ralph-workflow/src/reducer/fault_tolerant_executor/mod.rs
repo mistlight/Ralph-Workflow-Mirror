@@ -15,6 +15,7 @@ mod error_classification;
 mod tests;
 
 use crate::agents::{AgentRole, JsonParserType};
+use crate::logger::Loggable;
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
 use crate::reducer::event::{AgentErrorKind, PipelineEvent};
 use anyhow::Result;
@@ -170,16 +171,57 @@ fn try_agent_execution(
 
             // Extract error message from logfile (stdout) for agents that emit errors as JSON
             // This is critical for OpenCode and similar agents that don't use stderr for errors
+            //
+            // OpenCode Detection Flow:
+            // 1. Extract JSON error from stdout logfile (OpenCode emits {"type":"error",...})
+            // 2. Pass to classify_agent_error() which checks both stderr and stdout_error
+            // 3. Pattern matching detects usage limit errors from multiple sources:
+            //    - Structured codes: insufficient_quota, usage_limit_exceeded, quota_exceeded
+            //    - Message patterns: "usage limit reached", "anthropic: usage limit", etc.
+            // 4. If detected, emit AgentEvent::RateLimited for immediate agent fallback
             let stdout_error = crate::pipeline::extract_error_message_from_logfile(
                 config.logfile,
                 runtime.workspace,
             );
 
+            // Log extracted stdout errors for OpenCode debugging
+            if let Some(ref err_msg) = stdout_error {
+                runtime.logger.log(&format!(
+                    "[DEBUG] [OpenCode] Extracted error from logfile for agent '{}': {}",
+                    config.agent_name, err_msg
+                ));
+            }
+
             let error_kind =
                 classify_agent_error(exit_code, &result.stderr, stdout_error.as_deref());
 
             // Special handling for rate limit: emit fact event with prompt context
+            //
+            // Rate limit detection supports both stderr and stdout error sources:
+            // - stderr: Traditional error output (most agents)
+            // - stdout: JSON error events (OpenCode, multi-provider gateways)
+            //
+            // When detected, immediately emit AgentEvent::RateLimited to trigger
+            // agent fallback without retry attempts on the same agent.
             if is_rate_limit_error(&error_kind) {
+                // Log rate limit detection with error source and message preview
+                let error_source = if stdout_error.is_some() {
+                    "stdout"
+                } else {
+                    "stderr"
+                };
+                let error_preview = stdout_error
+                    .as_deref()
+                    .or(Some(result.stderr.as_str()))
+                    .unwrap_or("");
+                let preview_len = error_preview.len().min(100);
+                runtime.logger.info(&format!(
+                    "[OpenCode] Rate limit detected for agent '{}' (source: {}): {}",
+                    config.agent_name,
+                    error_source,
+                    &error_preview[..preview_len]
+                ));
+
                 return Ok(AgentExecutionResult {
                     event: PipelineEvent::agent_rate_limited(
                         config.role,

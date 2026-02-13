@@ -348,6 +348,85 @@ ralph opencode status # Show auth status per provider
 
 ---
 
+## Implementation Status
+
+### Phase 2: Error Classification & Recovery [PARTIALLY IMPLEMENTED]
+
+#### 2.1 OpenCode-Specific Error Patterns [IMPLEMENTED - 2026-02-12]
+
+**Status**: ✅ Completed
+
+**Implementation Details**:
+
+OpenCode usage limit detection has been comprehensively implemented with the following coverage:
+
+1. **Structured Error Codes** (JSON):
+   - `usage_limit_exceeded` - Generic usage limit (OpenCode gateway)
+   - `quota_exceeded` - Provider quota exhaustion
+   - `usage_limit_reached` - Alternative usage limit code
+   - `insufficient_quota` - OpenAI quota exhaustion (verified in OpenCode source)
+   - `rate_limit_exceeded` - Standard rate limit error
+
+2. **Message-Based Patterns** (stderr/stdout):
+   - "usage limit has been reached [retryin]" - OpenCode full phrase with timeout suffix
+   - "usage limit reached" - Shorter variant
+   - "usage limit exceeded" - Alternative wording
+   - "OpenCode Zen usage limit" - OpenCode Zen branded errors
+   - "opencode usage limit" - OpenCode gateway errors
+   - Provider-forwarded: "<provider>: usage limit" (e.g., "anthropic: usage limit reached")
+   - Bare "usage limit" with API error context (error prefix, punctuation, HTTP status)
+   - "Quota exceeded" - OpenCode reformatted OpenAI errors
+   - "insufficient_quota" - Direct OpenAI error messages
+
+3. **Dual-Source Detection**:
+   - Errors extracted from both stderr (traditional) and stdout (OpenCode JSON logs)
+   - Critical for OpenCode which emits errors as JSON to stdout via session.error events
+
+4. **False Positive Prevention**:
+   - Filename exclusion: Patterns like "usage_limit.rs file not found" are correctly excluded
+   - Context requirements: Bare "usage limit" requires API error context markers
+   - File extension detection: Generic regex pattern covers all common programming languages
+
+**Verified Sources**:
+- OpenCode repository: https://github.com/anomalyco/opencode
+- `/packages/opencode/src/cli/cmd/run.ts` - Error emission via session.error events
+- `/packages/opencode/src/session/message-v2.ts` - Error format definitions (MessageV2.APIError, etc.)
+- `/packages/opencode/src/provider/error.ts` - Error code parsing (insufficient_quota handling)
+
+**Testing**:
+- Comprehensive unit tests in `ralph-workflow/src/reducer/fault_tolerant_executor/tests/rate_limit_patterns.rs`
+- Covers 40+ OpenCode error patterns including structured codes, message variants, provider-specific formats
+- Negative tests prevent false positives from filenames, comments, non-error contexts
+
+**Observability**:
+- Debug logging: Extracted stdout errors from JSON logfiles
+- Debug logging: Structured error codes detected
+- Debug logging: Provider-specific error formats
+- Info logging: Rate limit detection with error source (stdout vs stderr) and message preview
+
+**Files Modified**:
+- `ralph-workflow/src/reducer/fault_tolerant_executor/error_classification.rs`
+- `ralph-workflow/src/pipeline/prompt/streaming.rs`
+- `ralph-workflow/src/reducer/fault_tolerant_executor/mod.rs`
+- `ralph-workflow/src/reducer/fault_tolerant_executor/tests/rate_limit_patterns.rs`
+
+**Last Verified**: 2026-02-12
+
+#### 2.2 Automatic Provider Fallback [NOT IMPLEMENTED]
+
+**Status**: ❌ Not Started
+
+This feature requires additional design work for multi-provider fallback chains.
+
+#### 2.3 Graceful Degradation [PARTIALLY IMPLEMENTED]
+
+**Status**: 🔶 Partially Complete
+
+The codebase already includes graceful degradation for JSON parsing failures and streaming errors,
+but provider-specific degradation strategies are not yet implemented.
+
+---
+
 ## References
 
 - Current opencode parser: `ralph-workflow/src/json_parser/opencode.rs`
