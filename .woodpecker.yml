@@ -14,5 +14,7 @@ steps:
       - ./tests/integration_tests/compliance_check.sh
       # Integration tests (mandatory - 437+ tests)
       - cargo test -p ralph-workflow-tests
+      # Memory safety verification (bounded growth, Arc patterns, thread lifecycle, etc.)
+      - bash scripts/verify_memory_safety.sh
       # Note: System tests (ralph-workflow-system-tests) are NOT run in CI
       # They require real git/filesystem and are run manually as needed

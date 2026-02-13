@@ -300,3 +300,249 @@ fn test_bounded_history_maintains_recent_context() {
         }
     });
 }
+
+#[test]
+fn test_execution_history_bounded_with_10000_iterations() {
+    with_default_timeout(|| {
+        // Stress test: verify history remains bounded over 10,000 iterations
+        // This simulates a very long-running pipeline with many development iterations
+        let mut state = PipelineState::initial(10000, 5);
+        let limit = 1000;
+
+        // Simulate 10,000 iterations
+        for i in 0..10000 {
+            state.add_execution_step(create_test_step(i), limit);
+        }
+
+        // History should be bounded to limit, not grow to 10,000 entries
+        assert_eq!(
+            state.execution_history.len(),
+            1000,
+            "History should remain at limit even after 10,000 iterations"
+        );
+
+        // First entry should be from iteration 9000 (oldest 9000 dropped)
+        let first_iteration = state.execution_history.first().unwrap().iteration;
+        assert_eq!(
+            first_iteration, 9000,
+            "First entry should be from iteration 9000 after dropping oldest 9000"
+        );
+
+        // Last entry should be from iteration 9999
+        let last_iteration = state.execution_history.last().unwrap().iteration;
+        assert_eq!(
+            last_iteration, 9999,
+            "Last entry should be from most recent iteration"
+        );
+
+        // Verify no memory leak: size remains constant
+        let json = serde_json::to_string(&state).expect("Serialization should succeed");
+        let size_kb = json.len() / 1024;
+
+        println!(
+            "Checkpoint size after 10,000 iterations (bounded to 1000): {} KB",
+            size_kb
+        );
+
+        // Size should be reasonable (< 500 KB) with bounded history
+        assert!(
+            size_kb < 500,
+            "Checkpoint size should be < 500 KB with bounded history, got {} KB",
+            size_kb
+        );
+    });
+}
+
+#[test]
+fn test_checkpoint_size_remains_stable_with_bounded_history() {
+    with_default_timeout(|| {
+        // Verify that checkpoint size stabilizes once history reaches limit
+        // This tests that there's no gradual memory growth beyond the bound
+
+        let mut state = PipelineState::initial(3000, 5);
+        let limit = 1000;
+
+        let mut checkpoint_sizes = Vec::new();
+
+        // Add entries in batches and measure checkpoint size
+        for batch in 0..3 {
+            let start = batch * 1000;
+            let end = (batch + 1) * 1000;
+
+            for i in start..end {
+                state.add_execution_step(create_test_step(i), limit);
+            }
+
+            let json = serde_json::to_string(&state).expect("Serialization should succeed");
+            let size_kb = json.len() / 1024;
+            checkpoint_sizes.push((end, size_kb));
+
+            println!("After {} iterations: {} KB", end, size_kb);
+        }
+
+        // After first 1000 iterations, size should be established
+        let size_after_1000 = checkpoint_sizes[0].1;
+
+        // After 2000 and 3000 iterations, size should be stable (no growth)
+        let size_after_2000 = checkpoint_sizes[1].1;
+        let size_after_3000 = checkpoint_sizes[2].1;
+
+        // Sizes should be within 10% of each other (minor variation due to iteration numbers)
+        let tolerance = size_after_1000 / 10; // 10% tolerance
+
+        assert!(
+            (size_after_2000 as i32 - size_after_1000 as i32).abs() <= tolerance as i32,
+            "Checkpoint size should remain stable between 1000 and 2000 iterations: {} KB vs {} KB",
+            size_after_1000,
+            size_after_2000
+        );
+
+        assert!(
+            (size_after_3000 as i32 - size_after_1000 as i32).abs() <= tolerance as i32,
+            "Checkpoint size should remain stable between 1000 and 3000 iterations: {} KB vs {} KB",
+            size_after_1000,
+            size_after_3000
+        );
+    });
+}
+
+#[test]
+fn test_memory_does_not_grow_with_many_checkpoint_cycles() {
+    with_default_timeout(|| {
+        // Simulate 100 checkpoint save/restore cycles to verify no accumulation
+        // This tests for subtle memory leaks that might occur during serialization
+
+        let limit = 1000;
+        let mut final_states = Vec::new();
+
+        for cycle in 0..100 {
+            let mut state = PipelineState::initial(1000, 5);
+
+            // Add entries to fill history
+            for i in 0..1000 {
+                state.add_execution_step(create_test_step(i), limit);
+            }
+
+            // Serialize and deserialize (checkpoint cycle)
+            let json = serde_json::to_string(&state).expect("Serialization should succeed");
+            let _restored: PipelineState =
+                serde_json::from_str(&json).expect("Deserialization should succeed");
+
+            // Store checkpoint size every 10 cycles
+            if cycle % 10 == 0 {
+                final_states.push((cycle, json.len()));
+            }
+        }
+
+        // Verify checkpoint size remains stable across cycles
+        let first_size = final_states[0].1;
+
+        for (cycle, size) in &final_states {
+            let diff = (*size as i32 - first_size as i32).abs();
+            let tolerance = first_size / 100; // 1% tolerance
+
+            assert!(
+                diff <= tolerance as i32,
+                "Checkpoint size should remain stable across cycles. Cycle {}: {} bytes vs initial {} bytes (diff: {} bytes)",
+                cycle,
+                size,
+                first_size,
+                diff
+            );
+        }
+
+        println!("\n=== Checkpoint Cycle Stability ===");
+        for (cycle, size) in &final_states {
+            println!("Cycle {}: {} KB", cycle, size / 1024);
+        }
+    });
+}
+
+#[test]
+fn test_bounded_growth_with_mixed_phase_operations() {
+    with_default_timeout(|| {
+        // Test bounded growth across different pipeline phases
+        // This simulates realistic pipeline execution with phase transitions
+
+        let mut state = PipelineState::initial(2000, 5);
+        let limit = 1000;
+
+        // Simulate mixed operations across phases
+        for i in 0..2000 {
+            // Vary the phase to simulate realistic pipeline execution
+            let phase = match i % 4 {
+                0 => "Planning",
+                1 => "Development",
+                2 => "Review",
+                _ => "Commit",
+            };
+
+            let step = ExecutionStep::new(
+                phase,
+                i,
+                "agent_invoked",
+                StepOutcome::success(Some("output".to_string()), vec!["file.rs".to_string()]),
+            )
+            .with_agent("test-agent")
+            .with_duration(5);
+
+            state.add_execution_step(step, limit);
+        }
+
+        // History should still be bounded
+        assert_eq!(
+            state.execution_history.len(),
+            1000,
+            "History should remain at limit despite mixed phase operations"
+        );
+
+        // Verify mix of phases is preserved in history
+        let planning_count = state
+            .execution_history
+            .iter()
+            .filter(|s| s.phase == "Planning")
+            .count();
+        let development_count = state
+            .execution_history
+            .iter()
+            .filter(|s| s.phase == "Development")
+            .count();
+        let review_count = state
+            .execution_history
+            .iter()
+            .filter(|s| s.phase == "Review")
+            .count();
+        let commit_count = state
+            .execution_history
+            .iter()
+            .filter(|s| s.phase == "Commit")
+            .count();
+
+        // Each phase should be represented (roughly 250 each)
+        assert!(
+            planning_count > 200 && planning_count < 300,
+            "Planning phase should be represented: {}",
+            planning_count
+        );
+        assert!(
+            development_count > 200 && development_count < 300,
+            "Development phase should be represented: {}",
+            development_count
+        );
+        assert!(
+            review_count > 200 && review_count < 300,
+            "Review phase should be represented: {}",
+            review_count
+        );
+        assert!(
+            commit_count > 200 && commit_count < 300,
+            "Commit phase should be represented: {}",
+            commit_count
+        );
+
+        println!(
+            "Phase distribution: Planning={}, Development={}, Review={}, Commit={}",
+            planning_count, development_count, review_count, commit_count
+        );
+    });
+}

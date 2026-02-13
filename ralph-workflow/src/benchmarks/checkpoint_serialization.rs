@@ -286,3 +286,90 @@ fn benchmark_serialization_scaling() {
     // This demonstrates how serialization time scales with history size
     // Helps identify if there are performance cliffs at certain sizes
 }
+
+#[test]
+fn benchmark_serialization_performance_ceiling() {
+    // This test establishes a performance ceiling for bounded history
+    // If this test starts failing, it indicates a performance regression
+    let state = create_test_pipeline_state(100, 20, 1000);
+
+    let start = Instant::now();
+    let json = serde_json::to_string(&state).unwrap();
+    let duration = start.elapsed();
+
+    let size_kb = json.len() / 1024;
+
+    println!("\n=== Serialization Performance Ceiling ===");
+    println!("Duration: {:?}", duration);
+    println!("Size: {} KB", size_kb);
+
+    // With bounded history (1000 entries), serialization should be fast
+    // This is NOT a hard limit but a regression detector
+    // If this starts failing, investigate what changed
+    assert!(
+        duration.as_millis() < 100,
+        "Serialization performance regression detected: {:?} exceeds 100ms ceiling",
+        duration
+    );
+
+    // Checkpoint size should be reasonable with bounded history
+    assert!(
+        size_kb < 1024,
+        "Checkpoint size regression detected: {} KB exceeds 1 MB ceiling",
+        size_kb
+    );
+}
+
+#[test]
+fn benchmark_deserialization_performance_ceiling() {
+    // Companion test to serialization ceiling - verifies deserialization performance
+    let state = create_test_pipeline_state(100, 20, 1000);
+    let json = serde_json::to_string(&state).unwrap();
+
+    let start = Instant::now();
+    let _restored: PipelineState = serde_json::from_str(&json).unwrap();
+    let duration = start.elapsed();
+
+    let size_kb = json.len() / 1024;
+
+    println!("\n=== Deserialization Performance Ceiling ===");
+    println!("Duration: {:?}", duration);
+    println!("Size: {} KB", size_kb);
+
+    // Deserialization should also be fast with bounded history
+    assert!(
+        duration.as_millis() < 100,
+        "Deserialization performance regression detected: {:?} exceeds 100ms ceiling",
+        duration
+    );
+}
+
+#[test]
+fn benchmark_round_trip_performance_ceiling() {
+    // Verifies total checkpoint cycle (save + restore) performance
+    let original = create_test_pipeline_state(100, 20, 1000);
+
+    let serialize_start = Instant::now();
+    let json = serde_json::to_string(&original).unwrap();
+    let serialize_duration = serialize_start.elapsed();
+
+    let deserialize_start = Instant::now();
+    let _restored: PipelineState = serde_json::from_str(&json).unwrap();
+    let deserialize_duration = deserialize_start.elapsed();
+
+    let total_duration = serialize_duration + deserialize_duration;
+    let size_kb = json.len() / 1024;
+
+    println!("\n=== Round Trip Performance Ceiling ===");
+    println!("Serialize: {:?}", serialize_duration);
+    println!("Deserialize: {:?}", deserialize_duration);
+    println!("Total: {:?}", total_duration);
+    println!("Size: {} KB", size_kb);
+
+    // Total round-trip should be under 200ms with bounded history
+    assert!(
+        total_duration.as_millis() < 200,
+        "Round-trip performance regression detected: {:?} exceeds 200ms ceiling",
+        total_duration
+    );
+}

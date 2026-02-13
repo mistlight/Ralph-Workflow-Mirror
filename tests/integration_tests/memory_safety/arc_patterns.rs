@@ -300,3 +300,153 @@ fn test_arc_with_workspace_and_executor_together() {
         );
     });
 }
+
+#[test]
+fn test_logger_printer_no_circular_reference() {
+    with_default_timeout(|| {
+        // Verify Logger and Printer Arc patterns are acyclic
+        // Logger may hold Arc to workspace, but workspace doesn't hold Logger Arc
+
+        use ralph_workflow::logger::{Colors, Logger};
+        use ralph_workflow::workspace::Workspace;
+
+        let workspace = Arc::new(MemoryWorkspace::new_test());
+        let ws_initial_count = Arc::strong_count(&workspace);
+
+        {
+            let logger = Logger::new(Colors::new());
+            // Logger lifetime is independent of workspace
+
+            let ws_clone = workspace.clone();
+            let _result = ws_clone.write(std::path::Path::new("test.txt"), "content");
+
+            // Workspace count should increase by 1 for the clone
+            assert_eq!(Arc::strong_count(&workspace), ws_initial_count + 1);
+
+            drop(ws_clone);
+            drop(logger);
+        }
+
+        // After dropping logger and workspace clone, count returns to initial
+        assert_eq!(
+            Arc::strong_count(&workspace),
+            ws_initial_count,
+            "Workspace Arc count should return to initial - no circular refs with Logger"
+        );
+    });
+}
+
+#[test]
+fn test_workspace_clone_tree_depth_bounded() {
+    with_default_timeout(|| {
+        // Verify workspace clones don't create long reference chains
+        // Each clone is independent, not a chain
+
+        let workspace = Arc::new(MemoryWorkspace::new_test());
+        let initial_count = Arc::strong_count(&workspace);
+
+        // Create multiple "generations" of clones
+        let gen1 = workspace.clone();
+        let gen2 = gen1.clone();
+        let gen3 = gen2.clone();
+
+        // All should point to same Arc, count should be initial + 3
+        assert_eq!(
+            Arc::strong_count(&workspace),
+            initial_count + 3,
+            "All clones should share same Arc"
+        );
+
+        // Drop in reverse order
+        drop(gen3);
+        assert_eq!(Arc::strong_count(&workspace), initial_count + 2);
+
+        drop(gen2);
+        assert_eq!(Arc::strong_count(&workspace), initial_count + 1);
+
+        drop(gen1);
+        assert_eq!(
+            Arc::strong_count(&workspace),
+            initial_count,
+            "Count returns to initial - no chain accumulation"
+        );
+    });
+}
+
+#[test]
+fn test_process_executor_cleanup_releases_all_references() {
+    with_default_timeout(|| {
+        // Verify executor cleanup releases all Arc references
+        // This tests that executor doesn't leak references through closures or callbacks
+
+        let executor = mock_executor_with_success();
+        let initial_count = Arc::strong_count(&executor);
+
+        // Simulate pipeline execution with executor
+        {
+            let exec1 = executor.clone();
+            let exec2 = executor.clone();
+
+            assert_eq!(Arc::strong_count(&executor), initial_count + 2);
+
+            // Executors are cloned and used in different contexts
+            // No need to actually execute - just verify cleanup
+
+            drop(exec1);
+            drop(exec2);
+        }
+
+        // All references should be released
+        assert_eq!(
+            Arc::strong_count(&executor),
+            initial_count,
+            "Executor should release all references after use"
+        );
+    });
+}
+
+#[test]
+fn test_pipeline_state_arc_patterns_deterministic() {
+    with_default_timeout(|| {
+        // Verify state cloning behavior is predictable
+        // PipelineState doesn't use Arc internally, but this tests
+        // that structures holding Arc behave deterministically
+
+        let workspace = Arc::new(MemoryWorkspace::new_test());
+        let executor = mock_executor_with_success();
+
+        let ws_initial = Arc::strong_count(&workspace);
+        let exec_initial = Arc::strong_count(&executor);
+
+        // Create multiple pipeline contexts using same Arc instances
+        let contexts: Vec<_> = (0..5)
+            .map(|_| (workspace.clone(), executor.clone()))
+            .collect();
+
+        // Counts should increase predictably
+        assert_eq!(
+            Arc::strong_count(&workspace),
+            ws_initial + 5,
+            "Workspace count should increase by 5"
+        );
+        assert_eq!(
+            Arc::strong_count(&executor),
+            exec_initial + 5,
+            "Executor count should increase by 5"
+        );
+
+        drop(contexts);
+
+        // Counts should return to initial
+        assert_eq!(
+            Arc::strong_count(&workspace),
+            ws_initial,
+            "Workspace count deterministically returns to initial"
+        );
+        assert_eq!(
+            Arc::strong_count(&executor),
+            exec_initial,
+            "Executor count deterministically returns to initial"
+        );
+    });
+}

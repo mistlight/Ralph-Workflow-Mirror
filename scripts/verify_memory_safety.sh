@@ -71,6 +71,16 @@ else
 fi
 echo ""
 
+# Run unsafe code pattern tests
+echo "→ Unsafe code pattern verification tests..."
+if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety::unsafe_patterns --quiet 2>&1; then
+    echo "✗ Unsafe pattern tests FAILED"
+    FAILED=1
+else
+    echo "✓ Unsafe pattern tests passed"
+fi
+echo ""
+
 # Run benchmark tests (informational only - capture output)
 echo "→ Benchmark tests (informational)..."
 if ! cargo test -p ralph-workflow --lib benchmarks --quiet 2>&1; then
@@ -81,13 +91,13 @@ else
 fi
 echo ""
 
-# Run unsafe code safety tests
-echo "→ Unsafe code behavioral verification..."
-if ! cargo test -p ralph-workflow --lib executor::tests::safety --quiet 2>&1; then
-    echo "✗ Unsafe code safety tests FAILED"
+# Run executor safety tests (from existing module)
+echo "→ Executor unsafe code behavioral verification..."
+if ! cargo test -p ralph-workflow --lib executor::tests --quiet 2>&1; then
+    echo "✗ Executor tests FAILED"
     FAILED=1
 else
-    echo "✓ Unsafe code safety tests passed"
+    echo "✓ Executor tests passed"
 fi
 echo ""
 

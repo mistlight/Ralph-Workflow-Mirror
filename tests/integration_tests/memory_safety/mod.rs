@@ -19,3 +19,4 @@ mod arc_patterns;
 mod bounded_growth;
 mod channel_bounds;
 mod thread_lifecycle;
+mod unsafe_patterns;
