@@ -249,6 +249,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("memory_safety/unsafe_patterns.rs"),
     },
     SourceFile {
+        path: "memory_safety/edge_cases.rs",
+        contents: include_str!("memory_safety/edge_cases.rs"),
+    },
+    SourceFile {
         path: "opencode_parser_tests.rs",
         contents: include_str!("opencode_parser_tests.rs"),
     },

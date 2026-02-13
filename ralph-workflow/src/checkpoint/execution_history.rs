@@ -503,6 +503,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Testing deprecated method intentionally
     fn test_execution_history_add_step() {
         let mut history = ExecutionHistory::new();
         let outcome = StepOutcome::success(None, vec![]);

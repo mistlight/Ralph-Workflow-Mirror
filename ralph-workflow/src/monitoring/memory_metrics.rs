@@ -120,6 +120,92 @@ impl MemoryMetricsCollector {
     pub fn export_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(&self.snapshots)
     }
+
+    /// Record a snapshot and send to telemetry backend.
+    pub fn record_and_emit(
+        &mut self,
+        state: &crate::reducer::PipelineState,
+        backend: &mut dyn TelemetryBackend,
+    ) {
+        if self.snapshot_interval == 0 {
+            return;
+        }
+
+        if state.iteration.is_multiple_of(self.snapshot_interval) || state.iteration == 1 {
+            let snapshot = MemorySnapshot::from_pipeline_state(state);
+            backend.emit_snapshot(&snapshot);
+            self.snapshots.push(snapshot);
+        }
+    }
+}
+
+/// Pluggable backend for telemetry integration.
+///
+/// Implement this trait to integrate with external monitoring systems
+/// (Prometheus, DataDog, CloudWatch, etc.)
+pub trait TelemetryBackend {
+    /// Emit a memory snapshot to the telemetry system.
+    fn emit_snapshot(&mut self, snapshot: &MemorySnapshot);
+
+    /// Emit a warning when memory usage approaches threshold.
+    fn emit_warning(&mut self, message: &str);
+
+    /// Flush any buffered metrics.
+    fn flush(&mut self);
+}
+
+/// No-op telemetry backend for testing.
+#[derive(Debug, Default)]
+pub struct NoOpBackend;
+
+impl TelemetryBackend for NoOpBackend {
+    fn emit_snapshot(&mut self, _snapshot: &MemorySnapshot) {}
+    fn emit_warning(&mut self, _message: &str) {}
+    fn flush(&mut self) {}
+}
+
+/// Logging-based telemetry backend.
+///
+/// Writes metrics to stdout/stderr for development and debugging.
+#[derive(Debug)]
+pub struct LoggingBackend {
+    warn_threshold_bytes: usize,
+}
+
+impl LoggingBackend {
+    /// Create a new logging backend with warning threshold.
+    pub fn new(warn_threshold_bytes: usize) -> Self {
+        Self {
+            warn_threshold_bytes,
+        }
+    }
+}
+
+impl TelemetryBackend for LoggingBackend {
+    fn emit_snapshot(&mut self, snapshot: &MemorySnapshot) {
+        eprintln!(
+            "[METRICS] iteration={} history_len={} heap_bytes={} checkpoint_count={}",
+            snapshot.iteration,
+            snapshot.execution_history_len,
+            snapshot.execution_history_heap_bytes,
+            snapshot.checkpoint_count
+        );
+
+        if snapshot.execution_history_heap_bytes > self.warn_threshold_bytes {
+            self.emit_warning(&format!(
+                "Execution history heap size {} bytes exceeds warning threshold {} bytes",
+                snapshot.execution_history_heap_bytes, self.warn_threshold_bytes
+            ));
+        }
+    }
+
+    fn emit_warning(&mut self, message: &str) {
+        eprintln!("[METRICS WARNING] {message}");
+    }
+
+    fn flush(&mut self) {
+        // Logging backend doesn't buffer
+    }
 }
 
 #[cfg(test)]
@@ -164,5 +250,83 @@ mod tests {
         state.iteration = 10;
         collector.maybe_record(&state);
         assert_eq!(collector.snapshots().len(), 2);
+    }
+
+    #[test]
+    fn test_telemetry_backend_noop() {
+        let mut backend = NoOpBackend;
+        let state = PipelineState::initial(100, 5);
+        let snapshot = MemorySnapshot::from_pipeline_state(&state);
+
+        // Should not panic
+        backend.emit_snapshot(&snapshot);
+        backend.emit_warning("test warning");
+        backend.flush();
+    }
+
+    #[test]
+    fn test_record_and_emit_integrates_with_backend() {
+        struct CountingBackend {
+            snapshot_count: usize,
+        }
+
+        impl TelemetryBackend for CountingBackend {
+            fn emit_snapshot(&mut self, _snapshot: &MemorySnapshot) {
+                self.snapshot_count += 1;
+            }
+            fn emit_warning(&mut self, _message: &str) {}
+            fn flush(&mut self) {}
+        }
+
+        let mut collector = MemoryMetricsCollector::new(10);
+        let mut backend = CountingBackend { snapshot_count: 0 };
+        let mut state = PipelineState::initial(100, 5);
+
+        // Should emit at iteration 1
+        state.iteration = 1;
+        collector.record_and_emit(&state, &mut backend);
+        assert_eq!(backend.snapshot_count, 1);
+        assert_eq!(collector.snapshots().len(), 1);
+
+        // Should not emit at iteration 5
+        state.iteration = 5;
+        collector.record_and_emit(&state, &mut backend);
+        assert_eq!(backend.snapshot_count, 1);
+
+        // Should emit at iteration 10
+        state.iteration = 10;
+        collector.record_and_emit(&state, &mut backend);
+        assert_eq!(backend.snapshot_count, 2);
+        assert_eq!(collector.snapshots().len(), 2);
+    }
+
+    #[test]
+    fn test_logging_backend_emits_warnings_above_threshold() {
+        let mut backend = LoggingBackend::new(100); // 100 byte threshold
+        let mut state = PipelineState::initial(100, 5);
+
+        // Add enough history to exceed threshold
+        for i in 0..50 {
+            state.execution_history.push(ExecutionStep::new(
+                "Development",
+                i,
+                "agent_invoked",
+                StepOutcome::success(
+                    Some("output with sufficient content".to_string()),
+                    vec!["file.rs".to_string()],
+                ),
+            ));
+        }
+
+        let snapshot = MemorySnapshot::from_pipeline_state(&state);
+        assert!(
+            snapshot.execution_history_heap_bytes > 100,
+            "Test setup should create heap usage > 100 bytes"
+        );
+
+        // This should emit both snapshot and warning
+        backend.emit_snapshot(&snapshot);
+        // Warning is emitted to stderr - no way to capture in unit test,
+        // but we verify no panic occurs
     }
 }
