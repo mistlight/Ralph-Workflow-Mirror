@@ -66,9 +66,9 @@ impl ExecutionHistoryBaseline {
     /// and fix the root cause instead.
     pub const ENTRIES_1000: Self = Self {
         entry_count: 1000,
-        heap_size_bytes: 500_000,       // 500 KB (measured: ~53 bytes/entry)
+        heap_size_bytes: 60_000, // 60 KB (measured: ~53_000 bytes for 1000 entries)
         serialized_size_bytes: 400_000, // 400 KB (measured: ~363 KB actual)
-        tolerance: 1.2,                 // 20% headroom for platform variance
+        tolerance: 1.2,          // 20% headroom for platform variance
     };
 
     /// Check if measured value exceeds baseline.
@@ -145,13 +145,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_execution_history_baseline_magnitude_is_reasonable() {
+        let baseline = ExecutionHistoryBaseline::ENTRIES_1000;
+
+        // Baselines should be in the same order of magnitude as the measured
+        // benchmark output (~53_000 bytes for 1000 entries).
+        assert!(baseline.heap_size_bytes > 40_000);
+        assert!(baseline.heap_size_bytes < 100_000);
+    }
+
+    #[test]
     fn test_baseline_check_within_tolerance() {
         let baseline = ExecutionHistoryBaseline::ENTRIES_1000;
 
-        // 450 KB is within 500 KB baseline + 20% tolerance
-        assert!(baseline.check_heap_size(450_000).is_ok());
+        // 70 KB is within 60 KB baseline + 20% tolerance
+        assert!(baseline.check_heap_size(70_000).is_ok());
 
-        // 650 KB exceeds (500 KB * 1.2 = 600 KB)
-        assert!(baseline.check_heap_size(650_000).is_err());
+        // 80 KB exceeds (60 KB * 1.2 = 72 KB)
+        assert!(baseline.check_heap_size(80_000).is_err());
     }
 }

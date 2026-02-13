@@ -75,6 +75,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_real_executor_execute_basic() {
         let executor = RealProcessExecutor::new();
         // Use 'echo' command which should exist on all Unix systems

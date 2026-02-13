@@ -15,101 +15,71 @@
 
 set -euo pipefail
 
-echo "Running memory safety verification..."
-echo ""
+VERBOSE=0
+if [[ "${1:-}" == "--verbose" ]]; then
+  VERBOSE=1
+  shift
+fi
 
-# Track if any test fails
+log() {
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    printf '%s\n' "$*"
+  fi
+}
+
+run() {
+  local name="$1"
+  shift
+
+  local output
+  if output=$("$@" 2>&1); then
+    log "✓ ${name}"
+    return 0
+  fi
+
+  printf '%s\n' "✗ ${name}" >&2
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    printf '%s\n' "$output" >&2
+  fi
+  return 1
+}
+
 FAILED=0
 
-# Run memory safety integration tests
-echo "→ Memory safety integration tests..."
-if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety --quiet 2>&1; then
-    echo "✗ Memory safety integration tests FAILED"
-    FAILED=1
-else
-    echo "✓ Memory safety integration tests passed"
-fi
-echo ""
+run "Memory safety integration tests" \
+  cargo test -p ralph-workflow-tests --test integration_tests memory_safety --quiet \
+  || FAILED=1
 
-# Run bounded growth tests specifically
-echo "→ Bounded growth tests..."
-if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety::bounded_growth --quiet 2>&1; then
-    echo "✗ Bounded growth tests FAILED"
-    FAILED=1
-else
-    echo "✓ Bounded growth tests passed"
-fi
-echo ""
+run "Bounded growth tests" \
+  cargo test -p ralph-workflow-tests --test integration_tests memory_safety::bounded_growth --quiet \
+  || FAILED=1
 
-# Run thread lifecycle tests
-echo "→ Thread lifecycle tests..."
-if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety::thread_lifecycle --quiet 2>&1; then
-    echo "✗ Thread lifecycle tests FAILED"
-    FAILED=1
-else
-    echo "✓ Thread lifecycle tests passed"
-fi
-echo ""
+run "Thread lifecycle tests" \
+  cargo test -p ralph-workflow-tests --test integration_tests memory_safety::thread_lifecycle --quiet \
+  || FAILED=1
 
-# Run Arc pattern tests
-echo "→ Arc circular reference prevention tests..."
-if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety::arc_patterns --quiet 2>&1; then
-    echo "✗ Arc pattern tests FAILED"
-    FAILED=1
-else
-    echo "✓ Arc pattern tests passed"
-fi
-echo ""
+run "Arc pattern tests" \
+  cargo test -p ralph-workflow-tests --test integration_tests memory_safety::arc_patterns --quiet \
+  || FAILED=1
 
-# Run channel bounds tests
-echo "→ Channel bounds and backpressure tests..."
-if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety::channel_bounds --quiet 2>&1; then
-    echo "✗ Channel bounds tests FAILED"
-    FAILED=1
-else
-    echo "✓ Channel bounds tests passed"
-fi
-echo ""
+run "Channel bounds tests" \
+  cargo test -p ralph-workflow-tests --test integration_tests memory_safety::channel_bounds --quiet \
+  || FAILED=1
 
-# Run unsafe code pattern tests
-echo "→ Unsafe code pattern verification tests..."
-if ! cargo test -p ralph-workflow-tests --test integration_tests memory_safety::unsafe_patterns --quiet 2>&1; then
-    echo "✗ Unsafe pattern tests FAILED"
-    FAILED=1
-else
-    echo "✓ Unsafe pattern tests passed"
-fi
-echo ""
+run "Unsafe pattern tests" \
+  cargo test -p ralph-workflow-tests --test integration_tests memory_safety::unsafe_patterns --quiet \
+  || FAILED=1
 
-# Run benchmark tests (informational only - capture output)
-echo "→ Benchmark tests (informational)..."
-if ! cargo test -p ralph-workflow --lib benchmarks --quiet 2>&1; then
-    echo "✗ Benchmark tests FAILED"
-    FAILED=1
-else
-    echo "✓ Benchmark tests passed"
-fi
-echo ""
+run "Benchmark tests" \
+  cargo test -p ralph-workflow --lib benchmarks --quiet \
+  || FAILED=1
 
-# Run executor safety tests (from existing module)
-echo "→ Executor unsafe code behavioral verification..."
-if ! cargo test -p ralph-workflow --lib executor::tests --quiet 2>&1; then
-    echo "✗ Executor tests FAILED"
-    FAILED=1
-else
-    echo "✓ Executor tests passed"
-fi
-echo ""
+run "Executor unit tests" \
+  cargo test -p ralph-workflow --lib executor::tests --quiet \
+  || FAILED=1
 
-# Summary
-if [ $FAILED -eq 0 ]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✓ All memory safety verification passed"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    exit 0
-else
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✗ Memory safety verification FAILED"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    exit 1
+if [[ "$FAILED" -eq 0 ]]; then
+  exit 0
 fi
+
+exit 1

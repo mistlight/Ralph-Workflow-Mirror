@@ -29,9 +29,11 @@ cargo test -p ralph-workflow-tests
 
 # Memory safety verification (bounded growth, thread cleanup, Arc patterns)
 bash scripts/verify_memory_safety.sh
+# (Use `--verbose` to print progress/output on failure debugging.)
 
 # Performance regression verification (long-running tests, checkpoint size, etc.)
 bash scripts/ci_performance_regression.sh
+# (Use `--verbose` to print progress/output on failure debugging.)
 
 # Per-run logging tests (when changing logging infrastructure)
 cargo test -p ralph-workflow-tests logging_per_run

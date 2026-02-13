@@ -198,7 +198,7 @@ impl PromptMonitor {
         _prompt_existed_last_check: &mut bool,
     ) {
         for path in &event.paths {
-            if path.as_os_str() == "PROMPT.md" {
+            if is_prompt_md_path(path) {
                 // Check for remove event
                 if matches!(event.kind, notify::EventKind::Remove(_)) {
                     // PROMPT.md was removed - restore it
@@ -277,7 +277,7 @@ impl PromptMonitor {
 
             // Restore from backup - ensure parent directory exists
             let prompt_path = Path::new("PROMPT.md");
-            if let Some(parent) = prompt_path.parent() {
+            if let Some(parent) = prompt_path.parent().filter(|p| !p.as_os_str().is_empty()) {
                 if let Err(e) = fs::create_dir_all(parent) {
                     eprintln!("Failed to create parent directory for PROMPT.md: {e}");
                     continue;
@@ -332,7 +332,7 @@ impl PromptMonitor {
     /// }
     /// ```
     pub fn check_and_restore(&self) -> bool {
-        self.restoration_detected.load(Ordering::Acquire)
+        self.restoration_detected.swap(false, Ordering::AcqRel)
     }
 
     /// Stop monitoring and cleanup resources.
@@ -373,6 +373,10 @@ impl PromptMonitor {
     }
 }
 
+fn is_prompt_md_path(path: &Path) -> bool {
+    matches!(path.file_name(), Some(name) if name == "PROMPT.md")
+}
+
 impl Drop for PromptMonitor {
     fn drop(&mut self) {
         // Signal the thread to stop when dropped
@@ -386,7 +390,28 @@ impl Drop for PromptMonitor {
 
 #[cfg(test)]
 mod tests {
-    // Note: Tests that change directories are problematic in test suites.
-    // The monitoring functionality will be tested through integration tests
-    // when the monitor is integrated into the pipeline.
+    use super::*;
+
+    #[test]
+    fn test_is_prompt_md_path_matches_by_file_name() {
+        assert!(is_prompt_md_path(Path::new("PROMPT.md")));
+        assert!(is_prompt_md_path(Path::new("./PROMPT.md")));
+        assert!(is_prompt_md_path(Path::new("dir/PROMPT.md")));
+        assert!(is_prompt_md_path(Path::new("/tmp/PROMPT.md")));
+
+        assert!(!is_prompt_md_path(Path::new("PROMPT.md.backup")));
+        assert!(!is_prompt_md_path(Path::new("PROMPT.mdx")));
+    }
+
+    #[test]
+    fn test_check_and_restore_returns_and_clears_flag() {
+        let monitor = PromptMonitor {
+            restoration_detected: Arc::new(AtomicBool::new(true)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            monitor_thread: None,
+        };
+
+        assert!(monitor.check_and_restore());
+        assert!(!monitor.check_and_restore());
+    }
 }
