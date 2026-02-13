@@ -177,7 +177,7 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
             commit: CommitState::NotStarted,
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
-            execution_history: Vec::new(),
+            execution_history: std::collections::VecDeque::new(),
             ..with_locked_prompt_permissions(with_locked_prompt_permissions(
                 PipelineState::initial(5, 2),
             ))
@@ -223,7 +223,7 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
             commit: CommitState::NotStarted,
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
-            execution_history: Vec::new(),
+            execution_history: std::collections::VecDeque::new(),
             ..with_locked_prompt_permissions(with_locked_prompt_permissions(
                 PipelineState::initial(5, 2),
             ))

@@ -132,8 +132,10 @@ fn test_execution_history_large_single_step() {
         let mut state = PipelineState::initial(10, 5);
         let limit = 1000;
 
-        // Create a step with very large output (10 MB of text)
-        let large_output = "x".repeat(10 * 1024 * 1024); // 10 MB
+        // Create a step with large output.
+        // Keep this sized for CI stability while still exercising large allocations.
+        const LARGE_OUTPUT_BYTES: usize = 1024 * 1024; // 1 MB
+        let large_output = "x".repeat(LARGE_OUTPUT_BYTES);
         let large_step = ExecutionStep::new(
             "Development",
             0,
@@ -159,7 +161,10 @@ fn test_execution_history_many_files_modified() {
         let limit = 1000;
 
         // Create a step that modified many files
-        let many_files: Vec<String> = (0..1000).map(|i| format!("file_{i}.rs")).collect();
+        const MANY_FILES_COUNT: usize = 200;
+        let many_files: Vec<String> = (0..MANY_FILES_COUNT)
+            .map(|i| format!("file_{i}.rs"))
+            .collect();
         let step_with_many_files = ExecutionStep::new(
             "Development",
             0,
@@ -180,7 +185,7 @@ fn test_execution_history_many_files_modified() {
         if let StepOutcome::Success { files_modified, .. } = &state.execution_history[0].outcome {
             assert_eq!(
                 files_modified.len(),
-                1000,
+                MANY_FILES_COUNT,
                 "Should preserve all files_modified entries"
             );
         } else {

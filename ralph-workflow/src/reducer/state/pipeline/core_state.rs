@@ -165,7 +165,7 @@ pub struct PipelineState {
     pub agent_chain: AgentChainState,
     pub rebase: RebaseState,
     pub commit: CommitState,
-    pub execution_history: Vec<ExecutionStep>,
+    pub execution_history: std::collections::VecDeque<ExecutionStep>,
     /// Count of CheckpointSaved events applied to state.
     ///
     /// This is a reducer-visible record of checkpoint saves, intended for
@@ -324,7 +324,7 @@ impl PipelineState {
             agent_chain: AgentChainState::initial(),
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
-            execution_history: Vec::new(),
+            execution_history: std::collections::VecDeque::new(),
             checkpoint_saved_count: 0,
             continuation: continuation.clone(),
             dev_fix_triggered: false,
@@ -393,12 +393,12 @@ impl PipelineState {
     /// - Checkpoint size: ~375 KB serialized
     /// - Growth: Bounded (oldest entries dropped when limit reached)
     pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
-        self.execution_history.push(step);
+        self.execution_history.push_back(step);
 
-        // Enforce limit by dropping oldest entries
-        if self.execution_history.len() > limit {
-            let excess = self.execution_history.len() - limit;
-            self.execution_history.drain(0..excess);
+        // Enforce limit by dropping oldest entries.
+        // VecDeque::pop_front is O(1) amortized and avoids repeated memmoves.
+        while self.execution_history.len() > limit {
+            self.execution_history.pop_front();
         }
     }
 }

@@ -32,7 +32,7 @@ fn benchmark_execution_history_growth_10_iterations() {
 
     // Simulate 10 iterations
     for i in 0..10 {
-        state.execution_history.push(create_test_step(i));
+        state.execution_history.push_back(create_test_step(i));
     }
 
     let end_size = std::mem::size_of_val(&state.execution_history);
@@ -72,7 +72,7 @@ fn benchmark_execution_history_growth_100_iterations() {
 
     // Simulate 100 iterations
     for i in 0..100 {
-        state.execution_history.push(create_test_step(i));
+        state.execution_history.push_back(create_test_step(i));
     }
 
     let duration = start.elapsed();
@@ -113,7 +113,7 @@ fn benchmark_execution_history_growth_1000_iterations() {
 
     // Simulate 1000 iterations (stress test)
     for i in 0..1000 {
-        state.execution_history.push(create_test_step(i));
+        state.execution_history.push_back(create_test_step(i));
     }
 
     let duration = start.elapsed();
@@ -182,7 +182,7 @@ fn benchmark_pipeline_state_size_with_100_steps() {
 
     // Add 100 execution steps
     for i in 0..100 {
-        state.execution_history.push(create_test_step(i));
+        state.execution_history.push_back(create_test_step(i));
     }
 
     let base_size = std::mem::size_of_val(&state);
@@ -222,7 +222,7 @@ fn benchmark_memory_growth_rate() {
 
     // Measure growth at intervals
     for i in 0..1000 {
-        state.execution_history.push(create_test_step(i));
+        state.execution_history.push_back(create_test_step(i));
 
         // Sample every 100 iterations
         if (i + 1) % 100 == 0 {
@@ -309,7 +309,9 @@ fn create_test_pipeline_state(
     let mut state = PipelineState::initial(iterations, review_passes);
 
     for i in 0..history_size {
-        state.execution_history.push(create_test_step(i as u32));
+        state
+            .execution_history
+            .push_back(create_test_step(i as u32));
     }
 
     state

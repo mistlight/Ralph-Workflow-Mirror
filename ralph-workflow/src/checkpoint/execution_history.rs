@@ -6,7 +6,7 @@
 use crate::checkpoint::timestamp;
 use crate::workspace::Workspace;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 /// Outcome of an execution step.
@@ -373,7 +373,7 @@ fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct ExecutionHistory {
     /// All execution steps in order
-    pub steps: Vec<ExecutionStep>,
+    pub steps: VecDeque<ExecutionStep>,
     /// File snapshots for key files at checkpoint time
     pub file_snapshots: HashMap<String, FileSnapshot>,
 }
@@ -410,7 +410,7 @@ impl ExecutionHistory {
     pub fn add_step(&mut self, step: ExecutionStep) {
         // Unbounded behavior - kept only for backward compatibility
         // All production callsites have been migrated to add_step_bounded
-        self.steps.push(step);
+        self.steps.push_back(step);
     }
 
     /// Add an execution step with explicit bounding (preferred method).
@@ -418,12 +418,12 @@ impl ExecutionHistory {
     /// This is the preferred method that enforces bounded memory growth.
     /// Use this instead of `add_step()` to prevent unbounded growth.
     pub fn add_step_bounded(&mut self, step: ExecutionStep, limit: usize) {
-        self.steps.push(step);
+        self.steps.push_back(step);
 
-        // Enforce limit by dropping oldest entries
-        if self.steps.len() > limit {
-            let excess = self.steps.len() - limit;
-            self.steps.drain(0..excess);
+        // Enforce limit by dropping oldest entries.
+        // VecDeque::pop_front is O(1) amortized and avoids repeated memmoves.
+        while self.steps.len() > limit {
+            self.steps.pop_front();
         }
     }
 }

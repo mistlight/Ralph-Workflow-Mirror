@@ -61,8 +61,8 @@ fn test_10k_iterations_memory_remains_bounded() {
         );
 
         // Verify we kept the most recent entries
-        let first_entry = state.execution_history.first().unwrap();
-        let last_entry = state.execution_history.last().unwrap();
+        let first_entry = state.execution_history.front().unwrap();
+        let last_entry = state.execution_history.back().unwrap();
 
         assert!(
             first_entry.iteration >= 9_000,
@@ -137,7 +137,7 @@ fn test_memory_growth_rate_is_zero_after_limit_reached() {
         );
 
         // Verify ring buffer behavior - oldest entries dropped
-        let first_iteration = state.execution_history.first().unwrap().iteration;
+        let first_iteration = state.execution_history.front().unwrap().iteration;
         assert!(
             first_iteration >= 1000,
             "Oldest entry should be from recent iterations, got {}",

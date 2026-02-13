@@ -19,12 +19,11 @@ The `add_execution_step` method enforces bounded growth with configurable limits
 
 ```rust
 pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
-    self.execution_history.push(step);
-    
-    // Enforce limit by dropping oldest entries
-    if self.execution_history.len() > limit {
-        let excess = self.execution_history.len() - limit;
-        self.execution_history.drain(0..excess);
+    self.execution_history.push_back(step);
+
+    // Enforce limit by dropping oldest entries.
+    while self.execution_history.len() > limit {
+        self.execution_history.pop_front();
     }
 }
 ```

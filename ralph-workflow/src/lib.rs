@@ -114,8 +114,8 @@ pub mod review_metrics;
 pub mod templates;
 pub mod workspace;
 
-// Benchmarks module - only baselines are public for integration tests
-#[cfg(any(test, feature = "test-utils"))]
+// Benchmarks module - contains public baselines used by integration tests.
+// Benchmark *tests* inside the module remain `#[cfg(test)]`.
 pub mod benchmarks;
 
 // Re-export XML extraction and validation functions for use in integration tests.

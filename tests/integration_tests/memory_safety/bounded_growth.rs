@@ -73,13 +73,13 @@ fn test_execution_history_drops_oldest_entries_when_limit_reached() {
         // Most recent entries (iterations 500-1499) should remain
         let first_iteration = state
             .execution_history
-            .first()
+            .front()
             .map(|step| step.iteration)
             .unwrap_or(0);
 
         let last_iteration = state
             .execution_history
-            .last()
+            .back()
             .map(|step| step.iteration)
             .unwrap_or(0);
 
@@ -126,7 +126,7 @@ fn test_execution_history_ring_buffer_behavior() {
         // First entry should now be from iteration 200 (oldest 200 dropped)
         let first_iteration = state
             .execution_history
-            .first()
+            .front()
             .map(|step| step.iteration)
             .unwrap();
 
@@ -138,7 +138,7 @@ fn test_execution_history_ring_buffer_behavior() {
         // Last entry should be from iteration 1199
         let last_iteration = state
             .execution_history
-            .last()
+            .back()
             .map(|step| step.iteration)
             .unwrap();
 
@@ -246,15 +246,15 @@ fn test_resume_from_checkpoint_preserves_bounded_history() {
         );
 
         // First and last entries should match
-        let original_first = original_state.execution_history.first().unwrap();
-        let restored_first = restored_state.execution_history.first().unwrap();
+        let original_first = original_state.execution_history.front().unwrap();
+        let restored_first = restored_state.execution_history.front().unwrap();
         assert_eq!(
             original_first.iteration, restored_first.iteration,
             "First entry should be preserved after resume"
         );
 
-        let original_last = original_state.execution_history.last().unwrap();
-        let restored_last = restored_state.execution_history.last().unwrap();
+        let original_last = original_state.execution_history.back().unwrap();
+        let restored_last = restored_state.execution_history.back().unwrap();
         assert_eq!(
             original_last.iteration, restored_last.iteration,
             "Last entry should be preserved after resume"
@@ -322,14 +322,14 @@ fn test_execution_history_bounded_with_10000_iterations() {
         );
 
         // First entry should be from iteration 9000 (oldest 9000 dropped)
-        let first_iteration = state.execution_history.first().unwrap().iteration;
+        let first_iteration = state.execution_history.front().unwrap().iteration;
         assert_eq!(
             first_iteration, 9000,
             "First entry should be from iteration 9000 after dropping oldest 9000"
         );
 
         // Last entry should be from iteration 9999
-        let last_iteration = state.execution_history.last().unwrap().iteration;
+        let last_iteration = state.execution_history.back().unwrap().iteration;
         assert_eq!(
             last_iteration, 9999,
             "Last entry should be from most recent iteration"

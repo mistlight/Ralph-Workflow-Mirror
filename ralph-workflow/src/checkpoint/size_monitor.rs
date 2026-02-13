@@ -100,26 +100,17 @@ impl CheckpointSizeMonitor {
         }
     }
 
-    /// Check serialized JSON size and log warnings if needed.
+    /// Check serialized JSON size and return an alert.
+    pub fn check_json(&self, json: &str) -> SizeAlert {
+        self.check_size(json.len())
+    }
+
+    /// Backwards-compatible wrapper.
     ///
-    /// Returns the alert level for programmatic handling.
+    /// Library code must not print directly; callers decide how/where to log.
+    #[deprecated(since = "0.7.3", note = "Use check_json(json) and log at the callsite")]
     pub fn check_json_and_log(&self, json: &str) -> SizeAlert {
-        let size = json.len();
-        let alert = self.check_size(size);
-
-        match &alert {
-            SizeAlert::Warning(msg) => {
-                eprintln!("[CHECKPOINT WARNING] {msg}");
-            }
-            SizeAlert::Error(msg) => {
-                eprintln!("[CHECKPOINT ERROR] {msg}");
-            }
-            SizeAlert::Ok => {
-                // Size is acceptable, no logging needed
-            }
-        }
-
-        alert
+        self.check_json(json)
     }
 
     /// Get current thresholds.
@@ -192,17 +183,17 @@ mod tests {
     }
 
     #[test]
-    fn test_check_json_and_log() {
+    fn test_check_json() {
         let monitor = CheckpointSizeMonitor::new();
 
         // Small JSON - should return Ok
         let small_json = "x".repeat(100_000); // 100 KB
-        let alert = monitor.check_json_and_log(&small_json);
+        let alert = monitor.check_json(&small_json);
         assert_eq!(alert, SizeAlert::Ok);
 
-        // Large JSON - should return Warning (logs to stderr)
+        // Large JSON - should return Warning
         let large_json = "x".repeat(1_600_000); // 1.6 MB
-        let alert = monitor.check_json_and_log(&large_json);
+        let alert = monitor.check_json(&large_json);
         assert!(matches!(alert, SizeAlert::Warning(_)));
     }
 

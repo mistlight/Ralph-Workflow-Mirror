@@ -15,10 +15,10 @@ Based on benchmark measurements from the memory safety test suite:
 | Component | Expected Size | Notes |
 |-----------|--------------|-------|
 | Baseline pipeline state | ~100 KB | Without execution history |
-| Execution history (1000 entries) | ~500 KB | Default limit in memory |
-| Checkpoint serialization | 1-5 MB | JSON format, includes file snapshots |
+| Execution history (1000 entries, heap) | ~51 KB | Default limit in memory (measured ~53 KB) |
+| Checkpoint (serialized, typical) | ~300-400 KB | JSON with bounded history; file snapshots can increase size |
 | Parser buffers | <1 MB | Event queue and streaming buffers |
-| **Total per pipeline** | **~2-7 MB** | Depends on iteration count and file changes |
+| **Total per pipeline (typical)** | **<5 MB** | Depends on file snapshots and log buffering |
 
 ### Execution History Growth
 
@@ -27,9 +27,9 @@ The execution history is the primary source of unbounded growth. Without boundin
 - **After bounding**: Bounded at configurable limit (default: 1000 entries)
 
 **Growth characteristics**:
-- Each execution step: ~500 bytes serialized
-- 1000 entries: ~500 KB
-- 10,000 entries (unbounded): ~5 MB
+- Each execution step: ~53 bytes heap (in-memory), ~384 bytes JSON serialized
+- 1000 entries: ~51 KB heap, ~375 KB serialized
+- Unbounded (pre-bounding): grows linearly with iterations
 
 ## Configured Limits
 
@@ -86,12 +86,11 @@ File snapshots larger than 10 KB are not stored in checkpoints to keep checkpoin
 
 ```rust
 pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
-    self.execution_history.push(step);
-    
-    // Enforce limit by dropping oldest entries
-    if self.execution_history.len() > limit {
-        let excess = self.execution_history.len() - limit;
-        self.execution_history.drain(0..excess);
+    self.execution_history.push_back(step);
+
+    // Enforce limit by dropping oldest entries.
+    while self.execution_history.len() > limit {
+        self.execution_history.pop_front();
     }
 }
 ```

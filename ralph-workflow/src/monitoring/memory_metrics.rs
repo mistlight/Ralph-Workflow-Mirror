@@ -105,7 +105,13 @@ impl MemoryMetricsCollector {
             return;
         }
 
-        if state.iteration.is_multiple_of(self.snapshot_interval) || state.iteration == 1 {
+        // Treat iteration 0 as "pre-run" (initial state). Recording here is surprising
+        // and skews exported metrics since 0 is a multiple of any non-zero interval.
+        if state.iteration == 0 {
+            return;
+        }
+
+        if state.iteration == 1 || state.iteration.is_multiple_of(self.snapshot_interval) {
             self.snapshots
                 .push(MemorySnapshot::from_pipeline_state(state));
         }
@@ -131,7 +137,11 @@ impl MemoryMetricsCollector {
             return;
         }
 
-        if state.iteration.is_multiple_of(self.snapshot_interval) || state.iteration == 1 {
+        if state.iteration == 0 {
+            return;
+        }
+
+        if state.iteration == 1 || state.iteration.is_multiple_of(self.snapshot_interval) {
             let snapshot = MemorySnapshot::from_pipeline_state(state);
             backend.emit_snapshot(&snapshot);
             self.snapshots.push(snapshot);
@@ -217,7 +227,7 @@ mod tests {
     #[test]
     fn test_memory_snapshot_captures_state() {
         let mut state = PipelineState::initial(100, 5);
-        state.execution_history.push(ExecutionStep::new(
+        state.execution_history.push_back(ExecutionStep::new(
             "Development",
             0,
             "agent_invoked",
@@ -235,6 +245,11 @@ mod tests {
     fn test_metrics_collector_respects_interval() {
         let mut collector = MemoryMetricsCollector::new(10);
         let mut state = PipelineState::initial(100, 5);
+
+        // Should not record at iteration 0 (initial state)
+        state.iteration = 0;
+        collector.maybe_record(&state);
+        assert_eq!(collector.snapshots().len(), 0);
 
         // Should record at iteration 1
         state.iteration = 1;
@@ -282,6 +297,12 @@ mod tests {
         let mut backend = CountingBackend { snapshot_count: 0 };
         let mut state = PipelineState::initial(100, 5);
 
+        // Should not emit at iteration 0 (initial state)
+        state.iteration = 0;
+        collector.record_and_emit(&state, &mut backend);
+        assert_eq!(backend.snapshot_count, 0);
+        assert_eq!(collector.snapshots().len(), 0);
+
         // Should emit at iteration 1
         state.iteration = 1;
         collector.record_and_emit(&state, &mut backend);
@@ -307,7 +328,7 @@ mod tests {
 
         // Add enough history to exceed threshold
         for i in 0..50 {
-            state.execution_history.push(ExecutionStep::new(
+            state.execution_history.push_back(ExecutionStep::new(
                 "Development",
                 i,
                 "agent_invoked",

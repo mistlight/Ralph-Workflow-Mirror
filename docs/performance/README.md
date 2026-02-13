@@ -16,9 +16,9 @@ resource management, and monitoring for the Ralph pipeline.
 
 | Component | Typical | Maximum |
 |-----------|---------|---------|
-| Execution History | 400-500 KB | 500 KB |
+| Execution History (heap) | ~50-60 KB | ~72 KB |
 | Checkpoint (serialized) | 300-400 KB | 2 MB |
-| Total per run | ~500 KB - 100 MB | ~500 MB |
+| Total per run | ~1-10 MB | Varies (file snapshots/logging) |
 
 ### Verification Commands
 
