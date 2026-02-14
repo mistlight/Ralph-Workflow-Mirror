@@ -79,6 +79,9 @@ fn extract_issue_snippets(
         };
 
         let Some(file) = file else { continue };
+        if !is_safe_workspace_relative_path(&file) {
+            continue;
+        }
         let Some(start) = line_start else { continue };
         let end = line_end.unwrap_or(start);
 
@@ -103,6 +106,75 @@ fn extract_issue_snippets(
     }
 
     snippets
+}
+
+fn is_safe_workspace_relative_path(path_str: &str) -> bool {
+    use std::path::Component;
+
+    let trimmed = path_str.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // Reject Windows drive prefixes on non-Windows platforms (e.g., "C:/..."), which
+    // would otherwise look like a relative path to Path::is_absolute().
+    let bytes = trimmed.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' {
+        let first = bytes[0] as char;
+        if first.is_ascii_alphabetic() {
+            return false;
+        }
+    }
+
+    // Reject obvious absolute/UNC-like paths.
+    if trimmed.starts_with("//") {
+        return false;
+    }
+
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return false;
+    }
+
+    // Reject parent traversal and any platform-specific prefixes/root components.
+    for component in path.components() {
+        match component {
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return false,
+            Component::CurDir | Component::Normal(_) => {}
+        }
+    }
+
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_issue_snippets;
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn test_extract_issue_snippets_rejects_unsafe_paths() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("src/main.rs", "fn main() {}\n")
+            .with_file("../secret.txt", "top secret\n")
+            .with_file("/etc/passwd.txt", "root:x:0:0:root:/root:/bin/bash\n")
+            .with_file("C:/secret.txt", "windows secret\n");
+
+        let issues = vec![
+            "src/main.rs:1".to_string(),
+            "../secret.txt:1".to_string(),
+            "/etc/passwd.txt:1".to_string(),
+            "C:/secret.txt:1".to_string(),
+        ];
+
+        let snippets = extract_issue_snippets(&issues, &workspace);
+
+        assert_eq!(snippets.len(), 1, "expected only the safe snippet");
+        assert_eq!(snippets[0].file, "src/main.rs");
+        assert_eq!(snippets[0].line_start, 1);
+        assert_eq!(snippets[0].line_end, 1);
+        assert!(snippets[0].content.contains("1 | fn main() {}"));
+    }
 }
 
 /// Lazy-initialized regex for parsing standard file locations (file:line-line).
