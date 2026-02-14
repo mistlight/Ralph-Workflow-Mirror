@@ -51,7 +51,7 @@ impl StepOutcome {
     /// Create a Success outcome with default values.
     pub fn success(output: Option<String>, files_modified: Vec<String>) -> Self {
         Self::Success {
-            output: output.map(|s| Box::from(s.as_str())),
+            output: output.map(String::into_boxed_str),
             files_modified: if files_modified.is_empty() {
                 None
             } else {
@@ -64,7 +64,7 @@ impl StepOutcome {
     /// Create a Failure outcome with default values.
     pub fn failure(error: String, recoverable: bool) -> Self {
         Self::Failure {
-            error: Box::from(error.as_str()),
+            error: error.into_boxed_str(),
             recoverable,
             exit_code: None,
             signals: None,
@@ -74,8 +74,8 @@ impl StepOutcome {
     /// Create a Partial outcome with default values.
     pub fn partial(completed: String, remaining: String) -> Self {
         Self::Partial {
-            completed: Box::from(completed.as_str()),
-            remaining: Box::from(remaining.as_str()),
+            completed: completed.into_boxed_str(),
+            remaining: remaining.into_boxed_str(),
             exit_code: None,
         }
     }
@@ -83,7 +83,7 @@ impl StepOutcome {
     /// Create a Skipped outcome.
     pub fn skipped(reason: String) -> Self {
         Self::Skipped {
-            reason: Box::from(reason.as_str()),
+            reason: reason.into_boxed_str(),
         }
     }
 }
@@ -203,7 +203,7 @@ impl ExecutionStep {
         pool: &mut crate::checkpoint::StringPool,
     ) -> Self {
         Self {
-            phase: pool.intern(phase),
+            phase: pool.intern_str(phase),
             iteration,
             step_type: Box::from(step_type),
             timestamp: timestamp(),
@@ -230,7 +230,7 @@ impl ExecutionStep {
         agent: &str,
         pool: &mut crate::checkpoint::StringPool,
     ) -> Self {
-        self.agent = Some(pool.intern(agent));
+        self.agent = Some(pool.intern_str(agent));
         self
     }
 
@@ -794,6 +794,84 @@ mod tests {
                 assert_eq!(error.len(), "test error".len());
             }
             _ => panic!("Expected Failure variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_constructors_reuse_string_allocations() {
+        // Regression test: StepOutcome constructors should not allocate+copy when converting
+        // owned `String` inputs into `Box<str>`.
+        //
+        // If we regress to `Box::from(s.as_str())`, the inner pointer will differ.
+
+        // Large strings avoid any allocator-small-size quirks.
+        let make_string = |byte: u8| -> String {
+            let bytes = vec![byte; 1024];
+            String::from_utf8(bytes).expect("valid utf8")
+        };
+
+        // failure()
+        let s = make_string(b'e');
+        let s_ptr = s.as_ptr();
+        let s_len = s.len();
+        let outcome = StepOutcome::failure(s, true);
+        match outcome {
+            StepOutcome::Failure { error, .. } => {
+                assert_eq!(error.as_ptr(), s_ptr);
+                assert_eq!(error.len(), s_len);
+            }
+            _ => panic!("Expected Failure variant"),
+        }
+
+        // partial()
+        let completed = make_string(b'c');
+        let completed_ptr = completed.as_ptr();
+        let completed_len = completed.len();
+        let remaining = make_string(b'r');
+        let remaining_ptr = remaining.as_ptr();
+        let remaining_len = remaining.len();
+        let outcome = StepOutcome::partial(completed, remaining);
+        match outcome {
+            StepOutcome::Partial {
+                completed,
+                remaining,
+                ..
+            } => {
+                assert_eq!(completed.as_ptr(), completed_ptr);
+                assert_eq!(completed.len(), completed_len);
+                assert_eq!(remaining.as_ptr(), remaining_ptr);
+                assert_eq!(remaining.len(), remaining_len);
+            }
+            _ => panic!("Expected Partial variant"),
+        }
+
+        // skipped()
+        let reason = make_string(b's');
+        let reason_ptr = reason.as_ptr();
+        let reason_len = reason.len();
+        let outcome = StepOutcome::skipped(reason);
+        match outcome {
+            StepOutcome::Skipped { reason } => {
+                assert_eq!(reason.as_ptr(), reason_ptr);
+                assert_eq!(reason.len(), reason_len);
+            }
+            _ => panic!("Expected Skipped variant"),
+        }
+
+        // success(Some(output), empty files)
+        let output = make_string(b'o');
+        let output_ptr = output.as_ptr();
+        let output_len = output.len();
+        let outcome = StepOutcome::success(Some(output), vec![]);
+        match outcome {
+            StepOutcome::Success {
+                output: Some(output),
+                ..
+            } => {
+                assert_eq!(output.as_ptr(), output_ptr);
+                assert_eq!(output.len(), output_len);
+            }
+            _ => panic!("Expected Success variant with output"),
         }
     }
 

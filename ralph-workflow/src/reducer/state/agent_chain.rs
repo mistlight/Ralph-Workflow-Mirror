@@ -184,7 +184,7 @@ impl AgentChainState {
     ///
     /// It changes only when the configured consumer set changes.
     pub fn consumer_signature_sha256(&self) -> String {
-        let mut pairs: Vec<String> = self
+        let mut pairs: Vec<(&str, &[String])> = self
             .agents
             .iter()
             .enumerate()
@@ -192,18 +192,48 @@ impl AgentChainState {
                 let models = self
                     .models_per_agent
                     .get(idx)
-                    .cloned()
-                    .unwrap_or_default()
-                    .join(",");
-                format!("{agent}|{models}")
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+                (agent.as_str(), models)
             })
             .collect();
-        pairs.sort();
+
+        // Sort so the signature is stable even if callers reorder the configured
+        // consumer set.
+        pairs.sort_by(|(agent_a, models_a), (agent_b, models_b)| {
+            use std::cmp::Ordering;
+
+            let agent_ord = agent_a.cmp(agent_b);
+            if agent_ord != Ordering::Equal {
+                return agent_ord;
+            }
+
+            let len_ord = models_a.len().cmp(&models_b.len());
+            if len_ord != Ordering::Equal {
+                return len_ord;
+            }
+
+            for (a, b) in models_a.iter().zip(models_b.iter()) {
+                let ord = a.cmp(b);
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+
+            Ordering::Equal
+        });
 
         let mut hasher = Sha256::new();
         hasher.update(format!("{:?}\n", self.current_role).as_bytes());
-        for pair in pairs {
-            hasher.update(pair.as_bytes());
+        for (agent, models) in pairs {
+            hasher.update(agent.as_bytes());
+            hasher.update(b"|");
+            for (idx, model) in models.iter().enumerate() {
+                if idx > 0 {
+                    hasher.update(b",");
+                }
+                hasher.update(model.as_bytes());
+            }
             hasher.update(b"\n");
         }
         let digest = hasher.finalize();

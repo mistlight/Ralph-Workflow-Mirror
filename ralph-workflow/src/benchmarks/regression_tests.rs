@@ -342,11 +342,12 @@ fn regression_test_boxed_slice_memory_savings() {
     let vec_size = size_of::<Vec<String>>();
     let boxed_slice_size = size_of::<Box<[String]>>();
 
-    assert_eq!(vec_size, 24, "Vec<T> should be 24 bytes");
-    assert_eq!(boxed_slice_size, 16, "Box<[T]> should be 16 bytes");
-
-    // Verify 8 byte savings per instance
-    assert_eq!(vec_size - boxed_slice_size, 8);
+    // Vec<T> is three usize values (ptr + len + cap)
+    assert_eq!(vec_size, 3 * size_of::<usize>());
+    // Box<[T]> is a fat pointer (data ptr + len)
+    assert_eq!(boxed_slice_size, 2 * size_of::<usize>());
+    // Savings: one usize per instance
+    assert_eq!(vec_size - boxed_slice_size, size_of::<usize>());
 }
 
 #[test]
@@ -359,9 +360,9 @@ fn regression_test_continuation_state_boxed_fields() {
     let boxed_size = size_of::<Option<Box<[String]>>>();
     let vec_size = size_of::<Option<Vec<String>>>();
 
-    assert_eq!(boxed_size, 16, "Option<Box<[String]>> should be 16 bytes");
-    assert_eq!(vec_size, 24, "Option<Vec<String>> should be 24 bytes");
-    assert_eq!(vec_size - boxed_size, 8, "Should save 8 bytes per field");
+    assert_eq!(boxed_size, 2 * size_of::<usize>());
+    assert_eq!(vec_size, 3 * size_of::<usize>());
+    assert_eq!(vec_size - boxed_size, size_of::<usize>());
 }
 
 #[test]
@@ -382,20 +383,23 @@ fn test_prompt_inputs_builder_no_allocation() {
 }
 
 #[test]
-fn regression_test_agent_chain_boxed_lists() {
-    // Verify AgentChainState uses Box<[String]> for immutable agent lists
+fn regression_test_agent_chain_arc_lists() {
+    // Verify AgentChainState uses Arc<[String]> for immutable agent lists
+    use crate::reducer::state::AgentChainState;
     use std::mem::size_of;
+    use std::sync::Arc;
 
-    let boxed_size = size_of::<Box<[String]>>();
+    // Type-level assertions: ensure the fields match the intended Arc-based design.
+    let state = AgentChainState::initial();
+    let _: &Arc<[String]> = &state.agents;
+    let _: &Arc<[Vec<String>]> = &state.models_per_agent;
+
+    let arc_slice_size = size_of::<Arc<[String]>>();
     let vec_size = size_of::<Vec<String>>();
 
-    assert_eq!(boxed_size, 16, "Box<[String]> should be 16 bytes");
-    assert_eq!(vec_size, 24, "Vec<String> should be 24 bytes");
-    assert_eq!(
-        vec_size - boxed_size,
-        8,
-        "Should save 8 bytes per agent list"
-    );
+    assert_eq!(arc_slice_size, 2 * size_of::<usize>());
+    assert_eq!(vec_size, 3 * size_of::<usize>());
+    assert_eq!(vec_size - arc_slice_size, size_of::<usize>());
 }
 
 #[test]
@@ -454,16 +458,9 @@ fn regression_test_modified_files_detail_memory_efficiency() {
     // Verify memory savings vs Vec
     let option_boxed_size = size_of::<Option<Box<[String]>>>();
     let vec_size = size_of::<Vec<String>>();
-    assert_eq!(
-        option_boxed_size, 16,
-        "Option<Box<[String]>> should be 16 bytes"
-    );
-    assert_eq!(vec_size, 24, "Vec<String> should be 24 bytes");
-    assert_eq!(
-        vec_size - option_boxed_size,
-        8,
-        "Should save 8 bytes per field"
-    );
+    assert_eq!(option_boxed_size, 2 * size_of::<usize>());
+    assert_eq!(vec_size, 3 * size_of::<usize>());
+    assert_eq!(vec_size - option_boxed_size, size_of::<usize>());
 }
 
 #[test]
@@ -471,19 +468,18 @@ fn regression_test_boxed_str_size_optimization() {
     use std::mem::size_of;
 
     // Verify Box<str> is smaller than String
-    assert_eq!(size_of::<Box<str>>(), 16, "Box<str> should be 16 bytes");
-    assert_eq!(size_of::<String>(), 24, "String should be 24 bytes");
+    assert_eq!(size_of::<Box<str>>(), 2 * size_of::<usize>());
+    assert_eq!(size_of::<String>(), 3 * size_of::<usize>());
     assert_eq!(
         size_of::<Option<Box<str>>>(),
-        16,
-        "Option<Box<str>> should be 16 bytes"
+        size_of::<Box<str>>(),
+        "Option<Box<str>> should have niche optimization"
     );
 
     // Verify savings
     assert_eq!(
         size_of::<String>() - size_of::<Box<str>>(),
-        8,
-        "Should save 8 bytes per string field"
+        size_of::<usize>()
     );
 }
 
@@ -532,8 +528,5 @@ fn regression_test_agent_chain_arc_optimization() {
     // No deep copy of the underlying Vec<String> occurs
     use std::mem::size_of;
     let arc_size = size_of::<Arc<[String]>>();
-    assert_eq!(
-        arc_size, 16,
-        "Arc<[String]> should be 16 bytes (fat pointer)"
-    );
+    assert_eq!(arc_size, 2 * size_of::<usize>());
 }

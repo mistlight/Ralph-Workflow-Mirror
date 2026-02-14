@@ -139,7 +139,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
             logger.info("Recent Activity:");
 
             for step in &recent_steps {
-                let outcome_emoji = match step.outcome {
+                let outcome_emoji = match &step.outcome {
                     crate::checkpoint::execution_history::StepOutcome::Success { .. } => "✓",
                     crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "✗",
                     crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "◐",

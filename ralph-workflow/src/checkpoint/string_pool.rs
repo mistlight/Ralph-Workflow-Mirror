@@ -4,7 +4,7 @@
 //! (like phase names and agent names) by storing them as Arc<str>. This reduces
 //! memory usage when the same strings appear many times across execution history.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// String pool for deduplicating commonly repeated strings in execution history.
@@ -28,7 +28,9 @@ use std::sync::Arc;
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct StringPool {
-    pool: HashMap<String, Arc<str>>,
+    // Store a single allocation per unique string (the Arc payload).
+    // Using `Arc<str>` as the set key enables cheap cloning and lookup by `&str`.
+    pool: HashSet<Arc<str>>,
 }
 
 impl StringPool {
@@ -46,15 +48,14 @@ impl StringPool {
     /// hash table resizing during initial population.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            pool: HashMap::with_capacity(capacity),
+            pool: HashSet::with_capacity(capacity),
         }
     }
 
-    /// Get or insert a string into the pool, returning an Arc<str>.
+    /// Get or insert a string slice into the pool, returning an Arc<str>.
     ///
-    /// If the string already exists in the pool, returns a clone of the existing
-    /// Arc<str> (which is a cheap reference count increment). If the string is
-    /// new, it is inserted into the pool.
+    /// Prefer this when the input is already a `&str` to avoid allocating a
+    /// temporary `String` on repeated calls.
     ///
     /// # Example
     ///
@@ -66,12 +67,35 @@ impl StringPool {
     /// let s2 = pool.intern("test");
     /// assert!(std::sync::Arc::ptr_eq(&s1, &s2));
     /// ```
+    pub fn intern_str(&mut self, s: &str) -> Arc<str> {
+        if let Some(existing) = self.pool.get(s) {
+            return Arc::clone(existing);
+        }
+
+        let interned: Arc<str> = Arc::from(s);
+        self.pool.insert(Arc::clone(&interned));
+        interned
+    }
+
+    /// Get or insert an owned string into the pool, returning an Arc<str>.
+    ///
+    /// This path can reuse the allocation of the provided `String` when inserting.
+    pub fn intern_string(&mut self, s: String) -> Arc<str> {
+        if let Some(existing) = self.pool.get(s.as_str()) {
+            return Arc::clone(existing);
+        }
+
+        let interned: Arc<str> = Arc::from(s);
+        self.pool.insert(Arc::clone(&interned));
+        interned
+    }
+
+    /// Backward-compatible convenience: accepts any `Into<String>`.
+    ///
+    /// Note: callers passing `&str` should prefer `intern_str()` to avoid
+    /// allocating a temporary `String` on repeated lookups.
     pub fn intern(&mut self, s: impl Into<String>) -> Arc<str> {
-        let s = s.into();
-        self.pool
-            .entry(s.clone())
-            .or_insert_with(|| Arc::from(s.as_str()))
-            .clone()
+        self.intern_string(s.into())
     }
 
     /// Get the number of unique strings in the pool.
@@ -112,8 +136,8 @@ mod tests {
     #[test]
     fn test_identical_strings_return_same_arc() {
         let mut pool = StringPool::new();
-        let s1 = pool.intern("Development");
-        let s2 = pool.intern("Development");
+        let s1 = pool.intern_str("Development");
+        let s2 = pool.intern_str("Development");
 
         // Both should point to the same allocation
         assert!(Arc::ptr_eq(&s1, &s2));
@@ -124,8 +148,8 @@ mod tests {
     #[test]
     fn test_different_strings_return_different_arc() {
         let mut pool = StringPool::new();
-        let s1 = pool.intern("Development");
-        let s2 = pool.intern("Review");
+        let s1 = pool.intern_str("Development");
+        let s2 = pool.intern_str("Review");
 
         // Should point to different allocations
         assert!(!Arc::ptr_eq(&s1, &s2));
@@ -139,7 +163,7 @@ mod tests {
 
         // Intern the same string multiple times
         for _ in 0..100 {
-            pool.intern("Development");
+            pool.intern_str("Development");
         }
 
         // Pool should still only contain one entry
@@ -151,7 +175,7 @@ mod tests {
         let mut pool = StringPool::new();
 
         // Test with &str
-        let s1 = pool.intern("test");
+        let s1 = pool.intern_str("test");
         // Test with String
         let s2 = pool.intern("test".to_string());
         // Test with owned String
@@ -164,10 +188,25 @@ mod tests {
     }
 
     #[test]
+    fn test_intern_str_and_intern_string_share_entries() {
+        // Regression test: the pool should store a single interned Arc<str> per
+        // unique string, regardless of whether callers use &str or String.
+        let mut pool = StringPool::new();
+
+        let s1 = pool.intern_str("test");
+        let s2 = pool.intern("test".to_string());
+        let s3 = pool.intern(String::from("test"));
+
+        assert!(Arc::ptr_eq(&s1, &s2));
+        assert!(Arc::ptr_eq(&s2, &s3));
+        assert_eq!(pool.len(), 1);
+    }
+
+    #[test]
     fn test_clear() {
         let mut pool = StringPool::new();
-        pool.intern("Development");
-        pool.intern("Review");
+        pool.intern_str("Development");
+        pool.intern_str("Review");
         assert_eq!(pool.len(), 2);
 
         pool.clear();
@@ -178,7 +217,7 @@ mod tests {
     #[test]
     fn test_arc_content_matches_input() {
         let mut pool = StringPool::new();
-        let arc = pool.intern("Development");
+        let arc = pool.intern_str("Development");
         assert_eq!(&*arc, "Development");
     }
 
@@ -189,7 +228,7 @@ mod tests {
 
         // Create 1000 references to the same string
         for _ in 0..1000 {
-            arcs.push(pool.intern("Development"));
+            arcs.push(pool.intern_str("Development"));
         }
 
         // Pool should still only contain one entry
@@ -204,8 +243,8 @@ mod tests {
     #[test]
     fn test_empty_string() {
         let mut pool = StringPool::new();
-        let s1 = pool.intern("");
-        let s2 = pool.intern("");
+        let s1 = pool.intern_str("");
+        let s2 = pool.intern_str("");
 
         assert!(Arc::ptr_eq(&s1, &s2));
         assert_eq!(&*s1, "");
@@ -215,8 +254,8 @@ mod tests {
     #[test]
     fn test_clone_pool() {
         let mut pool = StringPool::new();
-        pool.intern("Development");
-        pool.intern("Review");
+        pool.intern_str("Development");
+        pool.intern_str("Review");
 
         let cloned = pool.clone();
         assert_eq!(pool.len(), cloned.len());
