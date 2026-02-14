@@ -512,6 +512,12 @@ mod workspace_tests {
         let empty_json = workspace.read(Path::new(".agent/checkpoint.json")).unwrap();
         let empty_size = empty_json.len();
 
+        let empty_estimate = estimate_checkpoint_size(&checkpoint_empty);
+        assert!(
+            empty_estimate >= empty_size,
+            "estimate should be conservative for empty checkpoints"
+        );
+
         // Base size should be within 50% of actual (conservative estimate)
         assert!(
             empty_size <= 15_000,
@@ -539,22 +545,28 @@ mod workspace_tests {
         let json_100 = workspace.read(Path::new(".agent/checkpoint.json")).unwrap();
         let size_100 = json_100.len();
 
-        // Should be roughly BASE_SIZE + 100 * BYTES_PER_ENTRY
-        // Estimate: 10_000 + 100 * 400 = 50_000
-        // Allow 50% margin: 25_000 to 75_000
+        let estimate_100 = estimate_checkpoint_size(&checkpoint_100);
         assert!(
-            (25_000..=75_000).contains(&size_100),
-            "100-entry checkpoint should be 25-75KB, got {}",
-            size_100
+            estimate_100 >= size_100,
+            "estimate should be conservative for 100-entry checkpoints"
         );
 
-        // Verify per-entry growth is reasonable
-        let per_entry_bytes = (size_100 - empty_size) / 100;
         assert!(
-            (200..=600).contains(&per_entry_bytes),
-            "Per-entry cost should be 200-600 bytes, got {}",
-            per_entry_bytes
+            estimate_100 <= size_100.saturating_mul(4).saturating_add(10_000),
+            "estimate should not over-allocate excessively"
         );
+
+        // Growth should roughly scale with history length.
+        assert!(
+            size_100 > empty_size,
+            "serialized checkpoint should grow with execution history"
+        );
+    }
+
+    #[test]
+    fn test_estimate_checkpoint_size_is_overflow_safe_and_capped() {
+        let capped = estimate_checkpoint_size_from_history_len(usize::MAX);
+        assert_eq!(capped, MAX_CHECKPOINT_ESTIMATE_BYTES);
     }
 
     #[test]

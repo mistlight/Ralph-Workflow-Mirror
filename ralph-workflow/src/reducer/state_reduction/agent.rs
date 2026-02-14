@@ -242,7 +242,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                         }
                     }
                     PipelinePhase::CommitMessage => state.metrics.increment_xsd_retry_commit(),
-                    _ => state.metrics,
+                    _ => state.metrics.increment_xsd_retry_attempts_total(),
                 },
                 ..state
             }

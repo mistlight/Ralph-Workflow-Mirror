@@ -24,6 +24,24 @@ where
     })
 }
 
+fn serialize_option_boxed_string_slice_empty_if_none<S>(
+    value: &Option<Box<[String]>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeSeq;
+
+    match value {
+        Some(values) => values.serialize(serializer),
+        None => {
+            let seq = serializer.serialize_seq(Some(0))?;
+            seq.end()
+        }
+    }
+}
+
 /// Outcome of an execution step.
 ///
 /// # Memory Optimization
@@ -38,7 +56,8 @@ pub enum StepOutcome {
         output: Option<Box<str>>,
         #[serde(
             default,
-            deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+            deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty",
+            serialize_with = "serialize_option_boxed_string_slice_empty_if_none"
         )]
         files_modified: Option<Box<[String]>>,
         #[serde(default)]
@@ -52,7 +71,8 @@ pub enum StepOutcome {
         exit_code: Option<i32>,
         #[serde(
             default,
-            deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+            deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty",
+            serialize_with = "serialize_option_boxed_string_slice_empty_if_none"
         )]
         signals: Option<Box<[String]>>,
     },
@@ -964,13 +984,25 @@ mod tests {
             _ => panic!("Expected Success variant"),
         }
 
-        // Round-trip should not reintroduce [] for empty fields.
+        // Round-trip should preserve the on-disk shape for compatibility.
         let json = serde_json::to_string(&outcome).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(
             value.get("Success").and_then(|v| v.get("files_modified")),
-            Some(&serde_json::Value::Null),
-            "expected canonical serialization to use null (not [])"
+            Some(&serde_json::Value::Array(vec![])),
+            "expected serialization to use [] (not null) for compatibility"
+        );
+    }
+
+    #[test]
+    fn test_step_outcome_failure_signals_serialize_as_empty_array_when_none() {
+        let outcome = StepOutcome::failure("boom".to_string(), true);
+        let json = serde_json::to_string(&outcome).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value.get("Failure").and_then(|v| v.get("signals")),
+            Some(&serde_json::Value::Array(vec![])),
+            "expected serialization to use [] (not null) for signals"
         );
     }
 

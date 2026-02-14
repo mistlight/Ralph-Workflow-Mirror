@@ -208,11 +208,6 @@ impl AgentChainState {
                 return agent_ord;
             }
 
-            let len_ord = models_a.len().cmp(&models_b.len());
-            if len_ord != Ordering::Equal {
-                return len_ord;
-            }
-
             for (a, b) in models_a.iter().zip(models_b.iter()) {
                 let ord = a.cmp(b);
                 if ord != Ordering::Equal {
@@ -220,7 +215,7 @@ impl AgentChainState {
                 }
             }
 
-            Ordering::Equal
+            models_a.len().cmp(&models_b.len())
         });
 
         let mut hasher = Sha256::new();
@@ -234,6 +229,34 @@ impl AgentChainState {
                 }
                 hasher.update(model.as_bytes());
             }
+            hasher.update(b"\n");
+        }
+        let digest = hasher.finalize();
+        digest.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[cfg(test)]
+    fn legacy_consumer_signature_sha256_for_test(&self) -> String {
+        let mut rendered: Vec<String> = self
+            .agents
+            .iter()
+            .enumerate()
+            .map(|(idx, agent)| {
+                let models = self
+                    .models_per_agent
+                    .get(idx)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+                format!("{}|{}", agent, models.join(","))
+            })
+            .collect();
+
+        rendered.sort();
+
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{:?}\n", self.current_role).as_bytes());
+        for line in rendered {
+            hasher.update(line.as_bytes());
             hasher.update(b"\n");
         }
         let digest = hasher.finalize();
@@ -389,7 +412,8 @@ impl AgentChainState {
         if target_index <= self.current_agent_index {
             // Treat switching to an earlier agent as starting a new retry cycle.
             let new_retry_cycle = self.retry_cycle + 1;
-            let new_backoff_pending_ms = if new_retry_cycle >= self.max_cycles {
+            let new_backoff_pending_ms = if new_retry_cycle >= self.max_cycles && target_index == 0
+            {
                 None
             } else {
                 // Create temporary state to calculate backoff
@@ -664,6 +688,61 @@ impl AgentChainState {
             self.max_backoff_ms,
             cycle_index,
         )
+    }
+}
+
+#[cfg(test)]
+mod consumer_signature_tests {
+    use super::*;
+
+    #[test]
+    fn test_consumer_signature_sorting_matches_legacy_rendered_pair_ordering() {
+        // This regression test locks in the pre-optimization signature ordering:
+        // sort by the lexicographic ordering of the rendered `agent|models_csv` strings.
+        //
+        // A length-first models compare changes ordering when the first model differs.
+        // Example: "a,z" must sort before "b" even though it is longer.
+        let state = AgentChainState::initial().with_agents(
+            vec!["agent".to_string(), "agent".to_string()],
+            vec![
+                vec!["b".to_string()],
+                vec!["a".to_string(), "z".to_string()],
+            ],
+            AgentRole::Developer,
+        );
+
+        assert_eq!(
+            state.consumer_signature_sha256(),
+            state.legacy_consumer_signature_sha256_for_test(),
+            "consumer signature ordering must remain stable for the same configured consumers"
+        );
+    }
+}
+
+#[cfg(test)]
+mod backoff_semantics_tests {
+    use super::*;
+
+    #[test]
+    fn test_switch_to_agent_named_preserves_backoff_when_retry_cycle_hits_max_but_state_is_not_exhausted(
+    ) {
+        let mut state = AgentChainState::initial().with_agents(
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            vec![vec![], vec![], vec![]],
+            AgentRole::Developer,
+        );
+        state.max_cycles = 2;
+        state.retry_cycle = 1;
+        state.current_agent_index = 2;
+
+        let next = state.switch_to_agent_named("b");
+
+        assert_eq!(next.current_agent_index, 1);
+        assert_eq!(next.retry_cycle, 2);
+        assert!(
+            next.backoff_pending_ms.is_some(),
+            "backoff should remain pending unless the state is fully exhausted"
+        );
     }
 }
 

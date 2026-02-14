@@ -20,7 +20,10 @@ pub struct MemorySnapshot {
     pub iteration: u32,
     /// Execution history length
     pub execution_history_len: usize,
-    /// Estimated execution history heap size (bytes)
+    /// Deterministic size proxy for execution history (bytes).
+    ///
+    /// This is not a true allocator-backed heap measurement. It uses string lengths as
+    /// a stable, platform-independent proxy suitable for regression tracking.
     pub execution_history_heap_bytes: usize,
     /// Checkpoint saved count
     pub checkpoint_count: u32,
@@ -43,7 +46,10 @@ impl MemorySnapshot {
     }
 }
 
-/// Estimate heap size of execution history in bytes.
+/// Estimate a deterministic "heap bytes" proxy for execution history.
+///
+/// Uses string lengths (and collection element lengths) to produce a stable number that
+/// tracks payload growth without depending on allocator behavior.
 fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -> usize {
     use crate::checkpoint::execution_history::StepOutcome;
 

@@ -398,7 +398,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
     let issues_xml =
         "<ralph-issues><ralph-issue>[high] C:\\repo\\src\\lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
-        .with_file("C:/repo/src/lib.rs", "fn main() {\n    let y = 2;\n}\n")
+        .with_file("src/lib.rs", "fn main() {\n    let y = 2;\n}\n")
         .with_file(xml_paths::ISSUES_XML, issues_xml);
 
     let colors = Colors { enabled: false };

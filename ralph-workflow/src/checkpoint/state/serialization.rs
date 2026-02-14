@@ -97,8 +97,12 @@ pub fn save_checkpoint_with_workspace(
         )
     })?;
 
-    // SAFETY: serde_json guarantees valid UTF-8
-    let json = unsafe { String::from_utf8_unchecked(buf) };
+    let json = String::from_utf8(buf).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Checkpoint JSON was not valid UTF-8: {e}"),
+        )
+    })?;
 
     // Ensure the .agent directory exists
     workspace.create_dir_all(Path::new(AGENT_DIR))?;
@@ -116,18 +120,26 @@ pub fn save_checkpoint_with_workspace(
 /// The estimate is conservative (slightly over) to avoid reallocation while
 /// not wasting excessive memory.
 fn estimate_checkpoint_size(checkpoint: &PipelineCheckpoint) -> usize {
-    // Base size: metadata + config + snapshots
-    const BASE_SIZE: usize = 10_000;
-    // Average bytes per execution history entry (includes JSON overhead)
-    const BYTES_PER_ENTRY: usize = 400;
-
     let history_len = checkpoint
         .execution_history
         .as_ref()
         .map(|h| h.steps.len())
         .unwrap_or(0);
 
-    BASE_SIZE + (history_len * BYTES_PER_ENTRY)
+    estimate_checkpoint_size_from_history_len(history_len)
+}
+
+const MAX_CHECKPOINT_ESTIMATE_BYTES: usize = 50 * 1024 * 1024;
+
+fn estimate_checkpoint_size_from_history_len(history_len: usize) -> usize {
+    // Base size: metadata + config + snapshots
+    const BASE_SIZE: usize = 10_000;
+    // Average bytes per execution history entry (includes JSON overhead)
+    const BYTES_PER_ENTRY: usize = 400;
+
+    BASE_SIZE
+        .saturating_add(history_len.saturating_mul(BYTES_PER_ENTRY))
+        .min(MAX_CHECKPOINT_ESTIMATE_BYTES)
 }
 
 /// Load an existing checkpoint using the workspace.

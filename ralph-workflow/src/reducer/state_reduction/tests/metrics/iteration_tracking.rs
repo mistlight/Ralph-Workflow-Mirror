@@ -154,6 +154,25 @@ fn test_xsd_retry_increments_total_and_phase_counters() {
 }
 
 #[test]
+fn test_agent_xsd_validation_failed_always_increments_total_even_outside_known_phases() {
+    use crate::reducer::event::PipelinePhase;
+
+    let mut state = PipelineState::initial(3, 0);
+    state.phase = PipelinePhase::AwaitingDevFix;
+    assert_eq!(state.metrics.xsd_retry_attempts_total, 0);
+
+    let event = PipelineEvent::agent_xsd_validation_failed(
+        AgentRole::Developer,
+        ArtifactType::DevelopmentResult,
+        "validation error".to_string(),
+        1,
+    );
+    let state = reduce(state, event);
+
+    assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
+}
+
+#[test]
 fn test_agent_fallback_increments_counter() {
     let state = PipelineState::initial(3, 0);
     let event = PipelineEvent::agent_fallback_triggered(

@@ -78,10 +78,11 @@ fn extract_issue_snippets(
             (None, None, None)
         };
 
-        let Some(file) = file else { continue };
-        if !is_safe_workspace_relative_path(&file) {
+        let Some(file) =
+            file.and_then(|f| normalize_issue_file_path_to_workspace_relative(&f, workspace))
+        else {
             continue;
-        }
+        };
         let Some(start) = line_start else { continue };
         let end = line_end.unwrap_or(start);
 
@@ -106,6 +107,64 @@ fn extract_issue_snippets(
     }
 
     snippets
+}
+
+fn normalize_issue_file_path_to_workspace_relative(
+    file: &str,
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<String> {
+    let trimmed = file.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Reject UNC-like paths regardless of platform.
+    if trimmed.starts_with("//") {
+        return None;
+    }
+
+    let normalized = trimmed.replace('\\', "/");
+
+    if is_safe_workspace_relative_path(&normalized) {
+        return Some(normalized);
+    }
+
+    let root = workspace.root();
+    let path = Path::new(&normalized);
+
+    // Accept absolute paths only when they are under the workspace root.
+    if path.is_absolute() {
+        let stripped = path.strip_prefix(root).ok()?;
+        let candidate = stripped.to_string_lossy().replace('\\', "/");
+        if is_safe_workspace_relative_path(&candidate) {
+            return Some(candidate);
+        }
+        return None;
+    }
+
+    // Normalize Windows drive-style paths like "C:\\repo\\src\\lib.rs".
+    // Only accept them when they clearly refer to the current workspace root.
+    let bytes = normalized.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' {
+        let first = bytes[0] as char;
+        if first.is_ascii_alphabetic() {
+            let remainder = normalized[2..].trim_start_matches('/');
+            let base = root.file_name()?.to_str()?;
+            let remainder = remainder.strip_prefix(base)?;
+            let remainder = remainder.trim_start_matches('/');
+            if remainder.is_empty() {
+                return None;
+            }
+
+            let candidate = remainder.to_string();
+            if is_safe_workspace_relative_path(&candidate) {
+                return Some(candidate);
+            }
+            return None;
+        }
+    }
+
+    None
 }
 
 fn is_safe_workspace_relative_path(path_str: &str) -> bool {
