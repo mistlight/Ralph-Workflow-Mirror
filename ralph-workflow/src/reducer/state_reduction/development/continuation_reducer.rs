@@ -21,9 +21,8 @@ pub(super) fn reduce_continuation_event(
             next_steps,
         } => {
             // Trigger continuation with context from the previous attempt
-            let mut metrics = state.metrics.clone();
             // Increment continuation attempt counter
-            metrics.dev_continuation_attempt += 1;
+            let metrics = state.metrics.increment_dev_continuation_attempt();
 
             PipelineState {
                 iteration,
@@ -53,8 +52,7 @@ pub(super) fn reduce_continuation_event(
             total_continuation_attempts: _,
         } => {
             // Continuation succeeded; proceed to CommitMessage and reset continuation state.
-            let mut metrics = state.metrics.clone();
-            metrics.dev_iterations_completed += 1;
+            let metrics = state.metrics.increment_dev_iterations_completed();
 
             PipelineState {
                 phase: crate::reducer::event::PipelinePhase::CommitMessage,
@@ -90,14 +88,14 @@ pub(super) fn reduce_continuation_event(
             // Policy: After configured XSD retries are exhausted, switch to next agent.
             // This keeps invalid output retry logic in the reducer, not the handler.
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
-            let mut metrics = state.metrics.clone();
 
             // Only increment metrics if we're actually retrying (not exhausted)
             let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-            if will_retry {
-                metrics.xsd_retry_development += 1;
-                metrics.xsd_retry_attempts_total += 1;
-            }
+            let metrics = if will_retry {
+                state.metrics.increment_xsd_retry_development()
+            } else {
+                state.metrics
+            };
 
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent

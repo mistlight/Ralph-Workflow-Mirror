@@ -53,19 +53,22 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_started(
     state: PipelineState,
     pass: u32,
 ) -> PipelineState {
-    let mut metrics = state.metrics.clone();
     // Increment for the first PassStarted (pass 0) and for any truly new pass.
     // A PassStarted re-emitted for the same pass (retry) must not increment.
-    if state.metrics.review_passes_started == 0 || state.reviewer_pass != pass {
-        metrics.review_passes_started += 1;
+    let is_first_pass = state.metrics.review_passes_started == 0;
+    let is_new_pass = state.reviewer_pass != pass;
+
+    let mut metrics = state.metrics;
+    if is_first_pass || is_new_pass {
+        metrics = metrics.increment_review_passes_started();
     }
     // Update current pass tracker
-    metrics.current_review_pass = pass;
+    metrics = metrics.set_current_review_pass(pass);
     // Reset per-pass fix continuation attempt counter when starting a new pass.
     // If orchestration re-emits PassStarted for the same pass (retry), preserve the
     // current per-pass attempt counter so retries don't erase history.
-    if state.reviewer_pass != pass {
-        metrics.fix_continuation_attempt = 0;
+    if is_new_pass {
+        metrics = metrics.reset_fix_continuation_attempt();
     }
 
     PipelineState {
@@ -183,8 +186,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_agent_invoked(
     state: PipelineState,
     pass: u32,
 ) -> PipelineState {
-    let mut metrics = state.metrics.clone();
-    metrics.review_runs_total += 1;
+    let metrics = state.metrics.increment_review_runs_total();
 
     PipelineState {
         review_agent_invoked_pass: Some(pass),
@@ -229,7 +231,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_issues_xml_validated(
             pass,
             issues_found,
             clean_no_issues,
-            issues,
+            issues: issues.into_boxed_slice(),
             no_issues_found,
         }),
         continuation: ContinuationState {

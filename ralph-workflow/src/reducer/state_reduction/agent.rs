@@ -165,8 +165,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             ..
         } => {
             let state = reset_phase_xml_cleanup_for_retry(state);
-            let mut metrics = state.metrics.clone();
-            metrics.agent_fallbacks_total += 1;
+            let metrics = state.metrics.increment_agent_fallbacks_total();
 
             PipelineState {
                 agent_chain: state
@@ -192,8 +191,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             ..state
         },
         AgentEvent::ModelFallbackTriggered { .. } => {
-            let mut metrics = state.metrics.clone();
-            metrics.model_fallbacks_total += 1;
+            let metrics = state.metrics.increment_model_fallbacks_total();
 
             PipelineState {
                 agent_chain: state.agent_chain.advance_to_next_model(),
@@ -202,8 +200,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             }
         }
         AgentEvent::RetryCycleStarted { .. } => {
-            let mut metrics = state.metrics.clone();
-            metrics.retry_cycles_started_total += 1;
+            let metrics = state.metrics.increment_retry_cycles_started_total();
 
             PipelineState {
                 agent_chain: state.agent_chain.clear_backoff_pending(),
@@ -238,27 +235,24 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         // XSD validation failed: trigger XSD retry via continuation state
         AgentEvent::XsdValidationFailed { .. } => {
             let continuation = state.continuation.trigger_xsd_retry();
-            let mut metrics = state.metrics.clone();
-
-            metrics.xsd_retry_attempts_total += 1;
 
             // Increment per-phase counter based on current phase
-            match state.phase {
-                PipelinePhase::Planning => metrics.xsd_retry_planning += 1,
-                PipelinePhase::Development => metrics.xsd_retry_development += 1,
+            let metrics = match state.phase {
+                PipelinePhase::Planning => state.metrics.increment_xsd_retry_planning(),
+                PipelinePhase::Development => state.metrics.increment_xsd_retry_development(),
                 PipelinePhase::Review => {
                     // Distinguish review vs fix based on whether we're in fix flow
                     if state.fix_agent_invoked_pass.is_some()
                         && state.fix_result_xml_extracted_pass.is_none()
                     {
-                        metrics.xsd_retry_fix += 1;
+                        state.metrics.increment_xsd_retry_fix()
                     } else {
-                        metrics.xsd_retry_review += 1;
+                        state.metrics.increment_xsd_retry_review()
                     }
                 }
-                PipelinePhase::CommitMessage => metrics.xsd_retry_commit += 1,
-                _ => {}
-            }
+                PipelinePhase::CommitMessage => state.metrics.increment_xsd_retry_commit(),
+                _ => state.metrics,
+            };
 
             PipelineState {
                 continuation,
@@ -290,13 +284,14 @@ fn reduce_same_agent_retryable_failure(
     // - Retry same agent first for timeouts/internal errors.
     // - Fall back to next agent only after exhausting the configured budget.
     let new_retry_count = state.continuation.same_agent_retry_count + 1;
-    let mut metrics = state.metrics.clone();
 
     // Only increment metrics if we're actually retrying (not exhausted)
     let will_retry = new_retry_count < state.continuation.max_same_agent_retry_count;
-    if will_retry {
-        metrics.same_agent_retry_attempts_total += 1;
-    }
+    let metrics = if will_retry {
+        state.metrics.increment_same_agent_retry_attempts_total()
+    } else {
+        state.metrics
+    };
 
     if new_retry_count >= state.continuation.max_same_agent_retry_count {
         PipelineState {

@@ -131,14 +131,14 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
         PlanningEvent::OutputValidationFailed { iteration, attempt }
         | PlanningEvent::PlanXmlMissing { iteration, attempt } => {
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
-            let mut metrics = state.metrics.clone();
 
             // Only increment metrics if we're actually retrying (not exhausted)
             let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-            if will_retry {
-                metrics.xsd_retry_planning += 1;
-                metrics.xsd_retry_attempts_total += 1;
-            }
+            let metrics = if will_retry {
+                state.metrics.increment_xsd_retry_planning()
+            } else {
+                state.metrics
+            };
 
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent

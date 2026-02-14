@@ -502,7 +502,7 @@ fn test_review_pass_completed_applies_outcome_not_reruns() {
             pass: 2,
             issues_found: false,
             clean_no_issues: true,
-            issues: Vec::new(),
+            issues: Vec::new().into_boxed_slice(),
             no_issues_found: Some("ok".to_string()),
         }),
         review_issues_markdown_written_pass: Some(2),

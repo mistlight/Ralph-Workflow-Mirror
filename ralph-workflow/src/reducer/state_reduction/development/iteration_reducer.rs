@@ -33,14 +33,15 @@ pub(super) fn reduce_iteration_event(
             ..state
         },
         DevelopmentEvent::IterationStarted { iteration } => {
-            let mut metrics = state.metrics.clone();
             // New iteration started - increment iterations counter
             // (not incremented for continuations within same iteration)
-            metrics.dev_iterations_started += 1;
             // Reset per-iteration analysis attempt counter
-            metrics.analysis_attempts_in_current_iteration = 0;
             // Reset per-iteration continuation attempt counter
-            metrics.dev_continuation_attempt = 0;
+            let metrics = state
+                .metrics
+                .increment_dev_iterations_started()
+                .reset_analysis_attempts_in_current_iteration()
+                .reset_dev_continuation_attempt();
 
             PipelineState {
                 iteration,
@@ -89,10 +90,9 @@ pub(super) fn reduce_iteration_event(
             ..state
         },
         DevelopmentEvent::AgentInvoked { iteration } => {
-            let mut metrics = state.metrics.clone();
             // Developer agent invoked - increment attempt counter
             // (includes both initial attempts and continuations)
-            metrics.dev_attempts_total += 1;
+            let metrics = state.metrics.increment_dev_attempts_total();
 
             PipelineState {
                 development_agent_invoked_iteration: Some(iteration),
@@ -108,9 +108,10 @@ pub(super) fn reduce_iteration_event(
             }
         }
         DevelopmentEvent::AnalysisAgentInvoked { iteration } => {
-            let mut metrics = state.metrics.clone();
-            metrics.analysis_attempts_total += 1;
-            metrics.analysis_attempts_in_current_iteration += 1;
+            let metrics = state
+                .metrics
+                .increment_analysis_attempts_total()
+                .increment_analysis_attempts_in_current_iteration();
 
             PipelineState {
                 analysis_agent_invoked_iteration: Some(iteration),
@@ -138,7 +139,7 @@ pub(super) fn reduce_iteration_event(
                     iteration,
                     status,
                     summary,
-                    files_changed,
+                    files_changed: files_changed.map(|v| v.into_boxed_slice()),
                     next_steps,
                 },
             ),
@@ -187,7 +188,7 @@ pub(super) fn reduce_iteration_event(
                     iteration,
                     status: outcome.status,
                     summary: outcome.summary.clone(),
-                    files_changed: outcome.files_changed.clone(),
+                    files_changed: outcome.files_changed.as_ref().map(|b| b.to_vec()),
                     next_steps: outcome.next_steps.clone(),
                 }
             };
@@ -200,8 +201,7 @@ pub(super) fn reduce_iteration_event(
         } => {
             if output_valid {
                 // After a successful dev iteration, go to CommitMessage phase to create a commit.
-                let mut metrics = state.metrics.clone();
-                metrics.dev_iterations_completed += 1;
+                let metrics = state.metrics.increment_dev_iterations_completed();
 
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::CommitMessage,

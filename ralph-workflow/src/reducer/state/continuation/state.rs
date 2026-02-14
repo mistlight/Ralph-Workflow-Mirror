@@ -300,7 +300,7 @@ impl ContinuationState {
     /// where prior continuation/retry state should not carry over. For partial
     /// resets (e.g., resetting only fix continuation while preserving development
     /// continuation state), use field-level updates instead.
-    pub fn reset(&self) -> Self {
+    pub fn reset(self) -> Self {
         // Preserve configured limits, reset everything else including loop detection counters.
         // The struct initialization below explicitly preserves max_* fields,
         // then the spread operator ..Self::default() resets ALL other fields

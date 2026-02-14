@@ -23,10 +23,11 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
     };
 
     // Increment completed passes counter if no issues found (clean pass)
-    let mut metrics = state.metrics.clone();
-    if !issues_found {
-        metrics.review_passes_completed += 1;
-    }
+    let metrics = if !issues_found {
+        state.metrics.increment_review_passes_completed()
+    } else {
+        state.metrics
+    };
 
     if next_phase == PipelinePhase::CommitMessage {
         PipelineState {
@@ -132,8 +133,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
     // Clean pass means no issues found in this pass.
     // Advance to the next pass when more passes remain.
     // Increment completed passes counter
-    let mut metrics = state.metrics.clone();
-    metrics.review_passes_completed += 1;
+    let metrics = state.metrics.increment_review_passes_completed();
 
     let next_pass = pass + 1;
     let next_phase = if next_pass >= state.total_reviewer_passes {

@@ -83,8 +83,7 @@ pub(super) fn reduce_fix_result_xml_cleaned(state: PipelineState, pass: u32) -> 
 /// Marks fix agent as invoked for this pass and increments metrics.
 /// Clears retry flags since agent invocation is a fresh attempt.
 pub(super) fn reduce_fix_agent_invoked(state: PipelineState, pass: u32) -> PipelineState {
-    let mut metrics = state.metrics.clone();
-    metrics.fix_runs_total += 1;
+    let metrics = state.metrics.increment_fix_runs_total();
 
     PipelineState {
         fix_agent_invoked_pass: Some(pass),
@@ -191,8 +190,7 @@ pub(super) fn reduce_fix_attempt_completed(
     _changes_made: bool,
 ) -> PipelineState {
     // Fix completed successfully - increment completed passes counter
-    let mut metrics = state.metrics.clone();
-    metrics.review_passes_completed += 1;
+    let metrics = state.metrics.increment_review_passes_completed();
 
     PipelineState {
         phase: PipelinePhase::CommitMessage,
@@ -236,10 +234,10 @@ pub(super) fn reduce_fix_continuation_triggered(
     summary: Option<String>,
 ) -> PipelineState {
     // Fix output is valid but indicates work is incomplete (issues_remain)
-    let mut metrics = state.metrics.clone();
-    metrics.fix_continuations_total += 1;
-    // Increment fix continuation attempt counter
-    metrics.fix_continuation_attempt += 1;
+    let metrics = state
+        .metrics
+        .increment_fix_continuations_total()
+        .increment_fix_continuation_attempt();
 
     PipelineState {
         reviewer_pass: pass,
@@ -266,9 +264,8 @@ pub(super) fn reduce_fix_continuation_succeeded(
 ) -> PipelineState {
     // Fix continuation succeeded - transition to CommitMessage
     // Use reset() instead of new() to preserve configured limits
-    let mut metrics = state.metrics.clone();
     // Fix succeeded after continuation - increment review passes completed
-    metrics.review_passes_completed += 1;
+    let metrics = state.metrics.increment_review_passes_completed();
 
     PipelineState {
         phase: PipelinePhase::CommitMessage,
@@ -338,14 +335,14 @@ pub(super) fn reduce_fix_output_validation_failed(
 ) -> PipelineState {
     // Same policy as review output validation failure
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
-    let mut metrics = state.metrics.clone();
 
     // Only increment metrics if we're actually retrying (not exhausted)
     let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-    if will_retry {
-        metrics.xsd_retry_fix += 1;
-        metrics.xsd_retry_attempts_total += 1;
-    }
+    let metrics = if will_retry {
+        state.metrics.increment_xsd_retry_fix()
+    } else {
+        state.metrics
+    };
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent

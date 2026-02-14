@@ -20,20 +20,16 @@ impl ContinuationState {
     ///
     /// - If `current_fingerprint` equals `last_effect_kind`: increment `consecutive_same_effect_count`
     /// - Otherwise: reset `consecutive_same_effect_count` to 1 and update `last_effect_kind`
-    pub fn update_loop_detection_counters(&self, current_fingerprint: String) -> Self {
+    pub fn update_loop_detection_counters(mut self, current_fingerprint: String) -> Self {
         if self.last_effect_kind.as_deref() == Some(&current_fingerprint) {
             // Same effect as last time - increment counter
-            Self {
-                consecutive_same_effect_count: self.consecutive_same_effect_count + 1,
-                ..self.clone()
-            }
+            self.consecutive_same_effect_count += 1;
+            self
         } else {
             // Different effect - reset counter and update fingerprint
-            Self {
-                last_effect_kind: Some(current_fingerprint),
-                consecutive_same_effect_count: 1,
-                ..self.clone()
-            }
+            self.last_effect_kind = Some(current_fingerprint);
+            self.consecutive_same_effect_count = 1;
+            self
         }
     }
 

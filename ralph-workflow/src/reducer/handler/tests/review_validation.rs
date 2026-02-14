@@ -295,7 +295,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
         pass: 0,
         issues_found: false,
         clean_no_issues: true,
-        issues: Vec::new(),
+        issues: Vec::new().into_boxed_slice(),
         no_issues_found: Some("No issues found.".to_string()),
     });
 
@@ -362,7 +362,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         pass: 0,
         issues_found: true,
         clean_no_issues: false,
-        issues: vec!["[high] src/lib.rs:2 - adjust logic".to_string()],
+        issues: vec!["[high] src/lib.rs:2 - adjust logic".to_string()].into_boxed_slice(),
         no_issues_found: None,
     });
     let result = handler
@@ -440,7 +440,8 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         pass: 0,
         issues_found: true,
         clean_no_issues: false,
-        issues: vec!["[high] C:\\repo\\src\\lib.rs:2 - adjust logic".to_string()],
+        issues: vec!["[high] C:\\repo\\src\\lib.rs:2 - adjust logic".to_string()]
+            .into_boxed_slice(),
         no_issues_found: None,
     });
     let result = handler
@@ -517,7 +518,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         pass: 0,
         issues_found: true,
         clean_no_issues: false,
-        issues: vec!["[high] src/lib.rs:2 - adjust logic".to_string()],
+        issues: vec!["[high] src/lib.rs:2 - adjust logic".to_string()].into_boxed_slice(),
         no_issues_found: None,
     });
 

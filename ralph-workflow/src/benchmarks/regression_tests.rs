@@ -243,7 +243,7 @@ fn regression_test_checkpoint_size_scaling() {
         let bytes_per_entry = json_len / size;
         // Should be between 300-450 bytes per entry (allows for JSON overhead variance)
         assert!(
-            bytes_per_entry >= 300 && bytes_per_entry <= 450,
+            (300..=450).contains(&bytes_per_entry),
             "Checkpoint size scaling regression: {} bytes per entry at size {} (expected 300-450)",
             bytes_per_entry,
             size
@@ -293,4 +293,58 @@ fn regression_test_arc_str_vs_string_memory() {
     // With String: 100 allocations * ~11 bytes = ~1100 bytes
     // With Arc<str>: 1 allocation * 11 bytes = 11 bytes
     // Savings: ~1089 bytes (99% reduction) for just the phase field
+}
+
+// TDD test - validates Step 9 implementation
+#[test]
+fn regression_test_metrics_update_no_clone() {
+    // Verify that metrics updates use builder pattern instead of full struct clone
+    use crate::reducer::state::RunMetrics;
+
+    let metrics = RunMetrics::default();
+
+    // Test that builder methods exist and work correctly
+    let updated = metrics.increment_dev_iterations_started();
+    assert_eq!(updated.dev_iterations_started, 1);
+    assert_eq!(updated.dev_iterations_completed, 0); // Other fields unchanged
+
+    // Test chaining
+    let updated2 = updated
+        .increment_dev_iterations_completed()
+        .increment_dev_attempts_total();
+    assert_eq!(updated2.dev_iterations_started, 1);
+    assert_eq!(updated2.dev_iterations_completed, 1);
+    assert_eq!(updated2.dev_attempts_total, 1);
+}
+
+#[test]
+fn regression_test_continuation_state_builder_pattern() {
+    // Verify ContinuationState methods follow consuming builder pattern
+    use crate::reducer::state::{ArtifactType, ContinuationState};
+
+    let state = ContinuationState::with_limits(3, 3, 2);
+
+    // with_artifact should work without requiring clone
+    let updated = state.with_artifact(ArtifactType::Plan);
+    assert_eq!(updated.current_artifact, Some(ArtifactType::Plan));
+    assert_eq!(updated.xsd_retry_count, 0); // Should reset XSD state
+}
+
+#[test]
+fn regression_test_boxed_slice_memory_savings() {
+    // Verify Box<[T]> is more memory-efficient than Vec<T>
+    use std::mem::size_of;
+
+    // Box<[T]> is 16 bytes (fat pointer: data pointer + length)
+    // Vec<T> is 24 bytes (pointer + length + capacity)
+    // Savings: 8 bytes per instance
+
+    let vec_size = size_of::<Vec<String>>();
+    let boxed_slice_size = size_of::<Box<[String]>>();
+
+    assert_eq!(vec_size, 24, "Vec<T> should be 24 bytes");
+    assert_eq!(boxed_slice_size, 16, "Box<[T]> should be 16 bytes");
+
+    // Verify 8 byte savings per instance
+    assert_eq!(vec_size - boxed_slice_size, 8);
 }

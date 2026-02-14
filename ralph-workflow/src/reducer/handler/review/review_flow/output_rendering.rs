@@ -206,7 +206,7 @@ impl MainEffectHandler {
             .ok_or(ErrorEvent::ValidatedReviewOutcomeMissing { pass })?;
 
         let elements = crate::files::llm_output_extraction::IssuesElements {
-            issues: outcome.issues.clone(),
+            issues: outcome.issues.to_vec(),
             no_issues_found: outcome.no_issues_found.clone(),
         };
         let markdown = render_issues_markdown(&elements);

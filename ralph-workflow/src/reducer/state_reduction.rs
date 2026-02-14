@@ -97,12 +97,11 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         }
         PipelineEvent::LoopRecoveryTriggered { .. } => {
             // Reset all retry and loop state to break the loop
-            let continuation = state.continuation.reset().with_artifact(
-                state
-                    .continuation
-                    .current_artifact
-                    .unwrap_or(super::state::ArtifactType::Plan),
-            );
+            let artifact = state
+                .continuation
+                .current_artifact
+                .unwrap_or(super::state::ArtifactType::Plan);
+            let continuation = state.continuation.reset().with_artifact(artifact);
 
             // Clear agent session to force fresh invocation
             let agent_chain = state.agent_chain.clear_session_id();

@@ -17,6 +17,7 @@ use std::sync::Arc;
 ///
 /// ```
 /// use ralph_workflow::checkpoint::string_pool::StringPool;
+/// use std::sync::Arc;
 ///
 /// let mut pool = StringPool::new();
 /// let phase1 = pool.intern("Development");

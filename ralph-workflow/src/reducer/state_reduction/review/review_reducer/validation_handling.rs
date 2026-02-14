@@ -20,14 +20,14 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
     // Policy: The reducer maintains retry state for determinism.
     // Handlers should emit `attempt` from state (checkpoint-resume safe).
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
-    let mut metrics = state.metrics.clone();
 
     // Only increment metrics if we're actually retrying (not exhausted)
     let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-    if will_retry {
-        metrics.xsd_retry_review += 1;
-        metrics.xsd_retry_attempts_total += 1;
-    }
+    let metrics = if will_retry {
+        state.metrics.increment_xsd_retry_review()
+    } else {
+        state.metrics
+    };
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent

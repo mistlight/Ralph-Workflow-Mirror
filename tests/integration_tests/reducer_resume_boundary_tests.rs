@@ -237,7 +237,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
                 iteration: 1,
                 status: ralph_workflow::reducer::state::DevelopmentStatus::Completed,
                 summary: "Test development complete".to_string(),
-                files_changed: Some(vec![]),
+                files_changed: Some(vec![].into_boxed_slice()),
                 next_steps: None,
             },
         );
