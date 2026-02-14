@@ -52,10 +52,10 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
         .iter()
         .map(|step| {
             // Approximate heap allocations: string fields + vec allocations
-            // Arc<str> and Box<str> use len() (shared/exact allocation)
+            // Use `len()` consistently as a deterministic size proxy.
             let base_size = step.phase.len()
                 + step.step_type.len()
-                + step.timestamp.capacity()
+                + step.timestamp.len()
                 + step.agent.as_ref().map_or(0, |s| s.len());
 
             let outcome_size = match &step.outcome {
@@ -67,13 +67,13 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
                     output.as_ref().map_or(0, |s| s.len())
                         + files_modified
                             .as_ref()
-                            .map_or(0, |files| files.iter().map(|s| s.capacity()).sum::<usize>())
+                            .map_or(0, |files| files.iter().map(|s| s.len()).sum::<usize>())
                 }
                 StepOutcome::Failure { error, signals, .. } => {
                     error.len()
                         + signals
                             .as_ref()
-                            .map_or(0, |sigs| sigs.iter().map(|s| s.capacity()).sum::<usize>())
+                            .map_or(0, |sigs| sigs.iter().map(|s| s.len()).sum::<usize>())
                 }
                 StepOutcome::Partial {
                     completed,
@@ -246,6 +246,45 @@ mod tests {
     use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
     use crate::logger::output::TestLogger;
     use crate::reducer::PipelineState;
+
+    #[test]
+    fn test_execution_history_heap_estimate_uses_len_not_capacity() {
+        let mut state = PipelineState::initial(100, 5);
+
+        let mut timestamp = String::with_capacity(2048);
+        timestamp.push('t');
+        let mut file = String::with_capacity(4096);
+        file.push('f');
+
+        let step = ExecutionStep {
+            phase: std::sync::Arc::from("P"),
+            iteration: 0,
+            step_type: Box::from("T"),
+            timestamp,
+            outcome: StepOutcome::Success {
+                output: None,
+                files_modified: Some(vec![file].into_boxed_slice()),
+                exit_code: Some(0),
+            },
+            agent: Some(std::sync::Arc::from("A")),
+            duration_secs: None,
+            checkpoint_saved_at: None,
+            git_commit_oid: None,
+            modified_files_detail: None,
+            prompt_used: None,
+            issues_summary: None,
+        };
+
+        state.add_execution_step(step, 1000);
+
+        let bytes = super::estimate_execution_history_heap_size(&state);
+        let expected = "P".len() + "T".len() + "t".len() + "A".len() + "f".len();
+
+        assert_eq!(
+            bytes, expected,
+            "heap estimate should be a deterministic length-based proxy"
+        );
+    }
 
     #[test]
     fn test_memory_snapshot_captures_state() {

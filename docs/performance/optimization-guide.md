@@ -171,14 +171,14 @@ Current performance baselines after optimizations:
 
 | Metric | Current | Target | Status |
 |--------|---------|--------|--------|
-| Heap per entry | 53 bytes | ≤60 bytes | ✓ Within target |
-| Serialization (1000 entries) | 8ms | ≤10ms | ✓ Within target |
-| Checkpoint size (1000 entries) | 375 KB | ≤400 KB | ✓ Within target |
-| Memory growth rate | 53 bytes/entry | Linear | ✓ Bounded |
+| Heap per entry | 53 bytes | <=60 bytes | OK (within target) |
+| Serialization (1000 entries) | 8ms | <=10ms | OK (within target) |
+| Checkpoint size (1000 entries) | 375 KB | <=400 KB | OK (within target) |
+| Memory growth rate | 53 bytes/entry | Linear | OK (bounded) |
 
 ## Anti-Patterns to Avoid
 
-### ❌ Don't Clone Copy Types
+### X Don't Clone Copy Types
 
 ```rust
 // BAD: Unnecessary clone for Copy type
@@ -188,7 +188,7 @@ let status = state.continuation.previous_status.clone();
 let status = state.continuation.previous_status;
 ```
 
-### ❌ Don't Use Vec for Small Fixed-Size Collections
+### X Don't Use Vec for Small Fixed-Size Collections
 
 ```rust
 // BAD: Over-allocation for fixed-size data
@@ -202,7 +202,7 @@ pub struct Outcome {
 }
 ```
 
-### ❌ Don't Repeat String Allocations
+### X Don't Repeat String Allocations
 
 ```rust
 // BAD: Repeated allocations for same string

@@ -10,6 +10,20 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 
+fn deserialize_option_boxed_string_slice_none_if_empty<'de, D>(
+    deserializer: D,
+) -> Result<Option<Box<[String]>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<Vec<String>>::deserialize(deserializer)?;
+    Ok(match opt {
+        None => None,
+        Some(v) if v.is_empty() => None,
+        Some(v) => Some(v.into_boxed_slice()),
+    })
+}
+
 /// Outcome of an execution step.
 ///
 /// # Memory Optimization
@@ -22,7 +36,10 @@ pub enum StepOutcome {
     /// Step completed successfully
     Success {
         output: Option<Box<str>>,
-        #[serde(default)]
+        #[serde(
+            default,
+            deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+        )]
         files_modified: Option<Box<[String]>>,
         #[serde(default)]
         exit_code: Option<i32>,
@@ -33,7 +50,10 @@ pub enum StepOutcome {
         recoverable: bool,
         #[serde(default)]
         exit_code: Option<i32>,
-        #[serde(default)]
+        #[serde(
+            default,
+            deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+        )]
         signals: Option<Box<[String]>>,
     },
     /// Step partially completed (may need retry)
@@ -98,11 +118,23 @@ impl StepOutcome {
 /// - Total savings: up to 72 bytes per instance when all fields are empty
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct ModifiedFilesDetail {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+    )]
     pub added: Option<Box<[String]>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+    )]
     pub modified: Option<Box<[String]>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty"
+    )]
     pub deleted: Option<Box<[String]>>,
 }
 
@@ -455,44 +487,30 @@ pub struct ExecutionHistory {
 }
 
 impl ExecutionHistory {
+    /// Execution history must be bounded.
+    ///
+    /// The historical unbounded `add_step` API is intentionally not available in
+    /// non-test builds to avoid reintroducing unbounded growth.
+    ///
+    /// ```compile_fail
+    /// use ralph_workflow::checkpoint::ExecutionHistory;
+    /// use ralph_workflow::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+    ///
+    /// let mut history = ExecutionHistory::new();
+    /// let step = ExecutionStep::new("Development", 0, "dev_run", StepOutcome::success(None, vec![]));
+    ///
+    /// // Unbounded push is not part of the public API.
+    /// history.add_step(step);
+    /// ```
     /// Create a new execution history.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Add an execution step WITHOUT bounding (DEPRECATED - use add_step_bounded instead).
-    ///
-    /// **WARNING:** This method allows unbounded growth and should NOT be used
-    /// in production code. Use `add_step_bounded(step, limit)` instead.
-    ///
-    /// This method exists only for backward compatibility during migration.
-    /// All production code should use the bounded version to prevent memory leaks.
-    ///
-    /// # Migration
-    ///
-    /// Replace:
-    /// ```ignore
-    /// history.add_step(step);
-    /// ```
-    ///
-    /// With:
-    /// ```ignore
-    /// history.add_step_bounded(step, ctx.config.execution_history_limit);
-    /// ```
-    #[deprecated(
-        since = "0.7.3",
-        note = "Use add_step_bounded(step, limit) to prevent unbounded memory growth"
-    )]
-    pub fn add_step(&mut self, step: ExecutionStep) {
-        // Unbounded behavior - kept only for backward compatibility
-        // All production callsites have been migrated to add_step_bounded
-        self.steps.push_back(step);
-    }
-
     /// Add an execution step with explicit bounding (preferred method).
     ///
     /// This is the preferred method that enforces bounded memory growth.
-    /// Use this instead of `add_step()` to prevent unbounded growth.
+    /// Use this to prevent unbounded growth.
     pub fn add_step_bounded(&mut self, step: ExecutionStep, limit: usize) {
         self.steps.push_back(step);
 
@@ -606,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn test_execution_history_add_step() {
+    fn test_execution_history_add_step_bounded() {
         let mut history = ExecutionHistory::new();
         let outcome = StepOutcome::success(None, vec![]);
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
@@ -631,6 +649,11 @@ mod tests {
             .unwrap();
         assert_eq!(added.len(), 1);
         assert_eq!(added[0], "a.rs");
+
+        // Empty arrays in legacy JSON should preserve the None-for-empty canonical form.
+        let detail = deserialized.modified_files_detail.as_ref().unwrap();
+        assert!(detail.modified.is_none());
+        assert!(detail.deleted.is_none());
         assert_eq!(deserialized.prompt_used, Some("Fix issues".to_string()));
         assert_eq!(deserialized.issues_summary.as_ref().unwrap().found, 2);
     }
@@ -933,16 +956,41 @@ mod tests {
         let old_json = r#"{"Success":{"output":null,"files_modified":[],"exit_code":0}}"#;
         let outcome: StepOutcome = serde_json::from_str(old_json).unwrap();
 
-        // Should deserialize with None or empty Box<[String]>
+        // Canonical form: treat empty arrays as None to preserve the
+        // None-for-empty optimization when resaving a legacy checkpoint.
         match outcome {
-            StepOutcome::Success { files_modified, .. } => {
-                // Both None and empty box are acceptable for backward compatibility
-                if let Some(files) = files_modified {
-                    assert!(files.is_empty());
-                }
+            StepOutcome::Success {
+                ref files_modified, ..
+            } => {
+                assert!(
+                    files_modified.is_none(),
+                    "expected empty legacy array to deserialize as None"
+                );
             }
             _ => panic!("Expected Success variant"),
         }
+
+        // Round-trip should not reintroduce [] for empty fields.
+        let json = serde_json::to_string(&outcome).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value.get("Success").and_then(|v| v.get("files_modified")),
+            Some(&serde_json::Value::Null),
+            "expected canonical serialization to use null (not [])"
+        );
+    }
+
+    #[test]
+    fn test_modified_files_detail_legacy_empty_arrays_deserialize_to_none() {
+        let legacy = r#"{"added":[],"modified":[],"deleted":[]}"#;
+        let detail: ModifiedFilesDetail = serde_json::from_str(legacy).unwrap();
+        assert!(detail.added.is_none());
+        assert!(detail.modified.is_none());
+        assert!(detail.deleted.is_none());
+
+        // Round-trip should omit empty fields.
+        let json = serde_json::to_string(&detail).unwrap();
+        assert_eq!(json, "{}", "expected empty fields to be omitted");
     }
 
     #[test]
