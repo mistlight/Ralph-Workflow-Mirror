@@ -32,6 +32,29 @@
 //!    - Time baselines: 2x tolerance (serialization performance varies widely)
 //!    - Hard limits: 0% tolerance (prevent unbounded growth)
 
+use crate::checkpoint::execution_history::ExecutionStep;
+
+/// Estimate heap bytes for a single execution step using the same methodology as
+/// the benchmark suite and baselines.
+///
+/// Intentionally excludes `StepOutcome` payloads (e.g., output strings and file
+/// lists) because those are highly workload-dependent and can introduce
+/// cross-platform flakes when enforced as hard ceilings.
+pub fn estimate_execution_step_heap_bytes_core_fields(step: &ExecutionStep) -> usize {
+    step.phase.capacity()
+        + step.step_type.capacity()
+        + step.timestamp.capacity()
+        + step.agent.as_ref().map_or(0, |s| s.capacity())
+}
+
+/// Estimate heap bytes for an execution history slice.
+pub fn estimate_execution_history_heap_bytes_core_fields(steps: &[ExecutionStep]) -> usize {
+    steps
+        .iter()
+        .map(estimate_execution_step_heap_bytes_core_fields)
+        .sum()
+}
+
 /// Performance baseline for execution history growth.
 #[derive(Debug, Clone)]
 pub struct ExecutionHistoryBaseline {
@@ -143,6 +166,7 @@ impl CheckpointSerializationBaseline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 
     #[test]
     fn test_execution_history_baseline_magnitude_is_reasonable() {
@@ -163,5 +187,27 @@ mod tests {
 
         // 80 KB exceeds (60 KB * 1.2 = 72 KB)
         assert!(baseline.check_heap_size(80_000).is_err());
+    }
+
+    #[test]
+    fn test_execution_history_heap_estimator_counts_only_core_fields() {
+        let step = ExecutionStep::new(
+            "Development",
+            1,
+            "agent_invoked",
+            StepOutcome::success(Some("output".to_string()), vec!["file.rs".to_string()]),
+        )
+        .with_agent("test-agent")
+        .with_duration(5);
+
+        let expected = step.phase.capacity()
+            + step.step_type.capacity()
+            + step.timestamp.capacity()
+            + step.agent.as_ref().map_or(0, |s| s.capacity());
+
+        assert_eq!(
+            estimate_execution_step_heap_bytes_core_fields(&step),
+            expected
+        );
     }
 }

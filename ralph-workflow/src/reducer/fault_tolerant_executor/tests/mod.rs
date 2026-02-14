@@ -127,3 +127,109 @@ impl Workspace for TimedOutWriteWorkspace {
         self.inner.set_writable(relative)
     }
 }
+
+/// Test helper: Workspace that returns custom content for a specific read path.
+///
+/// Used to simulate agent logfiles containing structured error events without
+/// modifying the mock agent output generator.
+#[derive(Debug)]
+pub(super) struct ReadHijackWorkspace {
+    inner: MemoryWorkspace,
+    hijack_path: PathBuf,
+    hijack_content: String,
+}
+
+impl ReadHijackWorkspace {
+    pub(super) fn new(
+        inner: MemoryWorkspace,
+        hijack_path: PathBuf,
+        hijack_content: String,
+    ) -> Self {
+        Self {
+            inner,
+            hijack_path,
+            hijack_content,
+        }
+    }
+}
+
+impl Workspace for ReadHijackWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        if relative == self.hijack_path.as_path() {
+            return Ok(self.hijack_content.clone());
+        }
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}

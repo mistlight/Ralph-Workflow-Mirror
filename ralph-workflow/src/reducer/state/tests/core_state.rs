@@ -500,3 +500,44 @@ fn test_interrupted_without_context_not_complete() {
          (edge case for resumed checkpoints)"
     );
 }
+
+#[test]
+fn test_is_terminal_interrupted_requires_checkpoint_or_awaiting_dev_fix_marker() {
+    let mut state = PipelineState::initial(1, 1);
+    state.phase = PipelinePhase::Interrupted;
+    state.previous_phase = Some(PipelinePhase::Development);
+    state.checkpoint_saved_count = 0;
+
+    assert!(
+        !state.is_terminal(),
+        "Interrupted without checkpoint and without AwaitingDevFix marker should not be terminal"
+    );
+
+    state.checkpoint_saved_count = 1;
+    assert!(
+        state.is_terminal(),
+        "Interrupted with checkpoint should be terminal"
+    );
+}
+
+#[test]
+fn test_is_terminal_interrupted_from_awaiting_dev_fix_is_terminal_even_without_checkpoint() {
+    let mut state = PipelineState::initial(1, 1);
+    state.phase = PipelinePhase::Interrupted;
+    state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+    state.checkpoint_saved_count = 0;
+
+    assert!(
+        state.is_terminal(),
+        "Interrupted from AwaitingDevFix should be terminal even without checkpoint"
+    );
+}
+
+#[test]
+fn test_is_terminal_complete_is_terminal() {
+    let state = PipelineState {
+        phase: PipelinePhase::Complete,
+        ..PipelineState::initial(1, 1)
+    };
+    assert!(state.is_terminal());
+}
