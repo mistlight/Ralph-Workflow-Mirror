@@ -3,6 +3,8 @@
 //! These tests validate the critical commit validation agent fallback fix
 //! that prevents infinite loops when validation fails.
 
+use std::sync::Arc;
+
 use super::*;
 use crate::agents::AgentRole;
 use crate::reducer::event::CheckpointTrigger;
@@ -547,7 +549,7 @@ fn test_commit_agent_chain_initialized_preserves_role() {
         ),
     );
 
-    assert_eq!(new_state.agent_chain.agents, agents.into_boxed_slice());
+    assert_eq!(new_state.agent_chain.agents, Arc::from(agents));
     assert_eq!(new_state.agent_chain.current_role, AgentRole::Commit);
 }
 

@@ -2,6 +2,8 @@
 //!
 //! Tests for initializing agent chains with different roles and configurations.
 
+use std::sync::Arc;
+
 use crate::agents::AgentRole;
 use crate::reducer::tests::*;
 
@@ -22,7 +24,7 @@ fn test_agent_chain_initialized_for_developer() {
         ),
     );
 
-    assert_eq!(new_state.agent_chain.agents, agents.into_boxed_slice());
+    assert_eq!(new_state.agent_chain.agents, Arc::from(agents));
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
 }
@@ -44,7 +46,7 @@ fn test_agent_chain_initialized_for_reviewer() {
         ),
     );
 
-    assert_eq!(new_state.agent_chain.agents, agents.into_boxed_slice());
+    assert_eq!(new_state.agent_chain.agents, Arc::from(agents));
 }
 
 #[test]
@@ -64,7 +66,7 @@ fn test_agent_chain_initialized_for_commit_role() {
         ),
     );
 
-    assert_eq!(new_state.agent_chain.agents, agents.into_boxed_slice());
+    assert_eq!(new_state.agent_chain.agents, Arc::from(agents));
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
     assert_eq!(new_state.agent_chain.current_role, AgentRole::Commit);
@@ -99,7 +101,7 @@ fn test_agent_chain_initialized_resets_retry_cycle() {
 
     // CRITICAL: AgentChainInitialized uses reset_for_role() which RESETS retry_cycle to 0
     // This is DIFFERENT from reset() which preserves retry_cycle
-    assert_eq!(new_state.agent_chain.agents, new_agents.into_boxed_slice());
+    assert_eq!(new_state.agent_chain.agents, Arc::from(new_agents));
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
     assert_eq!(new_state.agent_chain.retry_cycle, 0); // RESET to 0, not preserved
@@ -144,7 +146,7 @@ fn test_agent_chain_initialized_contains_full_fallback_chain() {
 
     assert_eq!(
         new_state.agent_chain.agents,
-        agents.into_boxed_slice(),
+        Arc::from(agents),
         "Agent chain should contain all agents from the fallback config"
     );
     assert_eq!(

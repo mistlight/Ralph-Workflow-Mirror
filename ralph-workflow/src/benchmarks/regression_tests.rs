@@ -486,3 +486,54 @@ fn regression_test_boxed_str_size_optimization() {
         "Should save 8 bytes per string field"
     );
 }
+
+#[test]
+fn regression_test_agent_chain_arc_optimization() {
+    // Verify AgentChainState uses Arc for cheap cloning of immutable collections
+    use crate::agents::AgentRole;
+    use crate::reducer::state::AgentChainState;
+
+    let agents = vec!["agent1".to_string(), "agent2".to_string()];
+    let models = vec![vec!["model1".to_string()], vec!["model2".to_string()]];
+
+    let state1 = AgentChainState::initial().with_agents(
+        agents.clone(),
+        models.clone(),
+        AgentRole::Developer,
+    );
+
+    // Advance creates new state - agents Arc should be shared
+    let state2 = state1.advance_to_next_model();
+
+    // Verify Arc sharing (same pointer)
+    assert!(
+        Arc::ptr_eq(&state1.agents, &state2.agents),
+        "Arc optimization regression: agents not shared between states"
+    );
+    assert!(
+        Arc::ptr_eq(&state1.models_per_agent, &state2.models_per_agent),
+        "Arc optimization regression: models not shared between states"
+    );
+
+    // Test other state transition methods also share Arc
+    let state3 = state1.switch_to_next_agent();
+    assert!(
+        Arc::ptr_eq(&state1.agents, &state3.agents),
+        "Arc optimization regression: agents not shared after switch_to_next_agent"
+    );
+
+    let state4 = state1.reset();
+    assert!(
+        Arc::ptr_eq(&state1.agents, &state4.agents),
+        "Arc optimization regression: agents not shared after reset"
+    );
+
+    // Verify memory savings: Arc::clone only increments reference count
+    // No deep copy of the underlying Vec<String> occurs
+    use std::mem::size_of;
+    let arc_size = size_of::<Arc<[String]>>();
+    assert_eq!(
+        arc_size, 16,
+        "Arc<[String]> should be 16 bytes (fat pointer)"
+    );
+}

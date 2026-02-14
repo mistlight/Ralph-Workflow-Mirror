@@ -1,6 +1,17 @@
 // Agent fallback chain state.
 //
 // Contains AgentChainState and backoff computation helpers.
+//
+// # Performance Optimization
+//
+// AgentChainState uses Arc<[T]> for immutable collections (agents, models_per_agent)
+// to enable cheap state copying during state transitions. This eliminates O(n) deep
+// copy overhead and makes state transitions O(1) for collection fields.
+//
+// The reducer creates new state instances on every event, so this optimization
+// significantly reduces memory allocations and improves performance.
+
+use std::sync::Arc;
 
 use serde::de::Deserializer;
 use sha2::{Digest, Sha256};
@@ -11,15 +22,22 @@ use sha2::{Digest, Sha256};
 /// - Agent level (primary → fallback1 → fallback2)
 /// - Model level (within each agent, try different models)
 /// - Retry cycle (exhaust all agents, start over with exponential backoff)
+///
+/// # Memory Optimization
+///
+/// Uses Arc<[T]> for `agents` and `models_per_agent` collections to enable
+/// cheap cloning during state transitions. Since these collections are immutable
+/// after construction, Arc::clone only increments a reference count instead of
+/// deep copying the entire collection.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AgentChainState {
-    /// Agent names in fallback order. Box<[String]> saves 8 bytes per instance
-    /// vs Vec<String> since this collection is immutable after construction.
-    pub agents: Box<[String]>,
+    /// Agent names in fallback order. Arc<[String]> enables cheap cloning
+    /// via reference counting instead of deep copying the collection.
+    pub agents: Arc<[String]>,
     pub current_agent_index: usize,
-    /// Models per agent. Box for immutable outer collection, Vec for model lists
-    /// that need indexing during runtime selection.
-    pub models_per_agent: Box<[Vec<String>]>,
+    /// Models per agent. Arc for immutable outer collection with cheap cloning.
+    /// Inner Vec<String> is kept for runtime indexing during model selection.
+    pub models_per_agent: Arc<[Vec<String>]>,
     pub current_model_index: usize,
     pub retry_cycle: u32,
     pub max_cycles: u32,
@@ -104,9 +122,9 @@ const fn default_max_backoff_ms() -> u64 {
 impl AgentChainState {
     pub fn initial() -> Self {
         Self {
-            agents: vec![].into_boxed_slice(),
+            agents: Arc::from(vec![]),
             current_agent_index: 0,
-            models_per_agent: vec![].into_boxed_slice(),
+            models_per_agent: Arc::from(vec![]),
             current_model_index: 0,
             retry_cycle: 0,
             max_cycles: 3,
@@ -126,8 +144,8 @@ impl AgentChainState {
         models_per_agent: Vec<Vec<String>>,
         role: AgentRole,
     ) -> Self {
-        self.agents = agents.into_boxed_slice();
-        self.models_per_agent = models_per_agent.into_boxed_slice();
+        self.agents = Arc::from(agents);
+        self.models_per_agent = Arc::from(models_per_agent);
         self.current_role = role;
         self
     }
@@ -221,9 +239,9 @@ impl AgentChainState {
                 if self.current_model_index + 1 < models.len() {
                     // Simple model advance - only increment model index
                     Self {
-                        agents: self.agents.clone(),
+                        agents: Arc::clone(&self.agents),
                         current_agent_index: self.current_agent_index,
-                        models_per_agent: self.models_per_agent.clone(),
+                        models_per_agent: Arc::clone(&self.models_per_agent),
                         current_model_index: self.current_model_index + 1,
                         retry_cycle: self.retry_cycle,
                         max_cycles: self.max_cycles,
@@ -253,9 +271,9 @@ impl AgentChainState {
         if self.current_agent_index + 1 < self.agents.len() {
             // Advance to next agent
             Self {
-                agents: self.agents.clone(),
+                agents: Arc::clone(&self.agents),
                 current_agent_index: self.current_agent_index + 1,
-                models_per_agent: self.models_per_agent.clone(),
+                models_per_agent: Arc::clone(&self.models_per_agent),
                 current_model_index: 0,
                 retry_cycle: self.retry_cycle,
                 max_cycles: self.max_cycles,
@@ -275,9 +293,9 @@ impl AgentChainState {
             } else {
                 // Create temporary state to calculate backoff
                 let temp = Self {
-                    agents: self.agents.clone(),
+                    agents: Arc::clone(&self.agents),
                     current_agent_index: 0,
-                    models_per_agent: self.models_per_agent.clone(),
+                    models_per_agent: Arc::clone(&self.models_per_agent),
                     current_model_index: 0,
                     retry_cycle: new_retry_cycle,
                     max_cycles: self.max_cycles,
@@ -293,9 +311,9 @@ impl AgentChainState {
             };
 
             Self {
-                agents: self.agents.clone(),
+                agents: Arc::clone(&self.agents),
                 current_agent_index: 0,
-                models_per_agent: self.models_per_agent.clone(),
+                models_per_agent: Arc::clone(&self.models_per_agent),
                 current_model_index: 0,
                 retry_cycle: new_retry_cycle,
                 max_cycles: self.max_cycles,
@@ -322,9 +340,9 @@ impl AgentChainState {
         if target_index == self.current_agent_index {
             // Same agent - just reset model index
             return Self {
-                agents: self.agents.clone(),
+                agents: Arc::clone(&self.agents),
                 current_agent_index: self.current_agent_index,
-                models_per_agent: self.models_per_agent.clone(),
+                models_per_agent: Arc::clone(&self.models_per_agent),
                 current_model_index: 0,
                 retry_cycle: self.retry_cycle,
                 max_cycles: self.max_cycles,
@@ -346,9 +364,9 @@ impl AgentChainState {
             } else {
                 // Create temporary state to calculate backoff
                 let temp = Self {
-                    agents: self.agents.clone(),
+                    agents: Arc::clone(&self.agents),
                     current_agent_index: target_index,
-                    models_per_agent: self.models_per_agent.clone(),
+                    models_per_agent: Arc::clone(&self.models_per_agent),
                     current_model_index: 0,
                     retry_cycle: new_retry_cycle,
                     max_cycles: self.max_cycles,
@@ -364,9 +382,9 @@ impl AgentChainState {
             };
 
             Self {
-                agents: self.agents.clone(),
+                agents: Arc::clone(&self.agents),
                 current_agent_index: target_index,
-                models_per_agent: self.models_per_agent.clone(),
+                models_per_agent: Arc::clone(&self.models_per_agent),
                 current_model_index: 0,
                 retry_cycle: new_retry_cycle,
                 max_cycles: self.max_cycles,
@@ -381,9 +399,9 @@ impl AgentChainState {
         } else {
             // Advancing to later agent
             Self {
-                agents: self.agents.clone(),
+                agents: Arc::clone(&self.agents),
                 current_agent_index: target_index,
-                models_per_agent: self.models_per_agent.clone(),
+                models_per_agent: Arc::clone(&self.models_per_agent),
                 current_model_index: 0,
                 retry_cycle: self.retry_cycle,
                 max_cycles: self.max_cycles,
@@ -458,9 +476,9 @@ impl AgentChainState {
     /// saved prompt context from previous rate-limited agents.
     pub fn clear_continuation_prompt(&self) -> Self {
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: self.current_agent_index,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: self.current_model_index,
             retry_cycle: self.retry_cycle,
             max_cycles: self.max_cycles,
@@ -476,9 +494,9 @@ impl AgentChainState {
 
     pub fn reset_for_role(&self, role: AgentRole) -> Self {
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: 0,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: 0,
             retry_cycle: 0,
             max_cycles: self.max_cycles,
@@ -494,9 +512,9 @@ impl AgentChainState {
 
     pub fn reset(&self) -> Self {
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: 0,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: 0,
             retry_cycle: self.retry_cycle,
             max_cycles: self.max_cycles,
@@ -513,9 +531,9 @@ impl AgentChainState {
     /// Store session ID from agent response for potential reuse.
     pub fn with_session_id(&self, session_id: Option<String>) -> Self {
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: self.current_agent_index,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: self.current_model_index,
             retry_cycle: self.retry_cycle,
             max_cycles: self.max_cycles,
@@ -532,9 +550,9 @@ impl AgentChainState {
     /// Clear session ID (e.g., when switching agents or starting new work).
     pub fn clear_session_id(&self) -> Self {
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: self.current_agent_index,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: self.current_model_index,
             retry_cycle: self.retry_cycle,
             max_cycles: self.max_cycles,
@@ -555,9 +573,9 @@ impl AgentChainState {
         } else {
             // Create temporary state to calculate backoff
             let temp = Self {
-                agents: self.agents.clone(),
+                agents: Arc::clone(&self.agents),
                 current_agent_index: 0,
-                models_per_agent: self.models_per_agent.clone(),
+                models_per_agent: Arc::clone(&self.models_per_agent),
                 current_model_index: 0,
                 retry_cycle: new_retry_cycle,
                 max_cycles: self.max_cycles,
@@ -573,9 +591,9 @@ impl AgentChainState {
         };
 
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: 0,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: 0,
             retry_cycle: new_retry_cycle,
             max_cycles: self.max_cycles,
@@ -591,9 +609,9 @@ impl AgentChainState {
 
     pub fn clear_backoff_pending(&self) -> Self {
         Self {
-            agents: self.agents.clone(),
+            agents: Arc::clone(&self.agents),
             current_agent_index: self.current_agent_index,
-            models_per_agent: self.models_per_agent.clone(),
+            models_per_agent: Arc::clone(&self.models_per_agent),
             current_model_index: self.current_model_index,
             retry_cycle: self.retry_cycle,
             max_cycles: self.max_cycles,

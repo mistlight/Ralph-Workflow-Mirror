@@ -3,6 +3,8 @@
 // Tests for agent chain handling when transitioning from Development to Review phase,
 // including chain clearing, initialization, and auth failure handling.
 
+use std::sync::Arc;
+
 use super::*;
 
 /// When transitioning from Development to Review (via CommitCreated or CommitSkipped),
@@ -113,12 +115,11 @@ fn test_chain_initialized_populates_reviewer_chain() {
 
     assert_eq!(
         new_state.agent_chain.agents,
-        vec![
+        Arc::from(vec![
             "codex".to_string(),
             "opencode".to_string(),
             "claude".to_string()
-        ]
-        .into_boxed_slice(),
+        ]),
         "Reducer should store the exact fallback chain from ChainInitialized event"
     );
     assert_eq!(
