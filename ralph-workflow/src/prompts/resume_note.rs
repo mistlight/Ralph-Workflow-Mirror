@@ -164,13 +164,21 @@ impl BriefDescription for StepOutcome {
                 if let Some(ref out) = output {
                     if !out.is_empty() {
                         format!("Success - {}", out.lines().next().unwrap_or(""))
-                    } else if !files_modified.is_empty() {
-                        format!("Success - {} files modified", files_modified.len())
+                    } else if let Some(ref files) = files_modified {
+                        if !files.is_empty() {
+                            format!("Success - {} files modified", files.len())
+                        } else {
+                            "Success".to_string()
+                        }
                     } else {
                         "Success".to_string()
                     }
-                } else if !files_modified.is_empty() {
-                    format!("Success - {} files modified", files_modified.len())
+                } else if let Some(ref files) = files_modified {
+                    if !files.is_empty() {
+                        format!("Success - {} files modified", files.len())
+                    } else {
+                        "Success".to_string()
+                    }
                 } else {
                     "Success".to_string()
                 }

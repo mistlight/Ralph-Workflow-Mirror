@@ -9,6 +9,8 @@ resource management, and monitoring for the Ralph pipeline.
   bounded growth mechanisms
 - **[Monitoring Guide](./monitoring-guide.md)** - Production memory monitoring
   and troubleshooting
+- **[Optimization Guide](./optimization-guide.md)** - Performance optimization
+  patterns and best practices
 
 ## Quick Reference
 

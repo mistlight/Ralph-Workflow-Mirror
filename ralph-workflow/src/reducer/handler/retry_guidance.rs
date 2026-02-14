@@ -23,7 +23,7 @@ pub(crate) fn strip_existing_same_agent_retry_preamble(prompt: &str) -> &str {
 
 pub(crate) fn same_agent_retry_preamble(continuation: &ContinuationState) -> String {
     let attempt = continuation.same_agent_retry_count;
-    let reason = continuation.same_agent_retry_reason.clone();
+    let reason = continuation.same_agent_retry_reason;
 
     let reason_line = match reason {
         Some(SameAgentRetryReason::Timeout) => "Previous attempt timed out.",

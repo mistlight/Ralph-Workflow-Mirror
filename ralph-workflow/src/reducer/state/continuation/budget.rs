@@ -153,12 +153,12 @@ impl ContinuationState {
             // Set continue_pending to trigger continuation in orchestration
             continue_pending: true,
             // Preserve artifact type and limits
-            current_artifact: self.current_artifact.clone(),
+            current_artifact: self.current_artifact,
             max_xsd_retry_count: self.max_xsd_retry_count,
             max_same_agent_retry_count: self.max_same_agent_retry_count,
             max_continue_count: self.max_continue_count,
             // Preserve fix continuation fields
-            fix_status: self.fix_status.clone(),
+            fix_status: self.fix_status,
             fix_previous_summary: self.fix_previous_summary.clone(),
             fix_continuation_attempt: self.fix_continuation_attempt,
             fix_continue_pending: self.fix_continue_pending,

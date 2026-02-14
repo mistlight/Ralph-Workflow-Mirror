@@ -500,22 +500,22 @@ fn test_bounded_growth_with_mixed_phase_operations() {
         let planning_count = state
             .execution_history
             .iter()
-            .filter(|s| s.phase == "Planning")
+            .filter(|s| s.phase.as_ref() == "Planning")
             .count();
         let development_count = state
             .execution_history
             .iter()
-            .filter(|s| s.phase == "Development")
+            .filter(|s| s.phase.as_ref() == "Development")
             .count();
         let review_count = state
             .execution_history
             .iter()
-            .filter(|s| s.phase == "Review")
+            .filter(|s| s.phase.as_ref() == "Review")
             .count();
         let commit_count = state
             .execution_history
             .iter()
-            .filter(|s| s.phase == "Commit")
+            .filter(|s| s.phase.as_ref() == "Commit")
             .count();
 
         // Each phase should be represented (roughly 250 each)

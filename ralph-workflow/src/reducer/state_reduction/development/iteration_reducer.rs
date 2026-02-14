@@ -180,12 +180,12 @@ pub(super) fn reduce_iteration_event(
                     // `continuation_attempt` is 0-based with 0 = initial attempt.
                     // For the event payload, report total attempts including the initial run.
                     total_attempts: continuation_state.continuation_attempt + 1,
-                    last_status: outcome.status.clone(),
+                    last_status: outcome.status,
                 }
             } else {
                 DevelopmentEvent::ContinuationTriggered {
                     iteration,
-                    status: outcome.status.clone(),
+                    status: outcome.status,
                     summary: outcome.summary.clone(),
                     files_changed: outcome.files_changed.clone(),
                     next_steps: outcome.next_steps.clone(),

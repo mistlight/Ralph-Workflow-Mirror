@@ -101,7 +101,6 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
                 state
                     .continuation
                     .current_artifact
-                    .clone()
                     .unwrap_or(super::state::ArtifactType::Plan),
             );
 

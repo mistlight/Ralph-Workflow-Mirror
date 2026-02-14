@@ -14,12 +14,16 @@
 //!
 //! - `memory_usage` - Memory growth during pipeline execution
 //! - `checkpoint_serialization` - Checkpoint serialization performance
+//! - `regression_tests` - Performance regression detection tests
 
 #[cfg(test)]
 mod memory_usage;
 
 #[cfg(test)]
 mod checkpoint_serialization;
+
+#[cfg(test)]
+mod regression_tests;
 
 // Baselines module is public for use in integration tests
 pub mod baselines;

@@ -40,6 +40,7 @@ pub mod restore;
 pub mod run_context;
 pub mod size_monitor;
 pub mod state;
+pub mod string_pool;
 pub mod validation;
 
 pub use builder::CheckpointBuilder;
@@ -53,4 +54,5 @@ pub use state::{
     clear_checkpoint_with_workspace, load_checkpoint_with_workspace,
     save_checkpoint_with_workspace, timestamp, PipelineCheckpoint, PipelinePhase, RebaseState,
 };
+pub use string_pool::StringPool;
 pub use validation::validate_checkpoint;

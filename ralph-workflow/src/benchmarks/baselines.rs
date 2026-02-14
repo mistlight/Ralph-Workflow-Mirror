@@ -40,11 +40,26 @@ use crate::checkpoint::execution_history::ExecutionStep;
 /// Intentionally excludes `StepOutcome` payloads (e.g., output strings and file
 /// lists) because those are highly workload-dependent and can introduce
 /// cross-platform flakes when enforced as hard ceilings.
+///
+/// # Memory Optimization
+///
+/// After optimization, this accounts for:
+/// - `phase`: Arc<str> - counted as the length of the string (shared allocation)
+/// - `step_type`: Box<str> - counted as the length of the string
+/// - `timestamp`: String - counted as capacity
+/// - `agent`: Option<Arc<str>> - counted as the length of the string (shared allocation)
+///
+/// Arc<str> fields are counted by length rather than capacity because the
+/// allocation is shared across multiple ExecutionStep instances via string interning.
 pub fn estimate_execution_step_heap_bytes_core_fields(step: &ExecutionStep) -> usize {
-    step.phase.capacity()
-        + step.step_type.capacity()
+    // For Arc<str>, count the string length (shared allocation)
+    step.phase.len()
+        // For Box<str>, count the string length
+        + step.step_type.len()
+        // For String, count the capacity (may be over-allocated)
         + step.timestamp.capacity()
-        + step.agent.as_ref().map_or(0, |s| s.capacity())
+        // For Option<Arc<str>>, count the string length if present (shared allocation)
+        + step.agent.as_ref().map_or(0, |s| s.len())
 }
 
 /// Estimate heap bytes for an execution history slice.
@@ -200,14 +215,93 @@ mod tests {
         .with_agent("test-agent")
         .with_duration(5);
 
-        let expected = step.phase.capacity()
-            + step.step_type.capacity()
+        // After optimization: Arc<str> and Box<str> are counted by length, String by capacity
+        let expected = step.phase.len()
+            + step.step_type.len()
             + step.timestamp.capacity()
-            + step.agent.as_ref().map_or(0, |s| s.capacity());
+            + step.agent.as_ref().map_or(0, |s| s.len());
 
         assert_eq!(
             estimate_execution_step_heap_bytes_core_fields(&step),
             expected
+        );
+    }
+
+    /// Regression test: Verify memory optimization reduces per-entry footprint
+    ///
+    /// After Arc<str> and Box<str> optimizations, core fields should use ~40-45 bytes
+    /// per entry (down from ~53 bytes with String fields).
+    #[test]
+    fn test_memory_optimization_regression() {
+        use crate::checkpoint::StringPool;
+
+        let mut pool = StringPool::new();
+
+        // Create a typical execution step with string pool
+        let step = ExecutionStep::new_with_pool(
+            "Development",
+            1,
+            "agent_invoked",
+            StepOutcome::success(Some("output".to_string()), vec!["file.rs".to_string()]),
+            &mut pool,
+        )
+        .with_agent_pooled("test-agent", &mut pool)
+        .with_duration(5);
+
+        let heap_size = estimate_execution_step_heap_bytes_core_fields(&step);
+
+        // Core fields should be optimized to ~40-45 bytes
+        // (11 bytes phase + 14 bytes step_type + ~25 bytes timestamp + 10 bytes agent)
+        assert!(
+            heap_size <= 60,
+            "Memory regression: {} bytes per entry exceeds 60 byte target (expected ~40-45 bytes)",
+            heap_size
+        );
+    }
+
+    /// Regression test: Verify string pool deduplicates repeated strings
+    #[test]
+    fn test_string_pool_deduplication_regression() {
+        use crate::checkpoint::StringPool;
+        use std::sync::Arc;
+
+        let mut pool = StringPool::new();
+
+        // Create multiple steps with the same phase and agent
+        let step1 = ExecutionStep::new_with_pool(
+            "Development",
+            1,
+            "dev_run",
+            StepOutcome::success(None, vec![]),
+            &mut pool,
+        )
+        .with_agent_pooled("claude", &mut pool);
+
+        let step2 = ExecutionStep::new_with_pool(
+            "Development",
+            2,
+            "dev_run",
+            StepOutcome::success(None, vec![]),
+            &mut pool,
+        )
+        .with_agent_pooled("claude", &mut pool);
+
+        // Verify Arc sharing (same pointer)
+        assert!(
+            Arc::ptr_eq(&step1.phase, &step2.phase),
+            "String pool regression: phase strings not shared"
+        );
+        assert!(
+            Arc::ptr_eq(step1.agent.as_ref().unwrap(), step2.agent.as_ref().unwrap()),
+            "String pool regression: agent strings not shared"
+        );
+
+        // Pool should only contain 2 unique strings (phase and agent)
+        assert_eq!(
+            pool.len(),
+            2,
+            "String pool regression: expected 2 unique strings, got {}",
+            pool.len()
         );
     }
 }

@@ -163,12 +163,12 @@ pub(super) fn reduce_fix_outcome_applied(state: PipelineState, pass: u32) -> Pip
             ReviewEvent::FixContinuationBudgetExhausted {
                 pass,
                 total_attempts: next_attempt,
-                last_status: outcome.status.clone(),
+                last_status: outcome.status,
             }
         } else {
             ReviewEvent::FixContinuationTriggered {
                 pass,
-                status: outcome.status.clone(),
+                status: outcome.status,
                 summary: outcome.summary.clone(),
             }
         }

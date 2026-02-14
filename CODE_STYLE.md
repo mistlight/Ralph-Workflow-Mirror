@@ -200,6 +200,53 @@ Exceptions: `WorkspaceFs` impl, `RealAppEffectHandler`, bootstrap code.
 
 ---
 
+## Performance Optimization
+
+### Memory Optimization Guidelines
+
+Ralph uses memory-efficient data structures to minimize heap allocations and support long-running pipelines with bounded memory growth:
+
+**String Interning (Arc<str>)**
+- Use `Arc<str>` for repeated strings (phase names, agent names)
+- Share allocations via `StringPool` to reduce memory footprint
+- Example: `ExecutionStep.phase` and `ExecutionStep.agent` use `Arc<str>`
+
+**Exact Allocation (Box<str>)**
+- Use `Box<str>` for unique strings that don't need sharing
+- Avoids Vec<u8> over-allocation compared to String
+- Example: `ExecutionStep.step_type` uses `Box<str>`
+
+**Optional Collections (Option<Box<[T]>>)**
+- Use `Option<Box<[T]>>` for collections that are often empty
+- Saves 24 bytes (Vec overhead) when None
+- Example: `StepOutcome::Success.files_modified` uses `Option<Box<[String]>>`
+
+**When to Optimize:**
+- Hot paths (executed thousands of times per pipeline run)
+- Data structures stored in bounded collections (execution history)
+- Repeated strings across many instances
+
+**When NOT to Optimize:**
+- One-off allocations (config loading, CLI parsing)
+- Small structs (< 100 bytes total)
+- Code clarity would suffer significantly
+
+### Benchmarking
+
+Run benchmarks to measure performance:
+```bash
+cargo test --lib benchmarks -- --nocapture
+```
+
+Expected performance targets (as of v0.7.3):
+- Execution history: ~40-45 bytes per entry (core fields)
+- Checkpoint serialization: < 10ms for 1000 entries
+- Memory growth: Linear and bounded by `execution_history_limit`
+
+See `ralph-workflow/src/benchmarks/baselines.rs` for regression tests.
+
+---
+
 ## Principles
 
 - Tests don't legitimize production code - if code exists only for tests, delete both

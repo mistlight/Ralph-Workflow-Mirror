@@ -210,10 +210,10 @@ fn benchmark_memory_growth_rate() {
                 .execution_history()
                 .iter()
                 .map(|step| {
-                    step.phase.capacity()
-                        + step.step_type.capacity()
+                    step.phase.len()
+                        + step.step_type.len()
                         + step.timestamp.capacity()
-                        + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
+                        + step.agent.as_ref().map_or(0, |s| s.len())
                 })
                 .sum();
             sizes.push((i + 1, heap_size));
@@ -308,10 +308,10 @@ fn benchmark_peak_memory_usage_during_large_state_serialization() {
         .execution_history()
         .iter()
         .map(|step| {
-            step.phase.capacity()
-                + step.step_type.capacity()
+            step.phase.len()
+                + step.step_type.len()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
+                + step.agent.as_ref().map_or(0, |s| s.len())
         })
         .sum();
 
@@ -351,10 +351,10 @@ fn benchmark_memory_usage_with_different_history_limits() {
             .execution_history()
             .iter()
             .map(|step| {
-                step.phase.capacity()
-                    + step.step_type.capacity()
+                step.phase.len()
+                    + step.step_type.len()
                     + step.timestamp.capacity()
-                    + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
+                    + step.agent.as_ref().map_or(0, |s| s.len())
             })
             .sum();
 

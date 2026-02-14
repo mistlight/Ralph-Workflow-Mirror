@@ -36,7 +36,6 @@ pub(super) fn determine_development_effect(state: &PipelineState) -> Effect {
         let status = state
             .continuation
             .previous_status
-            .clone()
             .unwrap_or(DevelopmentStatus::Failed);
         let summary = state
             .continuation

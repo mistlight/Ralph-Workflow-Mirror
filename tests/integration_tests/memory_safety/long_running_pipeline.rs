@@ -160,14 +160,15 @@ fn test_heap_size_estimate_remains_bounded() {
         }
 
         // Estimate heap size
+        // Note: Arc<str> and Box<str> use .len() not .capacity() as they don't have excess capacity
         let heap_size: usize = state
             .execution_history
             .iter()
             .map(|step| {
-                let base_size = step.phase.capacity()
-                    + step.step_type.capacity()
+                let base_size = step.phase.len()
+                    + step.step_type.len()
                     + step.timestamp.capacity()
-                    + step.agent.as_ref().map_or(0, |s| s.capacity());
+                    + step.agent.as_ref().map_or(0, |s| s.len());
 
                 let outcome_size = match &step.outcome {
                     StepOutcome::Success {
@@ -175,18 +176,23 @@ fn test_heap_size_estimate_remains_bounded() {
                         files_modified,
                         ..
                     } => {
-                        output.as_ref().map_or(0, |s| s.capacity())
-                            + files_modified.iter().map(|s| s.capacity()).sum::<usize>()
+                        output.as_ref().map_or(0, |s| s.len())
+                            + files_modified
+                                .as_ref()
+                                .map_or(0, |files| files.iter().map(|s| s.capacity()).sum())
                     }
                     StepOutcome::Failure { error, signals, .. } => {
-                        error.capacity() + signals.iter().map(|s| s.capacity()).sum::<usize>()
+                        error.len()
+                            + signals
+                                .as_ref()
+                                .map_or(0, |sigs| sigs.iter().map(|s| s.capacity()).sum())
                     }
                     StepOutcome::Partial {
                         completed,
                         remaining,
                         ..
-                    } => completed.capacity() + remaining.capacity(),
-                    StepOutcome::Skipped { reason } => reason.capacity(),
+                    } => completed.len() + remaining.len(),
+                    StepOutcome::Skipped { reason } => reason.len(),
                 };
 
                 base_size + outcome_size

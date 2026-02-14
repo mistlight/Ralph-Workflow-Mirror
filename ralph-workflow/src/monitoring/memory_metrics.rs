@@ -52,10 +52,11 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
         .iter()
         .map(|step| {
             // Approximate heap allocations: string fields + vec allocations
-            let base_size = step.phase.capacity()
-                + step.step_type.capacity()
+            // Arc<str> and Box<str> use len() (shared/exact allocation)
+            let base_size = step.phase.len()
+                + step.step_type.len()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s: &String| s.capacity());
+                + step.agent.as_ref().map_or(0, |s| s.len());
 
             let outcome_size = match &step.outcome {
                 StepOutcome::Success {
@@ -63,18 +64,23 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
                     files_modified,
                     ..
                 } => {
-                    output.as_ref().map_or(0, |s| s.capacity())
-                        + files_modified.iter().map(|s| s.capacity()).sum::<usize>()
+                    output.as_ref().map_or(0, |s| s.len())
+                        + files_modified
+                            .as_ref()
+                            .map_or(0, |files| files.iter().map(|s| s.capacity()).sum::<usize>())
                 }
                 StepOutcome::Failure { error, signals, .. } => {
-                    error.capacity() + signals.iter().map(|s| s.capacity()).sum::<usize>()
+                    error.len()
+                        + signals
+                            .as_ref()
+                            .map_or(0, |sigs| sigs.iter().map(|s| s.capacity()).sum::<usize>())
                 }
                 StepOutcome::Partial {
                     completed,
                     remaining,
                     ..
-                } => completed.capacity() + remaining.capacity(),
-                StepOutcome::Skipped { reason } => reason.capacity(),
+                } => completed.len() + remaining.len(),
+                StepOutcome::Skipped { reason } => reason.len(),
             };
 
             base_size + outcome_size

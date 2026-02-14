@@ -70,14 +70,12 @@ mod workspace_tests {
     fn test_calculate_file_checksum_with_workspace() {
         let workspace = MemoryWorkspace::new_test().with_file("test.txt", "test content");
 
-        let checksum =
-            calculate_file_checksum_with_workspace(&workspace, Path::new("test.txt"));
+        let checksum = calculate_file_checksum_with_workspace(&workspace, Path::new("test.txt"));
         assert!(checksum.is_some());
 
         // Same content should give same checksum
         let workspace2 = MemoryWorkspace::new_test().with_file("other.txt", "test content");
-        let checksum2 =
-            calculate_file_checksum_with_workspace(&workspace2, Path::new("other.txt"));
+        let checksum2 = calculate_file_checksum_with_workspace(&workspace2, Path::new("other.txt"));
         assert_eq!(checksum, checksum2);
     }
 
@@ -86,10 +84,8 @@ mod workspace_tests {
         let workspace1 = MemoryWorkspace::new_test().with_file("test.txt", "content A");
         let workspace2 = MemoryWorkspace::new_test().with_file("test.txt", "content B");
 
-        let checksum1 =
-            calculate_file_checksum_with_workspace(&workspace1, Path::new("test.txt"));
-        let checksum2 =
-            calculate_file_checksum_with_workspace(&workspace2, Path::new("test.txt"));
+        let checksum1 = calculate_file_checksum_with_workspace(&workspace1, Path::new("test.txt"));
+        let checksum2 = calculate_file_checksum_with_workspace(&workspace2, Path::new("test.txt"));
 
         assert!(checksum1.is_some());
         assert!(checksum2.is_some());
@@ -285,8 +281,7 @@ mod workspace_tests {
 
         for phase_label in ["Fix", "ReviewAgain"] {
             let json = base_json.replace("%PHASE%", phase_label);
-            let workspace =
-                MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", &json);
+            let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", &json);
 
             let result = load_checkpoint_with_workspace(&workspace);
             assert!(
@@ -315,8 +310,7 @@ mod workspace_tests {
             err
         );
 
-        let review_again_result: Result<PipelinePhase, _> =
-            serde_json::from_str("\"ReviewAgain\"");
+        let review_again_result: Result<PipelinePhase, _> = serde_json::from_str("\"ReviewAgain\"");
         assert!(
             review_again_result.is_err(),
             "ReviewAgain phase should be rejected"
@@ -327,6 +321,234 @@ mod workspace_tests {
             "Error should mention 'no longer supported': {}",
             err
         );
+    }
+
+    // =========================================================================
+    // Optimized checkpoint serialization tests (Step 11)
+    // =========================================================================
+
+    #[test]
+    fn test_optimized_serialization_produces_compact_json() {
+        use crate::checkpoint::execution_history::{ExecutionHistory, ExecutionStep, StepOutcome};
+
+        let workspace = MemoryWorkspace::new_test();
+        let mut checkpoint = make_test_checkpoint_for_workspace(PipelinePhase::Development, 2);
+
+        // Add execution history to test compact serialization
+        let mut history = ExecutionHistory::new();
+        let outcome = StepOutcome::success(Some("test".to_string()), vec![]);
+        let step = ExecutionStep::new("Planning", 1, "plan", outcome);
+        history.add_step_bounded(step, 1000);
+        checkpoint.execution_history = Some(history);
+
+        save_checkpoint_with_workspace(&workspace, &checkpoint).unwrap();
+
+        let saved_json = workspace.read(Path::new(".agent/checkpoint.json")).unwrap();
+
+        // Verify compact JSON: should NOT have pretty-printing indentation
+        // (we allow some minimal spaces for JSON structure, but no multi-line pretty formatting)
+        let line_count = saved_json.lines().count();
+        // Compact JSON should be just a few lines (not hundreds)
+        assert!(
+            line_count < 10,
+            "Compact JSON should have minimal lines, got {}",
+            line_count
+        );
+    }
+
+    #[test]
+    fn test_optimized_serialization_round_trip_preserves_data() {
+        use crate::checkpoint::execution_history::{ExecutionHistory, ExecutionStep, StepOutcome};
+
+        let workspace = MemoryWorkspace::new_test();
+        let mut checkpoint = make_test_checkpoint_for_workspace(PipelinePhase::Review, 3);
+
+        // Add execution history with various data
+        let mut history = ExecutionHistory::new();
+        for i in 0..10 {
+            let outcome = StepOutcome::Success {
+                output: Some(format!("output{}", i).into()),
+                files_modified: Some(vec![format!("file{}.rs", i)].into_boxed_slice()),
+                exit_code: Some(0),
+            };
+            let step =
+                ExecutionStep::new(&format!("Phase{}", i), i, &format!("step{}", i), outcome)
+                    .with_agent(&format!("agent{}", i))
+                    .with_duration(100 + i as u64);
+            history.add_step_bounded(step, 1000);
+        }
+        checkpoint.execution_history = Some(history);
+
+        // Save with optimized serialization
+        save_checkpoint_with_workspace(&workspace, &checkpoint).unwrap();
+
+        // Load and verify data preservation
+        let loaded = load_checkpoint_with_workspace(&workspace)
+            .unwrap()
+            .expect("checkpoint should exist");
+
+        assert_eq!(loaded.phase, checkpoint.phase);
+        assert_eq!(loaded.iteration, checkpoint.iteration);
+        assert_eq!(loaded.developer_agent, checkpoint.developer_agent);
+
+        // Verify execution history preservation
+        let loaded_history = loaded.execution_history.expect("history should exist");
+        assert_eq!(loaded_history.steps.len(), 10);
+
+        for (i, step) in loaded_history.steps.iter().enumerate() {
+            assert_eq!(step.phase.as_ref(), format!("Phase{}", i));
+            assert_eq!(step.iteration, i as u32);
+            assert_eq!(step.step_type.as_ref(), format!("step{}", i));
+            assert_eq!(
+                step.agent.as_ref().map(|a| a.as_ref()),
+                Some(format!("agent{}", i).as_str())
+            );
+            assert_eq!(step.duration_secs, Some(100 + i as u64));
+
+            if let StepOutcome::Success {
+                output,
+                files_modified,
+                exit_code,
+            } = &step.outcome
+            {
+                assert_eq!(
+                    output.as_ref().map(|o| o.as_ref()),
+                    Some(format!("output{}", i).as_str())
+                );
+                assert_eq!(
+                    files_modified
+                        .as_ref()
+                        .map(|f| f.iter().map(|s| s.as_str()).collect::<Vec<_>>()),
+                    Some(vec![format!("file{}.rs", i).as_str()])
+                );
+                assert_eq!(*exit_code, Some(0));
+            } else {
+                panic!("Expected Success outcome");
+            }
+        }
+    }
+
+    #[test]
+    fn test_estimate_checkpoint_size_is_reasonable() {
+        use crate::checkpoint::execution_history::{ExecutionHistory, ExecutionStep, StepOutcome};
+
+        let workspace = MemoryWorkspace::new_test();
+
+        // Test with empty history
+        let checkpoint_empty = make_test_checkpoint_for_workspace(PipelinePhase::Planning, 1);
+        save_checkpoint_with_workspace(&workspace, &checkpoint_empty).unwrap();
+        let empty_json = workspace.read(Path::new(".agent/checkpoint.json")).unwrap();
+        let empty_size = empty_json.len();
+
+        // Base size should be within 50% of actual (conservative estimate)
+        assert!(
+            empty_size <= 15_000,
+            "Empty checkpoint should be < 15KB, got {}",
+            empty_size
+        );
+
+        // Test with 100 entries
+        let mut checkpoint_100 = make_test_checkpoint_for_workspace(PipelinePhase::Development, 5);
+        let mut history = ExecutionHistory::new();
+        for i in 0..100 {
+            let outcome = StepOutcome::Success {
+                output: Some("test output".to_string().into()),
+                files_modified: Some(vec!["file.rs".to_string()].into_boxed_slice()),
+                exit_code: Some(0),
+            };
+            let step = ExecutionStep::new("Development", i, "test", outcome)
+                .with_agent("agent")
+                .with_duration(100);
+            history.add_step_bounded(step, 1000);
+        }
+        checkpoint_100.execution_history = Some(history);
+
+        save_checkpoint_with_workspace(&workspace, &checkpoint_100).unwrap();
+        let json_100 = workspace.read(Path::new(".agent/checkpoint.json")).unwrap();
+        let size_100 = json_100.len();
+
+        // Should be roughly BASE_SIZE + 100 * BYTES_PER_ENTRY
+        // Estimate: 10_000 + 100 * 400 = 50_000
+        // Allow 50% margin: 25_000 to 75_000
+        assert!(
+            (25_000..=75_000).contains(&size_100),
+            "100-entry checkpoint should be 25-75KB, got {}",
+            size_100
+        );
+
+        // Verify per-entry growth is reasonable
+        let per_entry_bytes = (size_100 - empty_size) / 100;
+        assert!(
+            (200..=600).contains(&per_entry_bytes),
+            "Per-entry cost should be 200-600 bytes, got {}",
+            per_entry_bytes
+        );
+    }
+
+    #[test]
+    fn test_backward_compatibility_with_pretty_printed_checkpoints() {
+        // Verify that we can still load pretty-printed JSON from older versions
+        // (even though we now save compact JSON)
+        let pretty_json = r#"{
+  "version": 3,
+  "phase": "Development",
+  "iteration": 1,
+  "total_iterations": 5,
+  "reviewer_pass": 0,
+  "total_reviewer_passes": 2,
+  "timestamp": "2024-01-01 12:00:00",
+  "developer_agent": "claude",
+  "reviewer_agent": "codex",
+  "cli_args": {
+    "developer_iters": 5,
+    "reviewer_reviews": 2,
+    "commit_msg": null,
+    "isolation_mode": true,
+    "verbosity": 2,
+    "show_streaming_metrics": false,
+    "review_depth": null,
+    "reviewer_json_parser": null
+  },
+  "developer_agent_config": {
+    "name": "claude",
+    "cmd": "cmd",
+    "output_flag": "-o",
+    "yolo_flag": null,
+    "can_commit": true
+  },
+  "reviewer_agent_config": {
+    "name": "codex",
+    "cmd": "cmd",
+    "output_flag": "-o",
+    "yolo_flag": null,
+    "can_commit": true
+  },
+  "rebase_state": "NotStarted",
+  "config_path": null,
+  "config_checksum": null,
+  "working_dir": "/test/repo",
+  "prompt_md_checksum": null,
+  "git_user_name": null,
+  "git_user_email": null,
+  "run_id": "test-run-id",
+  "parent_run_id": null,
+  "resume_count": 0,
+  "actual_developer_runs": 1,
+  "actual_reviewer_runs": 0
+}"#;
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", pretty_json);
+
+        let loaded = load_checkpoint_with_workspace(&workspace)
+            .unwrap()
+            .expect("pretty-printed checkpoint should load");
+
+        assert_eq!(loaded.version, 3);
+        assert_eq!(loaded.phase, PipelinePhase::Development);
+        assert_eq!(loaded.iteration, 1);
+        assert_eq!(loaded.developer_agent, "claude");
+        assert_eq!(loaded.reviewer_agent, "codex");
     }
 }
 

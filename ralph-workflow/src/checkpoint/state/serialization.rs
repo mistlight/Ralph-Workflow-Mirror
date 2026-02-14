@@ -65,22 +65,58 @@ pub fn calculate_file_checksum_with_workspace(
 ///
 /// * `workspace` - The workspace for file operations
 /// * `checkpoint` - The checkpoint to save
+///
+/// # Performance
+///
+/// Uses optimized serialization with pre-allocated buffer and compact JSON
+/// encoding (no pretty-printing) to minimize serialization time.
 pub fn save_checkpoint_with_workspace(
     workspace: &dyn Workspace,
     checkpoint: &PipelineCheckpoint,
 ) -> io::Result<()> {
-    let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
+    // Estimate serialized size to pre-allocate buffer and avoid reallocation
+    let estimated_size = estimate_checkpoint_size(checkpoint);
+    let mut buf = Vec::with_capacity(estimated_size);
+
+    // Use compact serialization (no pretty printing) with pre-sized buffer
+    serde_json::to_writer(&mut buf, checkpoint).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Failed to serialize checkpoint: {e}"),
         )
     })?;
 
+    // SAFETY: serde_json guarantees valid UTF-8
+    let json = unsafe { String::from_utf8_unchecked(buf) };
+
     // Ensure the .agent directory exists
     workspace.create_dir_all(Path::new(AGENT_DIR))?;
 
     // Write checkpoint file atomically
     workspace.write_atomic(Path::new(&checkpoint_path()), &json)
+}
+
+/// Estimate the serialized JSON size of a checkpoint for buffer pre-allocation.
+///
+/// This heuristic is based on observed checkpoint sizes:
+/// - Base overhead: ~10KB for metadata, config snapshots, and structure
+/// - Per-entry cost: ~400 bytes for execution history entries
+///
+/// The estimate is conservative (slightly over) to avoid reallocation while
+/// not wasting excessive memory.
+fn estimate_checkpoint_size(checkpoint: &PipelineCheckpoint) -> usize {
+    // Base size: metadata + config + snapshots
+    const BASE_SIZE: usize = 10_000;
+    // Average bytes per execution history entry (includes JSON overhead)
+    const BYTES_PER_ENTRY: usize = 400;
+
+    let history_len = checkpoint
+        .execution_history
+        .as_ref()
+        .map(|h| h.steps.len())
+        .unwrap_or(0);
+
+    BASE_SIZE + (history_len * BYTES_PER_ENTRY)
 }
 
 /// Load an existing checkpoint using the workspace.

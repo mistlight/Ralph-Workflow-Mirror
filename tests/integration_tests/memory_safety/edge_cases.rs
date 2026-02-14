@@ -486,7 +486,7 @@ fn test_execution_history_many_files_modified() {
         // Verify files_modified is preserved
         if let StepOutcome::Success { files_modified, .. } = &state.execution_history[0].outcome {
             assert_eq!(
-                files_modified.len(),
+                files_modified.as_ref().map_or(0, |files| files.len()),
                 MANY_FILES_COUNT,
                 "Should preserve all files_modified entries"
             );

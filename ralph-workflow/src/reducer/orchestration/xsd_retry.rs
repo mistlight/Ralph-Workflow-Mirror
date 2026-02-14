@@ -128,7 +128,6 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
                 let status = state
                     .continuation
                     .previous_status
-                    .clone()
                     .unwrap_or(super::state::DevelopmentStatus::Failed);
                 let summary = state
                     .continuation

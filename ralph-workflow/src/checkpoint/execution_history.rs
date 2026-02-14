@@ -8,43 +8,55 @@ use crate::workspace::Workspace;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::Arc;
 
 /// Outcome of an execution step.
+///
+/// # Memory Optimization
+///
+/// This enum uses Box<str> for string fields and Option<Box<[String]>> for
+/// collections to reduce allocation overhead when fields are empty or small.
+/// Vec<T> over-allocates capacity, while Box<[T]> uses exactly the needed space.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StepOutcome {
     /// Step completed successfully
     Success {
-        output: Option<String>,
-        files_modified: Vec<String>,
+        output: Option<Box<str>>,
+        #[serde(default)]
+        files_modified: Option<Box<[String]>>,
         #[serde(default)]
         exit_code: Option<i32>,
     },
     /// Step failed with error
     Failure {
-        error: String,
+        error: Box<str>,
         recoverable: bool,
         #[serde(default)]
         exit_code: Option<i32>,
         #[serde(default)]
-        signals: Vec<String>,
+        signals: Option<Box<[String]>>,
     },
     /// Step partially completed (may need retry)
     Partial {
-        completed: String,
-        remaining: String,
+        completed: Box<str>,
+        remaining: Box<str>,
         #[serde(default)]
         exit_code: Option<i32>,
     },
     /// Step was skipped (e.g., already done)
-    Skipped { reason: String },
+    Skipped { reason: Box<str> },
 }
 
 impl StepOutcome {
     /// Create a Success outcome with default values.
     pub fn success(output: Option<String>, files_modified: Vec<String>) -> Self {
         Self::Success {
-            output,
-            files_modified,
+            output: output.map(|s| Box::from(s.as_str())),
+            files_modified: if files_modified.is_empty() {
+                None
+            } else {
+                Some(files_modified.into_boxed_slice())
+            },
             exit_code: Some(0),
         }
     }
@@ -52,25 +64,27 @@ impl StepOutcome {
     /// Create a Failure outcome with default values.
     pub fn failure(error: String, recoverable: bool) -> Self {
         Self::Failure {
-            error,
+            error: Box::from(error.as_str()),
             recoverable,
             exit_code: None,
-            signals: Vec::new(),
+            signals: None,
         }
     }
 
     /// Create a Partial outcome with default values.
     pub fn partial(completed: String, remaining: String) -> Self {
         Self::Partial {
-            completed,
-            remaining,
+            completed: Box::from(completed.as_str()),
+            remaining: Box::from(remaining.as_str()),
             exit_code: None,
         }
     }
 
     /// Create a Skipped outcome.
     pub fn skipped(reason: String) -> Self {
-        Self::Skipped { reason }
+        Self::Skipped {
+            reason: Box::from(reason.as_str()),
+        }
     }
 }
 
@@ -100,20 +114,31 @@ pub struct IssuesSummary {
 }
 
 /// A single execution step in the pipeline history.
+///
+/// # Memory Optimization
+///
+/// This struct uses Arc<str> for `phase` and `agent` fields to reduce memory
+/// usage through string interning. Phase names and agent names are repeated
+/// frequently across execution history entries, so sharing allocations via
+/// Arc<str> significantly reduces heap usage.
+///
+/// Serialization/deserialization is backward-compatible - Arc<str> is serialized
+/// as a regular string and can be deserialized from both old (String) and new
+/// (Arc<str>) checkpoint formats.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionStep {
-    /// Phase this step belongs to
-    pub phase: String,
+    /// Phase this step belongs to (interned via Arc<str>)
+    pub phase: Arc<str>,
     /// Iteration number (for development/review iterations)
     pub iteration: u32,
     /// Type of step (e.g., "review", "fix", "commit")
-    pub step_type: String,
+    pub step_type: Box<str>,
     /// When this step was executed (ISO 8601 format string)
     pub timestamp: String,
     /// Outcome of the step
     pub outcome: StepOutcome,
-    /// Agent that executed this step
-    pub agent: Option<String>,
+    /// Agent that executed this step (interned via Arc<str>)
+    pub agent: Option<Arc<str>>,
     /// Duration in seconds (if available)
     pub duration_secs: Option<u64>,
     /// When a checkpoint was saved during this step (ISO 8601 format string)
@@ -135,11 +160,45 @@ pub struct ExecutionStep {
 
 impl ExecutionStep {
     /// Create a new execution step.
+    ///
+    /// # Performance Note
+    ///
+    /// For optimal memory usage, use `new_with_pool` to intern repeated phase
+    /// and agent names via a StringPool. This constructor creates new Arc<str>
+    /// allocations for each call.
     pub fn new(phase: &str, iteration: u32, step_type: &str, outcome: StepOutcome) -> Self {
         Self {
-            phase: phase.to_string(),
+            phase: Arc::from(phase),
             iteration,
-            step_type: step_type.to_string(),
+            step_type: Box::from(step_type),
+            timestamp: timestamp(),
+            outcome,
+            agent: None,
+            duration_secs: None,
+            checkpoint_saved_at: None,
+            git_commit_oid: None,
+            modified_files_detail: None,
+            prompt_used: None,
+            issues_summary: None,
+        }
+    }
+
+    /// Create a new execution step using a StringPool for interning.
+    ///
+    /// This is the preferred constructor when creating many ExecutionSteps,
+    /// as it reduces memory usage by sharing allocations for repeated phase
+    /// and agent names.
+    pub fn new_with_pool(
+        phase: &str,
+        iteration: u32,
+        step_type: &str,
+        outcome: StepOutcome,
+        pool: &mut crate::checkpoint::StringPool,
+    ) -> Self {
+        Self {
+            phase: pool.intern(phase),
+            iteration,
+            step_type: Box::from(step_type),
             timestamp: timestamp(),
             outcome,
             agent: None,
@@ -154,7 +213,17 @@ impl ExecutionStep {
 
     /// Set the agent that executed this step.
     pub fn with_agent(mut self, agent: &str) -> Self {
-        self.agent = Some(agent.to_string());
+        self.agent = Some(Arc::from(agent));
+        self
+    }
+
+    /// Set the agent using a StringPool for interning.
+    pub fn with_agent_pooled(
+        mut self,
+        agent: &str,
+        pool: &mut crate::checkpoint::StringPool,
+    ) -> Self {
+        self.agent = Some(pool.intern(agent));
         self
     }
 
@@ -463,9 +532,9 @@ mod tests {
     fn test_execution_step_new() {
         let outcome = StepOutcome::success(None, vec!["test.txt".to_string()]);
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
-        assert_eq!(step.phase, "Development");
+        assert_eq!(&*step.phase, "Development");
         assert_eq!(step.iteration, 1);
-        assert_eq!(step.step_type, "dev_run");
+        assert_eq!(&*step.step_type, "dev_run");
         assert!(step.agent.is_none());
         assert!(step.duration_secs.is_none());
         // Verify new fields are None by default
@@ -481,7 +550,7 @@ mod tests {
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome)
             .with_agent("claude")
             .with_duration(120);
-        assert_eq!(step.agent, Some("claude".to_string()));
+        assert_eq!(step.agent.as_deref(), Some("claude"));
         assert_eq!(step.duration_secs, Some(120));
     }
 
@@ -536,7 +605,7 @@ mod tests {
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
         history.add_step_bounded(step, 1000);
         assert_eq!(history.steps.len(), 1);
-        assert_eq!(history.steps[0].phase, "Development");
+        assert_eq!(&*history.steps[0].phase, "Development");
         assert_eq!(history.steps[0].iteration, 1);
     }
 
@@ -552,5 +621,265 @@ mod tests {
         );
         assert_eq!(deserialized.prompt_used, Some("Fix issues".to_string()));
         assert_eq!(deserialized.issues_summary.as_ref().unwrap().found, 2);
+    }
+
+    #[test]
+    fn test_execution_step_with_string_pool() {
+        use crate::checkpoint::StringPool;
+
+        let mut pool = StringPool::new();
+        let outcome = StepOutcome::success(None, vec![]);
+
+        // Create multiple steps with the same phase and agent
+        let step1 =
+            ExecutionStep::new_with_pool("Development", 1, "dev_run", outcome.clone(), &mut pool)
+                .with_agent_pooled("claude", &mut pool);
+        let step2 = ExecutionStep::new_with_pool("Development", 2, "dev_run", outcome, &mut pool)
+            .with_agent_pooled("claude", &mut pool);
+
+        // Verify string pool deduplication works
+        assert!(Arc::ptr_eq(&step1.phase, &step2.phase));
+        assert!(Arc::ptr_eq(
+            step1.agent.as_ref().unwrap(),
+            step2.agent.as_ref().unwrap()
+        ));
+
+        // Verify content is correct
+        assert_eq!(&*step1.phase, "Development");
+        assert_eq!(&*step2.phase, "Development");
+        assert_eq!(step1.agent.as_deref(), Some("claude"));
+        assert_eq!(step2.agent.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn test_execution_step_memory_optimization() {
+        use crate::checkpoint::StringPool;
+
+        let mut pool = StringPool::new();
+        let outcome = StepOutcome::success(None, vec![]);
+
+        // Create step with string pool
+        let step = ExecutionStep::new_with_pool("Development", 1, "dev_run", outcome, &mut pool)
+            .with_agent_pooled("claude", &mut pool);
+
+        // Arc<str> and Box<str> should use len() not capacity()
+        let phase_size = step.phase.len();
+        let step_type_size = step.step_type.len();
+        let agent_size = step.agent.as_ref().map_or(0, |s| s.len());
+
+        // Verify sizes are reasonable
+        assert_eq!(phase_size, "Development".len());
+        assert_eq!(step_type_size, "dev_run".len());
+        assert_eq!(agent_size, "claude".len());
+
+        // Total size should be less than String capacity-based approach
+        let optimized_size = phase_size + step_type_size + agent_size;
+        assert!(optimized_size < 100); // Reasonable upper bound
+    }
+
+    #[test]
+    fn test_execution_step_serialization_roundtrip() {
+        use crate::checkpoint::StringPool;
+
+        let mut pool = StringPool::new();
+        let outcome =
+            StepOutcome::success(Some("output".to_string()), vec!["file.txt".to_string()]);
+
+        let step = ExecutionStep::new_with_pool("Development", 1, "dev_run", outcome, &mut pool)
+            .with_agent_pooled("claude", &mut pool)
+            .with_duration(120);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&step).unwrap();
+
+        // Deserialize back
+        let deserialized: ExecutionStep = serde_json::from_str(&json).unwrap();
+
+        // Verify all fields match
+        assert_eq!(&*step.phase, &*deserialized.phase);
+        assert_eq!(step.iteration, deserialized.iteration);
+        assert_eq!(&*step.step_type, &*deserialized.step_type);
+        assert_eq!(step.agent.as_deref(), deserialized.agent.as_deref());
+        assert_eq!(step.duration_secs, deserialized.duration_secs);
+        assert_eq!(step.outcome, deserialized.outcome);
+    }
+
+    #[test]
+    fn test_execution_step_backward_compatible_deserialization() {
+        // Old checkpoint format with String fields
+        let old_json = r#"{
+            "phase": "Development",
+            "iteration": 1,
+            "step_type": "dev_run",
+            "timestamp": "2025-01-20 12:00:00",
+            "outcome": {"Success": {"output": null, "files_modified": [], "exit_code": 0}},
+            "agent": "claude",
+            "duration_secs": 120
+        }"#;
+
+        // Should deserialize successfully into new Arc<str> format
+        let step: ExecutionStep = serde_json::from_str(old_json).unwrap();
+
+        assert_eq!(&*step.phase, "Development");
+        assert_eq!(step.iteration, 1);
+        assert_eq!(&*step.step_type, "dev_run");
+        assert_eq!(step.agent.as_deref(), Some("claude"));
+        assert_eq!(step.duration_secs, Some(120));
+    }
+
+    #[test]
+    fn test_step_outcome_success_with_empty_files_uses_none() {
+        // Empty files_modified should use None instead of empty Vec
+        let outcome = StepOutcome::success(None, vec![]);
+
+        match outcome {
+            StepOutcome::Success { files_modified, .. } => {
+                assert!(files_modified.is_none(), "Empty files should be None");
+            }
+            _ => panic!("Expected Success variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_success_with_files_uses_boxed_slice() {
+        // Non-empty files_modified should use Box<[String]>
+        let files = vec!["file1.txt".to_string(), "file2.txt".to_string()];
+        let outcome = StepOutcome::success(None, files);
+
+        match outcome {
+            StepOutcome::Success { files_modified, .. } => {
+                let files = files_modified.expect("Files should be present");
+                assert_eq!(files.len(), 2);
+                assert_eq!(files[0], "file1.txt");
+                assert_eq!(files[1], "file2.txt");
+            }
+            _ => panic!("Expected Success variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_failure_with_no_signals_uses_none() {
+        // Failure without signals should use None
+        let outcome = StepOutcome::failure("error message".to_string(), true);
+
+        match outcome {
+            StepOutcome::Failure { signals, .. } => {
+                assert!(signals.is_none(), "Empty signals should be None");
+            }
+            _ => panic!("Expected Failure variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_uses_box_str_for_strings() {
+        // Verify that Box<str> is used for string fields
+        let outcome = StepOutcome::failure("test error".to_string(), false);
+
+        match outcome {
+            StepOutcome::Failure { error, .. } => {
+                assert_eq!(&*error, "test error");
+                // Box<str> uses exactly the needed space
+                assert_eq!(error.len(), "test error".len());
+            }
+            _ => panic!("Expected Failure variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_partial_uses_box_str() {
+        let outcome = StepOutcome::partial("done".to_string(), "remaining".to_string());
+
+        match outcome {
+            StepOutcome::Partial {
+                completed,
+                remaining,
+                ..
+            } => {
+                assert_eq!(&*completed, "done");
+                assert_eq!(&*remaining, "remaining");
+                // Verify Box<str> efficiency
+                assert_eq!(completed.len(), "done".len());
+                assert_eq!(remaining.len(), "remaining".len());
+            }
+            _ => panic!("Expected Partial variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_skipped_uses_box_str() {
+        let outcome = StepOutcome::skipped("already done".to_string());
+
+        match outcome {
+            StepOutcome::Skipped { reason } => {
+                assert_eq!(&*reason, "already done");
+                assert_eq!(reason.len(), "already done".len());
+            }
+            _ => panic!("Expected Skipped variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_serialization_with_empty_collections() {
+        // Test that empty collections serialize correctly
+        let outcome = StepOutcome::success(None, vec![]);
+        let json = serde_json::to_string(&outcome).unwrap();
+
+        // Deserialize back
+        let deserialized: StepOutcome = serde_json::from_str(&json).unwrap();
+        assert_eq!(outcome, deserialized);
+
+        // Verify None is preserved
+        match deserialized {
+            StepOutcome::Success { files_modified, .. } => {
+                assert!(files_modified.is_none());
+            }
+            _ => panic!("Expected Success variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_backward_compatibility_with_empty_vec() {
+        // Old checkpoints may have empty Vec serialized as []
+        let old_json = r#"{"Success":{"output":null,"files_modified":[],"exit_code":0}}"#;
+        let outcome: StepOutcome = serde_json::from_str(old_json).unwrap();
+
+        // Should deserialize with None or empty Box<[String]>
+        match outcome {
+            StepOutcome::Success { files_modified, .. } => {
+                // Both None and empty box are acceptable for backward compatibility
+                if let Some(files) = files_modified {
+                    assert!(files.is_empty());
+                }
+            }
+            _ => panic!("Expected Success variant"),
+        }
+    }
+
+    #[test]
+    fn test_step_outcome_memory_efficiency_vs_vec() {
+        // Demonstrate memory efficiency of Box<str> and Option<Box<[T]>>
+        // Vec<T> over-allocates capacity, Box<[T]> uses exact size
+
+        let outcome = StepOutcome::success(
+            Some("output".to_string()),
+            vec!["file1.txt".to_string(), "file2.txt".to_string()],
+        );
+
+        match outcome {
+            StepOutcome::Success {
+                output,
+                files_modified,
+                ..
+            } => {
+                // Box<str> uses exact size
+                let output_str = output.expect("Output should be present");
+                assert_eq!(output_str.len(), "output".len());
+
+                // Box<[String]> uses exact size (no excess capacity)
+                let files = files_modified.expect("Files should be present");
+                assert_eq!(files.len(), 2);
+            }
+            _ => panic!("Expected Success variant"),
+        }
     }
 }

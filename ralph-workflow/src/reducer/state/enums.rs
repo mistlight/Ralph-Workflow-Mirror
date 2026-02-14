@@ -6,7 +6,7 @@
 ///
 /// Used to track which XML artifact type is expected for XSD validation,
 /// enabling role-specific retry prompts and error messages.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArtifactType {
     /// Plan XML from planning phase.
     Plan,
@@ -21,7 +21,7 @@ pub enum ArtifactType {
 }
 
 /// Prompt rendering mode chosen by the reducer.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PromptMode {
     /// Standard prompt rendering.
     Normal,
@@ -37,7 +37,7 @@ pub enum PromptMode {
 }
 
 /// Reason a same-agent retry is pending.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SameAgentRetryReason {
     /// The agent invocation timed out.
     Timeout,
@@ -66,7 +66,7 @@ impl std::fmt::Display for ArtifactType {
 ///
 /// These values map to the `<ralph-status>` element in development_result.xml.
 /// Used to track whether work is complete or needs continuation.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DevelopmentStatus {
     /// Work completed successfully - no continuation needed.
     Completed,
@@ -87,7 +87,7 @@ pub enum DevelopmentStatus {
 /// - `NoIssuesFound`: Complete, no continuation needed
 /// - `IssuesRemain`: Work incomplete, needs continuation
 /// - `Failed`: Fix attempt failed, needs continuation with different approach
-#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FixStatus {
     /// All issues have been addressed - no continuation needed.
     #[default]
@@ -253,7 +253,7 @@ impl CommitState {
 }
 
 /// Kind of prompt input that may require oversize handling.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PromptInputKind {
     Prompt,
     Plan,
@@ -278,7 +278,7 @@ pub enum PromptInputRepresentation {
 }
 
 /// Reason an input was materialized in a non-default way.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PromptMaterializationReason {
     /// Input was within all configured budgets (no oversize handling required).
     WithinBudgets,
