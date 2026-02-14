@@ -8,6 +8,70 @@
 use super::*;
 
 #[test]
+fn test_extracted_stdout_error_debug_log_is_gated_by_verbosity() {
+    let colors = Colors { enabled: false };
+
+    // Capture file logs via a workspace-backed logger so we can assert on emitted lines.
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        // Simulate a structured OpenCode error event in the agent logfile.
+        "{\"type\":\"error\",\"error\":{\"code\":\"usage_limit_exceeded\"}}\n".to_string(),
+    ));
+    let logger = Logger::new(colors).with_workspace_log(
+        Arc::clone(&workspace) as Arc<dyn Workspace>,
+        ".agent/logs/pipeline.log",
+    );
+
+    let mut timer = Timer::new();
+    let config = Config::default().with_verbosity(crate::config::Verbosity::Normal);
+
+    // Force a non-zero agent exit so the executor attempts stdout error extraction.
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(1, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "opencode",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::OpenCode,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "opencode",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let _ = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    let logs = workspace
+        .read(Path::new(".agent/logs/pipeline.log"))
+        .expect("pipeline log should be readable");
+
+    // Debug-only diagnostics must not be emitted at Normal verbosity.
+    assert!(!logs.contains("[DEBUG] [OpenCode] Extracted error from logfile"));
+}
+
+#[test]
 fn test_timeout_error_from_run_with_prompt_err_arm_triggers_timeout_fallback() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);

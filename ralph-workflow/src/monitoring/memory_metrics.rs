@@ -195,14 +195,6 @@ pub struct LoggingBackend {
 }
 
 impl LoggingBackend {
-    /// Create a new logging backend with warning threshold.
-    pub fn new(warn_threshold_bytes: usize) -> Self {
-        Self {
-            warn_threshold_bytes,
-            logger: Rc::new(crate::logger::Logger::default()),
-        }
-    }
-
     /// Create a logging backend that writes via the provided logger.
     pub fn with_logger(
         warn_threshold_bytes: usize,

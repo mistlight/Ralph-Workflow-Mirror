@@ -550,8 +550,8 @@ fn test_bounded_growth_with_mixed_phase_operations() {
 #[test]
 fn test_execution_history_heap_size_within_baseline() {
     with_default_timeout(|| {
+        use ralph_workflow::benchmarks::baselines::estimate_execution_step_heap_bytes_core_fields;
         use ralph_workflow::benchmarks::baselines::ExecutionHistoryBaseline;
-        use ralph_workflow::checkpoint::execution_history::StepOutcome;
 
         let mut state = PipelineState::initial(1000, 5);
         let limit = 1000;
@@ -561,38 +561,14 @@ fn test_execution_history_heap_size_within_baseline() {
             state.add_execution_step(create_test_step(i), limit);
         }
 
-        // Measure heap size
+        // Measure heap size using the same methodology as the benchmark suite.
+        //
+        // Intentionally excludes `StepOutcome` payloads to keep this check
+        // stable across platforms and small representation changes.
         let heap_size: usize = state
             .execution_history
             .iter()
-            .map(|step| {
-                let base_size = step.phase.capacity()
-                    + step.step_type.capacity()
-                    + step.timestamp.capacity()
-                    + step.agent.as_ref().map_or(0, |s| s.capacity());
-
-                let outcome_size = match &step.outcome {
-                    StepOutcome::Success {
-                        output,
-                        files_modified,
-                        ..
-                    } => {
-                        output.as_ref().map_or(0, |s| s.capacity())
-                            + files_modified.iter().map(|s| s.capacity()).sum::<usize>()
-                    }
-                    StepOutcome::Failure { error, signals, .. } => {
-                        error.capacity() + signals.iter().map(|s| s.capacity()).sum::<usize>()
-                    }
-                    StepOutcome::Partial {
-                        completed,
-                        remaining,
-                        ..
-                    } => completed.capacity() + remaining.capacity(),
-                    StepOutcome::Skipped { reason } => reason.capacity(),
-                };
-
-                base_size + outcome_size
-            })
+            .map(estimate_execution_step_heap_bytes_core_fields)
             .sum();
 
         // Verify against baseline

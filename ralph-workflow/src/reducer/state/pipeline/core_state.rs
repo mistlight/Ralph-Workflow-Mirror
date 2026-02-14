@@ -438,11 +438,8 @@ impl PipelineState {
         match self.phase {
             PipelinePhase::Complete => true,
             PipelinePhase::Interrupted => {
-                // Interrupted is terminal if:
-                // 1. Coming from AwaitingDevFix (failure path, completion marker written)
-                // 2. Normal interruption with checkpoint saved
-                // The reducer sets this phase AFTER writing completion marker or checkpoint
-                true
+                self.checkpoint_saved_count > 0
+                    || matches!(self.previous_phase, Some(PipelinePhase::AwaitingDevFix))
             }
             _ => false,
         }

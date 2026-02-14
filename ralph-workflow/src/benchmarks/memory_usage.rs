@@ -9,6 +9,7 @@
 //! **These are measurement benchmarks, not pass/fail tests.**
 //! Run with `--nocapture` to see output.
 
+use crate::benchmarks::baselines::estimate_execution_step_heap_bytes_core_fields;
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 use crate::reducer::state::PipelineState;
 use std::time::Instant;
@@ -39,13 +40,7 @@ fn benchmark_execution_history_growth_10_iterations() {
     let actual_heap_size: usize = state
         .execution_history()
         .iter()
-        .map(|step| {
-            // Approximate heap size: string fields + vec allocations
-            step.phase.capacity()
-                + step.step_type.capacity()
-                + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
-        })
+        .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
     let growth_per_iteration = if !state.execution_history().is_empty() {
@@ -79,12 +74,7 @@ fn benchmark_execution_history_growth_100_iterations() {
     let actual_heap_size: usize = state
         .execution_history()
         .iter()
-        .map(|step| {
-            step.phase.capacity()
-                + step.step_type.capacity()
-                + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
-        })
+        .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
     let growth_per_iteration = if !state.execution_history().is_empty() {
@@ -120,12 +110,7 @@ fn benchmark_execution_history_growth_1000_iterations() {
     let actual_heap_size: usize = state
         .execution_history()
         .iter()
-        .map(|step| {
-            step.phase.capacity()
-                + step.step_type.capacity()
-                + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
-        })
+        .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
     let growth_per_iteration = if !state.execution_history().is_empty() {
@@ -190,12 +175,7 @@ fn benchmark_pipeline_state_size_with_100_steps() {
     let heap_size: usize = state
         .execution_history()
         .iter()
-        .map(|step| {
-            step.phase.capacity()
-                + step.step_type.capacity()
-                + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
-        })
+        .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
     println!("\n=== Pipeline State Size (100 steps) ===");

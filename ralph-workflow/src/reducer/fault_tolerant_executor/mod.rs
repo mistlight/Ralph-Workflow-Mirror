@@ -186,12 +186,16 @@ fn try_agent_execution(
                 runtime.workspace,
             );
 
-            // Log extracted stdout errors for OpenCode debugging
-            if let Some(ref err_msg) = stdout_error {
-                runtime.logger.log(&format!(
-                    "[DEBUG] [OpenCode] Extracted error from logfile for agent '{}': {}",
-                    config.agent_name, err_msg
-                ));
+            // Log extracted stdout errors only in debug verbosity.
+            //
+            // This is diagnostic-only and can be noisy in normal runs.
+            if runtime.config.verbosity.is_debug() {
+                if let Some(ref err_msg) = stdout_error {
+                    runtime.logger.log(&format!(
+                        "[DEBUG] [OpenCode] Extracted error from logfile for agent '{}': {}",
+                        config.agent_name, err_msg
+                    ));
+                }
             }
 
             let error_kind =
