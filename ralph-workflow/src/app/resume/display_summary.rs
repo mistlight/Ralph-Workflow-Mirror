@@ -139,16 +139,17 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
             logger.info("Recent Activity:");
 
             for step in &recent_steps {
-                let outcome_emoji = match &step.outcome {
-                    crate::checkpoint::execution_history::StepOutcome::Success { .. } => "✓",
-                    crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "✗",
-                    crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "◐",
-                    crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "○",
+                // ASCII-only outcome markers (stable across non-UTF8 terminals)
+                let outcome_marker = match &step.outcome {
+                    crate::checkpoint::execution_history::StepOutcome::Success { .. } => "OK",
+                    crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "FAIL",
+                    crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "PART",
+                    crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "SKIP",
                 };
 
                 logger.info(&format!(
-                    "  {} {} ({})",
-                    outcome_emoji, step.step_type, step.phase
+                    "  {:<4} {} ({})",
+                    outcome_marker, step.step_type, step.phase
                 ));
 
                 // Add files modified count if available
