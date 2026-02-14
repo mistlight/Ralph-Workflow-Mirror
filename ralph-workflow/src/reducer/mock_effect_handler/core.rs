@@ -40,6 +40,11 @@ pub struct MockEffectHandler {
     pub(super) captured_ui_events: RefCell<Vec<UIEvent>>,
     /// When true, PrepareCommitPrompt returns CommitSkipped instead of proceeding.
     pub(super) simulate_empty_diff: bool,
+
+    /// When true, the next call to `execute()` will panic.
+    ///
+    /// This supports integration tests that verify panic paths do not hang.
+    pub(super) panic_on_next_execute: bool,
 }
 
 impl MockEffectHandler {
@@ -58,6 +63,7 @@ impl MockEffectHandler {
             captured_effects: RefCell::new(Vec::new()),
             captured_ui_events: RefCell::new(Vec::new()),
             simulate_empty_diff: false,
+            panic_on_next_execute: false,
         }
     }
 
@@ -74,6 +80,14 @@ impl MockEffectHandler {
     /// ```
     pub fn with_empty_diff(mut self) -> Self {
         self.simulate_empty_diff = true;
+        self
+    }
+
+    /// Configure the mock to panic on the next effect execution.
+    ///
+    /// This is used to test panic-unwind cleanup behavior in the event loop.
+    pub fn with_panic_on_next_execute(mut self) -> Self {
+        self.panic_on_next_execute = true;
         self
     }
 

@@ -49,7 +49,7 @@ Set up alerts based on these thresholds:
 
 | Metric | Warning | Critical | Action |
 |--------|---------|----------|--------|
-| execution_history_len | >1200 | >1500 | Check limit configuration |
+| execution_history_len | == execution_history_limit | > execution_history_limit | At-cap is expected on long runs; increase the limit if you need more history. Exceeding the limit indicates a bug or misconfiguration. |
 | execution_history_heap_bytes | >600 KB | >1 MB | Investigate history content |
 | Checkpoint interval | >30 min | >60 min | Check checkpoint performance |
 
@@ -59,7 +59,8 @@ Set up alerts based on these thresholds:
 
 **Detection:**
 ```bash
-# Check if history length exceeds limit
+# Check if history length exceeds the configured limit.
+# Default execution_history_limit is 1000; replace 1000 if you changed it.
 jq '.execution_history_len > 1000' memory_metrics.json
 ```
 

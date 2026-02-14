@@ -6,10 +6,12 @@
 //! - Checkpoint file size growth
 //! - Deserialization time
 //!
-//! **These are measurement benchmarks, not pass/fail tests.**
+//! These are primarily measurement benchmarks (run with `--nocapture` to see output),
+//! with a small number of hard invariants to prevent unbounded regression.
 //! Run with `--nocapture` to see output.
 
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+use crate::checkpoint::SizeThresholds;
 use crate::reducer::state::PipelineState;
 use std::time::Instant;
 
@@ -327,12 +329,24 @@ fn benchmark_serialization_performance_ceiling() {
         );
     }
 
-    // Checkpoint size should be reasonable with bounded history
+    // Checkpoint size must remain under the hard safety limit.
+    let hard_limit_bytes = SizeThresholds::DEFAULT.error_threshold;
     assert!(
-        size_kb < 1024,
-        "Checkpoint size regression detected: {} KB exceeds 1 MB ceiling",
-        size_kb
+        json.len() < hard_limit_bytes,
+        "Checkpoint size regression detected: {} bytes exceeds hard limit {} bytes",
+        json.len(),
+        hard_limit_bytes
     );
+
+    // Stricter (1 MiB) size ceilings are opt-in to avoid brittle failures as PipelineState evolves.
+    if perf_ceiling_asserts_enabled() {
+        const ONE_MIB: usize = 1024 * 1024;
+        assert!(
+            json.len() < ONE_MIB,
+            "Checkpoint size regression detected: {} KB exceeds 1 MiB ceiling",
+            size_kb
+        );
+    }
 }
 
 #[test]

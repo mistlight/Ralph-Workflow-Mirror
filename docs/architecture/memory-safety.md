@@ -117,15 +117,16 @@ Some channels use unbounded `channel()` for valid technical reasons:
    - Risk mitigation: Bounded channel would risk deadlock if child writes more than capacity
    - Verification: Pump thread drains continuously, joined with timeout
 
-2. **File system monitoring** (`files/protection/monitoring.rs:129`)
-   - Reason: External notify library API
-   - Risk mitigation: File system event rate is naturally low (human-triggered file changes)
+2. **File system monitoring** (`files/protection/monitoring.rs:126`)
+   - Uses: Bounded `sync_channel` queue + `try_send` (drop-on-full)
+   - Reason: `notify` callback must not block; bounded queue keeps memory capped
+   - Risk mitigation: Dropped events are acceptable (events are coalescable; polling fallback covers misses)
    - Verification: Monitor thread lifetime tied to pipeline run
 
 **Policy exception criteria:**
-- Event rate is naturally bounded (file system changes, process output)
-- Bounded channel would introduce deadlock risk
-- Consumer drains channel continuously
+- Bounded queue would introduce deadlock risk OR callback must not block
+- Backpressure is handled explicitly (block, drop-on-full, or coalescing)
+- Consumer drains continuously
 - Thread lifecycle is properly managed
 
 ## Thread Lifecycle

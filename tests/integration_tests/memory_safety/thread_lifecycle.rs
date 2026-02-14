@@ -238,20 +238,19 @@ fn test_no_deadlocks_with_concurrent_file_access() {
 #[test]
 fn test_panic_in_effect_handler_does_not_hang() {
     with_default_timeout(|| {
-        // Note: MockEffectHandler doesn't actually panic in this test,
-        // but we verify that error paths (which could include panics in production)
-        // don't leave threads hanging
-
         let mut app_handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from("/mock/repo"))
             .with_file("PROMPT.md", STANDARD_PROMPT);
 
-        let mut effect_handler = MockEffectHandler::new(PipelineState::initial(0, 0));
+        // Force a reducer-layer panic during effect execution.
+        // We assert the pipeline does not hang under a panic unwind (timeout guard).
+        let mut effect_handler =
+            MockEffectHandler::new(PipelineState::initial(1, 0)).with_panic_on_next_execute();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        // Even if effect handling encounters errors, pipeline should complete or fail gracefully
+        // The reducer event loop is expected to recover from a handler panic.
         let result = run_ralph_cli_with_handlers(
             &[],
             executor,
@@ -260,10 +259,19 @@ fn test_panic_in_effect_handler_does_not_hang() {
             &mut effect_handler,
         );
 
-        // Result may be Ok or Err, but should not hang
         assert!(
-            result.is_ok() || result.is_err(),
-            "Pipeline should complete (success or failure) without hanging"
+            result.is_ok(),
+            "Pipeline should recover and complete after reducer handler panic"
+        );
+
+        // Panic recovery should dump an event loop trace for diagnostics.
+        let trace_dumped = app_handler
+            .get_all_files()
+            .iter()
+            .any(|(path, _)| path.to_string_lossy().contains("event_loop_trace.jsonl"));
+        assert!(
+            trace_dumped,
+            "Expected event loop trace dump after injected reducer handler panic"
         );
     });
 }

@@ -50,6 +50,11 @@ use super::*;
 /// - `TriggerDevFixFlow` - Writes completion marker file
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+        if self.panic_on_next_execute {
+            self.panic_on_next_execute = false;
+            panic!("MockEffectHandler panic injected by test");
+        }
+
         match effect {
             Effect::ReportAgentChainExhausted { role, phase, cycle } => {
                 use crate::reducer::event::ErrorEvent;
