@@ -87,13 +87,11 @@ File snapshots larger than 10 KB are not stored in checkpoints to keep checkpoin
 
 ```rust
 pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
-    self.execution_history.push_back(step);
-
-    // Enforce limit by dropping oldest entries.
-    while self.execution_history.len() > limit {
-        self.execution_history.pop_front();
-    }
+    self.execution_history.push_bounded(step, limit);
 }
+
+// Note: The actual implementation delegates to BoundedExecutionHistory::push_bounded,
+// which enforces the limit using ring buffer semantics (oldest entries dropped first).
 ```
 
 **Behavior**:

@@ -203,6 +203,42 @@ fn test_pipeline_state_from_checkpoint_phase_mapping() {
 }
 
 #[test]
+fn test_pipeline_state_from_checkpoint_caps_legacy_execution_history() {
+    use crate::checkpoint::execution_history::{ExecutionHistory, ExecutionStep, StepOutcome};
+    use std::collections::VecDeque;
+
+    let mut checkpoint = make_checkpoint_for_state(
+        CheckpointPhase::Development,
+        CheckpointRebaseState::NotStarted,
+    );
+
+    // Create an oversized legacy execution history (simulates old checkpoints)
+    // that would otherwise load unbounded history into memory.
+    let mut steps = VecDeque::new();
+    for i in 0..1500u32 {
+        steps.push_back(ExecutionStep::new(
+            "Development",
+            i,
+            "legacy_step",
+            StepOutcome::success(None, vec![]),
+        ));
+    }
+
+    checkpoint.execution_history = Some(ExecutionHistory {
+        steps,
+        file_snapshots: std::collections::HashMap::new(),
+    });
+
+    // Conversion must apply a hard cap so oversized checkpoints cannot force
+    // unbounded memory usage.
+    let state: PipelineState = checkpoint.into();
+    assert!(
+        state.execution_history_len() <= 1000,
+        "expected execution history to be capped during checkpoint conversion"
+    );
+}
+
+#[test]
 fn test_pipeline_state_from_checkpoint_preserves_prompt_inputs_when_present() {
     let checkpoint = make_checkpoint_for_state(
         CheckpointPhase::Development,

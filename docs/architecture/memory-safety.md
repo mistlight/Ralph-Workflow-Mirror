@@ -108,16 +108,19 @@ let (tx, rx) = mpsc::channel();
    - Typical capacity: 500 events
    - Verified by: `memory_safety::channel_bounds` tests
 
-### Acceptable Unbounded Channel Uses
+2. **Stdout pump buffering** (`pipeline/prompt/streaming.rs`)
+   - Uses: `sync_channel` with explicit bounded capacity
+   - Behavior: Backpressure when parsing falls behind pumping
+   - Rationale: Caps buffering (prevents unbounded memory growth) while keeping the pump thread simple
+   - Memory guarantee: Buffer size capped at (chunk_size * channel_capacity)
+   - Verified by: `memory_safety::channel_bounds::test_streaming_output_channel_pattern`
 
-Some channels use unbounded `channel()` for valid technical reasons:
+### Acceptable Channel Exceptions
 
-1. **Streaming output** (`pipeline/prompt/streaming.rs:383`)
-   - Reason: Pipes stdout from child process
-   - Risk mitigation: Bounded channel would risk deadlock if child writes more than capacity
-   - Verification: Pump thread drains continuously, joined with timeout
+Some channel producers must not block (e.g., library callbacks). In those cases we still
+prefer bounded channels, but use non-blocking send with explicit drop-on-full semantics.
 
-2. **File system monitoring** (`files/protection/monitoring.rs:126`)
+1. **File system monitoring** (`files/protection/monitoring.rs:126`)
    - Uses: Bounded `sync_channel` queue + `try_send` (drop-on-full)
    - Reason: `notify` callback must not block; bounded queue keeps memory capped
    - Risk mitigation: Dropped events are acceptable (events are coalescable; polling fallback covers misses)

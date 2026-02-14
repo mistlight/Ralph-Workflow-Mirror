@@ -242,37 +242,55 @@ fn test_bounded_event_queue_pattern_documented() {
 #[test]
 fn test_streaming_output_channel_pattern() {
     with_default_timeout(|| {
-        // Verify the streaming output pattern documented in streaming.rs:383
-        // Uses unbounded channel for stdout pump to avoid deadlock
-        // This is acceptable because:
-        // 1. Child process stdout is piped
-        // 2. Bounded channel could deadlock if child writes more than capacity
-        // 3. Pump thread drains continuously
-        // 4. Thread is joined with timeout (streaming.rs:176-183)
+        // Verify the streaming output pattern used by the stdout pump.
+        //
+        // Production implementation (`pipeline/prompt/streaming.rs`) uses a bounded
+        // `sync_channel` with explicit capacity to cap buffering and apply backpressure
+        // when pumping stdout outpaces parsing. This prevents unbounded memory growth
+        // while keeping the pump thread design simple.
+        //
+        // The bounded channel approach ensures:
+        // - Memory usage is capped (buffer size * capacity)
+        // - Backpressure is applied when parser falls behind
+        // - No deadlock risk (capacity is sized appropriately)
 
         use std::sync::mpsc;
         use std::thread;
+        use std::time::Duration;
+
+        const CAPACITY: usize = 5;
+        const CHUNKS: usize = 100;
 
         // Simulate streaming output pattern
-        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(CAPACITY);
+
+        let saw_full = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_full_producer = std::sync::Arc::clone(&saw_full);
 
         // Producer (simulates stdout pump)
         let producer = thread::spawn(move || {
-            for i in 0..100 {
+            for i in 0..CHUNKS {
                 let data = format!("line {}\n", i).into_bytes();
-                if tx.send(data).is_err() {
-                    break;
+                loop {
+                    match tx.try_send(data.clone()) {
+                        Ok(()) => break,
+                        Err(mpsc::TrySendError::Full(_)) => {
+                            saw_full_producer.store(true, std::sync::atomic::Ordering::Relaxed);
+                            thread::sleep(Duration::from_micros(50));
+                        }
+                        Err(mpsc::TrySendError::Disconnected(_)) => return,
+                    }
                 }
             }
         });
 
         // Consumer (simulates parser reading)
         let mut received = 0;
-        while received < 100 {
+        while received < CHUNKS {
             match rx.try_recv() {
                 Ok(_data) => received += 1,
                 Err(mpsc::TryRecvError::Empty) => {
-                    thread::sleep(std::time::Duration::from_micros(10));
+                    thread::sleep(Duration::from_micros(10));
                 }
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
@@ -280,6 +298,11 @@ fn test_streaming_output_channel_pattern() {
 
         producer.join().expect("Producer should not panic");
 
-        assert_eq!(received, 100, "Should receive all streamed data");
+        assert!(
+            saw_full.load(std::sync::atomic::Ordering::Relaxed),
+            "expected bounded channel to apply backpressure at least once"
+        );
+
+        assert_eq!(received, CHUNKS, "Should receive all streamed data");
     });
 }

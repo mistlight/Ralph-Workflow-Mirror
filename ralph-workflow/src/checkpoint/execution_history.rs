@@ -426,6 +426,33 @@ impl ExecutionHistory {
             self.steps.pop_front();
         }
     }
+
+    /// Clone this execution history while enforcing a hard step limit.
+    ///
+    /// This is intended for resume paths where a legacy checkpoint may contain an
+    /// oversized `steps` buffer. Cloning only the tail avoids allocating memory
+    /// proportional to the checkpoint's full history.
+    pub fn clone_bounded(&self, limit: usize) -> Self {
+        if limit == 0 {
+            return Self {
+                steps: VecDeque::new(),
+                file_snapshots: self.file_snapshots.clone(),
+            };
+        }
+
+        let len = self.steps.len();
+        if len <= limit {
+            return self.clone();
+        }
+
+        let keep_from = len - limit;
+        let mut steps = VecDeque::with_capacity(limit);
+        steps.extend(self.steps.iter().skip(keep_from).cloned());
+        Self {
+            steps,
+            file_snapshots: self.file_snapshots.clone(),
+        }
+    }
 }
 
 #[cfg(test)]

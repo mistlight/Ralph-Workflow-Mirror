@@ -19,13 +19,11 @@ The `add_execution_step` method enforces bounded growth with configurable limits
 
 ```rust
 pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
-    self.execution_history.push_back(step);
-
-    // Enforce limit by dropping oldest entries.
-    while self.execution_history.len() > limit {
-        self.execution_history.pop_front();
-    }
+    self.execution_history.push_bounded(step, limit);
 }
+
+// Implementation uses BoundedExecutionHistory wrapper that enforces
+// the limit via ring buffer semantics (drops oldest when limit exceeded).
 ```
 
 ### Default Configuration
@@ -230,20 +228,23 @@ let (sender, receiver) = mpsc::sync_channel(config.capacity);
 
 **Verification:** `test_sync_channel_applies_backpressure` (channel_bounds.rs:21)
 
-### Documented Unbounded Channel Exceptions
+### Documented Channel Exceptions
 
-#### 1. File System Notifications
+#### 1. File System Monitoring Callback
 
 **Location:** `src/files/protection/monitoring.rs`
 
-**Usage:** File system watcher events (notify library requirement)
+**Usage:** File system watcher callback must not block
 
 ```rust
-let (tx, rx) = std::sync::mpsc::channel();
-let mut watcher = notify::recommended_watcher(tx)?;
+let (tx, rx) = std::sync::mpsc::sync_channel(NOTIFY_EVENT_QUEUE_CAPACITY);
+let mut watcher = notify::recommended_watcher(move |res| {
+    // Best-effort: drop on full rather than blocking the callback.
+    let _ = tx.try_send(res);
+})?;
 ```
 
-**Justification:** Required by `notify` library API; bounded by file system event rate
+**Justification:** Callback must not block; bounded queue caps memory and drops bursts
 
 #### 2. Short-Lived Stdout Pumping
 
@@ -252,11 +253,11 @@ let mut watcher = notify::recommended_watcher(tx)?;
 **Usage:** Stdout from agent process (real-time streaming)
 
 ```rust
-let (tx, rx) = mpsc::channel();
+let (tx, rx) = mpsc::sync_channel(STDOUT_PUMP_CHANNEL_CAPACITY);
 let pump_handle = spawn_stdout_pump(stdout, activity_timestamp, tx, cancel);
 ```
 
-**Justification:** Short-lived (bounded by agent process lifetime); backpressure handled at reader level
+**Justification:** Bounded buffering caps memory; backpressure applies when parsing falls behind pumping
 
 ### Channel Safety Verification
 

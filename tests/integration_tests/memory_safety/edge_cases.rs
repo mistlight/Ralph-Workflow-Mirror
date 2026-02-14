@@ -14,6 +14,127 @@ use crate::test_timeout::with_default_timeout;
 use ralph_workflow::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 use ralph_workflow::reducer::state::PipelineState;
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use ralph_workflow::workspace::{DirEntry, MemoryWorkspace, Workspace};
+
+/// Workspace wrapper that records file contents when they are removed.
+///
+/// The production pipeline clears `.agent/checkpoint.json` during finalization.
+/// For resume/checkpoint tests, we want to assert on the *content* of the
+/// checkpoint that was written right before it was cleared.
+struct RecordingWorkspace {
+    inner: MemoryWorkspace,
+    removed: Mutex<HashMap<PathBuf, Vec<u8>>>,
+}
+
+impl RecordingWorkspace {
+    fn new(inner: MemoryWorkspace) -> Self {
+        Self {
+            inner,
+            removed: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn removed_file_string(&self, path: &str) -> Option<String> {
+        let removed = self.removed.lock().ok()?;
+        removed
+            .get(&PathBuf::from(path))
+            .map(|b| String::from_utf8_lossy(b).to_string())
+    }
+}
+
+impl Workspace for RecordingWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> std::io::Result<String> {
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> std::io::Result<Vec<u8>> {
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> std::io::Result<()> {
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> std::io::Result<()> {
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> std::io::Result<()> {
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> std::io::Result<()> {
+        if self.inner.exists(relative) {
+            if let Ok(bytes) = self.inner.read_bytes(relative) {
+                if let Ok(mut removed) = self.removed.lock() {
+                    removed.insert(relative.to_path_buf(), bytes);
+                }
+            }
+        }
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> std::io::Result<()> {
+        if self.inner.exists(relative) {
+            self.remove(relative)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> std::io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> std::io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> std::io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> std::io::Result<Vec<DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> std::io::Result<()> {
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> std::io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> std::io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}
+
 /// Helper function to create a test execution step.
 fn create_test_step(iteration: u32) -> ExecutionStep {
     ExecutionStep::new(
@@ -24,6 +145,187 @@ fn create_test_step(iteration: u32) -> ExecutionStep {
     )
     .with_agent("test-agent")
     .with_duration(5)
+}
+
+#[test]
+fn test_resume_binds_execution_history_and_completion_checkpoint_uses_updated_history() {
+    with_default_timeout(|| {
+        use crate::common::{
+            create_test_config_struct, create_test_registry, mock_executor_with_success,
+        };
+        use crate::workflows::resume::make_checkpoint_with_execution_history;
+        use clap::error::ErrorKind;
+        use clap::Parser;
+        use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+        use ralph_workflow::app::{run_with_config_and_handlers, RunWithHandlersParams};
+        use ralph_workflow::checkpoint::execution_history::StepOutcome as CkptStepOutcome;
+        use ralph_workflow::config::MemoryConfigEnvironment;
+        use ralph_workflow::executor::ProcessExecutor;
+        use ralph_workflow::phases::PhaseContext;
+        use ralph_workflow::reducer::effect::{Effect, EffectResult};
+        use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+        use ralph_workflow::reducer::{EffectHandler, PipelineState as ReducerPipelineState};
+        use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+        use std::path::{Path, PathBuf};
+        use std::sync::Arc;
+
+        // Build a v3 checkpoint JSON with an oversized execution history.
+        // Keep it modest for CI stability while still exceeding our configured limit.
+        fn make_execution_history_json(step_count: usize) -> String {
+            let steps: Vec<serde_json::Value> = (0..step_count)
+                .map(|i| {
+                    serde_json::json!({
+                        "phase": "Development",
+                        "iteration": i,
+                        "step_type": "legacy",
+                        "timestamp": "2024-01-01 12:00:00",
+                        "outcome": {"Success": {"output": null, "files_modified": []}},
+                        "agent": "test-agent",
+                        "duration_secs": 1
+                    })
+                })
+                .collect();
+
+            serde_json::json!({
+                "steps": steps,
+                "file_snapshots": {}
+            })
+            .to_string()
+        }
+
+        let oversized_history_json = make_execution_history_json(50);
+        let checkpoint_json = make_checkpoint_with_execution_history(
+            "/mock/repo",
+            "Development",
+            &oversized_history_json,
+        );
+
+        let mut app_handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file(
+                "PROMPT.md",
+                "# Test\n\n## Goal\nTest\n\n## Acceptance\n- Pass",
+            )
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file(".agent/PLAN.md", "Test plan\n")
+            .with_file(".agent/commit-message.txt", "feat: test\n");
+
+        let mut config = create_test_config_struct();
+        config.execution_history_limit = 10;
+        let executor = mock_executor_with_success();
+
+        // Wrap the standard reducer MockEffectHandler but append a step during
+        // event loop execution. This must appear in the completion checkpoint.
+        struct AppendHistoryHandler {
+            inner: MockEffectHandler,
+            appended: bool,
+        }
+
+        impl AppendHistoryHandler {
+            fn new(state: ReducerPipelineState) -> Self {
+                Self {
+                    inner: MockEffectHandler::new(state),
+                    appended: false,
+                }
+            }
+        }
+
+        impl<'ctx> EffectHandler<'ctx> for AppendHistoryHandler {
+            fn execute(
+                &mut self,
+                effect: Effect,
+                ctx: &mut PhaseContext<'_>,
+            ) -> anyhow::Result<EffectResult> {
+                if !self.appended {
+                    self.appended = true;
+                    let step = ralph_workflow::checkpoint::execution_history::ExecutionStep::new(
+                        "Development",
+                        1234,
+                        "appended_during_loop",
+                        CkptStepOutcome::success(Some("appended".to_string()), vec![]),
+                    );
+                    ctx.execution_history
+                        .add_step_bounded(step, ctx.config.execution_history_limit);
+                }
+                self.inner.execute(effect, ctx)
+            }
+        }
+
+        impl ralph_workflow::app::event_loop::StatefulHandler for AppendHistoryHandler {
+            fn update_state(&mut self, state: ReducerPipelineState) {
+                self.inner.update_state(state);
+            }
+        }
+
+        let mut effect_handler = AppendHistoryHandler::new(ReducerPipelineState::initial(0, 0));
+
+        let argv: Vec<String> = vec!["ralph".to_string(), "--resume".to_string()];
+        let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+            Ok(args) => args,
+            Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+                return;
+            }
+            Err(e) => panic!("failed to parse args: {e}"),
+        };
+
+        let cwd = app_handler.get_cwd();
+        let mut ws = MemoryWorkspace::new(cwd);
+        for (path, content) in app_handler.get_all_files() {
+            if let Some(path_str) = path.to_str() {
+                ws = ws.with_file(path_str, &content);
+            }
+        }
+        let recording = Arc::new(RecordingWorkspace::new(ws));
+        let workspace: Arc<dyn Workspace> = recording.clone();
+
+        let registry = create_test_registry();
+        let config_env = MemoryConfigEnvironment::new()
+            .with_prompt_path(PathBuf::from("/mock/repo/PROMPT.md"))
+            .with_unified_config_path(PathBuf::from("/mock/repo/.config/ralph-workflow.toml"));
+
+        run_with_config_and_handlers(RunWithHandlersParams {
+            args: parsed_args,
+            executor: executor as Arc<dyn ProcessExecutor>,
+            config,
+            registry,
+            path_resolver: &config_env,
+            app_handler: &mut app_handler,
+            effect_handler: &mut effect_handler,
+            workspace: Some(Arc::clone(&workspace)),
+            _marker: std::marker::PhantomData,
+        })
+        .unwrap();
+
+        let saved = recording
+            .removed_file_string(".agent/checkpoint.json")
+            .unwrap_or_else(|| {
+                workspace
+                    .read(Path::new(".agent/checkpoint.json"))
+                    .expect("expected checkpoint to be saved")
+            });
+
+        let value: serde_json::Value =
+            serde_json::from_str(&saved).expect("saved checkpoint should be valid JSON");
+        let steps = value
+            .pointer("/execution_history/steps")
+            .and_then(|v| v.as_array())
+            .expect("checkpoint should contain execution_history.steps array");
+
+        assert_eq!(
+            steps.len(),
+            10,
+            "completion checkpoint should cap execution history to configured limit"
+        );
+
+        let contains_appended = steps
+            .iter()
+            .any(|s| s.get("step_type").and_then(|v| v.as_str()) == Some("appended_during_loop"));
+        assert!(
+            contains_appended,
+            "completion checkpoint should include steps appended during event loop execution"
+        );
+    });
 }
 
 #[test]

@@ -3,8 +3,31 @@
 // Implements conversion from checkpoint format to runtime PipelineState.
 // This is pure state transformation with no I/O operations.
 
-impl From<PipelineCheckpoint> for PipelineState {
-    fn from(checkpoint: PipelineCheckpoint) -> Self {
+use std::collections::VecDeque;
+
+fn bound_execution_history_steps(
+    steps: VecDeque<ExecutionStep>,
+    limit: usize,
+) -> VecDeque<ExecutionStep> {
+    if limit == 0 {
+        return VecDeque::new();
+    }
+    let len = steps.len();
+    if len <= limit {
+        return steps;
+    }
+
+    // Keep only the most recent `limit` entries while dropping the oversized
+    // allocation from legacy checkpoints.
+    let keep_from = len - limit;
+    steps.into_iter().skip(keep_from).collect()
+}
+
+impl PipelineState {
+    pub(crate) fn from_checkpoint_with_execution_history_limit(
+        mut checkpoint: PipelineCheckpoint,
+        execution_history_limit: usize,
+    ) -> Self {
         let rebase_state = map_checkpoint_rebase_state(&checkpoint.rebase_state);
         let agent_chain = AgentChainState::initial();
         let last_substitution_log = checkpoint.last_substitution_log.clone();
@@ -16,8 +39,8 @@ impl From<PipelineCheckpoint> for PipelineState {
 
         let execution_history_steps = checkpoint
             .execution_history
-            .as_ref()
-            .map(|h| h.steps.clone())
+            .take()
+            .map(|h| h.steps)
             .unwrap_or_default();
 
         let mut state = PipelineState {
@@ -106,14 +129,24 @@ impl From<PipelineCheckpoint> for PipelineState {
             },
         };
 
-        if !execution_history_steps.is_empty() {
-            let limit = execution_history_steps.len();
+        let bounded_steps =
+            bound_execution_history_steps(execution_history_steps, execution_history_limit);
+        if !bounded_steps.is_empty() {
             state
                 .execution_history
-                .replace_bounded(execution_history_steps, limit);
+                .replace_bounded(bounded_steps, execution_history_limit);
         }
 
         state
+    }
+}
+
+impl From<PipelineCheckpoint> for PipelineState {
+    fn from(checkpoint: PipelineCheckpoint) -> Self {
+        // `From` cannot accept configuration. Apply a conservative hard cap so
+        // legacy checkpoints cannot load arbitrarily large execution history into memory.
+        let limit = crate::config::Config::default().execution_history_limit;
+        PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, limit)
     }
 }
 

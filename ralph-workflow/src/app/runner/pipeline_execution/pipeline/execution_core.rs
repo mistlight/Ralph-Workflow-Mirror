@@ -251,7 +251,10 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         // Restore progress from checkpoint, but keep budgets/limits config-driven.
         // Initialize a config-aware base state first, then overlay checkpoint progress.
         let mut base_state = crate::app::event_loop::create_initial_state_with_config(&phase_ctx);
-        let migrated: PipelineState = checkpoint.clone().into();
+        let migrated = PipelineState::from_checkpoint_with_execution_history_limit(
+            checkpoint.clone(),
+            phase_ctx.config.execution_history_limit,
+        );
         let migrated_execution_history = migrated.execution_history().clone();
 
         base_state.phase = migrated.phase;
@@ -297,10 +300,6 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     let event_loop_config = EventLoopConfig {
         max_iterations: event_loop::MAX_EVENT_LOOP_ITERATIONS,
     };
-
-    // Clone execution_history and prompt_history BEFORE running event loop (to avoid borrow issues)
-    let execution_history_before = phase_ctx.execution_history.clone();
-    let prompt_history_before = phase_ctx.clone_prompt_history();
 
     // Create effect handler and run event loop.
     let loop_result = {
@@ -392,8 +391,8 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
 
         let builder = builder
-            .with_execution_history(execution_history_before)
-            .with_prompt_history(prompt_history_before)
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history())
             .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
         if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {

@@ -288,7 +288,9 @@ fn benchmark_checkpoint_cycle_memory_stability() {
     // Verify all sizes are similar (no growth)
     let first_size = states[0].1;
     for (cycle, size) in &states {
-        let diff_pct = ((size - first_size) as f64 / first_size as f64) * 100.0;
+        // Use signed arithmetic to avoid usize underflow when a later cycle
+        // happens to serialize slightly smaller than the first.
+        let diff_pct = ((*size as f64 - first_size as f64) / first_size as f64) * 100.0;
         assert!(
             diff_pct.abs() < 5.0,
             "Cycle {} size should be within 5% of initial: {} KB vs {} KB ({:.2}% diff)",
