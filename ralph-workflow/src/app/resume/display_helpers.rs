@@ -1,6 +1,19 @@
 // Display helper functions for checkpoint resume.
 // This module provides utility functions for formatting checkpoint output.
 
+fn parse_checkpoint_timestamp_as_local(timestamp: &str) -> Option<chrono::DateTime<chrono::Local>> {
+    use chrono::{Local, LocalResult, NaiveDateTime, TimeZone};
+
+    let dt = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S").ok()?;
+    match Local.from_local_datetime(&dt) {
+        LocalResult::Single(t) => Some(t),
+        // For ambiguous times (DST fall-back), pick the latest interpretation so
+        // "time ago" output doesn't go negative around transitions.
+        LocalResult::Ambiguous(_, latest) => Some(latest),
+        LocalResult::None => None,
+    }
+}
+
 /// Reconstruct the original command from checkpoint data.
 ///
 /// This function attempts to reconstruct the exact command that was used

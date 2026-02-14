@@ -298,6 +298,29 @@ mod tests {
     use crate::checkpoint::state::{
         AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, EnvironmentSnapshot, RebaseState,
     };
+    use serial_test::serial;
+
+    struct EnvVarGuard {
+        name: &'static str,
+        prior: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn remove(name: &'static str) -> Self {
+            let prior = std::env::var_os(name);
+            std::env::remove_var(name);
+            Self { name, prior }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match self.prior.take() {
+                Some(v) => std::env::set_var(self.name, v),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
 
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32, pass: u32) -> PipelineCheckpoint {
         let cli_args = CliArgsSnapshot::new(5, 3, None, true, 2, false, None);
@@ -450,6 +473,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_restore_environment_skips_sensitive_vars() {
         let mut checkpoint = make_test_checkpoint(PipelinePhase::Development, 1, 0);
         let mut snapshot = EnvironmentSnapshot::default();
@@ -467,10 +491,10 @@ mod tests {
             .insert("GIT_PASSWORD".to_string(), "nope".to_string());
         checkpoint.env_snapshot = Some(snapshot);
 
-        std::env::remove_var("RALPH_SAFE_SETTING");
-        std::env::remove_var("RALPH_API_TOKEN");
-        std::env::remove_var("EDITOR");
-        std::env::remove_var("GIT_PASSWORD");
+        let _safe = EnvVarGuard::remove("RALPH_SAFE_SETTING");
+        let _token = EnvVarGuard::remove("RALPH_API_TOKEN");
+        let _editor = EnvVarGuard::remove("EDITOR");
+        let _git_password = EnvVarGuard::remove("GIT_PASSWORD");
 
         let restored = restore_environment_from_checkpoint(&checkpoint);
         assert_eq!(restored, 2);
@@ -481,8 +505,5 @@ mod tests {
         assert!(std::env::var("RALPH_API_TOKEN").is_err());
         assert_eq!(std::env::var("EDITOR").ok().as_deref(), Some("vim"));
         assert!(std::env::var("GIT_PASSWORD").is_err());
-
-        std::env::remove_var("RALPH_SAFE_SETTING");
-        std::env::remove_var("EDITOR");
     }
 }

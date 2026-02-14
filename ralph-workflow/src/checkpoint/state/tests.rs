@@ -6,21 +6,59 @@
 // Workspace-based tests (for testability without real filesystem)
 // =========================================================================
 
+use serial_test::serial;
+
+struct EnvVarGuard {
+    name: &'static str,
+    prior: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let prior = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self { name, prior }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.prior.take() {
+            Some(v) => std::env::set_var(self.name, v),
+            None => std::env::remove_var(self.name),
+        }
+    }
+}
+
 #[test]
+#[serial]
 fn test_environment_snapshot_filters_sensitive_vars() {
-    std::env::set_var("RALPH_SAFE_SETTING", "ok");
-    std::env::set_var("RALPH_API_TOKEN", "secret");
-    std::env::set_var("EDITOR", "vim");
+    let _safe = EnvVarGuard::set("RALPH_SAFE_SETTING", "ok");
+    let _token = EnvVarGuard::set("RALPH_API_TOKEN", "secret");
+    let _editor = EnvVarGuard::set("EDITOR", "vim");
 
     let snapshot = EnvironmentSnapshot::capture_current();
 
     assert!(snapshot.ralph_vars.contains_key("RALPH_SAFE_SETTING"));
     assert!(!snapshot.ralph_vars.contains_key("RALPH_API_TOKEN"));
     assert!(snapshot.other_vars.contains_key("EDITOR"));
+}
 
-    std::env::remove_var("RALPH_SAFE_SETTING");
-    std::env::remove_var("RALPH_API_TOKEN");
-    std::env::remove_var("EDITOR");
+#[test]
+#[serial]
+fn test_environment_tests_do_not_clobber_prior_env_values() {
+    let _original = EnvVarGuard::set("EDITOR", "original");
+
+    {
+        let _vim = EnvVarGuard::set("EDITOR", "vim");
+        drop(_vim);
+    }
+
+    assert_eq!(
+        std::env::var("EDITOR").ok().as_deref(),
+        Some("original"),
+        "env-muting tests must restore prior values"
+    );
 }
 
 #[cfg(feature = "test-utils")]
@@ -302,6 +340,76 @@ mod workspace_tests {
         assert_eq!(loaded.run_id, "run-test");
         assert!(loaded.execution_history.is_none());
         assert!(loaded.file_system_state.is_none());
+    }
+
+    #[test]
+    fn test_load_checkpoint_rejects_newer_checkpoint_versions() {
+        let json = r#"{
+            "version": 4,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 1,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 0,
+            "timestamp": "2026-02-13 12:00:00",
+            "developer_agent": "claude",
+            "reviewer_agent": "codex",
+            "cli_args": {
+                "developer_iters": 1,
+                "reviewer_reviews": 0,
+                "review_depth": null,
+                "isolation_mode": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            },
+            "developer_agent_config": {
+                "name": "claude",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "reviewer_agent_config": {
+                "name": "codex",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "/tmp",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "run-test",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0
+        }"#;
+
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", json);
+
+        let result = load_checkpoint_with_workspace(&workspace);
+        assert!(
+            result.is_err(),
+            "newer checkpoint versions must be rejected"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("newer") || err.to_string().contains("upgrade"),
+            "error should suggest upgrading: {}",
+            err
+        );
     }
 
     #[test]

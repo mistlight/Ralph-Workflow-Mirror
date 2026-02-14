@@ -10,17 +10,43 @@
 /// - Current iteration
 /// - Current reviewer pass
 /// - XSD retry pending flag
-/// - XSD retry count (to distinguish retry 1 from retry 10 in tight loop detection)
+///
+/// Intentionally excludes retry counters like `xsd_retry_count` so that repeated
+/// retries still register as the "same effect" for tight-loop detection.
 pub fn compute_effect_fingerprint(state: &PipelineState) -> String {
     format!(
-        "{}:{}:iter={}:pass={}:xsd_retry={}:count={}",
+        "{}:{}:iter={}:pass={}:xsd_retry={}",
         state.phase,
         state.agent_chain.current_role,
         state.iteration,
         state.reviewer_pass,
-        state.continuation.xsd_retry_pending,
-        state.continuation.xsd_retry_count
+        state.continuation.xsd_retry_pending
     )
+}
+
+#[cfg(test)]
+mod xsd_retry_fingerprint_tests {
+    use super::compute_effect_fingerprint;
+    use crate::agents::AgentRole;
+    use crate::reducer::event::PipelinePhase;
+    use crate::reducer::state::PipelineState;
+
+    #[test]
+    fn test_effect_fingerprint_ignores_xsd_retry_count() {
+        let mut state = PipelineState::initial(1, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain.current_role = AgentRole::Developer;
+        state.iteration = 1;
+        state.reviewer_pass = 0;
+        state.continuation.xsd_retry_pending = true;
+
+        state.continuation.xsd_retry_count = 1;
+        let fp1 = compute_effect_fingerprint(&state);
+        state.continuation.xsd_retry_count = 2;
+        let fp2 = compute_effect_fingerprint(&state);
+
+        assert_eq!(fp1, fp2);
+    }
 }
 
 /// Derive the effect for XSD retry based on current phase.

@@ -16,7 +16,8 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
     issues_found: bool,
 ) -> PipelineState {
     let next_pass = if issues_found { pass } else { pass + 1 };
-    let next_phase = if !issues_found && next_pass >= state.total_reviewer_passes {
+    let transitioning_to_commit = !issues_found && next_pass >= state.total_reviewer_passes;
+    let next_phase = if transitioning_to_commit {
         PipelinePhase::CommitMessage
     } else {
         state.phase
@@ -25,8 +26,10 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
     if next_phase == PipelinePhase::CommitMessage {
         PipelineState {
             phase: next_phase,
-            previous_phase: None,
-            reviewer_pass: next_pass,
+            previous_phase: Some(PipelinePhase::Review),
+            // When leaving Review for CommitMessage, keep the current pass index.
+            // The commit reducer will increment and route to the next phase.
+            reviewer_pass: pass,
             review_issues_found: issues_found,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
@@ -103,7 +106,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_phase_completed(
 ) -> PipelineState {
     PipelineState {
         phase: PipelinePhase::CommitMessage,
-        previous_phase: None,
+        previous_phase: Some(PipelinePhase::Review),
         commit: CommitState::NotStarted,
         commit_prompt_prepared: false,
         commit_diff_prepared: false,
@@ -143,8 +146,9 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
     if next_phase == PipelinePhase::CommitMessage {
         PipelineState {
             phase: next_phase,
-            previous_phase: None,
-            reviewer_pass: next_pass,
+            previous_phase: Some(PipelinePhase::Review),
+            // Keep current pass index; commit transition increments for next pass.
+            reviewer_pass: pass,
             review_issues_found: false,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,

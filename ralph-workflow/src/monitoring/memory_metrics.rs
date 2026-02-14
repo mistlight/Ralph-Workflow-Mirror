@@ -57,12 +57,32 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
         .execution_history()
         .iter()
         .map(|step| {
+            let modified_files_detail_size = step.modified_files_detail.as_ref().map_or(0, |d| {
+                let sum_list = |xs: &Option<Box<[String]>>| {
+                    xs.as_ref()
+                        .map_or(0, |v| v.iter().map(|s| s.len()).sum::<usize>())
+                };
+
+                sum_list(&d.added) + sum_list(&d.modified) + sum_list(&d.deleted)
+            });
+
+            let issues_summary_size = step
+                .issues_summary
+                .as_ref()
+                .and_then(|s| s.description.as_ref())
+                .map_or(0, |s| s.len());
+
             // Approximate heap allocations: string fields + vec allocations
             // Use `len()` consistently as a deterministic size proxy.
             let base_size = step.phase.len()
                 + step.step_type.len()
                 + step.timestamp.len()
-                + step.agent.as_ref().map_or(0, |s| s.len());
+                + step.agent.as_ref().map_or(0, |s| s.len())
+                + step.checkpoint_saved_at.as_ref().map_or(0, |s| s.len())
+                + step.git_commit_oid.as_ref().map_or(0, |s| s.len())
+                + step.prompt_used.as_ref().map_or(0, |s| s.len())
+                + modified_files_detail_size
+                + issues_summary_size;
 
             let outcome_size = match &step.outcome {
                 StepOutcome::Success {
@@ -249,7 +269,9 @@ impl TelemetryBackend for LoggingBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+    use crate::checkpoint::execution_history::{
+        ExecutionStep, IssuesSummary, ModifiedFilesDetail, StepOutcome,
+    };
     use crate::logger::output::TestLogger;
     use crate::reducer::PipelineState;
 
@@ -261,6 +283,22 @@ mod tests {
         timestamp.push('t');
         let mut file = String::with_capacity(4096);
         file.push('f');
+
+        let mut checkpoint_saved_at = String::with_capacity(2048);
+        checkpoint_saved_at.push('c');
+        let mut git_commit_oid = String::with_capacity(2048);
+        git_commit_oid.push('g');
+        let mut prompt_used = String::with_capacity(2048);
+        prompt_used.push('p');
+        let mut issues_desc = String::with_capacity(2048);
+        issues_desc.push('i');
+
+        let mut added = String::with_capacity(2048);
+        added.push('a');
+        let mut modified = String::with_capacity(2048);
+        modified.push('m');
+        let mut deleted = String::with_capacity(2048);
+        deleted.push('d');
 
         let step = ExecutionStep {
             phase: std::sync::Arc::from("P"),
@@ -274,17 +312,36 @@ mod tests {
             },
             agent: Some(std::sync::Arc::from("A")),
             duration_secs: None,
-            checkpoint_saved_at: None,
-            git_commit_oid: None,
-            modified_files_detail: None,
-            prompt_used: None,
-            issues_summary: None,
+            checkpoint_saved_at: Some(checkpoint_saved_at),
+            git_commit_oid: Some(git_commit_oid),
+            modified_files_detail: Some(ModifiedFilesDetail {
+                added: Some(vec![added].into_boxed_slice()),
+                modified: Some(vec![modified].into_boxed_slice()),
+                deleted: Some(vec![deleted].into_boxed_slice()),
+            }),
+            prompt_used: Some(prompt_used),
+            issues_summary: Some(IssuesSummary {
+                found: 0,
+                fixed: 0,
+                description: Some(issues_desc),
+            }),
         };
 
         state.add_execution_step(step, 1000);
 
         let bytes = super::estimate_execution_history_heap_size(&state);
-        let expected = "P".len() + "T".len() + "t".len() + "A".len() + "f".len();
+        let expected = "P".len()
+            + "T".len()
+            + "t".len()
+            + "A".len()
+            + "f".len()
+            + "c".len()
+            + "g".len()
+            + "p".len()
+            + "i".len()
+            + "a".len()
+            + "m".len()
+            + "d".len();
 
         assert_eq!(
             bytes, expected,

@@ -578,7 +578,7 @@ fn test_execution_history_heap_size_within_baseline() {
             .expect("Heap size should be within baseline");
 
         println!(
-            "✓ Heap size {} bytes within baseline {} bytes (tolerance {}x)",
+            "OK Heap size {} bytes within baseline {} bytes (tolerance {}x)",
             heap_size, baseline.heap_size_bytes, baseline.tolerance
         );
     });
@@ -609,7 +609,7 @@ fn test_checkpoint_serialized_size_within_baseline() {
             .expect("Serialized size should be within baseline");
 
         println!(
-            "✓ Serialized size {} bytes within baseline {} bytes (tolerance {}x)",
+            "OK Serialized size {} bytes within baseline {} bytes (tolerance {}x)",
             size_bytes, baseline.serialized_size_bytes, baseline.tolerance
         );
     });

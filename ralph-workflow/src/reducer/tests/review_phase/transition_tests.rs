@@ -32,8 +32,9 @@ fn test_review_pass_completed_clean_on_last_pass_transitions_to_commit() {
     let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(2));
 
     // 2 + 1 = 3, 3 >= 3, should transition to CommitMessage
-    assert_eq!(new_state.reviewer_pass, 3);
+    assert_eq!(new_state.reviewer_pass, 2);
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
 }
 
 #[test]

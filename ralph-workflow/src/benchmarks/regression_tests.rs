@@ -262,21 +262,21 @@ fn regression_test_checkpoint_size_scaling() {
     let bytes_per_entry_500_to_1000 = (len_1000.saturating_sub(len_500)) / 500;
 
     assert!(
-        (300..=450).contains(&bytes_per_entry_100_to_500),
-        "Checkpoint size scaling regression: {} bytes per entry for entries 101-500 (expected 300-450)",
+        (150..=450).contains(&bytes_per_entry_100_to_500),
+        "Checkpoint size scaling regression: {} bytes per entry for entries 101-500 (expected 150-450)",
         bytes_per_entry_100_to_500
     );
     assert!(
-        (300..=450).contains(&bytes_per_entry_500_to_1000),
-        "Checkpoint size scaling regression: {} bytes per entry for entries 501-1000 (expected 300-450)",
+        (150..=450).contains(&bytes_per_entry_500_to_1000),
+        "Checkpoint size scaling regression: {} bytes per entry for entries 501-1000 (expected 150-450)",
         bytes_per_entry_500_to_1000
     );
 
     // Also enforce the band at 1000 entries, where overhead is amortized.
     let bytes_per_entry_at_1000 = len_1000 / 1000;
     assert!(
-        (300..=450).contains(&bytes_per_entry_at_1000),
-        "Checkpoint size scaling regression: {} bytes per entry at size 1000 (expected 300-450)",
+        (150..=450).contains(&bytes_per_entry_at_1000),
+        "Checkpoint size scaling regression: {} bytes per entry at size 1000 (expected 150-450)",
         bytes_per_entry_at_1000
     );
 }

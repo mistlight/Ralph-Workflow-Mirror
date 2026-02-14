@@ -18,15 +18,26 @@ fn load_checkpoint_with_fallback(
     // Parse using the current struct shape; serde will default missing Option fields.
     match serde_json::from_str::<PipelineCheckpoint>(content) {
         Ok(mut checkpoint) => {
-            // Accept v3 (current) or higher.
-            if checkpoint.version >= 3 {
-                return Ok(checkpoint);
-            }
-
             // v2 -> v3 migration (in-memory)
             if checkpoint.version == 2 {
                 checkpoint.version = 3;
                 return Ok(checkpoint);
+            }
+
+            // Accept only the current version.
+            if checkpoint.version == 3 {
+                return Ok(checkpoint);
+            }
+
+            // Fail closed on newer versions; future formats may be incompatible.
+            if checkpoint.version > 3 {
+                return Err(format!(
+                    "Invalid checkpoint format: version {} is newer than this binary supports. \
+                     Supported versions: 2 (migrated) and 3 (current). \
+                     Please upgrade Ralph Workflow to resume this checkpoint.",
+                    checkpoint.version
+                )
+                .into());
             }
 
             Err(format!(

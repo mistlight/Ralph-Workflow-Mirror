@@ -305,7 +305,7 @@ fn test_review_phase_completed_resets_commit_state() {
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
     assert!(matches!(new_state.commit, CommitState::NotStarted));
-    assert_eq!(new_state.previous_phase, None);
+    assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
 }
 
 #[test]

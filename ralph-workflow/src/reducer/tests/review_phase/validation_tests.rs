@@ -129,8 +129,9 @@ fn test_review_completed_on_last_pass_with_no_issues_transitions_to_commit() {
     let new_state = reduce(state, PipelineEvent::review_completed(1, false));
 
     // 1 + 1 = 2, 2 >= 2, should transition to CommitMessage
-    assert_eq!(new_state.reviewer_pass, 2);
+    assert_eq!(new_state.reviewer_pass, 1);
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
 }
 
 #[test]
@@ -339,4 +340,30 @@ fn test_review_completed_increments_large_pass_number() {
     // Should increment to 1000
     assert_eq!(new_state.reviewer_pass, 1000);
     assert_eq!(new_state.phase, PipelinePhase::Review); // Not done yet (1000 < 1001)
+}
+
+#[test]
+fn test_review_completed_on_last_pass_transitions_to_commit_then_final_validation() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        total_reviewer_passes: 2,
+        review_issues_found: false,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(state, PipelineEvent::review_completed(1, false));
+
+    // Transition to CommitMessage, but don't pre-increment pass; commit transition will.
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
+    assert_eq!(new_state.reviewer_pass, 1);
+
+    let new_state = reduce(
+        new_state,
+        PipelineEvent::commit_created("abc".to_string(), "msg".to_string()),
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+    assert_eq!(new_state.reviewer_pass, 2);
 }

@@ -168,7 +168,7 @@ pub struct IssuesSummary {
     #[serde(default)]
     pub fixed: u32,
     /// Description of issues (e.g., "3 clippy warnings, 2 test failures")
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 
@@ -197,23 +197,25 @@ pub struct ExecutionStep {
     /// Outcome of the step
     pub outcome: StepOutcome,
     /// Agent that executed this step (interned via Arc<str>)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<Arc<str>>,
     /// Duration in seconds (if available)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_secs: Option<u64>,
     /// When a checkpoint was saved during this step (ISO 8601 format string)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_saved_at: Option<String>,
     /// Git commit OID created during this step (if any)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_commit_oid: Option<String>,
     /// Detailed information about files modified
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_files_detail: Option<ModifiedFilesDetail>,
     /// The prompt text used for this step (for deterministic replay)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_used: Option<String>,
     /// Issues summary (found and fixed counts)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issues_summary: Option<IssuesSummary>,
 }
 
@@ -472,6 +474,8 @@ fn compress_data(data: &[u8]) -> Result<String, std::io::Error> {
     Ok(STANDARD.encode(&compressed))
 }
 
+const MAX_DECOMPRESSED_SNAPSHOT_BYTES: usize = 1024 * 1024;
+
 /// Decompress data that was compressed with compress_data.
 fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
     use base64::{engine::general_purpose::STANDARD, Engine};
@@ -487,7 +491,26 @@ fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
 
     let mut decoder = GzDecoder::new(compressed.as_slice());
     let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed)?;
+    let mut buf = [0u8; 8 * 1024];
+
+    loop {
+        let n = decoder.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+
+        if decompressed.len().saturating_add(n) > MAX_DECOMPRESSED_SNAPSHOT_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Decompressed payload exceeds max size ({} bytes)",
+                    MAX_DECOMPRESSED_SNAPSHOT_BYTES
+                ),
+            ));
+        }
+
+        decompressed.extend_from_slice(&buf[..n]);
+    }
 
     String::from_utf8(decompressed).map_err(|e| {
         std::io::Error::new(
@@ -644,6 +667,18 @@ mod tests {
     }
 
     #[test]
+    fn test_decompress_data_rejects_oversized_payload() {
+        // Safety invariant: checkpoint resume must not allow decompression bombs.
+        // We enforce an upper bound on decompressed payload size.
+        let max_bytes = 1024 * 1024;
+        let data = "a".repeat(max_bytes + 1);
+        let encoded = compress_data(data.as_bytes()).unwrap();
+
+        let err = decompress_data(&encoded).expect_err("oversized payload should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
     fn test_execution_history_add_step_bounded() {
         let mut history = ExecutionHistory::new();
         let outcome = StepOutcome::success(None, vec![]);
@@ -652,6 +687,21 @@ mod tests {
         assert_eq!(history.steps.len(), 1);
         assert_eq!(&*history.steps[0].phase, "Development");
         assert_eq!(history.steps[0].iteration, 1);
+    }
+
+    #[test]
+    fn test_execution_step_serialization_omits_none_option_fields() {
+        let outcome = StepOutcome::success(None, vec![]);
+        let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
+        let json = serde_json::to_string(&step).unwrap();
+
+        assert!(!json.contains("\"agent\":null"));
+        assert!(!json.contains("\"duration_secs\":null"));
+        assert!(!json.contains("\"checkpoint_saved_at\":null"));
+        assert!(!json.contains("\"git_commit_oid\":null"));
+        assert!(!json.contains("\"modified_files_detail\":null"));
+        assert!(!json.contains("\"prompt_used\":null"));
+        assert!(!json.contains("\"issues_summary\":null"));
     }
 
     #[test]

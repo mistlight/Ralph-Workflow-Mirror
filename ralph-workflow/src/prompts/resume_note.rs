@@ -155,6 +155,17 @@ pub trait BriefDescription {
     fn brief_description(&self) -> String;
 }
 
+const PARTIAL_FIELD_MAX_CHARS: usize = 120;
+
+fn one_line_truncated(input: &str, max_chars: usize) -> String {
+    let first_line = input.lines().next().unwrap_or("").trim();
+    let mut out: String = first_line.chars().take(max_chars).collect();
+    if first_line.chars().count() > max_chars {
+        out.push_str("...(truncated)");
+    }
+    out
+}
+
 impl BriefDescription for StepOutcome {
     fn brief_description(&self) -> String {
         match self {
@@ -199,11 +210,36 @@ impl BriefDescription for StepOutcome {
                 remaining,
                 ..
             } => {
+                let completed = one_line_truncated(completed, PARTIAL_FIELD_MAX_CHARS);
+                let remaining = one_line_truncated(remaining, PARTIAL_FIELD_MAX_CHARS);
                 format!("Partial - {} done, {}", completed, remaining)
             }
             Self::Skipped { reason } => {
                 format!("Skipped - {}", reason)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BriefDescription;
+    use crate::checkpoint::execution_history::StepOutcome;
+
+    #[test]
+    fn test_partial_brief_description_is_single_line_and_truncated() {
+        let outcome =
+            StepOutcome::partial("done line 1\ndone line 2".to_string(), "x".repeat(1000));
+
+        let desc = outcome.brief_description();
+        assert!(
+            !desc.contains('\n'),
+            "description must be single-line: {desc}"
+        );
+        assert!(
+            desc.contains("truncated"),
+            "expected truncation marker for oversized fields: {desc}"
+        );
+        assert!(desc.len() < 300, "expected bounded output size: {desc}");
     }
 }

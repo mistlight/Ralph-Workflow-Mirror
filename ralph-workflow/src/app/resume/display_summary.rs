@@ -3,7 +3,7 @@
 
 /// Display a user-friendly checkpoint summary with time elapsed.
 fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
-    use chrono::{DateTime, Local, NaiveDateTime};
+    use chrono::Local;
 
     // Display phase with stable indicator (ASCII only)
     let phase_indicator = get_phase_indicator(checkpoint.phase);
@@ -11,20 +11,14 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
     // Calculate and display time elapsed
     // Parse the timestamp string which is in "YYYY-MM-DD HH:MM:SS" format
-    let checkpoint_time =
-        match NaiveDateTime::parse_from_str(&checkpoint.timestamp, "%Y-%m-%d %H:%M:%S") {
-            Ok(dt) => {
-                DateTime::<Local>::from_naive_utc_and_offset(dt, Local::now().offset().to_owned())
-            }
-            Err(_) => {
-                // If parsing fails, just show the timestamp string
-                logger.info(&format!(
-                    "Session was interrupted at: {}",
-                    checkpoint.timestamp
-                ));
-                return;
-            }
-        };
+    let Some(checkpoint_time) = parse_checkpoint_timestamp_as_local(&checkpoint.timestamp) else {
+        // If parsing fails, just show the timestamp string
+        logger.info(&format!(
+            "Session was interrupted at: {}",
+            checkpoint.timestamp
+        ));
+        return;
+    };
     let now = Local::now();
     let duration = now.signed_duration_since(checkpoint_time);
 

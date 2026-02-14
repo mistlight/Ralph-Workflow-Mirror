@@ -120,7 +120,19 @@ impl ContinuationState {
         self.previous_summary = Some(summary);
         self.previous_files_changed = files_changed.map(|v| v.into_boxed_slice());
         self.previous_next_steps = next_steps;
-        self.continuation_attempt += 1;
+
+        let next_attempt = self.continuation_attempt.saturating_add(1);
+        if next_attempt >= self.max_continue_count {
+            // Defensive: if called at/over the budget boundary, do not schedule another
+            // continuation attempt. Keep state consistent by clearing pending flags.
+            self.continuation_attempt = next_attempt;
+            self.continue_pending = false;
+            self.context_write_pending = false;
+            self.context_cleanup_pending = false;
+            return self;
+        }
+
+        self.continuation_attempt = next_attempt;
         self.invalid_output_attempts = 0;
         self.context_write_pending = true;
         self.context_cleanup_pending = false;

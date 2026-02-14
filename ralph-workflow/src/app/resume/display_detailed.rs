@@ -6,15 +6,13 @@
 /// This function shows comprehensive checkpoint details when the user
 /// runs with the --inspect-checkpoint flag.
 fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Logger) {
-    use chrono::{DateTime, Local, NaiveDateTime};
+    use chrono::Local;
 
     logger.info(&format!("Phase: {}", checkpoint.phase));
     logger.info(&format!("Timestamp: {}", checkpoint.timestamp));
 
     // Calculate and display time elapsed
-    if let Ok(dt) = NaiveDateTime::parse_from_str(&checkpoint.timestamp, "%Y-%m-%d %H:%M:%S") {
-        let checkpoint_time =
-            DateTime::<Local>::from_naive_utc_and_offset(dt, Local::now().offset().to_owned());
+    if let Some(checkpoint_time) = parse_checkpoint_timestamp_as_local(&checkpoint.timestamp) {
         let now = Local::now();
         let duration = now.signed_duration_since(checkpoint_time);
 

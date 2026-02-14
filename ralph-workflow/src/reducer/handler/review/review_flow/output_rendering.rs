@@ -208,7 +208,7 @@ fn is_safe_workspace_relative_path(path_str: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_issue_snippets;
+    use super::{extract_issue_snippets, extract_snippet_lines};
     use crate::workspace::MemoryWorkspace;
 
     #[test]
@@ -233,6 +233,18 @@ mod tests {
         assert_eq!(snippets[0].line_start, 1);
         assert_eq!(snippets[0].line_end, 1);
         assert!(snippets[0].content.contains("1 | fn main() {}"));
+    }
+
+    #[test]
+    fn test_extract_snippet_lines_rejects_reversed_ranges() {
+        let content = "line1\nline2\n";
+        assert!(extract_snippet_lines(content, 2, 1).is_none());
+    }
+
+    #[test]
+    fn test_extract_snippet_lines_requires_one_based_start() {
+        let content = "line1\n";
+        assert!(extract_snippet_lines(content, 0, 1).is_none());
     }
 }
 
@@ -263,6 +275,10 @@ fn issue_gh_location_regex() -> &'static Regex {
 /// Returns the extracted lines with line numbers prepended (e.g., "42 | code here").
 /// Line numbers are 1-based. Returns `None` if the range is invalid.
 fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> {
+    if start < 1 || end < 1 || end < start {
+        return None;
+    }
+
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
         return None;
