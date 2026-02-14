@@ -22,8 +22,6 @@ pub(super) fn reduce_continuation_event(
         } => {
             // Trigger continuation with context from the previous attempt
             // Increment continuation attempt counter
-            let metrics = state.metrics.increment_dev_continuation_attempt();
-
             PipelineState {
                 iteration,
                 continuation: state.continuation.trigger_continuation(
@@ -43,7 +41,7 @@ pub(super) fn reduce_continuation_event(
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
-                metrics,
+                metrics: state.metrics.increment_dev_continuation_attempt(),
                 ..state
             }
         }
@@ -52,8 +50,6 @@ pub(super) fn reduce_continuation_event(
             total_continuation_attempts: _,
         } => {
             // Continuation succeeded; proceed to CommitMessage and reset continuation state.
-            let metrics = state.metrics.increment_dev_iterations_completed();
-
             PipelineState {
                 phase: crate::reducer::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(crate::reducer::event::PipelinePhase::Development),
@@ -79,7 +75,7 @@ pub(super) fn reduce_continuation_event(
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
-                metrics,
+                metrics: state.metrics.increment_dev_iterations_completed(),
                 ..state
             }
         }
@@ -91,11 +87,6 @@ pub(super) fn reduce_continuation_event(
 
             // Only increment metrics if we're actually retrying (not exhausted)
             let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-            let metrics = if will_retry {
-                state.metrics.increment_xsd_retry_development()
-            } else {
-                state.metrics
-            };
 
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
@@ -126,7 +117,11 @@ pub(super) fn reduce_continuation_event(
                     development_xml_extracted_iteration: None,
                     development_validated_outcome: None,
                     development_xml_archived_iteration: None,
-                    metrics,
+                    metrics: if will_retry {
+                        state.metrics.increment_xsd_retry_development()
+                    } else {
+                        state.metrics
+                    },
                     ..state
                 }
             } else {
@@ -153,7 +148,11 @@ pub(super) fn reduce_continuation_event(
                     development_xml_extracted_iteration: None,
                     development_validated_outcome: None,
                     development_xml_archived_iteration: None,
-                    metrics,
+                    metrics: if will_retry {
+                        state.metrics.increment_xsd_retry_development()
+                    } else {
+                        state.metrics
+                    },
                     ..state
                 }
             }

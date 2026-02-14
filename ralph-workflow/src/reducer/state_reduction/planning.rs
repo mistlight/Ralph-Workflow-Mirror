@@ -134,11 +134,6 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
 
             // Only increment metrics if we're actually retrying (not exhausted)
             let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-            let metrics = if will_retry {
-                state.metrics.increment_xsd_retry_planning()
-            } else {
-                state.metrics
-            };
 
             if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
@@ -164,7 +159,11 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                         same_agent_retry_reason: None,
                         ..state.continuation
                     },
-                    metrics,
+                    metrics: if will_retry {
+                        state.metrics.increment_xsd_retry_planning()
+                    } else {
+                        state.metrics
+                    },
                     ..state
                 }
             } else {
@@ -187,7 +186,11 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                         xsd_retry_session_reuse_pending: true,
                         ..state.continuation
                     },
-                    metrics,
+                    metrics: if will_retry {
+                        state.metrics.increment_xsd_retry_planning()
+                    } else {
+                        state.metrics
+                    },
                     ..state
                 }
             }

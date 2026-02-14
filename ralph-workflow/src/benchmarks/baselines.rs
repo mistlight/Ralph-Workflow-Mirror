@@ -46,7 +46,7 @@ use crate::checkpoint::execution_history::ExecutionStep;
 /// After optimization, this accounts for:
 /// - `phase`: Arc<str> - counted as the length of the string (shared allocation)
 /// - `step_type`: Box<str> - counted as the length of the string
-/// - `timestamp`: String - counted as capacity
+/// - `timestamp`: String - counted as length (deterministic; capacity can vary)
 /// - `agent`: Option<Arc<str>> - counted as the length of the string (shared allocation)
 ///
 /// Arc<str> fields are counted by length rather than capacity because the
@@ -56,8 +56,8 @@ pub fn estimate_execution_step_heap_bytes_core_fields(step: &ExecutionStep) -> u
     step.phase.len()
         // For Box<str>, count the string length
         + step.step_type.len()
-        // For String, count the capacity (may be over-allocated)
-        + step.timestamp.capacity()
+        // For String, count length (capacity is allocator-dependent and can be flaky)
+        + step.timestamp.len()
         // For Option<Arc<str>>, count the string length if present (shared allocation)
         + step.agent.as_ref().map_or(0, |s| s.len())
 }

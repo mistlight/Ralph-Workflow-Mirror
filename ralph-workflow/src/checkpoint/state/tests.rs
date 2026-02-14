@@ -233,6 +233,78 @@ mod workspace_tests {
     }
 
     #[test]
+    fn test_load_checkpoint_migrates_v2_to_v3() {
+        // v2 checkpoints are still structurally compatible with v3 and can be
+        // migrated in-memory by bumping the version while leaving v3-only fields empty.
+        let json = r#"{
+            "version": 2,
+            "phase": "Development",
+            "iteration": 2,
+            "total_iterations": 3,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 1,
+            "timestamp": "2026-02-13 12:00:00",
+            "developer_agent": "claude",
+            "reviewer_agent": "codex",
+            "cli_args": {
+                "developer_iters": 3,
+                "reviewer_reviews": 1,
+                "review_depth": null,
+                "isolation_mode": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            },
+            "developer_agent_config": {
+                "name": "claude",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "reviewer_agent_config": {
+                "name": "codex",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "/tmp",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "run-test",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0
+        }"#;
+
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", json);
+
+        let loaded = load_checkpoint_with_workspace(&workspace)
+            .unwrap()
+            .expect("checkpoint should exist");
+
+        assert_eq!(loaded.version, 3, "v2 checkpoint should be migrated to v3");
+        assert_eq!(loaded.phase, PipelinePhase::Development);
+        assert_eq!(loaded.iteration, 2);
+        assert_eq!(loaded.total_iterations, 3);
+        assert_eq!(loaded.run_id, "run-test");
+        assert!(loaded.execution_history.is_none());
+        assert!(loaded.file_system_state.is_none());
+    }
+
+    #[test]
     fn test_load_checkpoint_rejects_legacy_phase_variants() {
         let base_json = r#"{
             "version": 3,

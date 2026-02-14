@@ -101,17 +101,14 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
                 .continuation
                 .current_artifact
                 .unwrap_or(super::state::ArtifactType::Plan);
-            let continuation = state.continuation.reset().with_artifact(artifact);
-
-            // Clear agent session to force fresh invocation
-            let agent_chain = state.agent_chain.clear_session_id();
 
             // Note: iteration and reviewer_pass counters are preserved via ..state spread.
             // This is intentional - loop recovery breaks the tight loop but allows the
             // pipeline to continue from the same iteration/pass that was in progress.
             PipelineState {
-                continuation,
-                agent_chain,
+                continuation: state.continuation.reset().with_artifact(artifact),
+                // Clear agent session to force fresh invocation.
+                agent_chain: state.agent_chain.clear_session_id(),
                 ..state
             }
         }

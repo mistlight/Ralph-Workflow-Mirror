@@ -91,9 +91,11 @@ fn regression_test_serialization_performance() {
     let json = serde_json::to_string(&state).unwrap();
     let duration = start.elapsed();
 
-    // After optimizations (pre-allocated buffer + compact JSON), should be <= 10ms
-    // This is a conservative threshold (2x expected performance) to account for
-    // platform variance and CI environment overhead
+    // Performance ceiling for baseline `serde_json::to_string(&PipelineState)`.
+    // NOTE: This is intentionally *not* the checkpoint writer path
+    // (`save_checkpoint_with_workspace`), which uses a pre-sized buffer.
+    //
+    // This ceiling is conservative to account for platform variance and CI overhead.
     if std::env::var_os("RALPH_WORKFLOW_PERF_CEILINGS").is_some() {
         assert!(
             duration.as_millis() <= 10,

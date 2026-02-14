@@ -83,8 +83,6 @@ pub(super) fn reduce_fix_result_xml_cleaned(state: PipelineState, pass: u32) -> 
 /// Marks fix agent as invoked for this pass and increments metrics.
 /// Clears retry flags since agent invocation is a fresh attempt.
 pub(super) fn reduce_fix_agent_invoked(state: PipelineState, pass: u32) -> PipelineState {
-    let metrics = state.metrics.increment_fix_runs_total();
-
     PipelineState {
         fix_agent_invoked_pass: Some(pass),
         continuation: ContinuationState {
@@ -94,7 +92,7 @@ pub(super) fn reduce_fix_agent_invoked(state: PipelineState, pass: u32) -> Pipel
             same_agent_retry_reason: None,
             ..state.continuation
         },
-        metrics,
+        metrics: state.metrics.increment_fix_runs_total(),
         ..state
     }
 }
@@ -190,8 +188,6 @@ pub(super) fn reduce_fix_attempt_completed(
     _changes_made: bool,
 ) -> PipelineState {
     // Fix completed successfully - increment completed passes counter
-    let metrics = state.metrics.increment_review_passes_completed();
-
     PipelineState {
         phase: PipelinePhase::CommitMessage,
         previous_phase: Some(PipelinePhase::Review),
@@ -218,7 +214,7 @@ pub(super) fn reduce_fix_attempt_completed(
             last_fix_xsd_error: None,
             ..state.continuation
         },
-        metrics,
+        metrics: state.metrics.increment_review_passes_completed(),
         ..state
     }
 }
@@ -234,11 +230,6 @@ pub(super) fn reduce_fix_continuation_triggered(
     summary: Option<String>,
 ) -> PipelineState {
     // Fix output is valid but indicates work is incomplete (issues_remain)
-    let metrics = state
-        .metrics
-        .increment_fix_continuations_total()
-        .increment_fix_continuation_attempt();
-
     PipelineState {
         reviewer_pass: pass,
         fix_prompt_prepared_pass: None,
@@ -248,7 +239,10 @@ pub(super) fn reduce_fix_continuation_triggered(
         fix_validated_outcome: None,
         fix_result_xml_archived_pass: None,
         continuation: state.continuation.trigger_fix_continuation(status, summary),
-        metrics,
+        metrics: state
+            .metrics
+            .increment_fix_continuations_total()
+            .increment_fix_continuation_attempt(),
         ..state
     }
 }
@@ -265,8 +259,6 @@ pub(super) fn reduce_fix_continuation_succeeded(
     // Fix continuation succeeded - transition to CommitMessage
     // Use reset() instead of new() to preserve configured limits
     // Fix succeeded after continuation - increment review passes completed
-    let metrics = state.metrics.increment_review_passes_completed();
-
     PipelineState {
         phase: PipelinePhase::CommitMessage,
         previous_phase: Some(PipelinePhase::Review),
@@ -284,7 +276,7 @@ pub(super) fn reduce_fix_continuation_succeeded(
         commit_xml_archived: false,
         continuation: state.continuation.reset(),
         fix_result_xml_cleaned_pass: None,
-        metrics,
+        metrics: state.metrics.increment_review_passes_completed(),
         ..state
     }
 }
@@ -338,11 +330,6 @@ pub(super) fn reduce_fix_output_validation_failed(
 
     // Only increment metrics if we're actually retrying (not exhausted)
     let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-    let metrics = if will_retry {
-        state.metrics.increment_xsd_retry_fix()
-    } else {
-        state.metrics
-    };
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent
@@ -368,7 +355,11 @@ pub(super) fn reduce_fix_output_validation_failed(
             fix_prompt_prepared_pass: None,
             fix_agent_invoked_pass: None,
             fix_result_xml_cleaned_pass: None,
-            metrics,
+            metrics: if will_retry {
+                state.metrics.increment_xsd_retry_fix()
+            } else {
+                state.metrics
+            },
             ..state
         }
     } else {
@@ -395,7 +386,11 @@ pub(super) fn reduce_fix_output_validation_failed(
             fix_prompt_prepared_pass: None,
             fix_agent_invoked_pass: None,
             fix_result_xml_cleaned_pass: None,
-            metrics,
+            metrics: if will_retry {
+                state.metrics.increment_xsd_retry_fix()
+            } else {
+                state.metrics
+            },
             ..state
         }
     }

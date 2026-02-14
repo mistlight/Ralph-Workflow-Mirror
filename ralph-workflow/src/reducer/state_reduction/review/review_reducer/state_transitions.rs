@@ -189,8 +189,6 @@ pub(in crate::reducer::state_reduction::review) fn reduce_agent_invoked(
     state: PipelineState,
     pass: u32,
 ) -> PipelineState {
-    let metrics = state.metrics.increment_review_runs_total();
-
     PipelineState {
         review_agent_invoked_pass: Some(pass),
         continuation: ContinuationState {
@@ -200,7 +198,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_agent_invoked(
             same_agent_retry_reason: None,
             ..state.continuation
         },
-        metrics,
+        metrics: state.metrics.increment_review_runs_total(),
         ..state
     }
 }

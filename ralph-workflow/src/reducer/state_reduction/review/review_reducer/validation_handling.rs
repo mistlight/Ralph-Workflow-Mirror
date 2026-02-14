@@ -23,11 +23,6 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
 
     // Only increment metrics if we're actually retrying (not exhausted)
     let will_retry = new_xsd_count < state.continuation.max_xsd_retry_count;
-    let metrics = if will_retry {
-        state.metrics.increment_xsd_retry_review()
-    } else {
-        state.metrics
-    };
 
     if new_xsd_count >= state.continuation.max_xsd_retry_count {
         // XSD retries exhausted - switch to next agent
@@ -56,7 +51,11 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
             review_prompt_prepared_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_cleaned_pass: None,
-            metrics,
+            metrics: if will_retry {
+                state.metrics.increment_xsd_retry_review()
+            } else {
+                state.metrics
+            },
             ..state
         }
     } else {
@@ -84,7 +83,11 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
             review_prompt_prepared_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_cleaned_pass: None,
-            metrics,
+            metrics: if will_retry {
+                state.metrics.increment_xsd_retry_review()
+            } else {
+                state.metrics
+            },
             ..state
         }
     }

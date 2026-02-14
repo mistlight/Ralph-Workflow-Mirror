@@ -22,13 +22,6 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
         state.phase
     };
 
-    // Increment completed passes counter if no issues found (clean pass)
-    let metrics = if !issues_found {
-        state.metrics.increment_review_passes_completed()
-    } else {
-        state.metrics
-    };
-
     if next_phase == PipelinePhase::CommitMessage {
         PipelineState {
             phase: next_phase,
@@ -63,7 +56,11 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
-            metrics,
+            metrics: if !issues_found {
+                state.metrics.increment_review_passes_completed()
+            } else {
+                state.metrics
+            },
             ..state
         }
     } else {
@@ -88,7 +85,11 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
-            metrics,
+            metrics: if !issues_found {
+                state.metrics.increment_review_passes_completed()
+            } else {
+                state.metrics
+            },
             ..state
         }
     }
@@ -132,9 +133,6 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
 ) -> PipelineState {
     // Clean pass means no issues found in this pass.
     // Advance to the next pass when more passes remain.
-    // Increment completed passes counter
-    let metrics = state.metrics.increment_review_passes_completed();
-
     let next_pass = pass + 1;
     let next_phase = if next_pass >= state.total_reviewer_passes {
         PipelinePhase::CommitMessage
@@ -174,7 +172,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
-            metrics,
+            metrics: state.metrics.increment_review_passes_completed(),
             ..state
         }
     } else {
@@ -199,7 +197,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
-            metrics,
+            metrics: state.metrics.increment_review_passes_completed(),
             ..state
         }
     }

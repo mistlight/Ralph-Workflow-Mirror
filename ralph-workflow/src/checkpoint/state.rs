@@ -5,15 +5,22 @@
 //!
 //! # Checkpoint Format
 //!
-//! Only version 3 checkpoints are supported. Earlier versions (v1, v2) are explicitly
-//! rejected during loading. The following legacy phases are also rejected:
+//! Version support:
+//! - v3 checkpoints are supported (current).
+//! - v2 checkpoints are supported via a minimal in-memory migration to v3 (version bump;
+//!   v3-only fields remain empty).
+//! - v1 and pre-v1 checkpoints are not supported.
+//!
+//! The following legacy phases are also rejected:
 //! - "Fix" (use "Development" instead)
 //! - "ReviewAgain" (use "Review" instead)
 //!
 //! # Backwards Compatibility
 //!
-//! Legacy checkpoint formats are not supported. Users must delete old
-//! checkpoints and start a fresh pipeline run.
+//! Legacy checkpoint formats (v1, pre-v1) are not supported.
+//!
+//! If a checkpoint cannot be loaded and you need to start fresh, prefer backing it up first:
+//! `cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json`
 
 use chrono::Local;
 use serde::de::{self, Visitor};

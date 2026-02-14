@@ -165,7 +165,6 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             ..
         } => {
             let state = reset_phase_xml_cleanup_for_retry(state);
-            let metrics = state.metrics.increment_agent_fallbacks_total();
 
             PipelineState {
                 agent_chain: state
@@ -182,7 +181,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                     same_agent_retry_reason: None,
                     ..state.continuation
                 },
-                metrics,
+                metrics: state.metrics.increment_agent_fallbacks_total(),
                 ..state
             }
         }
@@ -190,24 +189,16 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             agent_chain: state.agent_chain.start_retry_cycle(),
             ..state
         },
-        AgentEvent::ModelFallbackTriggered { .. } => {
-            let metrics = state.metrics.increment_model_fallbacks_total();
-
-            PipelineState {
-                agent_chain: state.agent_chain.advance_to_next_model(),
-                metrics,
-                ..state
-            }
-        }
-        AgentEvent::RetryCycleStarted { .. } => {
-            let metrics = state.metrics.increment_retry_cycles_started_total();
-
-            PipelineState {
-                agent_chain: state.agent_chain.clear_backoff_pending(),
-                metrics,
-                ..state
-            }
-        }
+        AgentEvent::ModelFallbackTriggered { .. } => PipelineState {
+            agent_chain: state.agent_chain.advance_to_next_model(),
+            metrics: state.metrics.increment_model_fallbacks_total(),
+            ..state
+        },
+        AgentEvent::RetryCycleStarted { .. } => PipelineState {
+            agent_chain: state.agent_chain.clear_backoff_pending(),
+            metrics: state.metrics.increment_retry_cycles_started_total(),
+            ..state
+        },
         AgentEvent::ChainInitialized {
             role,
             agents,
@@ -234,29 +225,25 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         },
         // XSD validation failed: trigger XSD retry via continuation state
         AgentEvent::XsdValidationFailed { .. } => {
-            let continuation = state.continuation.trigger_xsd_retry();
-
-            // Increment per-phase counter based on current phase
-            let metrics = match state.phase {
-                PipelinePhase::Planning => state.metrics.increment_xsd_retry_planning(),
-                PipelinePhase::Development => state.metrics.increment_xsd_retry_development(),
-                PipelinePhase::Review => {
-                    // Distinguish review vs fix based on whether we're in fix flow
-                    if state.fix_agent_invoked_pass.is_some()
-                        && state.fix_result_xml_extracted_pass.is_none()
-                    {
-                        state.metrics.increment_xsd_retry_fix()
-                    } else {
-                        state.metrics.increment_xsd_retry_review()
-                    }
-                }
-                PipelinePhase::CommitMessage => state.metrics.increment_xsd_retry_commit(),
-                _ => state.metrics,
-            };
-
             PipelineState {
-                continuation,
-                metrics,
+                continuation: state.continuation.trigger_xsd_retry(),
+                // Increment per-phase counter based on current phase.
+                metrics: match state.phase {
+                    PipelinePhase::Planning => state.metrics.increment_xsd_retry_planning(),
+                    PipelinePhase::Development => state.metrics.increment_xsd_retry_development(),
+                    PipelinePhase::Review => {
+                        // Distinguish review vs fix based on whether we're in fix flow.
+                        if state.fix_agent_invoked_pass.is_some()
+                            && state.fix_result_xml_extracted_pass.is_none()
+                        {
+                            state.metrics.increment_xsd_retry_fix()
+                        } else {
+                            state.metrics.increment_xsd_retry_review()
+                        }
+                    }
+                    PipelinePhase::CommitMessage => state.metrics.increment_xsd_retry_commit(),
+                    _ => state.metrics,
+                },
                 ..state
             }
         }
@@ -287,11 +274,6 @@ fn reduce_same_agent_retryable_failure(
 
     // Only increment metrics if we're actually retrying (not exhausted)
     let will_retry = new_retry_count < state.continuation.max_same_agent_retry_count;
-    let metrics = if will_retry {
-        state.metrics.increment_same_agent_retry_attempts_total()
-    } else {
-        state.metrics
-    };
 
     if new_retry_count >= state.continuation.max_same_agent_retry_count {
         PipelineState {
@@ -305,7 +287,11 @@ fn reduce_same_agent_retryable_failure(
                 same_agent_retry_reason: None,
                 ..state.continuation
             },
-            metrics,
+            metrics: if will_retry {
+                state.metrics.increment_same_agent_retry_attempts_total()
+            } else {
+                state.metrics
+            },
             ..state
         }
     } else {
@@ -323,7 +309,11 @@ fn reduce_same_agent_retryable_failure(
                 xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
-            metrics,
+            metrics: if will_retry {
+                state.metrics.increment_same_agent_retry_attempts_total()
+            } else {
+                state.metrics
+            },
             ..state
         }
     }

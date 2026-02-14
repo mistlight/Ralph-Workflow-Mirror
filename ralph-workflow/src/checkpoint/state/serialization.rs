@@ -5,23 +5,34 @@
 
 /// Load a checkpoint from a string.
 ///
-/// Only v3 (current) checkpoint format is supported. Legacy formats (v1, v2, pre-v1)
-/// and legacy phases (Fix, ReviewAgain) are no longer supported and will result in an error.
+/// Load a checkpoint from a string, with minimal compatibility handling.
+///
+/// Supported versions:
+/// - v3 (current)
+/// - v2 (migrated in-memory to v3 by bumping `version`; v3-only fields remain empty)
+///
+/// Legacy formats (v1, pre-v1) and legacy phases (Fix, ReviewAgain) are not supported.
 fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
-    // Only accept v3 format (current)
+    // Parse using the current struct shape; serde will default missing Option fields.
     match serde_json::from_str::<PipelineCheckpoint>(content) {
-        Ok(checkpoint) => {
-            // Accept v3 (current) or higher
+        Ok(mut checkpoint) => {
+            // Accept v3 (current) or higher.
             if checkpoint.version >= 3 {
                 return Ok(checkpoint);
             }
-            // Reject older versions
+
+            // v2 -> v3 migration (in-memory)
+            if checkpoint.version == 2 {
+                checkpoint.version = 3;
+                return Ok(checkpoint);
+            }
+
             Err(format!(
                 "Invalid checkpoint format: version {} is no longer supported. \
-                 Only version 3 (current) is accepted. \
-                 Delete .agent/checkpoint.json and start a fresh pipeline run.",
+                 Supported versions: 2 (migrated) and 3 (current). \
+                 To start fresh without data loss: cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json",
                 checkpoint.version
             )
             .into())
@@ -31,7 +42,7 @@ fn load_checkpoint_with_fallback(
             Err(format!(
                 "Invalid checkpoint format: {}. \
                  Legacy checkpoint formats are no longer supported. \
-                 Delete .agent/checkpoint.json and start a fresh pipeline run.",
+                 To start fresh without data loss: cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json",
                 e
             )
             .into())

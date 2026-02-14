@@ -37,12 +37,6 @@ pub(super) fn reduce_iteration_event(
             // (not incremented for continuations within same iteration)
             // Reset per-iteration analysis attempt counter
             // Reset per-iteration continuation attempt counter
-            let metrics = state
-                .metrics
-                .increment_dev_iterations_started()
-                .reset_analysis_attempts_in_current_iteration()
-                .reset_dev_continuation_attempt();
-
             PipelineState {
                 iteration,
                 agent_chain: state.agent_chain.reset(),
@@ -59,7 +53,11 @@ pub(super) fn reduce_iteration_event(
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
-                metrics,
+                metrics: state
+                    .metrics
+                    .increment_dev_iterations_started()
+                    .reset_analysis_attempts_in_current_iteration()
+                    .reset_dev_continuation_attempt(),
                 ..state
             }
         }
@@ -92,8 +90,6 @@ pub(super) fn reduce_iteration_event(
         DevelopmentEvent::AgentInvoked { iteration } => {
             // Developer agent invoked - increment attempt counter
             // (includes both initial attempts and continuations)
-            let metrics = state.metrics.increment_dev_attempts_total();
-
             PipelineState {
                 development_agent_invoked_iteration: Some(iteration),
                 continuation: crate::reducer::state::ContinuationState {
@@ -103,23 +99,21 @@ pub(super) fn reduce_iteration_event(
                     same_agent_retry_reason: None,
                     ..state.continuation
                 },
-                metrics,
+                metrics: state.metrics.increment_dev_attempts_total(),
                 ..state
             }
         }
         DevelopmentEvent::AnalysisAgentInvoked { iteration } => {
-            let metrics = state
-                .metrics
-                .increment_analysis_attempts_total()
-                .increment_analysis_attempts_in_current_iteration();
-
             PipelineState {
                 analysis_agent_invoked_iteration: Some(iteration),
                 // If analysis was invoked as part of an XSD retry cycle, clear the retry flag here
                 // so orchestration can proceed to Extract/Validate instead of repeatedly deriving
                 // the XSD retry effect.
                 continuation: state.continuation.clear_xsd_retry_pending(),
-                metrics,
+                metrics: state
+                    .metrics
+                    .increment_analysis_attempts_total()
+                    .increment_analysis_attempts_in_current_iteration(),
                 ..state
             }
         }
@@ -201,8 +195,6 @@ pub(super) fn reduce_iteration_event(
         } => {
             if output_valid {
                 // After a successful dev iteration, go to CommitMessage phase to create a commit.
-                let metrics = state.metrics.increment_dev_iterations_completed();
-
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::CommitMessage,
                     previous_phase: Some(crate::reducer::event::PipelinePhase::Development),
@@ -230,7 +222,7 @@ pub(super) fn reduce_iteration_event(
                     development_xml_extracted_iteration: None,
                     development_validated_outcome: None,
                     development_xml_archived_iteration: None,
-                    metrics,
+                    metrics: state.metrics.increment_dev_iterations_completed(),
                     ..state
                 }
             } else {
@@ -242,21 +234,19 @@ pub(super) fn reduce_iteration_event(
                         .switch_to_next_agent()
                         .clear_session_id()
                         .clear_continuation_prompt();
-                    let continuation = ContinuationState {
-                        invalid_output_attempts: 0,
-                        xsd_retry_count: 0,
-                        xsd_retry_pending: false,
-                        xsd_retry_session_reuse_pending: false,
-                        same_agent_retry_count: 0,
-                        same_agent_retry_pending: false,
-                        same_agent_retry_reason: None,
-                        ..state.continuation
-                    };
-
                     PipelineState {
                         phase: crate::reducer::event::PipelinePhase::Development,
                         iteration,
-                        continuation,
+                        continuation: ContinuationState {
+                            invalid_output_attempts: 0,
+                            xsd_retry_count: 0,
+                            xsd_retry_pending: false,
+                            xsd_retry_session_reuse_pending: false,
+                            same_agent_retry_count: 0,
+                            same_agent_retry_pending: false,
+                            same_agent_retry_reason: None,
+                            ..state.continuation
+                        },
                         agent_chain: new_agent_chain,
                         development_context_prepared_iteration: None,
                         development_prompt_prepared_iteration: None,
@@ -269,15 +259,13 @@ pub(super) fn reduce_iteration_event(
                         ..state
                     }
                 } else {
-                    let continuation = ContinuationState {
-                        invalid_output_attempts,
-                        ..state.continuation
-                    };
-
                     PipelineState {
                         phase: crate::reducer::event::PipelinePhase::Development,
                         iteration,
-                        continuation,
+                        continuation: ContinuationState {
+                            invalid_output_attempts,
+                            ..state.continuation
+                        },
                         development_context_prepared_iteration: None,
                         development_prompt_prepared_iteration: None,
                         development_xml_cleaned_iteration: None,
