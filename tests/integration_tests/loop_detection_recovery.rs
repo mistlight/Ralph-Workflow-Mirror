@@ -61,7 +61,7 @@ fn test_loop_detection_fields_exist() {
             state.continuation.last_effect_kind,
             Some("Review:Reviewer:0:0:xsd_retry=true".to_string())
         );
-        assert_eq!(state.continuation.max_consecutive_same_effect, 20);
+        assert_eq!(state.continuation.max_consecutive_same_effect, 100);
     });
 }
 

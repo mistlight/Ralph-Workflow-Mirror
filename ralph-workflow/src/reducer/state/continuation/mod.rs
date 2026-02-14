@@ -54,7 +54,7 @@
 //! - System tracks `last_effect_kind` and `consecutive_same_effect_count`
 //!
 //! **Detection threshold:**
-//! - `max_consecutive_same_effect` (default 20)
+//! - `max_consecutive_same_effect` (default 100, see [`DEFAULT_LOOP_DETECTION_THRESHOLD`])
 //! - When threshold is exceeded, triggers loop recovery
 //!
 //! **Recovery behavior:**
@@ -78,4 +78,4 @@ mod budget;
 mod loop_detection;
 mod state;
 
-pub use state::ContinuationState;
+pub use state::{ContinuationState, DEFAULT_LOOP_DETECTION_THRESHOLD};

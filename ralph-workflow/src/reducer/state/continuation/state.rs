@@ -183,8 +183,15 @@ const fn default_max_continue_count() -> u32 {
     3
 }
 
+/// Default threshold for consecutive identical effects before triggering loop recovery.
+///
+/// When the same effect is executed this many times consecutively, the system triggers
+/// loop recovery to break potential infinite retry cycles.
+pub const DEFAULT_LOOP_DETECTION_THRESHOLD: u32 = 100;
+
+/// Serde requires a function for `#[serde(default = "...")]`.
 const fn default_max_consecutive_same_effect() -> u32 {
-    20
+    DEFAULT_LOOP_DETECTION_THRESHOLD
 }
 
 impl Default for ContinuationState {
@@ -221,7 +228,7 @@ impl Default for ContinuationState {
             // Loop detection fields
             last_effect_kind: None,
             consecutive_same_effect_count: 0,
-            max_consecutive_same_effect: default_max_consecutive_same_effect(),
+            max_consecutive_same_effect: DEFAULT_LOOP_DETECTION_THRESHOLD,
         }
     }
 }
