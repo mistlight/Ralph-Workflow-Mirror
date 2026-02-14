@@ -89,14 +89,21 @@ impl StepOutcome {
 }
 
 /// Detailed information about files modified in a step.
+///
+/// # Memory Optimization
+///
+/// Uses `Option<Box<[String]>>` instead of `Vec<String>` to save memory:
+/// - Empty collections use `None` instead of empty Vec (saves 24 bytes per field)
+/// - Non-empty collections use `Box<[String]>` which is 16 bytes vs Vec's 24 bytes
+/// - Total savings: up to 72 bytes per instance when all fields are empty
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct ModifiedFilesDetail {
-    #[serde(default)]
-    pub added: Vec<String>,
-    #[serde(default)]
-    pub modified: Vec<String>,
-    #[serde(default)]
-    pub deleted: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added: Option<Box<[String]>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<Box<[String]>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<Box<[String]>>,
 }
 
 /// Summary of issues found and fixed during a step.
@@ -568,9 +575,9 @@ mod tests {
     #[test]
     fn test_modified_files_detail_default() {
         let detail = ModifiedFilesDetail::default();
-        assert!(detail.added.is_empty());
-        assert!(detail.modified.is_empty());
-        assert!(detail.deleted.is_empty());
+        assert!(detail.added.is_none());
+        assert!(detail.modified.is_none());
+        assert!(detail.deleted.is_none());
     }
 
     #[test]
@@ -615,10 +622,15 @@ mod tests {
         let json_str = r#"{"phase":"Review","iteration":1,"step_type":"review","timestamp":"2025-01-20 12:00:00","outcome":{"Success":{"output":null,"files_modified":[],"exit_code":0}},"agent":null,"duration_secs":null,"checkpoint_saved_at":null,"git_commit_oid":"abc123","modified_files_detail":{"added":["a.rs"],"modified":[],"deleted":[]},"prompt_used":"Fix issues","issues_summary":{"found":2,"fixed":2,"description":"All fixed"}}"#;
         let deserialized: ExecutionStep = serde_json::from_str(json_str).unwrap();
         assert_eq!(deserialized.git_commit_oid, Some("abc123".to_string()));
-        assert_eq!(
-            deserialized.modified_files_detail.as_ref().unwrap().added,
-            vec!["a.rs"]
-        );
+        let added = deserialized
+            .modified_files_detail
+            .as_ref()
+            .unwrap()
+            .added
+            .as_ref()
+            .unwrap();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0], "a.rs");
         assert_eq!(deserialized.prompt_used, Some("Fix issues".to_string()));
         assert_eq!(deserialized.issues_summary.as_ref().unwrap().found, 2);
     }

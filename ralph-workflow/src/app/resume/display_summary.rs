@@ -153,19 +153,21 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
                 // Add files modified count if available
                 if let Some(ref detail) = step.modified_files_detail {
-                    let total_files =
-                        detail.added.len() + detail.modified.len() + detail.deleted.len();
+                    let added_count = detail.added.as_ref().map_or(0, |v| v.len());
+                    let modified_count = detail.modified.as_ref().map_or(0, |v| v.len());
+                    let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
+                    let total_files = added_count + modified_count + deleted_count;
                     if total_files > 0 {
                         let mut file_summary = String::from("    Files: ");
                         let mut parts = Vec::new();
-                        if !detail.added.is_empty() {
-                            parts.push(format!("{} added", detail.added.len()));
+                        if added_count > 0 {
+                            parts.push(format!("{} added", added_count));
                         }
-                        if !detail.modified.is_empty() {
-                            parts.push(format!("{} modified", detail.modified.len()));
+                        if modified_count > 0 {
+                            parts.push(format!("{} modified", modified_count));
                         }
-                        if !detail.deleted.is_empty() {
-                            parts.push(format!("{} deleted", detail.deleted.len()));
+                        if deleted_count > 0 {
+                            parts.push(format!("{} deleted", deleted_count));
                         }
                         file_summary.push_str(&parts.join(", "));
                         logger.info(&file_summary);

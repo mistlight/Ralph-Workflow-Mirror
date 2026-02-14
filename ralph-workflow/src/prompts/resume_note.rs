@@ -88,18 +88,20 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
 
                 // Add files modified count if available
                 if let Some(ref detail) = step.modified_files_detail {
-                    let total_files =
-                        detail.added.len() + detail.modified.len() + detail.deleted.len();
+                    let added_count = detail.added.as_ref().map_or(0, |v| v.len());
+                    let modified_count = detail.modified.as_ref().map_or(0, |v| v.len());
+                    let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
+                    let total_files = added_count + modified_count + deleted_count;
                     if total_files > 0 {
                         note.push_str(&format!("  Files: {} changed", total_files));
-                        if !detail.added.is_empty() {
-                            note.push_str(&format!(" ({} added)", detail.added.len()));
+                        if added_count > 0 {
+                            note.push_str(&format!(" ({} added)", added_count));
                         }
-                        if !detail.modified.is_empty() {
-                            note.push_str(&format!(" ({} modified)", detail.modified.len()));
+                        if modified_count > 0 {
+                            note.push_str(&format!(" ({} modified)", modified_count));
                         }
-                        if !detail.deleted.is_empty() {
-                            note.push_str(&format!(" ({} deleted)", detail.deleted.len()));
+                        if deleted_count > 0 {
+                            note.push_str(&format!(" ({} deleted)", deleted_count));
                         }
                         note.push('\n');
                     }

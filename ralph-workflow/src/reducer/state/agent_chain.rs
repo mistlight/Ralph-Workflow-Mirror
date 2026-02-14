@@ -212,22 +212,34 @@ impl AgentChainState {
 
     pub fn advance_to_next_model(&self) -> Self {
         let start_agent_index = self.current_agent_index;
-        let new = self.clone();
 
         // When models are configured, we try each model for the current agent once.
         // If the models list is exhausted, advance to the next agent/retry cycle
         // instead of looping models indefinitely.
-        let mut next = match new.models_per_agent.get(new.current_agent_index) {
+        let mut next = match self.models_per_agent.get(self.current_agent_index) {
             Some(models) if !models.is_empty() => {
-                if new.current_model_index + 1 < models.len() {
-                    let mut advanced = new;
-                    advanced.current_model_index += 1;
-                    advanced
+                if self.current_model_index + 1 < models.len() {
+                    // Simple model advance - only increment model index
+                    Self {
+                        agents: self.agents.clone(),
+                        current_agent_index: self.current_agent_index,
+                        models_per_agent: self.models_per_agent.clone(),
+                        current_model_index: self.current_model_index + 1,
+                        retry_cycle: self.retry_cycle,
+                        max_cycles: self.max_cycles,
+                        retry_delay_ms: self.retry_delay_ms,
+                        backoff_multiplier: self.backoff_multiplier,
+                        max_backoff_ms: self.max_backoff_ms,
+                        backoff_pending_ms: self.backoff_pending_ms,
+                        current_role: self.current_role,
+                        rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+                        last_session_id: self.last_session_id.clone(),
+                    }
                 } else {
-                    new.switch_to_next_agent()
+                    self.switch_to_next_agent()
                 }
             }
-            _ => new.switch_to_next_agent(),
+            _ => self.switch_to_next_agent(),
         };
 
         if next.current_agent_index != start_agent_index {
@@ -238,22 +250,64 @@ impl AgentChainState {
     }
 
     pub fn switch_to_next_agent(&self) -> Self {
-        let mut new = self.clone();
-        if new.current_agent_index + 1 < new.agents.len() {
-            new.current_agent_index += 1;
-            new.current_model_index = 0;
-            new.backoff_pending_ms = None;
+        if self.current_agent_index + 1 < self.agents.len() {
+            // Advance to next agent
+            Self {
+                agents: self.agents.clone(),
+                current_agent_index: self.current_agent_index + 1,
+                models_per_agent: self.models_per_agent.clone(),
+                current_model_index: 0,
+                retry_cycle: self.retry_cycle,
+                max_cycles: self.max_cycles,
+                retry_delay_ms: self.retry_delay_ms,
+                backoff_multiplier: self.backoff_multiplier,
+                max_backoff_ms: self.max_backoff_ms,
+                backoff_pending_ms: None,
+                current_role: self.current_role,
+                rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+                last_session_id: self.last_session_id.clone(),
+            }
         } else {
-            new.current_agent_index = 0;
-            new.current_model_index = 0;
-            new.retry_cycle += 1;
-            if new.is_exhausted() {
-                new.backoff_pending_ms = None;
+            // Wrap around to first agent and increment retry cycle
+            let new_retry_cycle = self.retry_cycle + 1;
+            let new_backoff_pending_ms = if new_retry_cycle >= self.max_cycles {
+                None
             } else {
-                new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+                // Create temporary state to calculate backoff
+                let temp = Self {
+                    agents: self.agents.clone(),
+                    current_agent_index: 0,
+                    models_per_agent: self.models_per_agent.clone(),
+                    current_model_index: 0,
+                    retry_cycle: new_retry_cycle,
+                    max_cycles: self.max_cycles,
+                    retry_delay_ms: self.retry_delay_ms,
+                    backoff_multiplier: self.backoff_multiplier,
+                    max_backoff_ms: self.max_backoff_ms,
+                    backoff_pending_ms: None,
+                    current_role: self.current_role,
+                    rate_limit_continuation_prompt: None,
+                    last_session_id: None,
+                };
+                Some(temp.calculate_backoff_delay_ms_for_retry_cycle())
+            };
+
+            Self {
+                agents: self.agents.clone(),
+                current_agent_index: 0,
+                models_per_agent: self.models_per_agent.clone(),
+                current_model_index: 0,
+                retry_cycle: new_retry_cycle,
+                max_cycles: self.max_cycles,
+                retry_delay_ms: self.retry_delay_ms,
+                backoff_multiplier: self.backoff_multiplier,
+                max_backoff_ms: self.max_backoff_ms,
+                backoff_pending_ms: new_backoff_pending_ms,
+                current_role: self.current_role,
+                rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+                last_session_id: self.last_session_id.clone(),
             }
         }
-        new
     }
 
     /// Switch to a specific agent by name.
@@ -265,29 +319,83 @@ impl AgentChainState {
             return self.switch_to_next_agent();
         };
 
-        let mut new = self.clone();
-        if target_index == new.current_agent_index {
-            new.current_model_index = 0;
-            new.backoff_pending_ms = None;
-            return new;
+        if target_index == self.current_agent_index {
+            // Same agent - just reset model index
+            return Self {
+                agents: self.agents.clone(),
+                current_agent_index: self.current_agent_index,
+                models_per_agent: self.models_per_agent.clone(),
+                current_model_index: 0,
+                retry_cycle: self.retry_cycle,
+                max_cycles: self.max_cycles,
+                retry_delay_ms: self.retry_delay_ms,
+                backoff_multiplier: self.backoff_multiplier,
+                max_backoff_ms: self.max_backoff_ms,
+                backoff_pending_ms: None,
+                current_role: self.current_role,
+                rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+                last_session_id: self.last_session_id.clone(),
+            };
         }
-
-        new.current_agent_index = target_index;
-        new.current_model_index = 0;
 
         if target_index <= self.current_agent_index {
             // Treat switching to an earlier agent as starting a new retry cycle.
-            new.retry_cycle += 1;
-            if new.is_exhausted() {
-                new.backoff_pending_ms = None;
+            let new_retry_cycle = self.retry_cycle + 1;
+            let new_backoff_pending_ms = if new_retry_cycle >= self.max_cycles {
+                None
             } else {
-                new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+                // Create temporary state to calculate backoff
+                let temp = Self {
+                    agents: self.agents.clone(),
+                    current_agent_index: target_index,
+                    models_per_agent: self.models_per_agent.clone(),
+                    current_model_index: 0,
+                    retry_cycle: new_retry_cycle,
+                    max_cycles: self.max_cycles,
+                    retry_delay_ms: self.retry_delay_ms,
+                    backoff_multiplier: self.backoff_multiplier,
+                    max_backoff_ms: self.max_backoff_ms,
+                    backoff_pending_ms: None,
+                    current_role: self.current_role,
+                    rate_limit_continuation_prompt: None,
+                    last_session_id: None,
+                };
+                Some(temp.calculate_backoff_delay_ms_for_retry_cycle())
+            };
+
+            Self {
+                agents: self.agents.clone(),
+                current_agent_index: target_index,
+                models_per_agent: self.models_per_agent.clone(),
+                current_model_index: 0,
+                retry_cycle: new_retry_cycle,
+                max_cycles: self.max_cycles,
+                retry_delay_ms: self.retry_delay_ms,
+                backoff_multiplier: self.backoff_multiplier,
+                max_backoff_ms: self.max_backoff_ms,
+                backoff_pending_ms: new_backoff_pending_ms,
+                current_role: self.current_role,
+                rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+                last_session_id: self.last_session_id.clone(),
             }
         } else {
-            new.backoff_pending_ms = None;
+            // Advancing to later agent
+            Self {
+                agents: self.agents.clone(),
+                current_agent_index: target_index,
+                models_per_agent: self.models_per_agent.clone(),
+                current_model_index: 0,
+                retry_cycle: self.retry_cycle,
+                max_cycles: self.max_cycles,
+                retry_delay_ms: self.retry_delay_ms,
+                backoff_multiplier: self.backoff_multiplier,
+                max_backoff_ms: self.max_backoff_ms,
+                backoff_pending_ms: None,
+                current_role: self.current_role,
+                rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+                last_session_id: self.last_session_id.clone(),
+            }
         }
-
-        new
     }
 
     /// Switch to next agent after rate limit, preserving prompt for continuation.
@@ -297,13 +405,26 @@ impl AgentChainState {
     /// we switch to the next agent and preserve the prompt so the new agent
     /// can continue the same work.
     pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
-        let mut next = self.switch_to_next_agent();
+        let base = self.switch_to_next_agent();
         // Back-compat: older callers didn't track role. Preserve prompt only.
-        next.rate_limit_continuation_prompt = prompt.map(|p| RateLimitContinuationPrompt {
-            role: next.current_role,
-            prompt: p,
-        });
-        next
+        Self {
+            agents: base.agents,
+            current_agent_index: base.current_agent_index,
+            models_per_agent: base.models_per_agent,
+            current_model_index: base.current_model_index,
+            retry_cycle: base.retry_cycle,
+            max_cycles: base.max_cycles,
+            retry_delay_ms: base.retry_delay_ms,
+            backoff_multiplier: base.backoff_multiplier,
+            max_backoff_ms: base.max_backoff_ms,
+            backoff_pending_ms: base.backoff_pending_ms,
+            current_role: base.current_role,
+            rate_limit_continuation_prompt: prompt.map(|p| RateLimitContinuationPrompt {
+                role: base.current_role,
+                prompt: p,
+            }),
+            last_session_id: base.last_session_id,
+        }
     }
 
     /// Switch to next agent after rate limit, preserving prompt for continuation (role-scoped).
@@ -312,10 +433,23 @@ impl AgentChainState {
         role: AgentRole,
         prompt: Option<String>,
     ) -> Self {
-        let mut next = self.switch_to_next_agent();
-        next.rate_limit_continuation_prompt =
-            prompt.map(|p| RateLimitContinuationPrompt { role, prompt: p });
-        next
+        let base = self.switch_to_next_agent();
+        Self {
+            agents: base.agents,
+            current_agent_index: base.current_agent_index,
+            models_per_agent: base.models_per_agent,
+            current_model_index: base.current_model_index,
+            retry_cycle: base.retry_cycle,
+            max_cycles: base.max_cycles,
+            retry_delay_ms: base.retry_delay_ms,
+            backoff_multiplier: base.backoff_multiplier,
+            max_backoff_ms: base.max_backoff_ms,
+            backoff_pending_ms: base.backoff_pending_ms,
+            current_role: base.current_role,
+            rate_limit_continuation_prompt: prompt
+                .map(|p| RateLimitContinuationPrompt { role, prompt: p }),
+            last_session_id: base.last_session_id,
+        }
     }
 
     /// Clear continuation prompt after successful execution.
@@ -323,64 +457,154 @@ impl AgentChainState {
     /// Called when an agent successfully completes its task, clearing any
     /// saved prompt context from previous rate-limited agents.
     pub fn clear_continuation_prompt(&self) -> Self {
-        let mut new = self.clone();
-        new.rate_limit_continuation_prompt = None;
-        new
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: self.current_agent_index,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: self.current_model_index,
+            retry_cycle: self.retry_cycle,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: self.backoff_pending_ms,
+            current_role: self.current_role,
+            rate_limit_continuation_prompt: None,
+            last_session_id: self.last_session_id.clone(),
+        }
     }
 
     pub fn reset_for_role(&self, role: AgentRole) -> Self {
-        let mut new = self.clone();
-        new.current_role = role;
-        new.current_agent_index = 0;
-        new.current_model_index = 0;
-        new.retry_cycle = 0;
-        new.backoff_pending_ms = None;
-        new.rate_limit_continuation_prompt = None;
-        new.last_session_id = None;
-        new
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: 0,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: 0,
+            retry_cycle: 0,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: None,
+            current_role: role,
+            rate_limit_continuation_prompt: None,
+            last_session_id: None,
+        }
     }
 
     pub fn reset(&self) -> Self {
-        let mut new = self.clone();
-        new.current_agent_index = 0;
-        new.current_model_index = 0;
-        new.backoff_pending_ms = None;
-        new.rate_limit_continuation_prompt = None;
-        new.last_session_id = None;
-        new
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: 0,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: 0,
+            retry_cycle: self.retry_cycle,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: None,
+            current_role: self.current_role,
+            rate_limit_continuation_prompt: None,
+            last_session_id: None,
+        }
     }
 
     /// Store session ID from agent response for potential reuse.
     pub fn with_session_id(&self, session_id: Option<String>) -> Self {
-        let mut new = self.clone();
-        new.last_session_id = session_id;
-        new
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: self.current_agent_index,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: self.current_model_index,
+            retry_cycle: self.retry_cycle,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: self.backoff_pending_ms,
+            current_role: self.current_role,
+            rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+            last_session_id: session_id,
+        }
     }
 
     /// Clear session ID (e.g., when switching agents or starting new work).
     pub fn clear_session_id(&self) -> Self {
-        let mut new = self.clone();
-        new.last_session_id = None;
-        new
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: self.current_agent_index,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: self.current_model_index,
+            retry_cycle: self.retry_cycle,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: self.backoff_pending_ms,
+            current_role: self.current_role,
+            rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+            last_session_id: None,
+        }
     }
 
     pub fn start_retry_cycle(&self) -> Self {
-        let mut new = self.clone();
-        new.current_agent_index = 0;
-        new.current_model_index = 0;
-        new.retry_cycle += 1;
-        if new.is_exhausted() {
-            new.backoff_pending_ms = None;
+        let new_retry_cycle = self.retry_cycle + 1;
+        let new_backoff_pending_ms = if new_retry_cycle >= self.max_cycles {
+            None
         } else {
-            new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+            // Create temporary state to calculate backoff
+            let temp = Self {
+                agents: self.agents.clone(),
+                current_agent_index: 0,
+                models_per_agent: self.models_per_agent.clone(),
+                current_model_index: 0,
+                retry_cycle: new_retry_cycle,
+                max_cycles: self.max_cycles,
+                retry_delay_ms: self.retry_delay_ms,
+                backoff_multiplier: self.backoff_multiplier,
+                max_backoff_ms: self.max_backoff_ms,
+                backoff_pending_ms: None,
+                current_role: self.current_role,
+                rate_limit_continuation_prompt: None,
+                last_session_id: None,
+            };
+            Some(temp.calculate_backoff_delay_ms_for_retry_cycle())
+        };
+
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: 0,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: 0,
+            retry_cycle: new_retry_cycle,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: new_backoff_pending_ms,
+            current_role: self.current_role,
+            rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+            last_session_id: self.last_session_id.clone(),
         }
-        new
     }
 
     pub fn clear_backoff_pending(&self) -> Self {
-        let mut new = self.clone();
-        new.backoff_pending_ms = None;
-        new
+        Self {
+            agents: self.agents.clone(),
+            current_agent_index: self.current_agent_index,
+            models_per_agent: self.models_per_agent.clone(),
+            current_model_index: self.current_model_index,
+            retry_cycle: self.retry_cycle,
+            max_cycles: self.max_cycles,
+            retry_delay_ms: self.retry_delay_ms,
+            backoff_multiplier: self.backoff_multiplier,
+            max_backoff_ms: self.max_backoff_ms,
+            backoff_pending_ms: None,
+            current_role: self.current_role,
+            rate_limit_continuation_prompt: self.rate_limit_continuation_prompt.clone(),
+            last_session_id: self.last_session_id.clone(),
+        }
     }
 
     fn calculate_backoff_delay_ms_for_retry_cycle(&self) -> u64 {

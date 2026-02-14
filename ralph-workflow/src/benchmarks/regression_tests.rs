@@ -365,7 +365,7 @@ fn regression_test_continuation_state_boxed_fields() {
 }
 
 #[test]
-fn regression_test_prompt_inputs_builder_no_allocation() {
+fn test_prompt_inputs_builder_no_allocation() {
     // Verify builder methods don't introduce extra allocations
     use crate::reducer::state::PromptInputsState;
 
@@ -395,5 +395,94 @@ fn regression_test_agent_chain_boxed_lists() {
         vec_size - boxed_size,
         8,
         "Should save 8 bytes per agent list"
+    );
+}
+
+#[test]
+fn regression_test_agent_chain_reset_operations() {
+    use crate::agents::AgentRole;
+    use crate::reducer::state::AgentChainState;
+
+    let agents = vec!["agent1".to_string(), "agent2".to_string()];
+    let models: Vec<Vec<String>> = vec![vec!["model1".to_string()], vec!["model2".to_string()]];
+
+    let state = AgentChainState::initial()
+        .with_agents(agents, models, AgentRole::Developer)
+        .with_max_cycles(5);
+
+    // Test various reset operations
+    let state2 = state.reset();
+    assert_eq!(state2.current_agent_index, 0);
+    assert_eq!(state2.current_model_index, 0);
+    assert!(state2.backoff_pending_ms.is_none());
+    assert!(state2.rate_limit_continuation_prompt.is_none());
+
+    // Test reset_for_role
+    let state3 = state.reset_for_role(AgentRole::Reviewer);
+    assert_eq!(state3.current_role, AgentRole::Reviewer);
+    assert_eq!(state3.current_agent_index, 0);
+
+    // Verify data integrity after resets
+    assert_eq!(state.agents.len(), state2.agents.len());
+    assert_eq!(state.agents.len(), state3.agents.len());
+    assert_eq!(state2.agents[0], "agent1");
+    assert_eq!(state3.agents[1], "agent2");
+}
+
+#[test]
+fn regression_test_modified_files_detail_memory_efficiency() {
+    use crate::checkpoint::execution_history::ModifiedFilesDetail;
+    use std::mem::size_of;
+
+    // Empty detail should use minimal memory (all fields None)
+    let empty = ModifiedFilesDetail::default();
+
+    // Verify fields are Option<Box<[String]>> not Vec<String>
+    // This test documents expected size after optimization
+    let expected_size = size_of::<Option<Box<[String]>>>() * 3;
+    assert_eq!(
+        size_of::<ModifiedFilesDetail>(),
+        expected_size,
+        "ModifiedFilesDetail should use Option<Box<[String]>> for all fields"
+    );
+
+    // Verify None for empty collections
+    assert!(empty.added.is_none());
+    assert!(empty.modified.is_none());
+    assert!(empty.deleted.is_none());
+
+    // Verify memory savings vs Vec
+    let option_boxed_size = size_of::<Option<Box<[String]>>>();
+    let vec_size = size_of::<Vec<String>>();
+    assert_eq!(
+        option_boxed_size, 16,
+        "Option<Box<[String]>> should be 16 bytes"
+    );
+    assert_eq!(vec_size, 24, "Vec<String> should be 24 bytes");
+    assert_eq!(
+        vec_size - option_boxed_size,
+        8,
+        "Should save 8 bytes per field"
+    );
+}
+
+#[test]
+fn regression_test_boxed_str_size_optimization() {
+    use std::mem::size_of;
+
+    // Verify Box<str> is smaller than String
+    assert_eq!(size_of::<Box<str>>(), 16, "Box<str> should be 16 bytes");
+    assert_eq!(size_of::<String>(), 24, "String should be 24 bytes");
+    assert_eq!(
+        size_of::<Option<Box<str>>>(),
+        16,
+        "Option<Box<str>> should be 16 bytes"
+    );
+
+    // Verify savings
+    assert_eq!(
+        size_of::<String>() - size_of::<Box<str>>(),
+        8,
+        "Should save 8 bytes per string field"
     );
 }

@@ -32,9 +32,22 @@ pub struct StringPool {
 }
 
 impl StringPool {
-    /// Create a new empty string pool.
+    /// Create a new string pool with default capacity hint.
+    ///
+    /// Pre-allocates capacity for 16 unique strings, which is typical for
+    /// most pipeline runs (phase names, agent names, step types).
     pub fn new() -> Self {
-        Self::default()
+        Self::with_capacity(16)
+    }
+
+    /// Create a string pool with specific capacity.
+    ///
+    /// Use this when you know the expected number of unique strings to avoid
+    /// hash table resizing during initial population.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            pool: HashMap::with_capacity(capacity),
+        }
     }
 
     /// Get or insert a string into the pool, returning an Arc<str>.
@@ -86,6 +99,14 @@ mod tests {
         let pool = StringPool::new();
         assert_eq!(pool.len(), 0);
         assert!(pool.is_empty());
+    }
+
+    #[test]
+    fn test_string_pool_with_capacity() {
+        let pool = StringPool::with_capacity(32);
+        assert_eq!(pool.len(), 0);
+        assert!(pool.is_empty());
+        // Capacity is pre-allocated, so adding strings shouldn't trigger resize
     }
 
     #[test]
