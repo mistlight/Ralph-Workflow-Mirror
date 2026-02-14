@@ -32,7 +32,7 @@ fn test_continuation_triggered_updates_state() {
     );
     assert_eq!(
         new_state.continuation.previous_files_changed,
-        Some(vec!["src/main.rs".to_string()])
+        Some(vec!["src/main.rs".to_string()].into_boxed_slice())
     );
     assert_eq!(
         new_state.continuation.previous_next_steps,

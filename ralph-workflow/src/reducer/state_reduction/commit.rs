@@ -27,10 +27,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_diff_content_id_sha256: Some(content_id_sha256),
             // If the diff is (re)prepared, any previously materialized commit inputs
             // are potentially stale (the diff file was rewritten). Force rematerialization.
-            prompt_inputs: PromptInputsState {
-                commit: None,
-                ..state.prompt_inputs.clone()
-            },
+            prompt_inputs: state.prompt_inputs.with_commit_cleared(),
             ..state
         },
         CommitEvent::DiffFailed { .. } => PipelineState {
@@ -50,10 +47,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,
-            prompt_inputs: PromptInputsState {
-                commit: None,
-                ..state.prompt_inputs.clone()
-            },
+            prompt_inputs: state.prompt_inputs.with_commit_cleared(),
             ..state
         },
         CommitEvent::PromptPrepared { .. } => PipelineState {
@@ -62,7 +56,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                     attempt: 1,
                     max_attempts: crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS,
                 },
-                _ => state.commit.clone(),
+                other => other,
             },
             commit_prompt_prepared: true,
             continuation: crate::reducer::state::ContinuationState {

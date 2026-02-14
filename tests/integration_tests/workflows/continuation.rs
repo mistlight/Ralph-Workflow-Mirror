@@ -55,7 +55,7 @@ fn test_partial_status_triggers_continuation() {
         );
         assert_eq!(
             new_state.continuation.previous_files_changed,
-            Some(vec!["src/lib.rs".to_string()])
+            Some(vec!["src/lib.rs".to_string()].into_boxed_slice())
         );
     });
 }

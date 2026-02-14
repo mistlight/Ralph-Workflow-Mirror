@@ -547,7 +547,7 @@ fn test_commit_agent_chain_initialized_preserves_role() {
         ),
     );
 
-    assert_eq!(new_state.agent_chain.agents, agents);
+    assert_eq!(new_state.agent_chain.agents, agents.into_boxed_slice());
     assert_eq!(new_state.agent_chain.current_role, AgentRole::Commit);
 }
 

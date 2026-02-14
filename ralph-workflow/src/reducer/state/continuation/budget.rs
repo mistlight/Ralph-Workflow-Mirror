@@ -118,7 +118,7 @@ impl ContinuationState {
     ) -> Self {
         self.previous_status = Some(status);
         self.previous_summary = Some(summary);
-        self.previous_files_changed = files_changed;
+        self.previous_files_changed = files_changed.map(|v| v.into_boxed_slice());
         self.previous_next_steps = next_steps;
         self.continuation_attempt += 1;
         self.invalid_output_attempts = 0;

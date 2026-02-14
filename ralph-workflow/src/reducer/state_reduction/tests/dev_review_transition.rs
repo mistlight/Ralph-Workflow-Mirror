@@ -117,7 +117,8 @@ fn test_chain_initialized_populates_reviewer_chain() {
             "codex".to_string(),
             "opencode".to_string(),
             "claude".to_string()
-        ],
+        ]
+        .into_boxed_slice(),
         "Reducer should store the exact fallback chain from ChainInitialized event"
     );
     assert_eq!(

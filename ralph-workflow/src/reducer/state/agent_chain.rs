@@ -13,9 +13,13 @@ use sha2::{Digest, Sha256};
 /// - Retry cycle (exhaust all agents, start over with exponential backoff)
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AgentChainState {
-    pub agents: Vec<String>,
+    /// Agent names in fallback order. Box<[String]> saves 8 bytes per instance
+    /// vs Vec<String> since this collection is immutable after construction.
+    pub agents: Box<[String]>,
     pub current_agent_index: usize,
-    pub models_per_agent: Vec<Vec<String>>,
+    /// Models per agent. Box for immutable outer collection, Vec for model lists
+    /// that need indexing during runtime selection.
+    pub models_per_agent: Box<[Vec<String>]>,
     pub current_model_index: usize,
     pub retry_cycle: u32,
     pub max_cycles: u32,
@@ -100,9 +104,9 @@ const fn default_max_backoff_ms() -> u64 {
 impl AgentChainState {
     pub fn initial() -> Self {
         Self {
-            agents: Vec::new(),
+            agents: vec![].into_boxed_slice(),
             current_agent_index: 0,
-            models_per_agent: Vec::new(),
+            models_per_agent: vec![].into_boxed_slice(),
             current_model_index: 0,
             retry_cycle: 0,
             max_cycles: 3,
@@ -122,8 +126,8 @@ impl AgentChainState {
         models_per_agent: Vec<Vec<String>>,
         role: AgentRole,
     ) -> Self {
-        self.agents = agents;
-        self.models_per_agent = models_per_agent;
+        self.agents = agents.into_boxed_slice();
+        self.models_per_agent = models_per_agent.into_boxed_slice();
         self.current_role = role;
         self
     }

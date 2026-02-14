@@ -39,7 +39,7 @@ fn test_continuation_trigger_partial() {
     );
     assert_eq!(
         new_state.previous_files_changed,
-        Some(vec!["file1.rs".to_string()])
+        Some(vec!["file1.rs".to_string()].into_boxed_slice())
     );
     assert_eq!(
         new_state.previous_next_steps,
@@ -102,7 +102,10 @@ fn test_multiple_continuations() {
 
     assert_eq!(state.continuation_attempt, 2);
     assert_eq!(state.previous_summary, Some("Second".to_string()));
-    assert_eq!(state.previous_files_changed, Some(vec!["b.rs".to_string()]));
+    assert_eq!(
+        state.previous_files_changed,
+        Some(vec!["b.rs".to_string()].into_boxed_slice())
+    );
     assert_eq!(state.previous_next_steps, Some("Do more".to_string()));
 }
 

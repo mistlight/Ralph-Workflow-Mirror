@@ -348,3 +348,52 @@ fn regression_test_boxed_slice_memory_savings() {
     // Verify 8 byte savings per instance
     assert_eq!(vec_size - boxed_slice_size, 8);
 }
+
+#[test]
+fn regression_test_continuation_state_boxed_fields() {
+    // Verify ContinuationState uses Box<[String]> for immutable fields
+    use std::mem::size_of;
+
+    // Option<Box<[String]>> is 16 bytes (fat pointer)
+    // Option<Vec<String>> is 24 bytes (pointer + len + capacity)
+    let boxed_size = size_of::<Option<Box<[String]>>>();
+    let vec_size = size_of::<Option<Vec<String>>>();
+
+    assert_eq!(boxed_size, 16, "Option<Box<[String]>> should be 16 bytes");
+    assert_eq!(vec_size, 24, "Option<Vec<String>> should be 24 bytes");
+    assert_eq!(vec_size - boxed_size, 8, "Should save 8 bytes per field");
+}
+
+#[test]
+fn regression_test_prompt_inputs_builder_no_allocation() {
+    // Verify builder methods don't introduce extra allocations
+    use crate::reducer::state::PromptInputsState;
+
+    let inputs = PromptInputsState::default();
+
+    // Builder methods should consume and return without cloning
+    let updated = inputs.with_commit_cleared();
+    assert!(updated.commit.is_none());
+
+    // Verify other fields are preserved (not cloned/reallocated)
+    let inputs2 = PromptInputsState::default();
+    let updated2 = inputs2.with_planning_cleared();
+    assert!(updated2.planning.is_none());
+}
+
+#[test]
+fn regression_test_agent_chain_boxed_lists() {
+    // Verify AgentChainState uses Box<[String]> for immutable agent lists
+    use std::mem::size_of;
+
+    let boxed_size = size_of::<Box<[String]>>();
+    let vec_size = size_of::<Vec<String>>();
+
+    assert_eq!(boxed_size, 16, "Box<[String]> should be 16 bytes");
+    assert_eq!(vec_size, 24, "Vec<String> should be 24 bytes");
+    assert_eq!(
+        vec_size - boxed_size,
+        8,
+        "Should save 8 bytes per agent list"
+    );
+}

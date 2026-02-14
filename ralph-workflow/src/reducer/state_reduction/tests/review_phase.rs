@@ -45,7 +45,7 @@ fn test_review_phase_started_resets_continuation_state() {
         continuation: ContinuationState {
             previous_status: Some(DevelopmentStatus::Partial),
             previous_summary: Some("prev summary".to_string()),
-            previous_files_changed: Some(vec!["src/lib.rs".to_string()]),
+            previous_files_changed: Some(vec!["src/lib.rs".to_string()].into_boxed_slice()),
             previous_next_steps: Some("next steps".to_string()),
             continuation_attempt: 2,
             invalid_output_attempts: 3,

@@ -83,12 +83,15 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_started(
         review_issues_markdown_written_pass: None,
         review_issue_snippets_extracted_pass: None,
         review_issues_xml_archived_pass: None,
-        agent_chain: if pass == state.reviewer_pass {
-            // If orchestration re-emits PassStarted for the same pass (e.g., retry after
-            // OutputValidationFailed), preserve the agent selection so fallback is effective.
-            state.agent_chain.clone()
-        } else {
-            state.agent_chain.reset()
+        agent_chain: {
+            let should_reset = pass != state.reviewer_pass;
+            if should_reset {
+                state.agent_chain.reset()
+            } else {
+                // If orchestration re-emits PassStarted for the same pass (e.g., retry after
+                // OutputValidationFailed), preserve the agent selection so fallback is effective.
+                state.agent_chain
+            }
         },
         continuation: if pass == state.reviewer_pass {
             // If orchestration re-emits PassStarted for the same pass (e.g., retry after

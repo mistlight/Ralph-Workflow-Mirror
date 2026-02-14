@@ -84,7 +84,7 @@ fn test_planning_output_validation_failed_switches_agent_at_max_attempts() {
     };
 
     // Initialize agent chain with multiple agents
-    state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()];
+    state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()].into_boxed_slice();
     state.agent_chain.current_agent_index = 0;
 
     // Attempt at MAX should trigger agent switch
@@ -135,7 +135,7 @@ fn test_planning_output_validation_failed_multiple_attempts_before_switch() {
         max_xsd_retry_count: 3,
         ..ContinuationState::new()
     };
-    state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()];
+    state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()].into_boxed_slice();
     state.agent_chain.current_agent_index = 0;
 
     // First failure (attempt 0) should not switch agent
