@@ -28,28 +28,28 @@ fn create_test_step(iteration: u32) -> ExecutionStep {
 #[test]
 fn benchmark_execution_history_growth_10_iterations() {
     let mut state = PipelineState::initial(100, 5);
-    let start_size = std::mem::size_of_val(&state.execution_history);
+    let start_size = std::mem::size_of_val(state.execution_history());
 
     // Simulate 10 iterations
     for i in 0..10 {
-        state.execution_history.push_back(create_test_step(i));
+        state.add_execution_step(create_test_step(i), 10);
     }
 
-    let end_size = std::mem::size_of_val(&state.execution_history);
+    let end_size = std::mem::size_of_val(state.execution_history());
     let actual_heap_size: usize = state
-        .execution_history
+        .execution_history()
         .iter()
         .map(|step| {
             // Approximate heap size: string fields + vec allocations
             step.phase.capacity()
                 + step.step_type.capacity()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s| s.capacity())
+                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
         })
         .sum();
 
-    let growth_per_iteration = if !state.execution_history.is_empty() {
-        actual_heap_size / state.execution_history.len()
+    let growth_per_iteration = if !state.execution_history().is_empty() {
+        actual_heap_size / state.execution_history_len()
     } else {
         0
     };
@@ -59,10 +59,10 @@ fn benchmark_execution_history_growth_10_iterations() {
     println!("Stack size end: {} bytes", end_size);
     println!("Heap size (estimated): {} bytes", actual_heap_size);
     println!("Growth per iteration: ~{} bytes", growth_per_iteration);
-    println!("Total entries: {}", state.execution_history.len());
+    println!("Total entries: {}", state.execution_history_len());
 
     // Document baseline - this is NOT a failure, just measurement
-    assert_eq!(state.execution_history.len(), 10);
+    assert_eq!(state.execution_history_len(), 10);
 }
 
 #[test]
@@ -72,23 +72,23 @@ fn benchmark_execution_history_growth_100_iterations() {
 
     // Simulate 100 iterations
     for i in 0..100 {
-        state.execution_history.push_back(create_test_step(i));
+        state.add_execution_step(create_test_step(i), 100);
     }
 
     let duration = start.elapsed();
     let actual_heap_size: usize = state
-        .execution_history
+        .execution_history()
         .iter()
         .map(|step| {
             step.phase.capacity()
                 + step.step_type.capacity()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s| s.capacity())
+                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
         })
         .sum();
 
-    let growth_per_iteration = if !state.execution_history.is_empty() {
-        actual_heap_size / state.execution_history.len()
+    let growth_per_iteration = if !state.execution_history().is_empty() {
+        actual_heap_size / state.execution_history_len()
     } else {
         0
     };
@@ -96,11 +96,11 @@ fn benchmark_execution_history_growth_100_iterations() {
     println!("\n=== Execution History Growth (100 iterations) ===");
     println!("Heap size (estimated): {} bytes", actual_heap_size);
     println!("Growth per iteration: ~{} bytes", growth_per_iteration);
-    println!("Total entries: {}", state.execution_history.len());
+    println!("Total entries: {}", state.execution_history_len());
     println!("Time to populate: {:?}", duration);
 
     // Document baseline
-    assert_eq!(state.execution_history.len(), 100);
+    assert_eq!(state.execution_history_len(), 100);
 
     // This demonstrates unbounded growth - after step 11 implementation,
     // this should be bounded to configured limit (default 1000)
@@ -113,23 +113,23 @@ fn benchmark_execution_history_growth_1000_iterations() {
 
     // Simulate 1000 iterations (stress test)
     for i in 0..1000 {
-        state.execution_history.push_back(create_test_step(i));
+        state.add_execution_step(create_test_step(i), 1000);
     }
 
     let duration = start.elapsed();
     let actual_heap_size: usize = state
-        .execution_history
+        .execution_history()
         .iter()
         .map(|step| {
             step.phase.capacity()
                 + step.step_type.capacity()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s| s.capacity())
+                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
         })
         .sum();
 
-    let growth_per_iteration = if !state.execution_history.is_empty() {
-        actual_heap_size / state.execution_history.len()
+    let growth_per_iteration = if !state.execution_history().is_empty() {
+        actual_heap_size / state.execution_history_len()
     } else {
         0
     };
@@ -142,11 +142,11 @@ fn benchmark_execution_history_growth_1000_iterations() {
         actual_heap_size, size_kb, size_mb
     );
     println!("Growth per iteration: ~{} bytes", growth_per_iteration);
-    println!("Total entries: {}", state.execution_history.len());
+    println!("Total entries: {}", state.execution_history_len());
     println!("Time to populate: {:?}", duration);
 
     // Document baseline
-    assert_eq!(state.execution_history.len(), 1000);
+    assert_eq!(state.execution_history_len(), 1000);
 
     // This demonstrates the scale of unbounded growth.
     // After step 11 implementation with default limit of 1000,
@@ -159,7 +159,7 @@ fn benchmark_pipeline_state_size_empty() {
 
     // Approximate size calculation
     let base_size = std::mem::size_of_val(&state);
-    let execution_history_size = std::mem::size_of_val(&state.execution_history);
+    let execution_history_size = std::mem::size_of_val(state.execution_history());
 
     println!("\n=== Pipeline State Size (Empty) ===");
     println!("Base state size: {} bytes", base_size);
@@ -169,11 +169,11 @@ fn benchmark_pipeline_state_size_empty() {
     );
     println!(
         "Total execution history entries: {}",
-        state.execution_history.len()
+        state.execution_history_len()
     );
 
     // Baseline measurement
-    assert!(state.execution_history.is_empty());
+    assert!(state.execution_history().is_empty());
 }
 
 #[test]
@@ -182,19 +182,19 @@ fn benchmark_pipeline_state_size_with_100_steps() {
 
     // Add 100 execution steps
     for i in 0..100 {
-        state.execution_history.push_back(create_test_step(i));
+        state.add_execution_step(create_test_step(i), 100);
     }
 
     let base_size = std::mem::size_of_val(&state);
-    let execution_history_size = std::mem::size_of_val(&state.execution_history);
+    let execution_history_size = std::mem::size_of_val(state.execution_history());
     let heap_size: usize = state
-        .execution_history
+        .execution_history()
         .iter()
         .map(|step| {
             step.phase.capacity()
                 + step.step_type.capacity()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s| s.capacity())
+                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
         })
         .sum();
 
@@ -208,11 +208,11 @@ fn benchmark_pipeline_state_size_with_100_steps() {
     println!("Total size estimate: ~{} bytes", base_size + heap_size);
     println!(
         "Total execution history entries: {}",
-        state.execution_history.len()
+        state.execution_history_len()
     );
 
     // Baseline measurement
-    assert_eq!(state.execution_history.len(), 100);
+    assert_eq!(state.execution_history_len(), 100);
 }
 
 #[test]
@@ -222,18 +222,18 @@ fn benchmark_memory_growth_rate() {
 
     // Measure growth at intervals
     for i in 0..1000 {
-        state.execution_history.push_back(create_test_step(i));
+        state.add_execution_step(create_test_step(i), 1000);
 
         // Sample every 100 iterations
         if (i + 1) % 100 == 0 {
             let heap_size: usize = state
-                .execution_history
+                .execution_history()
                 .iter()
                 .map(|step| {
                     step.phase.capacity()
                         + step.step_type.capacity()
                         + step.timestamp.capacity()
-                        + step.agent.as_ref().map_or(0, |s| s.capacity())
+                        + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
                 })
                 .sum();
             sizes.push((i + 1, heap_size));
@@ -309,9 +309,7 @@ fn create_test_pipeline_state(
     let mut state = PipelineState::initial(iterations, review_passes);
 
     for i in 0..history_size {
-        state
-            .execution_history
-            .push_back(create_test_step(i as u32));
+        state.add_execution_step(create_test_step(i as u32), history_size);
     }
 
     state
@@ -325,13 +323,13 @@ fn benchmark_peak_memory_usage_during_large_state_serialization() {
     let state = create_test_pipeline_state(100, 20, 2000);
 
     let heap_before: usize = state
-        .execution_history
+        .execution_history()
         .iter()
         .map(|step| {
             step.phase.capacity()
                 + step.step_type.capacity()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s| s.capacity())
+                + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
         })
         .sum();
 
@@ -352,7 +350,7 @@ fn benchmark_peak_memory_usage_during_large_state_serialization() {
     );
 
     // Document baseline
-    assert_eq!(state.execution_history.len(), 2000);
+    assert_eq!(state.execution_history_len(), 2000);
 }
 
 #[test]
@@ -368,13 +366,13 @@ fn benchmark_memory_usage_with_different_history_limits() {
         let state = create_test_pipeline_state(100, 20, limit);
 
         let heap_size: usize = state
-            .execution_history
+            .execution_history()
             .iter()
             .map(|step| {
                 step.phase.capacity()
                     + step.step_type.capacity()
                     + step.timestamp.capacity()
-                    + step.agent.as_ref().map_or(0, |s| s.capacity())
+                    + step.agent.as_ref().map_or(0, |s: &String| s.capacity())
             })
             .sum();
 

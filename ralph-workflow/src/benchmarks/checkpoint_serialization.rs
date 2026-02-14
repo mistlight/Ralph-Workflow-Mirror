@@ -45,9 +45,7 @@ fn create_test_pipeline_state(
     let mut state = PipelineState::initial(iterations, review_passes);
 
     for i in 0..history_size {
-        state
-            .execution_history
-            .push_back(create_test_step(i as u32));
+        state.add_execution_step(create_test_step(i as u32), history_size);
     }
 
     state
@@ -69,7 +67,7 @@ fn benchmark_checkpoint_serialization_empty_state() {
     println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
     println!(
         "Execution history entries: {}",
-        state.execution_history.len()
+        state.execution_history_len()
     );
 
     // Verify serialization works
@@ -100,15 +98,15 @@ fn benchmark_checkpoint_serialization_small_state() {
     println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
     println!(
         "Execution history entries: {}",
-        state.execution_history.len()
+        state.execution_history_len()
     );
     println!(
         "Bytes per history entry: ~{}",
-        size_bytes / state.execution_history.len().max(1)
+        size_bytes / state.execution_history_len().max(1)
     );
 
     // Verify serialization works
-    assert_eq!(state.execution_history.len(), 10);
+    assert_eq!(state.execution_history_len(), 10);
 
     // Wall-clock sanity checks are opt-in to avoid flaky failures on noisy CI hosts.
     if perf_ceiling_asserts_enabled() {
@@ -135,15 +133,15 @@ fn benchmark_checkpoint_serialization_medium_state() {
     println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
     println!(
         "Execution history entries: {}",
-        state.execution_history.len()
+        state.execution_history_len()
     );
     println!(
         "Bytes per history entry: ~{}",
-        size_bytes / state.execution_history.len()
+        size_bytes / state.execution_history_len()
     );
 
     // Verify serialization works
-    assert_eq!(state.execution_history.len(), 100);
+    assert_eq!(state.execution_history_len(), 100);
 
     // This establishes baseline - may be slow initially
     // After bounding implementation (step 11), should improve
@@ -169,15 +167,15 @@ fn benchmark_checkpoint_serialization_large_state() {
     );
     println!(
         "Execution history entries: {}",
-        state.execution_history.len()
+        state.execution_history_len()
     );
     println!(
         "Bytes per history entry: ~{}",
-        size_bytes / state.execution_history.len()
+        size_bytes / state.execution_history_len()
     );
 
     // Verify serialization works
-    assert_eq!(state.execution_history.len(), 1000);
+    assert_eq!(state.execution_history_len(), 1000);
 
     // This demonstrates serialization performance with large history
     // After bounding implementation, history will be capped at limit (default 1000)
@@ -198,11 +196,11 @@ fn benchmark_checkpoint_deserialization_small_state() {
     println!("Checkpoint size: {} bytes", json.len());
     println!(
         "Execution history entries: {}",
-        deserialized.execution_history.len()
+        deserialized.execution_history_len()
     );
 
     // Verify deserialization works correctly
-    assert_eq!(deserialized.execution_history.len(), 10);
+    assert_eq!(deserialized.execution_history_len(), 10);
 
     // Wall-clock sanity checks are opt-in to avoid flaky failures on noisy CI hosts.
     if perf_ceiling_asserts_enabled() {
@@ -230,11 +228,11 @@ fn benchmark_checkpoint_deserialization_large_state() {
     println!("Checkpoint size: {} KB", size_kb);
     println!(
         "Execution history entries: {}",
-        deserialized.execution_history.len()
+        deserialized.execution_history_len()
     );
 
     // Verify deserialization works correctly
-    assert_eq!(deserialized.execution_history.len(), 1000);
+    assert_eq!(deserialized.execution_history_len(), 1000);
 }
 
 #[test]
@@ -260,13 +258,13 @@ fn benchmark_checkpoint_round_trip() {
     println!("Checkpoint size: {} KB", size_kb);
     println!(
         "Execution history entries: {}",
-        restored.execution_history.len()
+        restored.execution_history_len()
     );
 
     // Verify round-trip correctness
     assert_eq!(
-        restored.execution_history.len(),
-        original.execution_history.len()
+        restored.execution_history_len(),
+        original.execution_history_len()
     );
     assert_eq!(restored.iteration, original.iteration);
     assert_eq!(restored.phase, original.phase);

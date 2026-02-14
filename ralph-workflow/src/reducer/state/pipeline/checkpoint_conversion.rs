@@ -8,12 +8,19 @@ impl From<PipelineCheckpoint> for PipelineState {
         let rebase_state = map_checkpoint_rebase_state(&checkpoint.rebase_state);
         let agent_chain = AgentChainState::initial();
         let last_substitution_log = checkpoint.last_substitution_log.clone();
-        let (template_validation_failed, template_validation_unsubstituted) =
-            last_substitution_log.as_ref().map_or((false, Vec::new()), |log| {
+        let (template_validation_failed, template_validation_unsubstituted) = last_substitution_log
+            .as_ref()
+            .map_or((false, Vec::new()), |log| {
                 (!log.is_complete(), log.unsubstituted.clone())
             });
 
-        PipelineState {
+        let execution_history_steps = checkpoint
+            .execution_history
+            .as_ref()
+            .map(|h| h.steps.clone())
+            .unwrap_or_default();
+
+        let mut state = PipelineState {
             phase: map_checkpoint_phase(checkpoint.phase),
             previous_phase: None,
             // Restore iteration/pass counters from checkpoint.
@@ -73,10 +80,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             agent_chain,
             rebase: rebase_state,
             commit: CommitState::NotStarted,
-            execution_history: checkpoint
-                .execution_history
-                .map(|h| h.steps)
-                .unwrap_or_default(),
+            execution_history: BoundedExecutionHistory::new(),
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
@@ -100,7 +104,16 @@ impl From<PipelineCheckpoint> for PipelineState {
                     ..RunMetrics::default()
                 }
             },
+        };
+
+        if !execution_history_steps.is_empty() {
+            let limit = execution_history_steps.len();
+            state
+                .execution_history
+                .replace_bounded(execution_history_steps, limit);
         }
+
+        state
     }
 }
 

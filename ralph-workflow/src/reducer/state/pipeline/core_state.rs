@@ -4,6 +4,71 @@
 // All state fields are immutable from the reducer's perspective. State transitions
 // occur exclusively through the reduce function.
 
+/// Execution step history with bounded insertion.
+///
+/// This newtype enforces that callers cannot mutate the underlying `VecDeque` directly
+/// (e.g., via `push_back`) and must instead use a bounded API.
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+#[serde(transparent)]
+pub struct BoundedExecutionHistory(std::collections::VecDeque<ExecutionStep>);
+
+impl BoundedExecutionHistory {
+    pub fn new() -> Self {
+        Self(std::collections::VecDeque::new())
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, ExecutionStep> {
+        self.0.iter()
+    }
+
+    pub fn as_deque(&self) -> &std::collections::VecDeque<ExecutionStep> {
+        &self.0
+    }
+
+    pub(crate) fn push_bounded(&mut self, step: ExecutionStep, limit: usize) {
+        self.0.push_back(step);
+        while self.0.len() > limit {
+            self.0.pop_front();
+        }
+    }
+
+    pub(crate) fn replace_bounded(
+        &mut self,
+        history: std::collections::VecDeque<ExecutionStep>,
+        limit: usize,
+    ) {
+        self.0 = history;
+        while self.0.len() > limit {
+            self.0.pop_front();
+        }
+    }
+}
+
+impl std::ops::Deref for BoundedExecutionHistory {
+    type Target = std::collections::VecDeque<ExecutionStep>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a BoundedExecutionHistory {
+    type Item = &'a ExecutionStep;
+    type IntoIter = std::collections::vec_deque::Iter<'a, ExecutionStep>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// Immutable pipeline state - the single source of truth for pipeline progress.
 ///
 /// This struct captures complete execution context and doubles as the checkpoint
@@ -165,7 +230,8 @@ pub struct PipelineState {
     pub agent_chain: AgentChainState,
     pub rebase: RebaseState,
     pub commit: CommitState,
-    pub execution_history: std::collections::VecDeque<ExecutionStep>,
+    #[serde(default)]
+    pub execution_history: BoundedExecutionHistory,
     /// Count of CheckpointSaved events applied to state.
     ///
     /// This is a reducer-visible record of checkpoint saves, intended for
@@ -236,6 +302,14 @@ pub struct PipelineState {
 }
 
 impl PipelineState {
+    pub fn execution_history(&self) -> &std::collections::VecDeque<ExecutionStep> {
+        self.execution_history.as_deque()
+    }
+
+    pub fn execution_history_len(&self) -> usize {
+        self.execution_history.len()
+    }
+
     pub fn initial(developer_iters: u32, reviewer_reviews: u32) -> Self {
         Self::initial_with_continuation(developer_iters, reviewer_reviews, ContinuationState::new())
     }
@@ -324,7 +398,7 @@ impl PipelineState {
             agent_chain: AgentChainState::initial(),
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
-            execution_history: std::collections::VecDeque::new(),
+            execution_history: BoundedExecutionHistory::new(),
             checkpoint_saved_count: 0,
             continuation: continuation.clone(),
             dev_fix_triggered: false,
@@ -393,12 +467,14 @@ impl PipelineState {
     /// - Checkpoint size: ~375 KB serialized
     /// - Growth: Bounded (oldest entries dropped when limit reached)
     pub fn add_execution_step(&mut self, step: ExecutionStep, limit: usize) {
-        self.execution_history.push_back(step);
+        self.execution_history.push_bounded(step, limit);
+    }
 
-        // Enforce limit by dropping oldest entries.
-        // VecDeque::pop_front is O(1) amortized and avoids repeated memmoves.
-        while self.execution_history.len() > limit {
-            self.execution_history.pop_front();
-        }
+    pub(crate) fn replace_execution_history_bounded(
+        &mut self,
+        history: std::collections::VecDeque<ExecutionStep>,
+        limit: usize,
+    ) {
+        self.execution_history.replace_bounded(history, limit);
     }
 }

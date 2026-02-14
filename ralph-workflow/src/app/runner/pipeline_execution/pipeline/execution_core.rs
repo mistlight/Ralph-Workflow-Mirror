@@ -252,6 +252,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         // Initialize a config-aware base state first, then overlay checkpoint progress.
         let mut base_state = crate::app::event_loop::create_initial_state_with_config(&phase_ctx);
         let migrated: PipelineState = checkpoint.clone().into();
+        let migrated_execution_history = migrated.execution_history().clone();
 
         base_state.phase = migrated.phase;
         base_state.iteration = migrated.iteration;
@@ -259,7 +260,10 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         base_state.reviewer_pass = migrated.reviewer_pass;
         base_state.total_reviewer_passes = migrated.total_reviewer_passes;
         base_state.rebase = migrated.rebase;
-        base_state.execution_history = migrated.execution_history;
+        base_state.replace_execution_history_bounded(
+            migrated_execution_history,
+            phase_ctx.config.execution_history_limit,
+        );
         base_state.prompt_inputs = migrated.prompt_inputs;
         base_state.prompt_permissions = migrated.prompt_permissions;
         base_state.metrics = migrated.metrics;

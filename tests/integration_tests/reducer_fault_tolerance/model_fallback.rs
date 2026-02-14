@@ -249,7 +249,7 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
             commit: CommitState::NotStarted,
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
-            execution_history: std::collections::VecDeque::new(),
+            execution_history: ralph_workflow::reducer::state::BoundedExecutionHistory::new(),
             ..PipelineState::initial(5, 2)
         };
 
@@ -365,7 +365,7 @@ fn test_timeout_fallback_clears_session_id() {
             commit: CommitState::NotStarted,
             continuation: ContinuationState::with_limits(2, 3, 2),
             checkpoint_saved_count: 0,
-            execution_history: std::collections::VecDeque::new(),
+            execution_history: ralph_workflow::reducer::state::BoundedExecutionHistory::new(),
             ..PipelineState::initial(5, 2)
         };
 

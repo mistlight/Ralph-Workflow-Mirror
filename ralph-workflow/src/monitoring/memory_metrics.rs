@@ -35,7 +35,7 @@ impl MemorySnapshot {
 
         Self {
             iteration: state.iteration,
-            execution_history_len: state.execution_history.len(),
+            execution_history_len: state.execution_history_len(),
             execution_history_heap_bytes,
             checkpoint_count: state.checkpoint_saved_count,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -48,14 +48,14 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
     use crate::checkpoint::execution_history::StepOutcome;
 
     state
-        .execution_history
+        .execution_history()
         .iter()
         .map(|step| {
             // Approximate heap allocations: string fields + vec allocations
             let base_size = step.phase.capacity()
                 + step.step_type.capacity()
                 + step.timestamp.capacity()
-                + step.agent.as_ref().map_or(0, |s| s.capacity());
+                + step.agent.as_ref().map_or(0, |s: &String| s.capacity());
 
             let outcome_size = match &step.outcome {
                 StepOutcome::Success {
@@ -252,12 +252,15 @@ mod tests {
     #[test]
     fn test_memory_snapshot_captures_state() {
         let mut state = PipelineState::initial(100, 5);
-        state.execution_history.push_back(ExecutionStep::new(
-            "Development",
-            0,
-            "agent_invoked",
-            StepOutcome::success(Some("output".to_string()), vec!["file.rs".to_string()]),
-        ));
+        state.add_execution_step(
+            ExecutionStep::new(
+                "Development",
+                0,
+                "agent_invoked",
+                StepOutcome::success(Some("output".to_string()), vec!["file.rs".to_string()]),
+            ),
+            1000,
+        );
 
         let snapshot = MemorySnapshot::from_pipeline_state(&state);
 
@@ -385,15 +388,18 @@ mod tests {
 
         // Add enough history to exceed threshold
         for i in 0..50 {
-            state.execution_history.push_back(ExecutionStep::new(
-                "Development",
-                i,
-                "agent_invoked",
-                StepOutcome::success(
-                    Some("output with sufficient content".to_string()),
-                    vec!["file.rs".to_string()],
+            state.add_execution_step(
+                ExecutionStep::new(
+                    "Development",
+                    i,
+                    "agent_invoked",
+                    StepOutcome::success(
+                        Some("output with sufficient content".to_string()),
+                        vec!["file.rs".to_string()],
+                    ),
                 ),
-            ));
+                1000,
+            );
         }
 
         let snapshot = MemorySnapshot::from_pipeline_state(&state);

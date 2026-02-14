@@ -38,7 +38,7 @@ pub(super) fn create_state_with_agent_chain_in_development() -> PipelineState {
         commit: CommitState::NotStarted,
         continuation: ContinuationState::new(),
         checkpoint_saved_count: 0,
-        execution_history: std::collections::VecDeque::new(),
+        execution_history: ralph_workflow::reducer::state::BoundedExecutionHistory::new(),
         ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
     }
 }

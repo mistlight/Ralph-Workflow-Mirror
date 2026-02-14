@@ -66,7 +66,7 @@ fn create_resume_state(
         agent_chain: AgentChainState::initial(),
         rebase: crate::reducer::state::RebaseState::NotStarted,
         commit: CommitState::NotStarted,
-        execution_history: std::collections::VecDeque::new(),
+        execution_history: crate::reducer::state::BoundedExecutionHistory::new(),
         checkpoint_saved_count: 0,
         continuation: crate::reducer::state::ContinuationState::new(),
         dev_fix_triggered: false,

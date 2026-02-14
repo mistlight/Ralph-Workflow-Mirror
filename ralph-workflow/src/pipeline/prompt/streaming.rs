@@ -14,6 +14,10 @@ use crate::pipeline::idle_timeout::{ActivityTrackingReader, SharedActivityTimest
 
 use super::streaming_line_reader::StreamingLineReader;
 
+// Upper bound on stdout data buffered between the pump thread and the parser.
+// Each pump chunk is up to 4096 bytes.
+const STDOUT_PUMP_CHANNEL_CAPACITY: usize = 256; // 256 * 4096B chunks ~= 1MiB worst-case
+
 struct CancelAwareReceiverBufRead {
     rx: mpsc::Receiver<io::Result<Vec<u8>>>,
     cancel: Arc<AtomicBool>,
@@ -122,7 +126,7 @@ impl BufRead for CancelAwareReceiverBufRead {
 fn spawn_stdout_pump(
     stdout: Box<dyn io::Read + Send>,
     activity_timestamp: SharedActivityTimestamp,
-    tx: mpsc::Sender<io::Result<Vec<u8>>>,
+    tx: mpsc::SyncSender<io::Result<Vec<u8>>>,
     cancel: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -449,23 +453,11 @@ pub(super) fn stream_agent_output_from_handle(
     activity_timestamp: SharedActivityTimestamp,
     cancel: Arc<AtomicBool>,
 ) -> io::Result<()> {
-    // UNBOUNDED CHANNEL JUSTIFICATION (streaming.rs:383):
+    // Bounded channel: prevents unbounded buffering when stdout pumping outpaces parsing.
     //
-    // This channel transfers stdout chunks from the pump thread to the parser.
-    // Unbounded is safe here because:
-    //
-    // 1. Lifetime bound: Channel exists only during agent execution (minutes to hours max)
-    // 2. Natural backpressure: Pump thread blocks on stdout read; agent controls rate
-    // 3. Memory bound: Limited by total agent output size (typically <100MB)
-    // 4. Timeout protection: Idle timeout monitor terminates stuck agents
-    // 5. Cancel-aware: Parser can signal cancellation to drain/stop pump
-    //
-    // Alternative considered: sync_channel(capacity)
-    // Rejected because: Would require tuning capacity per agent type; unbounded
-    // provides simpler code with equivalent safety due to bounded agent lifetime.
-    //
-    // See: tests/integration_tests/memory_safety/channel_bounds.rs for verification
-    let (tx, rx) = mpsc::channel();
+    // Backpressure is acceptable here: if the parser stalls, we prefer blocking the pump thread
+    // (and therefore the child stdout pipe) over unbounded memory growth.
+    let (tx, rx) = mpsc::sync_channel(STDOUT_PUMP_CHANNEL_CAPACITY);
     let pump_handle = spawn_stdout_pump(stdout, activity_timestamp, tx, Arc::clone(&cancel));
 
     // Cancel-aware buffering: lets the main thread stop parsing promptly when the
@@ -591,6 +583,59 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct FastReader {
+        remaining: usize,
+    }
+
+    impl FastReader {
+        fn new(total_bytes: usize) -> Self {
+            Self {
+                remaining: total_bytes,
+            }
+        }
+    }
+
+    impl io::Read for FastReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Ok(0);
+            }
+
+            let n = buf.len().min(self.remaining);
+            buf[..n].fill(b'a');
+            self.remaining -= n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn stdout_pump_applies_backpressure_when_receiver_is_not_consuming() {
+        // Bounded-memory invariant: the stdout pump must not enqueue unbounded chunks when the
+        // downstream parser stalls. A bounded channel forces backpressure (blocking on send).
+        let timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        // Large enough to exceed any bounded queue (4096 bytes per chunk).
+        let reader: Box<dyn io::Read + Send> = Box::new(FastReader::new(10 * 1024 * 1024));
+        let (tx, rx) = mpsc::sync_channel(STDOUT_PUMP_CHANNEL_CAPACITY);
+
+        let handle = spawn_stdout_pump(reader, timestamp, tx, Arc::clone(&cancel));
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        // With an unbounded channel, the pump can usually enqueue everything and exit.
+        // With a bounded channel, it should block and remain alive.
+        assert!(
+            !handle.is_finished(),
+            "stdout pump finished despite receiver not consuming"
+        );
+
+        cancel.store(true, Ordering::Release);
+        drop(rx);
+        let _ = handle.join();
+    }
+
     #[test]
     fn stdout_pump_exits_when_receiver_dropped() {
         let stop = Arc::new(AtomicBool::new(false));
@@ -599,7 +644,7 @@ mod tests {
         });
 
         let timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(STDOUT_PUMP_CHANNEL_CAPACITY);
         let cancel = Arc::new(AtomicBool::new(false));
 
         let handle = spawn_stdout_pump(reader, timestamp, tx, cancel);

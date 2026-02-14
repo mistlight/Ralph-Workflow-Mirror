@@ -319,33 +319,20 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
     // IMPORTANT: This check must exclude filename patterns to avoid false positives.
     // The pattern "error: usage limit.rs file not found" should NOT match because
     // "usage limit" is followed by a file extension, not additional error context.
-    if stderr_lower.contains(": usage limit") {
-        // Exclude patterns where "usage limit" is followed by a file extension
-        // (e.g., "error: usage limit.rs file not found")
-        if !is_followed_by_file_extension_generic(stderr_lower, "usage limit") {
-            return true;
-        }
+    if contains_provider_prefixed_usage_limit(stderr_lower) {
+        return true;
     }
 
     // Bare "usage limit" pattern with context requirements
     // Match only when in API error context to avoid false positives
     if stderr_lower.contains("usage limit") {
-        // First, exclude filename patterns to avoid false positives
-        // File patterns like "usage_limit.rs" or "usage limit.rs" should NOT match
-        //
-        // We need to check two types of filename patterns:
-        // 1. Compiler/source error format: "usage_limit.rs:123" (with trailing colon)
-        // 2. File-not-found format: "error: usage_limit.rs file not found" (no colon after extension)
-        //
-        // For both cases, we need to exclude patterns where a file extension (e.g., .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .php, .cs, etc.)
-        // appears immediately after "usage limit" or "usage_limit" in an error context.
-        //
-        // We use a general pattern to match any file extension: a dot followed by 1-5 alphanumeric characters.
-        // This covers all common programming language file extensions (.rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .rs, .sh, .bash, .zsh, .fish, etc.)
-        // and is future-proof for new file extensions.
-        if is_followed_by_file_extension_generic(stderr_lower, "usage limit")
-            || is_followed_by_file_extension_generic(stderr_lower, "usage_limit")
-        {
+        // Exclude cases where every occurrence is actually a filename (e.g., "usage limit.rs").
+        // IMPORTANT: do not return false just because *some* occurrences look like filenames;
+        // stderr can contain both a filename diagnostic and a later provider error.
+        let has_non_filename_usage_limit = has_non_filename_occurrence(stderr_lower, "usage limit")
+            || has_non_filename_occurrence(stderr_lower, "usage_limit");
+
+        if !has_non_filename_usage_limit {
             return false;
         }
 
@@ -567,7 +554,36 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
 ///
 /// # Returns
 /// `true` if the pattern is found and is followed by a file extension pattern
-fn is_followed_by_file_extension_generic(text: &str, pattern: &str) -> bool {
+fn contains_provider_prefixed_usage_limit(text_lower: &str) -> bool {
+    // Multi-provider gateway forwarding pattern.
+    // Pattern: "<provider>: usage limit" (e.g., "anthropic: usage limit")
+    // IMPORTANT: Some stderr contains multiple occurrences; we must inspect each matching occurrence
+    // rather than only the first "usage limit" substring in the text.
+    for (pos, _) in text_lower.match_indices(": usage limit") {
+        let usage_limit_pos = pos + ": ".len();
+        if !is_followed_by_file_extension_generic_at(text_lower, usage_limit_pos, "usage limit") {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn has_non_filename_occurrence(text_lower: &str, pattern: &str) -> bool {
+    for (pos, _) in text_lower.match_indices(pattern) {
+        if !is_followed_by_file_extension_generic_at(text_lower, pos, pattern) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_followed_by_file_extension_generic_at(
+    text_lower: &str,
+    pattern_pos: usize,
+    pattern: &str,
+) -> bool {
     /// LazyLock for one-time regex initialization (compiled on first use, then cached).
     /// Pattern matches: optional whitespace + dot + 1-10 alphanumeric chars + non-alphanumeric or end.
     /// Matches common file extensions: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, .properties, .markdown, .terraform, etc.
@@ -577,25 +593,15 @@ fn is_followed_by_file_extension_generic(text: &str, pattern: &str) -> bool {
         regex::Regex::new(r"^\s*\.[a-z0-9]{1,10}([^a-z0-9]|$)").unwrap()
     });
 
-    let Some(pos) = text.find(pattern) else {
+    let Some(after_pattern) = text_lower.get(pattern_pos + pattern.len()..) else {
         return false;
     };
 
-    // Check if the character after the pattern (with optional whitespace) is a dot
-    // followed by 1-5 alphanumeric chars.
-    // This matches common file extensions like: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, etc.
-    // Also handles the edge case where there's whitespace between the pattern and the extension
-    // (e.g., "usage limit .rs file not found")
-    let after_pattern = text.get(pos + pattern.len()..);
-    match after_pattern {
-        None | Some("") => false, // Pattern is at end of string, no extension
-        Some(rest) => {
-            // Check if it starts with optional whitespace, then a dot followed by 1-5 alphanumeric characters
-            // The pattern is: optional whitespace + "." + [a-z0-9]{1,5}
-            // After the extension, there should be a non-alphanumeric character or end of string
-            EXTENSION_REGEX.is_match(rest)
-        }
+    if after_pattern.is_empty() {
+        return false;
     }
+
+    EXTENSION_REGEX.is_match(after_pattern)
 }
 
 #[cfg(test)]
@@ -609,5 +615,19 @@ mod tests {
         let error_kind = classify_agent_error(1, "timeout.rs:1:1: error: unexpected token", None);
 
         assert_eq!(error_kind, AgentErrorKind::InternalError);
+    }
+
+    #[test]
+    fn classify_agent_error_detects_usage_limit_even_if_first_match_is_filename() {
+        // Regression test: if stderr contains multiple occurrences of "usage limit" and the first
+        // one looks like a filename (e.g., "usage_limit.rs"), we must still detect a later
+        // provider error like "anthropic: usage limit".
+        // Note: some diagnostics include filenames with spaces (e.g., "usage limit.rs").
+        // This should not suppress detection when a real provider usage-limit error appears later.
+        let stderr = "error: usage limit.rs file not found\nanthropic: usage limit";
+
+        let error_kind = classify_agent_error(1, stderr, None);
+
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
     }
 }
