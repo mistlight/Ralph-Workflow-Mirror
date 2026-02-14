@@ -240,17 +240,45 @@ fn regression_test_checkpoint_size_scaling() {
         measurements.push((size, json.len()));
     }
 
-    // Calculate bytes per entry for each size
-    for (size, json_len) in &measurements {
-        let bytes_per_entry = json_len / size;
-        // Should be between 300-450 bytes per entry (allows for JSON overhead variance)
-        assert!(
-            (300..=450).contains(&bytes_per_entry),
-            "Checkpoint size scaling regression: {} bytes per entry at size {} (expected 300-450)",
-            bytes_per_entry,
-            size
-        );
-    }
+    // Use deltas between sizes to cancel fixed JSON overhead (key names, other PipelineState
+    // fields, braces/commas). Small history sizes can otherwise skew the average.
+    let len_100 = measurements
+        .iter()
+        .find(|(size, _)| *size == 100)
+        .map(|(_, len)| *len)
+        .unwrap();
+    let len_500 = measurements
+        .iter()
+        .find(|(size, _)| *size == 500)
+        .map(|(_, len)| *len)
+        .unwrap();
+    let len_1000 = measurements
+        .iter()
+        .find(|(size, _)| *size == 1000)
+        .map(|(_, len)| *len)
+        .unwrap();
+
+    let bytes_per_entry_100_to_500 = (len_500.saturating_sub(len_100)) / 400;
+    let bytes_per_entry_500_to_1000 = (len_1000.saturating_sub(len_500)) / 500;
+
+    assert!(
+        (300..=450).contains(&bytes_per_entry_100_to_500),
+        "Checkpoint size scaling regression: {} bytes per entry for entries 101-500 (expected 300-450)",
+        bytes_per_entry_100_to_500
+    );
+    assert!(
+        (300..=450).contains(&bytes_per_entry_500_to_1000),
+        "Checkpoint size scaling regression: {} bytes per entry for entries 501-1000 (expected 300-450)",
+        bytes_per_entry_500_to_1000
+    );
+
+    // Also enforce the band at 1000 entries, where overhead is amortized.
+    let bytes_per_entry_at_1000 = len_1000 / 1000;
+    assert!(
+        (300..=450).contains(&bytes_per_entry_at_1000),
+        "Checkpoint size scaling regression: {} bytes per entry at size 1000 (expected 300-450)",
+        bytes_per_entry_at_1000
+    );
 }
 
 #[test]

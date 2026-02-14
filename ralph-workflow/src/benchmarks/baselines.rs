@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn test_execution_history_heap_estimator_counts_only_core_fields() {
-        let step = ExecutionStep::new(
+        let mut step = ExecutionStep::new(
             "Development",
             1,
             "agent_invoked",
@@ -215,10 +215,19 @@ mod tests {
         .with_agent("test-agent")
         .with_duration(5);
 
-        // After optimization: Arc<str> and Box<str> are counted by length, String by capacity
+        // After optimization: Arc<str>, Box<str>, and String are counted by length.
+        //
+        // Ensure this test is robust by making timestamp capacity differ from its length.
+        // The estimator intentionally uses `len()` for determinism across allocators.
+        step.timestamp.reserve_exact(64);
+        assert!(
+            step.timestamp.capacity() > step.timestamp.len(),
+            "test invariant: timestamp capacity should exceed length"
+        );
+
         let expected = step.phase.len()
             + step.step_type.len()
-            + step.timestamp.capacity()
+            + step.timestamp.len()
             + step.agent.as_ref().map_or(0, |s| s.len());
 
         assert_eq!(
