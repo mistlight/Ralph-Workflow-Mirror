@@ -150,8 +150,14 @@ fn save_checkpoint_with_workspace(
     // Use compact serialization (no pretty printing)
     serde_json::to_writer(&mut buf, checkpoint)?;
 
-    // SAFETY: serde_json guarantees valid UTF-8
-    let json = unsafe { String::from_utf8_unchecked(buf) };
+    // Convert the serialized bytes to UTF-8 with error handling.
+    // Avoid `unsafe`: if bytes are not valid UTF-8, surface a structured error.
+    let json = String::from_utf8(buf).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Checkpoint JSON was not valid UTF-8: {e}"),
+        )
+    })?;
 
     workspace.write_atomic(Path::new(&checkpoint_path()), &json)
 }

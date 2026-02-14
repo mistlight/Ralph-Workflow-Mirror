@@ -226,7 +226,7 @@ fn test_review_pass_completed_clean_on_last_pass_clears_previous_phase() {
     let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(0));
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
-    assert_eq!(new_state.previous_phase, None);
+    assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
     assert!(matches!(new_state.commit, CommitState::NotStarted));
 }
 

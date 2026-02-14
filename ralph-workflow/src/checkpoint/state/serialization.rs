@@ -41,8 +41,9 @@ fn load_checkpoint_with_fallback(
             }
 
             Err(format!(
-                "Invalid checkpoint format: version {} is no longer supported. \
-                 Supported versions: 2 (migrated) and 3 (current). \
+                "Invalid checkpoint format: version {} is no longer supported (v1 and earlier). \
+                 Supported versions: 2 (best-effort migration) and 3 (current). \
+                 Legacy checkpoint formats are no longer supported. \
                  To start fresh without data loss: cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json",
                 checkpoint.version
             )
@@ -52,7 +53,7 @@ fn load_checkpoint_with_fallback(
             // Parsing failed - likely legacy format or legacy phase
             Err(format!(
                 "Invalid checkpoint format: {}. \
-                 Legacy checkpoint formats are no longer supported. \
+                 Legacy checkpoint formats (v1 and earlier) are no longer supported. \
                  To start fresh without data loss: cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json",
                 e
             )

@@ -120,12 +120,7 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
                 history.steps.len()
             ));
             for (i, step) in history.steps.iter().take(10).enumerate() {
-                let outcome_str = match &step.outcome {
-                    crate::checkpoint::execution_history::StepOutcome::Success { .. } => "✓",
-                    crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "✗",
-                    crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "◐",
-                    crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "○",
-                };
+                let outcome_str = outcome_marker_ascii(&step.outcome);
                 logger.info(&format!(
                     "  {}. {} {} ({})",
                     i + 1,

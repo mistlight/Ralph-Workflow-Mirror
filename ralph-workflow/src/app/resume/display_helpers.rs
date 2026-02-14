@@ -207,3 +207,18 @@ fn get_phase_indicator(phase: PipelinePhase) -> &'static str {
         PipelinePhase::Interrupted => "[interrupted]",
     }
 }
+
+/// Get a stable, ASCII-only marker for an execution step outcome.
+///
+/// This intentionally avoids Unicode glyphs so `--inspect-checkpoint` output
+/// stays stable on non-UTF8 terminals.
+fn outcome_marker_ascii(
+    outcome: &crate::checkpoint::execution_history::StepOutcome,
+) -> &'static str {
+    match outcome {
+        crate::checkpoint::execution_history::StepOutcome::Success { .. } => "OK",
+        crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "FAIL",
+        crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "PART",
+        crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "SKIP",
+    }
+}

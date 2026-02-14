@@ -212,7 +212,7 @@ fn benchmark_memory_growth_rate() {
                 .map(|step| {
                     step.phase.len()
                         + step.step_type.len()
-                        + step.timestamp.capacity()
+                        + step.timestamp.len()
                         + step.agent.as_ref().map_or(0, |s| s.len())
                 })
                 .sum();
@@ -310,7 +310,7 @@ fn benchmark_peak_memory_usage_during_large_state_serialization() {
         .map(|step| {
             step.phase.len()
                 + step.step_type.len()
-                + step.timestamp.capacity()
+                + step.timestamp.len()
                 + step.agent.as_ref().map_or(0, |s| s.len())
         })
         .sum();
@@ -353,7 +353,7 @@ fn benchmark_memory_usage_with_different_history_limits() {
             .map(|step| {
                 step.phase.len()
                     + step.step_type.len()
-                    + step.timestamp.capacity()
+                    + step.timestamp.len()
                     + step.agent.as_ref().map_or(0, |s| s.len())
             })
             .sum();

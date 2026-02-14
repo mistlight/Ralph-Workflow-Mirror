@@ -13,7 +13,6 @@
 
 use std::sync::Arc;
 
-use serde::de::Deserializer;
 use sha2::{Digest, Sha256};
 
 /// Agent fallback chain state (explicit, not loop indices).
@@ -29,7 +28,7 @@ use sha2::{Digest, Sha256};
 /// cheap cloning during state transitions. Since these collections are immutable
 /// after construction, Arc::clone only increments a reference count instead of
 /// deep copying the entire collection.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Debug)]
 pub struct AgentChainState {
     /// Agent names in fallback order. Arc<[String]> enables cheap cloning
     /// via reference counting instead of deep copying the collection.
@@ -61,10 +60,7 @@ pub struct AgentChainState {
     ///
     /// IMPORTANT: This must be role-scoped to prevent cross-task contamination
     /// (e.g., a developer continuation prompt overriding an analysis prompt).
-    #[serde(
-        default,
-        deserialize_with = "deserialize_rate_limit_continuation_prompt"
-    )]
+    #[serde(default)]
     pub rate_limit_continuation_prompt: Option<RateLimitContinuationPrompt>,
     /// Session ID from the last agent response.
     ///
@@ -89,22 +85,68 @@ enum RateLimitContinuationPromptRepr {
     Structured { role: AgentRole, prompt: String },
 }
 
-fn deserialize_rate_limit_continuation_prompt<'de, D>(
-    deserializer: D,
-) -> Result<Option<RateLimitContinuationPrompt>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = Option::<RateLimitContinuationPromptRepr>::deserialize(deserializer)?;
-    Ok(opt.map(|repr| match repr {
-        RateLimitContinuationPromptRepr::LegacyString(prompt) => RateLimitContinuationPrompt {
-            role: AgentRole::Developer,
-            prompt,
-        },
-        RateLimitContinuationPromptRepr::Structured { role, prompt } => {
-            RateLimitContinuationPrompt { role, prompt }
+impl<'de> Deserialize<'de> for AgentChainState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct AgentChainStateSerde {
+            agents: Arc<[String]>,
+            current_agent_index: usize,
+            models_per_agent: Arc<[Vec<String>]>,
+            current_model_index: usize,
+            retry_cycle: u32,
+            max_cycles: u32,
+            #[serde(default = "default_retry_delay_ms")]
+            retry_delay_ms: u64,
+            #[serde(default = "default_backoff_multiplier")]
+            backoff_multiplier: f64,
+            #[serde(default = "default_max_backoff_ms")]
+            max_backoff_ms: u64,
+            #[serde(default)]
+            backoff_pending_ms: Option<u64>,
+            current_role: AgentRole,
+            #[serde(default)]
+            rate_limit_continuation_prompt: Option<RateLimitContinuationPromptRepr>,
+            #[serde(default)]
+            last_session_id: Option<String>,
         }
-    }))
+
+        let raw = AgentChainStateSerde::deserialize(deserializer)?;
+
+        let rate_limit_continuation_prompt = raw.rate_limit_continuation_prompt.map(|repr| {
+            match repr {
+                RateLimitContinuationPromptRepr::LegacyString(prompt) => {
+                    // Legacy checkpoints stored only the prompt string. Scope it to the
+                    // chain's current role so resume can't cross-contaminate roles.
+                    RateLimitContinuationPrompt {
+                        role: raw.current_role,
+                        prompt,
+                    }
+                }
+                RateLimitContinuationPromptRepr::Structured { role, prompt } => {
+                    RateLimitContinuationPrompt { role, prompt }
+                }
+            }
+        });
+
+        Ok(Self {
+            agents: raw.agents,
+            current_agent_index: raw.current_agent_index,
+            models_per_agent: raw.models_per_agent,
+            current_model_index: raw.current_model_index,
+            retry_cycle: raw.retry_cycle,
+            max_cycles: raw.max_cycles,
+            retry_delay_ms: raw.retry_delay_ms,
+            backoff_multiplier: raw.backoff_multiplier,
+            max_backoff_ms: raw.max_backoff_ms,
+            backoff_pending_ms: raw.backoff_pending_ms,
+            current_role: raw.current_role,
+            rate_limit_continuation_prompt,
+            last_session_id: raw.last_session_id,
+        })
+    }
 }
 
 const fn default_retry_delay_ms() -> u64 {
@@ -117,6 +159,15 @@ const fn default_backoff_multiplier() -> f64 {
 
 const fn default_max_backoff_ms() -> u64 {
     60000
+}
+
+fn agent_role_signature_tag(role: AgentRole) -> &'static [u8] {
+    match role {
+        AgentRole::Developer => b"developer\n",
+        AgentRole::Reviewer => b"reviewer\n",
+        AgentRole::Commit => b"commit\n",
+        AgentRole::Analysis => b"analysis\n",
+    }
 }
 
 impl AgentChainState {
@@ -219,7 +270,7 @@ impl AgentChainState {
         });
 
         let mut hasher = Sha256::new();
-        hasher.update(format!("{:?}\n", self.current_role).as_bytes());
+        hasher.update(agent_role_signature_tag(self.current_role));
         for (agent, models) in pairs {
             hasher.update(agent.as_bytes());
             hasher.update(b"|");
@@ -254,7 +305,7 @@ impl AgentChainState {
         rendered.sort();
 
         let mut hasher = Sha256::new();
-        hasher.update(format!("{:?}\n", self.current_role).as_bytes());
+        hasher.update(agent_role_signature_tag(self.current_role));
         for line in rendered {
             hasher.update(line.as_bytes());
             hasher.update(b"\n");
@@ -716,6 +767,68 @@ mod consumer_signature_tests {
             state.legacy_consumer_signature_sha256_for_test(),
             "consumer signature ordering must remain stable for the same configured consumers"
         );
+    }
+
+    #[test]
+    fn test_consumer_signature_uses_stable_role_encoding() {
+        // The consumer signature is persisted in reducer state and used for dedupe.
+        // It must not depend on Debug formatting (variant renames would change the hash).
+        // Instead, it should use a stable, explicit role tag.
+        let state = AgentChainState::initial().with_agents(
+            vec!["agent-a".to_string()],
+            vec![vec!["m1".to_string(), "m2".to_string()]],
+            AgentRole::Reviewer,
+        );
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"reviewer\n");
+        hasher.update(b"agent-a");
+        hasher.update(b"|");
+        hasher.update(b"m1");
+        hasher.update(b",");
+        hasher.update(b"m2");
+        hasher.update(b"\n");
+        let expected = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+
+        assert_eq!(
+            state.consumer_signature_sha256(),
+            expected,
+            "role encoding must be stable and explicit"
+        );
+    }
+}
+
+#[cfg(test)]
+mod legacy_rate_limit_prompt_tests {
+    use super::*;
+
+    #[test]
+    fn test_legacy_rate_limit_continuation_prompt_uses_current_role_on_deserialize() {
+        // Legacy checkpoints stored `rate_limit_continuation_prompt` as a bare string.
+        // When resuming, we must scope that prompt to the chain's `current_role`
+        // (the role the checkpoint was executing) instead of defaulting to Developer.
+        let state = AgentChainState::initial().with_agents(
+            vec!["a".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        );
+
+        let mut v = serde_json::to_value(&state).expect("serialize AgentChainState");
+        v["rate_limit_continuation_prompt"] = serde_json::Value::String("legacy prompt".into());
+
+        let json = serde_json::to_string(&v).expect("serialize JSON value");
+        let decoded: AgentChainState =
+            serde_json::from_str(&json).expect("deserialize AgentChainState");
+
+        let prompt = decoded
+            .rate_limit_continuation_prompt
+            .expect("expected legacy prompt to deserialize");
+        assert_eq!(prompt.role, AgentRole::Reviewer);
+        assert_eq!(prompt.prompt, "legacy prompt");
     }
 }
 

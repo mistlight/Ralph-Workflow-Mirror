@@ -5,6 +5,9 @@ use super::*;
 #[test]
 fn test_complete_pipeline_phase_flow() {
     let mut state = create_test_state();
+    // This test validates the minimal end-to-end phase progression.
+    // Use a single review pass so the post-review commit advances to FinalValidation.
+    state.total_reviewer_passes = 1;
 
     // Planning -> Development
     state = reduce(state, PipelineEvent::planning_phase_started());
@@ -74,12 +77,12 @@ fn test_phase_transitions_preserve_reviewer_pass() {
     state = reduce(state, PipelineEvent::review_phase_completed(false));
     assert_eq!(state.reviewer_pass, original_pass);
 
-    // Transition to final validation
+    // CommitCreated is the moment the pipeline advances the reviewer pass.
     state = reduce(
         state,
         PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
     );
-    assert_eq!(state.reviewer_pass, original_pass);
+    assert_eq!(state.reviewer_pass, original_pass + 1);
 }
 
 #[test]

@@ -79,5 +79,8 @@ The intent is to detect (and sometimes repair) unsafe divergence between the sav
 
 ## Operational Debugging Tips
 
-- If a checkpoint cannot be deserialized due to a version/format mismatch, the code intentionally produces a "delete `.agent/checkpoint.json`" message.
+- Checkpoint format support is intentionally strict:
+  - Supported: v3 (current) and a limited v2 -> v3 in-memory migration when the v2 JSON still matches the current struct shape.
+  - Not supported: v1 and pre-v1 formats/phases. These cannot be upgraded automatically.
+- If a checkpoint cannot be deserialized due to a version/format mismatch, the CLI intentionally guides you to "start fresh" by backing up and removing `.agent/checkpoint.json`.
 - If resume keeps failing validation, start by checking whether a rebase is in progress and whether `.agent/` artifacts were modified externally.

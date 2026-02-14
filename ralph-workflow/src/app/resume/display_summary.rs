@@ -134,12 +134,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
             for step in &recent_steps {
                 // ASCII-only outcome markers (stable across non-UTF8 terminals)
-                let outcome_marker = match &step.outcome {
-                    crate::checkpoint::execution_history::StepOutcome::Success { .. } => "OK",
-                    crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "FAIL",
-                    crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "PART",
-                    crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "SKIP",
-                };
+                let outcome_marker = outcome_marker_ascii(&step.outcome);
 
                 logger.info(&format!(
                     "  {:<4} {} ({})",
