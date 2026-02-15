@@ -22,8 +22,25 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             }
         }
         AwaitingDevFixEvent::DevFixSkipped { .. } => {
-            // Dev-fix was skipped, prepare for termination
-            state
+            // Dev-fix was skipped (disabled/unavailable feature).
+            // Treat this as a completed recovery attempt so unattended orchestration
+            // can advance into the recovery loop instead of re-triggering dev-fix
+            // indefinitely.
+
+            let new_attempt_count = state.dev_fix_attempt_count + 1;
+            let new_level = match new_attempt_count {
+                1..=3 => 1,
+                4..=6 => 2,
+                7..=9 => 3,
+                _ => 4,
+            };
+
+            PipelineState {
+                dev_fix_triggered: true,
+                dev_fix_attempt_count: new_attempt_count,
+                recovery_escalation_level: new_level,
+                ..state
+            }
         }
         AwaitingDevFixEvent::DevFixCompleted {
             success: _,
@@ -260,5 +277,34 @@ mod tests {
         assert!(!new_state.agent_chain.is_exhausted());
         assert_eq!(new_state.agent_chain.retry_cycle, 0);
         assert_eq!(new_state.phase, PipelinePhase::Development);
+    }
+
+    #[test]
+    fn dev_fix_skipped_advances_recovery_state_to_avoid_infinite_trigger_loop() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.dev_fix_triggered = false;
+        state.dev_fix_attempt_count = 0;
+        state.recovery_escalation_level = 0;
+        state.failed_phase_for_recovery = Some(PipelinePhase::CommitMessage);
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixSkipped {
+                reason: "disabled".to_string(),
+            }),
+        );
+
+        assert!(
+            new_state.dev_fix_triggered,
+            "DevFixSkipped should mark dev-fix as handled so orchestration can progress"
+        );
+        assert_eq!(new_state.dev_fix_attempt_count, 1);
+        assert_eq!(new_state.recovery_escalation_level, 1);
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(
+            new_state.failed_phase_for_recovery,
+            Some(PipelinePhase::CommitMessage)
+        );
     }
 }

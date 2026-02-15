@@ -137,7 +137,7 @@ impl MainEffectHandler {
 
                 if unavailable {
                     ctx.logger.warn(&format!(
-                        "Dev-fix agent unavailable: {}. Pipeline will terminate with failure marker.",
+                        "Dev-fix agent unavailable: {}. Continuing unattended recovery loop without dev-fix agent.",
                         err
                     ));
                 } else {

@@ -86,8 +86,17 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
                 }
             } else {
                 // First time in AwaitingDevFix or dev-fix not yet triggered
+                let failed_phase = state
+                    .failed_phase_for_recovery
+                    .or(state.previous_phase)
+                    .unwrap_or(PipelinePhase::Development);
+                let failed_phase = if failed_phase == PipelinePhase::AwaitingDevFix {
+                    PipelinePhase::Development
+                } else {
+                    failed_phase
+                };
                 Effect::TriggerDevFixFlow {
-                    failed_phase: state.previous_phase.unwrap_or(PipelinePhase::Development),
+                    failed_phase,
                     failed_role: state.agent_chain.current_role,
                     retry_cycle: state.agent_chain.retry_cycle,
                 }
@@ -108,6 +117,59 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
             Effect::SaveCheckpoint {
                 trigger: CheckpointTrigger::Interrupt,
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::AgentRole;
+
+    #[test]
+    fn trigger_dev_fix_flow_prefers_failed_phase_for_recovery_over_previous_phase() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+        state.failed_phase_for_recovery = Some(PipelinePhase::CommitMessage);
+        state.dev_fix_triggered = false;
+        state.recovery_escalation_level = 0;
+
+        state.agent_chain.current_role = AgentRole::Developer;
+        state.agent_chain.retry_cycle = 7;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        match effect {
+            Effect::TriggerDevFixFlow {
+                failed_phase,
+                failed_role,
+                retry_cycle,
+            } => {
+                assert_eq!(failed_phase, PipelinePhase::CommitMessage);
+                assert_eq!(failed_role, AgentRole::Developer);
+                assert_eq!(retry_cycle, 7);
+            }
+            other => panic!("expected TriggerDevFixFlow, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trigger_dev_fix_flow_never_reports_awaiting_dev_fix_as_failed_phase() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+        state.failed_phase_for_recovery = None;
+        state.dev_fix_triggered = false;
+        state.recovery_escalation_level = 0;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        match effect {
+            Effect::TriggerDevFixFlow { failed_phase, .. } => {
+                assert_ne!(failed_phase, PipelinePhase::AwaitingDevFix);
+            }
+            other => panic!("expected TriggerDevFixFlow, got: {other:?}"),
         }
     }
 }

@@ -428,3 +428,169 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
         "Completion marker must not be written by TriggerDevFixFlow; it is written only on termination"
     );
 }
+
+#[test]
+fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let repo_root = PathBuf::from("/test/repo");
+
+    #[derive(Debug)]
+    struct FailingAgentLogWorkspace {
+        inner: MemoryWorkspace,
+    }
+
+    impl Workspace for FailingAgentLogWorkspace {
+        fn root(&self) -> &Path {
+            self.inner.root()
+        }
+
+        fn read(&self, relative: &Path) -> io::Result<String> {
+            self.inner.read(relative)
+        }
+
+        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+            self.inner.read_bytes(relative)
+        }
+
+        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write(relative, content)
+        }
+
+        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.write_bytes(relative, content)
+        }
+
+        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            if relative.to_string_lossy().starts_with(".agent/logs-") {
+                return Err(io::Error::other("usage limit exceeded"));
+            }
+            self.inner.append_bytes(relative, content)
+        }
+
+        fn exists(&self, relative: &Path) -> bool {
+            self.inner.exists(relative)
+        }
+
+        fn is_file(&self, relative: &Path) -> bool {
+            self.inner.is_file(relative)
+        }
+
+        fn is_dir(&self, relative: &Path) -> bool {
+            self.inner.is_dir(relative)
+        }
+
+        fn remove(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove(relative)
+        }
+
+        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_if_exists(relative)
+        }
+
+        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all(relative)
+        }
+
+        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all_if_exists(relative)
+        }
+
+        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+            self.inner.create_dir_all(relative)
+        }
+
+        fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+            self.inner.read_dir(relative)
+        }
+
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.inner.rename(from, to)
+        }
+
+        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write_atomic(relative, content)
+        }
+
+        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_readonly(relative)
+        }
+
+        fn set_writable(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_writable(relative)
+        }
+    }
+
+    let workspace = std::sync::Arc::new(FailingAgentLogWorkspace {
+        inner: MemoryWorkspace::new(repo_root.clone()),
+    });
+    let run_log_context = crate::logging::RunLogContext::new(workspace.as_ref()).unwrap();
+    let mut timer = Timer::new();
+
+    let logger = Logger::new(colors).with_workspace_log(
+        std::sync::Arc::clone(&workspace) as std::sync::Arc<dyn Workspace>,
+        ".agent/tmp/test_logger.log",
+    );
+
+    let executor = std::sync::Arc::new(MockProcessExecutor::new());
+    let executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "claude",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: executor_arc.as_ref(),
+        executor_arc: std::sync::Arc::clone(&executor_arc),
+        repo_root: repo_root.as_path(),
+        workspace: workspace.as_ref(),
+        run_log_context: &run_log_context,
+    };
+
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::AwaitingDevFix;
+    state.agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    let mut handler = MainEffectHandler::new(state);
+
+    let result = handler
+        .execute(
+            Effect::TriggerDevFixFlow {
+                failed_phase: PipelinePhase::Development,
+                failed_role: AgentRole::Developer,
+                retry_cycle: 1,
+            },
+            &mut ctx,
+        )
+        .expect("TriggerDevFixFlow should handle agent unavailability");
+
+    assert!(result.additional_events.iter().any(|e| matches!(
+        e,
+        PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixAgentUnavailable { .. })
+    )));
+
+    let log_contents = workspace
+        .read(Path::new(".agent/tmp/test_logger.log"))
+        .expect("expected logger to write to workspace log");
+    assert!(
+        log_contents.contains("Continuing unattended recovery loop without dev-fix agent"),
+        "expected updated log message, got:\n{log_contents}"
+    );
+    assert!(
+        !log_contents.contains("terminate with failure marker"),
+        "log must not claim termination, got:\n{log_contents}"
+    );
+}

@@ -35,7 +35,7 @@ One development iteration is the unit of progress that ends in a commit. The cor
 3. **Result verification** runs the analysis agent to produce an objective `development_result.xml`.
 4. **Commit** creates (or skips) a commit for that iteration and advances the iteration counter.
 
-The authoritative sequencing lives in `ralph-workflow/src/reducer/orchestration/phase_effects.rs` and the reducer transitions live in `ralph-workflow/src/reducer/state_reduction/`.
+The authoritative sequencing lives in `ralph-workflow/src/reducer/orchestration/phase_effects/mod.rs` and the reducer transitions live in `ralph-workflow/src/reducer/state_reduction/`.
 
 ### Planning (per-iteration)
 
@@ -257,7 +257,7 @@ Checkpoint persistence for interrupted runs is implemented in the CLI/app layer 
 
 ## Where To Look in Code
 
-- Orchestration (state -> next effect): `ralph-workflow/src/reducer/orchestration/phase_effects.rs`
+- Orchestration (state -> next effect): `ralph-workflow/src/reducer/orchestration/phase_effects/mod.rs`
 - Reducers (state + event -> state): `ralph-workflow/src/reducer/state_reduction/`
 - State + counters + terminal semantics: `ralph-workflow/src/reducer/state/pipeline.rs`
 - Event loop driver: `ralph-workflow/src/app/event_loop.rs`
