@@ -127,6 +127,16 @@ impl PipelineEvent {
         Self::Commit(CommitEvent::Skipped { reason })
     }
 
+    /// Create a PreTerminationSafetyCheckPassed event.
+    pub fn pre_termination_safety_check_passed() -> Self {
+        Self::Commit(CommitEvent::PreTerminationSafetyCheckPassed)
+    }
+
+    /// Create a PreTerminationUncommittedChangesDetected event.
+    pub fn pre_termination_uncommitted_changes_detected(file_count: usize) -> Self {
+        Self::Commit(CommitEvent::PreTerminationUncommittedChangesDetected { file_count })
+    }
+
     // Miscellaneous constructors
     /// Create a ContextCleaned event.
     pub fn context_cleaned() -> Self {

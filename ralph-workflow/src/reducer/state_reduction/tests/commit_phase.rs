@@ -82,3 +82,46 @@ fn test_diff_invalidated_clears_flags() {
     assert_eq!(new_state.commit_diff_content_id_sha256, None);
     assert!(!new_state.commit_prompt_prepared);
 }
+
+#[test]
+fn test_pre_termination_uncommitted_changes_routes_back_to_commit_phase() {
+    // When the pre-termination safety check finds uncommitted changes, the reducer must
+    // route back through the commit phase (unattended-mode safety), recording the
+    // phase we should resume after committing.
+    let mut state = PipelineState::initial(0, 0);
+    state.phase = PipelinePhase::Complete;
+    state.pre_termination_commit_checked = false;
+    state.termination_resume_phase = None;
+
+    let event = PipelineEvent::pre_termination_uncommitted_changes_detected(3);
+    let new_state = reduce(state, event);
+
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(
+        new_state.termination_resume_phase,
+        Some(PipelinePhase::Complete)
+    );
+}
+
+#[test]
+fn test_post_commit_resumes_termination_phase_when_safety_commit_pending() {
+    // If we routed into CommitMessage due to the pre-termination safety check,
+    // a successful commit must resume the original termination phase and allow
+    // termination to proceed.
+    let mut state = PipelineState::initial(0, 0);
+    state.phase = PipelinePhase::CommitMessage;
+    state.termination_resume_phase = Some(PipelinePhase::Complete);
+    state.pre_termination_commit_checked = false;
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "msg".to_string()),
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::Complete);
+    assert_eq!(new_state.termination_resume_phase, None);
+    assert!(
+        new_state.pre_termination_commit_checked,
+        "Termination should be unblocked after safety commit completes"
+    );
+}

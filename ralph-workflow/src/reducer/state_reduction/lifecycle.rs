@@ -18,9 +18,5 @@ pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent
                 ..state
             }
         }
-        LifecycleEvent::PreTerminationCommitChecked => PipelineState {
-            pre_termination_commit_checked: true,
-            ..state
-        },
     }
 }

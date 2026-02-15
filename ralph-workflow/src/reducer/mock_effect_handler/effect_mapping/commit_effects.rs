@@ -29,6 +29,7 @@
 //! - **CreateCommit** returns a fake commit hash
 //! - **RunRebase** always succeeds with a fake head OID
 
+use crate::files::llm_output_extraction::try_extract_xml_commit_with_trace;
 use crate::reducer::effect::Effect;
 use crate::reducer::event::{PipelineEvent, PipelinePhase};
 use crate::reducer::state::{
@@ -74,7 +75,11 @@ impl MockEffectHandler {
                     attempt,
                     MaterializedPromptInput {
                         kind: PromptInputKind::Diff,
-                        content_id_sha256: "id".to_string(),
+                        content_id_sha256: self
+                            .state
+                            .commit_diff_content_id_sha256
+                            .clone()
+                            .unwrap_or_else(|| "id".to_string()),
                         consumer_signature_sha256: self
                             .state
                             .agent_chain
@@ -131,22 +136,34 @@ impl MockEffectHandler {
                     CommitState::Generating { attempt, .. } => attempt,
                     _ => 1,
                 };
-                let mock_commit_xml = r#"<ralph-commit>
+                let xml = self.simulate_commit_message_xml.clone().unwrap_or_else(|| {
+                    r#"<ralph-commit>
 <ralph-subject>feat: mock commit message for testing</ralph-subject>
 <ralph-body>This is a mock commit body generated for testing purposes.
 
 - Changed some files
 - Added new features</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>"#
+                        .to_string()
+                });
+
+                let (message, skip_reason, detail) = try_extract_xml_commit_with_trace(&xml);
+
+                let event = if let Some(reason) = skip_reason {
+                    PipelineEvent::commit_skipped(reason)
+                } else if let Some(message) = message {
+                    PipelineEvent::commit_xml_validated(message, attempt)
+                } else {
+                    PipelineEvent::commit_xml_validation_failed(detail, attempt)
+                };
+
                 let ui = vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::CommitMessage,
-                    content: mock_commit_xml.to_string(),
+                    content: xml,
                     context: None,
                 }];
-                Some((
-                    PipelineEvent::commit_xml_validated("mock commit message".to_string(), attempt),
-                    ui,
-                ))
+
+                Some((event, ui))
             }
 
             Effect::ApplyCommitMessageOutcome => {

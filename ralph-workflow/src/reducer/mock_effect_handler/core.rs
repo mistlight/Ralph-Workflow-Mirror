@@ -41,10 +41,33 @@ pub struct MockEffectHandler {
     /// When true, PrepareCommitPrompt returns CommitSkipped instead of proceeding.
     pub(super) simulate_empty_diff: bool,
 
+    /// Optional simulated error for `CheckCommitDiff`.
+    pub(super) simulate_commit_diff_error: Option<String>,
+
+    /// Optional simulated diff content for `CheckCommitDiff`.
+    pub(super) simulate_commit_diff_content: Option<String>,
+
+    /// Optional simulated commit message XML for `ValidateCommitXml`.
+    pub(super) simulate_commit_message_xml: Option<String>,
+
+    /// Mock outcome for `CheckUncommittedChangesBeforeTermination`.
+    pub(super) pre_termination_snapshot: PreTerminationSnapshotMock,
+
     /// When true, the next call to `execute()` will panic.
     ///
     /// This supports integration tests that verify panic paths do not hang.
     pub(super) panic_on_next_execute: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum PreTerminationSnapshotMock {
+    Clean,
+    Dirty {
+        file_count: usize,
+    },
+    Error {
+        kind: crate::reducer::event::WorkspaceIoErrorKind,
+    },
 }
 
 impl MockEffectHandler {
@@ -63,6 +86,10 @@ impl MockEffectHandler {
             captured_effects: RefCell::new(Vec::new()),
             captured_ui_events: RefCell::new(Vec::new()),
             simulate_empty_diff: false,
+            simulate_commit_diff_error: None,
+            simulate_commit_diff_content: None,
+            simulate_commit_message_xml: None,
+            pre_termination_snapshot: PreTerminationSnapshotMock::Clean,
             panic_on_next_execute: false,
         }
     }
@@ -80,6 +107,46 @@ impl MockEffectHandler {
     /// ```
     pub fn with_empty_diff(mut self) -> Self {
         self.simulate_empty_diff = true;
+        self
+    }
+
+    /// Configure the mock to simulate a git diff error for `CheckCommitDiff`.
+    pub fn with_commit_diff_error(mut self, message: impl Into<String>) -> Self {
+        self.simulate_commit_diff_error = Some(message.into());
+        self
+    }
+
+    /// Configure the mock to return a specific diff content for `CheckCommitDiff`.
+    pub fn with_commit_diff_content(mut self, content: impl Into<String>) -> Self {
+        self.simulate_commit_diff_content = Some(content.into());
+        self
+    }
+
+    /// Configure the mock to use a specific commit message XML content for `ValidateCommitXml`.
+    pub fn with_commit_message_xml(mut self, xml: impl Into<String>) -> Self {
+        self.simulate_commit_message_xml = Some(xml.into());
+        self
+    }
+
+    /// Configure the mock to simulate a clean working directory for the
+    /// pre-termination safety check.
+    pub fn with_clean_pre_termination_snapshot(mut self) -> Self {
+        self.pre_termination_snapshot = PreTerminationSnapshotMock::Clean;
+        self
+    }
+
+    /// Configure the mock to simulate uncommitted changes for the pre-termination safety check.
+    pub fn with_dirty_pre_termination_snapshot(mut self, file_count: usize) -> Self {
+        self.pre_termination_snapshot = PreTerminationSnapshotMock::Dirty { file_count };
+        self
+    }
+
+    /// Configure the mock to simulate a git status/snapshot failure for the pre-termination safety check.
+    pub fn with_pre_termination_snapshot_error(
+        mut self,
+        kind: crate::reducer::event::WorkspaceIoErrorKind,
+    ) -> Self {
+        self.pre_termination_snapshot = PreTerminationSnapshotMock::Error { kind };
         self
     }
 

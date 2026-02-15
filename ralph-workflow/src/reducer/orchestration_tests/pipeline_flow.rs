@@ -323,10 +323,7 @@ fn test_complete_pipeline_flow() {
             }
             Effect::CheckUncommittedChangesBeforeTermination => {
                 // Pre-termination safety check - simulate clean working directory
-                state = reduce(
-                    state,
-                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
-                );
+                state = reduce(state, PipelineEvent::pre_termination_safety_check_passed());
             }
             Effect::ValidateFinalState => {
                 state = reduce(state, PipelineEvent::finalizing_started());
@@ -479,10 +476,7 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
             }
             Effect::CheckUncommittedChangesBeforeTermination => {
                 // Pre-termination safety check - simulate clean working directory
-                state = reduce(
-                    state,
-                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
-                );
+                state = reduce(state, PipelineEvent::pre_termination_safety_check_passed());
             }
             Effect::ValidateFinalState => {
                 state = reduce(state, PipelineEvent::pipeline_completed());

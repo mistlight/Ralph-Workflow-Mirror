@@ -17,11 +17,6 @@ impl PipelineEvent {
         Self::Lifecycle(LifecycleEvent::Completed)
     }
 
-    /// Create a PreTerminationCommitChecked event.
-    pub fn lifecycle_pre_termination_commit_checked() -> Self {
-        Self::Lifecycle(LifecycleEvent::PreTerminationCommitChecked)
-    }
-
     // Planning constructors
     /// Create a PlanningPhaseStarted event.
     pub fn planning_phase_started() -> Self {

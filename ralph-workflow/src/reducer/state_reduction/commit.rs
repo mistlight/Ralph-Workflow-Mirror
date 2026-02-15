@@ -42,16 +42,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         // This event is kept ONLY for backward compatibility with old checkpoints.
         // New handler code uses fallback instructions instead of emitting DiffFailed.
         // If this event is somehow emitted, treat as no-op to avoid termination.
-        CommitEvent::DiffFailed { error } => {
-            // Log deprecation warning if this deprecated path is hit
-            eprintln!(
-                "WARN: Deprecated DiffFailed event received: {}. \
-                 This should not happen with current handler code. \
-                 Ignoring event to prevent incorrect termination.",
-                error
-            );
-            state // Return state unchanged - no-op
-        }
+        CommitEvent::DiffFailed { .. } => state,
         CommitEvent::DiffInvalidated { .. } => PipelineState {
             commit_diff_prepared: false,
             commit_diff_empty: false,
@@ -137,6 +128,26 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             ..state
         },
         CommitEvent::Created { hash, .. } => {
+            if let Some(resume_phase) = state.termination_resume_phase {
+                // Special case: commit was forced by the pre-termination safety check.
+                // Resume the original termination phase without advancing iterations/passes.
+                return PipelineState {
+                    commit: CommitState::Committed { hash },
+                    phase: resume_phase,
+                    termination_resume_phase: None,
+                    pre_termination_commit_checked: true,
+                    previous_phase: None,
+                    commit_prompt_prepared: false,
+                    commit_agent_invoked: false,
+                    commit_xml_cleaned: false,
+                    commit_xml_extracted: false,
+                    commit_validated_outcome: None,
+                    commit_xml_archived: false,
+                    metrics: state.metrics.increment_commits_created_total(),
+                    ..state
+                };
+            }
+
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
             // When transitioning to Review phase, reset the agent chain for Reviewer role
@@ -193,6 +204,25 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             ..state
         },
         CommitEvent::Skipped { .. } => {
+            if let Some(resume_phase) = state.termination_resume_phase {
+                // Special case: commit was skipped by the AI during the pre-termination
+                // safety check. Treat this as an explicit decision to allow termination.
+                return PipelineState {
+                    commit: CommitState::Skipped,
+                    phase: resume_phase,
+                    termination_resume_phase: None,
+                    pre_termination_commit_checked: true,
+                    previous_phase: None,
+                    commit_prompt_prepared: false,
+                    commit_agent_invoked: false,
+                    commit_xml_cleaned: false,
+                    commit_xml_extracted: false,
+                    commit_validated_outcome: None,
+                    commit_xml_archived: false,
+                    ..state
+                };
+            }
+
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
             // When transitioning to Review phase, reset the agent chain for Reviewer role
@@ -241,6 +271,37 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         }
         CommitEvent::MessageValidationFailed { attempt, reason } => {
             reduce_commit_validation_failed(state, attempt, reason)
+        }
+
+        CommitEvent::PreTerminationSafetyCheckPassed => PipelineState {
+            pre_termination_commit_checked: true,
+            ..state
+        },
+
+        CommitEvent::PreTerminationUncommittedChangesDetected { .. } => {
+            // Safety invariant: the pipeline must not terminate with uncommitted work.
+            // Route back through the commit phase, recording the phase we must resume
+            // after committing (or explicitly skipping).
+            let resume_phase = state.phase;
+            PipelineState {
+                phase: crate::reducer::event::PipelinePhase::CommitMessage,
+                termination_resume_phase: Some(resume_phase),
+                // Force re-materialization of commit inputs when we re-enter commit.
+                commit: CommitState::NotStarted,
+                commit_prompt_prepared: false,
+                commit_diff_prepared: false,
+                commit_diff_empty: false,
+                commit_diff_content_id_sha256: None,
+                commit_agent_invoked: false,
+                commit_xml_cleaned: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
+                prompt_inputs: state.prompt_inputs.with_commit_cleared(),
+                // Ensure termination cannot proceed until commit finishes.
+                pre_termination_commit_checked: false,
+                ..state
+            }
         }
     }
 }

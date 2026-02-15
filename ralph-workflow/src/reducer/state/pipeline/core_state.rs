@@ -357,6 +357,14 @@ pub struct PipelineState {
     #[serde(default)]
     pub interrupted_by_user: bool,
 
+    /// When set, the pipeline has detected uncommitted changes during the
+    /// pre-termination safety check and routed back through the commit phase.
+    ///
+    /// After the commit is created (or explicitly skipped), the reducer must
+    /// return to this phase and allow termination to proceed.
+    #[serde(default)]
+    pub termination_resume_phase: Option<PipelinePhase>,
+
     /// True if pre-termination commit safety check has been performed.
     /// Prevents infinite loops when checking for uncommitted changes before Complete/Interrupted.
     #[serde(default)]
@@ -478,6 +486,7 @@ impl PipelineState {
             template_validation_unsubstituted: Vec::new(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
             interrupted_by_user: false,
+            termination_resume_phase: None,
             pre_termination_commit_checked: false,
         }
     }

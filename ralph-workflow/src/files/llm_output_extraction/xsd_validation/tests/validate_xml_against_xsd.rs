@@ -199,3 +199,20 @@ fn test_validate_with_escaped_newlines_in_content() {
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_validate_rejects_commit_elements_after_skip() {
+    // Regression: if <ralph-skip> appears before commit message elements, the validator
+    // must reject the mixed content rather than silently accepting skip and ignoring
+    // the later commit message.
+    let xml = r#"<ralph-commit>
+<ralph-skip>No changes found</ralph-skip>
+<ralph-subject>feat: should not be accepted</ralph-subject>
+</ralph-commit>"#;
+
+    let result = validate_xml_against_xsd(xml);
+    assert!(
+        result.is_err(),
+        "Expected mixed skip+commit elements to be rejected"
+    );
+}

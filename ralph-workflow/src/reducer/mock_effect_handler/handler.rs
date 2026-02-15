@@ -57,6 +57,81 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
         }
 
         match effect {
+            Effect::CheckCommitDiff => {
+                use crate::reducer::prompt_inputs::sha256_hex_str;
+                use std::path::Path;
+
+                // Write the simulated diff content to the workspace so tests can assert on it.
+                let tmp_dir = Path::new(".agent/tmp");
+                if !ctx.workspace.exists(tmp_dir) {
+                    // In MemoryWorkspace this is in-memory, not real I/O.
+                    ctx.workspace
+                        .create_dir_all(tmp_dir)
+                        .map_err(|e| anyhow::anyhow!(e))?;
+                }
+
+                let content = if let Some(ref err) = self.simulate_commit_diff_error {
+                    format!(
+                        r#"## DIFF UNAVAILABLE - INVESTIGATION REQUIRED
+
+The `git diff` command failed with error: {}
+
+You must investigate what changed by:
+
+1. Run `git status` to see which files are modified/staged
+2. Examine the content of modified files to understand what changed
+3. Compare with recent git history if available (`git log -1 --stat`)
+4. Based on your investigation, generate an appropriate commit message
+
+If you determine there are NO actual changes to commit, respond with:
+<ralph-commit><ralph-skip>Your reason why no commit is needed</ralph-skip></ralph-commit>
+"#,
+                        err
+                    )
+                } else if let Some(ref content) = self.simulate_commit_diff_content {
+                    content.clone()
+                } else if self.simulate_empty_diff {
+                    String::new()
+                } else {
+                    "+ mock diff\n".to_string()
+                };
+
+                ctx.workspace
+                    .write(Path::new(".agent/tmp/commit_diff.txt"), &content)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                self.captured_effects
+                    .borrow_mut()
+                    .push(Effect::CheckCommitDiff);
+
+                Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
+                    content.trim().is_empty(),
+                    sha256_hex_str(&content),
+                )))
+            }
+
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                use crate::reducer::event::ErrorEvent;
+
+                self.captured_effects
+                    .borrow_mut()
+                    .push(Effect::CheckUncommittedChangesBeforeTermination);
+
+                match self.pre_termination_snapshot.clone() {
+                    super::core::PreTerminationSnapshotMock::Clean => Ok(EffectResult::event(
+                        PipelineEvent::pre_termination_safety_check_passed(),
+                    )),
+                    super::core::PreTerminationSnapshotMock::Dirty { file_count } => {
+                        Ok(EffectResult::event(
+                            PipelineEvent::pre_termination_uncommitted_changes_detected(file_count),
+                        ))
+                    }
+                    super::core::PreTerminationSnapshotMock::Error { kind } => {
+                        Err(ErrorEvent::GitStatusFailed { kind }.into())
+                    }
+                }
+            }
+
             Effect::ReportAgentChainExhausted { role, phase, cycle } => {
                 use crate::reducer::event::ErrorEvent;
                 Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())

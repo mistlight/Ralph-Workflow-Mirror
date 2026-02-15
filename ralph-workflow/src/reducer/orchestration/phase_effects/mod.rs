@@ -44,7 +44,7 @@
 //! ensure no work is lost:
 //!
 //! - If uncommitted changes exist → route to CommitMessage phase
-//! - If working directory is clean → emit PreTerminationCommitChecked and proceed
+//! - If working directory is clean → emit PreTerminationSafetyCheckPassed and proceed
 //! - If git snapshot fails → route to AwaitingDevFix for recovery
 //!
 //! **THE ONLY EXCEPTION:** User-initiated Ctrl+C (interrupted_by_user=true) skips

@@ -115,12 +115,42 @@ pub(crate) fn validate_xml_against_xsd(
             Ok(Event::Start(e)) => {
                 match e.name().as_ref() {
                     b"ralph-subject" => {
+                        if skip_reason.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-subject".to_string(),
+                                expected: "either commit message elements OR ralph-skip, not both"
+                                    .to_string(),
+                                found: "mixed commit and skip elements".to_string(),
+                                suggestion: "Use ralph-skip alone when no commit is needed."
+                                    .to_string(),
+                                example: Some(
+                                    "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>"
+                                        .into(),
+                                ),
+                            });
+                        }
                         if subject.is_some() {
                             return Err(duplicate_element_error("ralph-subject", "ralph-commit"));
                         }
                         subject = Some(read_text_until_end(&mut reader, b"ralph-subject")?);
                     }
                     b"ralph-body" => {
+                        if skip_reason.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body".to_string(),
+                                expected: "either commit message elements OR ralph-skip, not both"
+                                    .to_string(),
+                                found: "mixed commit and skip elements".to_string(),
+                                suggestion: "Use ralph-skip alone when no commit is needed."
+                                    .to_string(),
+                                example: Some(
+                                    "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>"
+                                        .into(),
+                                ),
+                            });
+                        }
                         // Check for mixed body types
                         if body_summary.is_some() || body_details.is_some() || body_footer.is_some()
                         {
@@ -140,6 +170,21 @@ pub(crate) fn validate_xml_against_xsd(
                         body = Some(read_text_until_end(&mut reader, b"ralph-body")?);
                     }
                     b"ralph-body-summary" => {
+                        if skip_reason.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body-summary".to_string(),
+                                expected: "either commit message elements OR ralph-skip, not both"
+                                    .to_string(),
+                                found: "mixed commit and skip elements".to_string(),
+                                suggestion: "Use ralph-skip alone when no commit is needed."
+                                    .to_string(),
+                                example: Some(
+                                    "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>"
+                                        .into(),
+                                ),
+                            });
+                        }
                         if body.is_some() {
                             return Err(XsdValidationError {
                                 error_type: XsdErrorType::UnexpectedElement,
@@ -161,6 +206,21 @@ pub(crate) fn validate_xml_against_xsd(
                             Some(read_text_until_end(&mut reader, b"ralph-body-summary")?);
                     }
                     b"ralph-body-details" => {
+                        if skip_reason.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body-details".to_string(),
+                                expected: "either commit message elements OR ralph-skip, not both"
+                                    .to_string(),
+                                found: "mixed commit and skip elements".to_string(),
+                                suggestion: "Use ralph-skip alone when no commit is needed."
+                                    .to_string(),
+                                example: Some(
+                                    "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>"
+                                        .into(),
+                                ),
+                            });
+                        }
                         if body.is_some() {
                             return Err(XsdValidationError {
                                 error_type: XsdErrorType::UnexpectedElement,
@@ -182,6 +242,21 @@ pub(crate) fn validate_xml_against_xsd(
                             Some(read_text_until_end(&mut reader, b"ralph-body-details")?);
                     }
                     b"ralph-body-footer" => {
+                        if skip_reason.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body-footer".to_string(),
+                                expected: "either commit message elements OR ralph-skip, not both"
+                                    .to_string(),
+                                found: "mixed commit and skip elements".to_string(),
+                                suggestion: "Use ralph-skip alone when no commit is needed."
+                                    .to_string(),
+                                example: Some(
+                                    "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>"
+                                        .into(),
+                                ),
+                            });
+                        }
                         if body.is_some() {
                             return Err(XsdValidationError {
                                 error_type: XsdErrorType::UnexpectedElement,

@@ -45,7 +45,7 @@ fn test_reduce_finalization_full_flow() {
 ///
 /// This tests the orchestration + reduction path:
 /// 0. FinalValidation phase -> CheckUncommittedChangesBeforeTermination effect (safety check)
-/// 1. PreTerminationCommitChecked event -> FinalValidation phase (unchanged)
+/// 1. PreTerminationSafetyCheckPassed event -> FinalValidation phase (unchanged)
 /// 2. FinalValidation phase -> ValidateFinalState effect
 /// 3. ValidateFinalState effect -> FinalizingStarted event
 /// 4. FinalizingStarted event -> Finalizing phase
@@ -76,14 +76,14 @@ fn test_finalization_orchestration_integration() {
         "FinalValidation should first emit CheckUncommittedChangesBeforeTermination effect"
     );
 
-    // Execute safety check, get PreTerminationCommitChecked event
+    // Execute safety check, get PreTerminationSafetyCheckPassed event
     let result0 = handler.execute_mock(effect0);
     assert!(
         matches!(
             result0.event,
-            PipelineEvent::Lifecycle(LifecycleEvent::PreTerminationCommitChecked)
+            PipelineEvent::Commit(CommitEvent::PreTerminationSafetyCheckPassed)
         ),
-        "CheckUncommittedChangesBeforeTermination should return PreTerminationCommitChecked"
+        "CheckUncommittedChangesBeforeTermination should return PreTerminationSafetyCheckPassed"
     );
 
     // Reduce state with safety check event

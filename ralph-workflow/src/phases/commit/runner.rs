@@ -4,6 +4,8 @@
 pub struct CommitMessageResult {
     /// The generated commit message
     pub message: String,
+    /// Optional skip reason when the AI determines no commit is needed.
+    pub skip_reason: Option<String>,
     /// Whether the generation was successful
     pub success: bool,
     /// Path to the agent log file for debugging (currently unused)
@@ -335,7 +337,14 @@ pub fn generate_commit_message(
         CommitExtractionOutcome::InvalidXml(detail)
         | CommitExtractionOutcome::MissingFile(detail) => anyhow::bail!(detail),
         CommitExtractionOutcome::Skipped(reason) => {
-            anyhow::bail!("Commit skipped by AI: {}", reason)
+            archive_xml_file_with_workspace(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
+            return Ok(CommitMessageResult {
+                message: String::new(),
+                skip_reason: Some(reason),
+                success: true,
+                _log_path: String::new(),
+                generated_prompts,
+            });
         }
     };
 
@@ -343,6 +352,7 @@ pub fn generate_commit_message(
 
     Ok(CommitMessageResult {
         message: result.into_message(),
+        skip_reason: None,
         success: true,
         _log_path: String::new(),
         generated_prompts,
@@ -483,13 +493,24 @@ pub fn generate_commit_message_with_chain(
                 );
                 return Ok(CommitMessageResult {
                     message: extracted.into_message(),
+                    skip_reason: None,
                     success: true,
                     _log_path: String::new(),
                     generated_prompts,
                 });
             }
             CommitExtractionOutcome::Skipped(reason) => {
-                last_error = Some(anyhow::anyhow!("Commit skipped by AI: {}", reason));
+                archive_xml_file_with_workspace(
+                    workspace,
+                    Path::new(xml_paths::COMMIT_MESSAGE_XML),
+                );
+                return Ok(CommitMessageResult {
+                    message: String::new(),
+                    skip_reason: Some(reason),
+                    success: true,
+                    _log_path: String::new(),
+                    generated_prompts,
+                });
             }
             CommitExtractionOutcome::InvalidXml(detail)
             | CommitExtractionOutcome::MissingFile(detail) => {

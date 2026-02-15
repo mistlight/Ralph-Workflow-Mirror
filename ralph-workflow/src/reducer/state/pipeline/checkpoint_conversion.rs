@@ -134,6 +134,7 @@ impl PipelineState {
                 }
             },
             interrupted_by_user: checkpoint.interrupted_by_user,
+            termination_resume_phase: None,
             pre_termination_commit_checked: false,
         };
 

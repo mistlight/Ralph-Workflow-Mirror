@@ -2,7 +2,7 @@
 //!
 //! These tests verify that before pipeline termination:
 //! 1. `CheckUncommittedChangesBeforeTermination` effect is derived
-//! 2. Uncommitted changes trigger error routing to `AwaitingDevFix`
+//! 2. Uncommitted changes route back through `CommitMessage` (not AwaitingDevFix)
 //! 3. Clean working directory allows termination to proceed
 //! 4. User-initiated interrupts (Ctrl+C) skip the safety check
 //!
@@ -80,10 +80,10 @@ fn test_safety_check_effect_derived_before_complete() {
     });
 }
 
-/// Test that clean working directory emits PreTerminationCommitChecked event.
+/// Test that clean working directory unblocks termination.
 ///
 /// This verifies that when git snapshot shows no uncommitted changes:
-/// 1. Handler emits `PreTerminationCommitChecked` event
+/// 1. Handler emits `PreTerminationSafetyCheckPassed` event
 /// 2. Reducer sets `pre_termination_commit_checked = true`
 /// 3. Pipeline proceeds to termination (SaveCheckpoint)
 #[test]
@@ -103,7 +103,7 @@ fn test_clean_working_directory_allows_termination() {
         run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
             .unwrap();
 
-        // Verify flag was set (this indicates PreTerminationCommitChecked event was processed)
+        // Verify flag was set (this indicates safety check passed event was processed)
         assert!(
             effect_handler.state.pre_termination_commit_checked,
             "Flag should be set after clean check (indicates event was emitted and processed)"
@@ -111,14 +111,14 @@ fn test_clean_working_directory_allows_termination() {
     });
 }
 
-/// Test that uncommitted changes trigger error event.
+/// Test that uncommitted changes route back through commit phase.
 ///
 /// This verifies that when git snapshot shows uncommitted changes:
-/// 1. Handler emits `PreTerminationUncommittedChanges` error event
-/// 2. State transitions to `AwaitingDevFix` phase
+/// 1. Handler emits `PreTerminationUncommittedChangesDetected`
+/// 2. Reducer routes to `CommitMessage` to force a commit (or explicit skip)
 /// 3. Pipeline does NOT terminate with uncommitted work
 #[test]
-fn test_uncommitted_changes_trigger_error() {
+fn test_uncommitted_changes_route_back_through_commit_phase() {
     with_default_timeout(|| {
         let mut app_handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
@@ -126,23 +126,35 @@ fn test_uncommitted_changes_trigger_error() {
             .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_diff("")
             .with_staged_changes(false);
-        // Note: Without a way to simulate uncommitted changes via MockAppEffectHandler,
-        // this test verifies the safety check executes, but can't test the error path.
-        // The error path is tested in unit tests for the handler.
 
-        let mut effect_handler = MockEffectHandler::new(PipelineState::initial(0, 0));
+        let mut initial_state = PipelineState::initial(0, 0);
+        initial_state.phase = PipelinePhase::Complete;
+        initial_state.pre_termination_commit_checked = false;
+
+        let mut effect_handler =
+            MockEffectHandler::new(initial_state).with_dirty_pre_termination_snapshot(2);
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
         run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
             .unwrap();
 
-        // Observable behavior: Safety check effect should execute
-        let _safety_check_executed = effect_handler
-            .was_effect_executed(|e| matches!(e, Effect::CheckUncommittedChangesBeforeTermination));
-
-        // Test verifies the safety check executes in these scenarios
-        // (actual error handling with uncommitted changes is tested in unit tests)
+        // Observable behavior: safety check executes and the pipeline routes back
+        // through commit phase (commit effects execute).
+        assert!(
+            effect_handler.was_effect_executed(|e| {
+                matches!(e, Effect::CheckUncommittedChangesBeforeTermination)
+            }),
+            "Safety check effect should execute"
+        );
+        assert!(
+            effect_handler.was_effect_executed(|e| matches!(e, Effect::CheckCommitDiff)),
+            "Dirty status should route back through CommitMessage"
+        );
+        assert!(
+            effect_handler.state.pre_termination_commit_checked,
+            "Termination should be unblocked after safety commit completes"
+        );
     });
 }
 
@@ -240,7 +252,7 @@ fn test_programmatic_interrupt_requires_safety_check() {
 ///
 /// This verifies the flag prevents infinite loops:
 /// 1. First cycle: pre_termination_commit_checked=false → derives effect
-/// 2. Effect executes → emits PreTerminationCommitChecked
+/// 2. Effect executes → emits PreTerminationSafetyCheckPassed
 /// 3. Reducer sets pre_termination_commit_checked=true
 /// 4. Second cycle: pre_termination_commit_checked=true → skips effect
 #[test]
@@ -288,36 +300,24 @@ fn test_safety_check_executes_only_once() {
 #[test]
 fn test_git_snapshot_failure_routes_to_error() {
     with_default_timeout(|| {
-        let mut app_handler = MockAppEffectHandler::new()
-            .with_head_oid("a".repeat(40))
-            .with_cwd(PathBuf::from("/mock/repo"))
-            .with_file("PROMPT.md", STANDARD_PROMPT)
-            .with_diff("")
-            .with_staged_changes(false);
-        // Note: MockAppEffectHandler doesn't have explicit snapshot error simulation
-        // but we can verify error handling through the effect execution path
+        // Reducer-only: simulating a snapshot failure via the full event loop would
+        // enter the recovery loop (non-terminating by design).
+        use ralph_workflow::reducer::event::PipelineEvent;
+        use ralph_workflow::reducer::event::{ErrorEvent, PromptInputEvent, WorkspaceIoErrorKind};
+        use ralph_workflow::reducer::state_reduction::reduce;
 
-        let mut effect_handler = MockEffectHandler::new(PipelineState::initial(0, 0));
-        let config = create_test_config_struct();
-        let executor = mock_executor_with_success();
+        let mut state = PipelineState::initial(0, 0);
+        state.phase = PipelinePhase::Complete;
 
-        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
-            .unwrap();
+        let event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+            phase: state.phase,
+            error: ErrorEvent::GitStatusFailed {
+                kind: WorkspaceIoErrorKind::Other,
+            },
+        });
 
-        // Observable behavior: Safety check should execute
-        let safety_check_executed = effect_handler
-            .was_effect_executed(|e| matches!(e, Effect::CheckUncommittedChangesBeforeTermination));
-
-        assert!(
-            safety_check_executed,
-            "Safety check effect should be executed"
-        );
-
-        // In the success case (snapshot works), verify we proceed correctly
-        assert!(
-            effect_handler.state.pre_termination_commit_checked,
-            "Flag should be set when snapshot succeeds"
-        );
+        let new_state = reduce(state, event);
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
     });
 }
 

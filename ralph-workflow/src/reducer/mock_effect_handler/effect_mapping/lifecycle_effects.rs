@@ -305,7 +305,7 @@ impl MockEffectHandler {
             Effect::CheckUncommittedChangesBeforeTermination => {
                 // Mock always returns no uncommitted changes (clean working directory)
                 Some((
-                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
+                    PipelineEvent::pre_termination_safety_check_passed(),
                     vec![],
                     vec![],
                 ))

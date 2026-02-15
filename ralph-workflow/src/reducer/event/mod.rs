@@ -476,7 +476,6 @@ mod tests {
                 LifecycleEvent::Resumed { .. } => "resumed",
                 LifecycleEvent::Completed => "completed",
                 LifecycleEvent::GitignoreEntriesEnsured { .. } => "gitignore_ensured",
-                LifecycleEvent::PreTerminationCommitChecked => "pre_termination_commit_checked",
                 // DO NOT ADD _ WILDCARD - intentionally exhaustive
             }
         }

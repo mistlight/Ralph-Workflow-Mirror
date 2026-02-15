@@ -129,4 +129,19 @@ pub enum CommitEvent {
         /// The reason for skipping.
         reason: String,
     },
+
+    /// Pre-termination commit safety check completed successfully.
+    ///
+    /// Emitted after `Effect::CheckUncommittedChangesBeforeTermination` when the
+    /// working directory is clean, allowing termination to proceed.
+    PreTerminationSafetyCheckPassed,
+
+    /// Pre-termination commit safety check detected uncommitted changes.
+    ///
+    /// This is not a terminal error: the reducer must route back through the
+    /// commit phase so the changes are committed (or explicitly skipped).
+    PreTerminationUncommittedChangesDetected {
+        /// Number of lines in `git status --porcelain` output.
+        file_count: usize,
+    },
 }

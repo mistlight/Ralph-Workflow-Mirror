@@ -87,20 +87,21 @@ impl MainEffectHandler {
     ///
     /// # Events Emitted
     ///
-    /// - `lifecycle_pre_termination_commit_checked` - No uncommitted changes found
+    /// - `pre_termination_safety_check_passed` - No uncommitted changes found
     ///
     /// # Errors
     ///
-    /// - `PreTerminationUncommittedChanges` - Uncommitted changes detected, must commit first
+    /// - `GitStatusFailed` - Unable to determine working directory status
     pub(in crate::reducer::handler) fn check_uncommitted_changes_before_termination(
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
-        use crate::git_helpers::git_snapshot;
+        use crate::git_helpers::git_snapshot_in_repo;
 
-        let status = git_snapshot().map_err(|err| ErrorEvent::GitStatusFailed {
-            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-        })?;
+        let status =
+            git_snapshot_in_repo(ctx.repo_root).map_err(|err| ErrorEvent::GitStatusFailed {
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         let has_changes = !status.trim().is_empty();
 
@@ -112,15 +113,17 @@ impl MainEffectHandler {
                 file_count
             ));
 
-            // This is a critical error - we should never reach termination with uncommitted work
-            return Err(ErrorEvent::PreTerminationUncommittedChanges { file_count }.into());
+            // Route back through the commit phase so unattended runs cannot lose work.
+            return Ok(EffectResult::event(
+                PipelineEvent::pre_termination_uncommitted_changes_detected(file_count),
+            ));
         }
 
         ctx.logger
             .info("Pre-termination safety check: No uncommitted changes found.");
 
         Ok(EffectResult::event(
-            PipelineEvent::lifecycle_pre_termination_commit_checked(),
+            PipelineEvent::pre_termination_safety_check_passed(),
         ))
     }
 }

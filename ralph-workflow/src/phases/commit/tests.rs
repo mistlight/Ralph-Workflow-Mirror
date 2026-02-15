@@ -299,6 +299,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_generate_commit_message_with_chain_treats_skip_as_success() {
+        // Regression: legacy plumbing should treat <ralph-skip> as a successful outcome,
+        // not an error.
+        let workspace = MemoryWorkspace::new_test().with_file(
+            xml_paths::COMMIT_MESSAGE_XML,
+            "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>",
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+        let executor_ref: &dyn ProcessExecutor = executor_arc.as_ref();
+        let executor_arc_for_runtime: Arc<dyn ProcessExecutor> = executor_arc.clone();
+
+        let mut runtime = PipelineRuntime {
+            timer: &mut timer,
+            logger: &logger,
+            colors: &colors,
+            config: &config,
+            executor: executor_ref,
+            executor_arc: executor_arc_for_runtime,
+            workspace: &workspace,
+        };
+
+        let agents = vec!["claude".to_string()];
+        let result = generate_commit_message_with_chain(
+            "diff --git a/a b/a\n+change\n",
+            &registry,
+            &mut runtime,
+            &agents,
+            &template_context,
+            &workspace,
+            &HashMap::new(),
+        )
+        .expect("expected skip outcome to be treated as success");
+
+        assert!(result.success);
+        assert!(
+            result.message.is_empty(),
+            "skip should not produce a message"
+        );
+        assert_eq!(result.skip_reason.as_deref(), Some("No changes found"));
+    }
+
     // Tests for effective_model_budget_bytes
     #[test]
     fn test_effective_budget_is_min_across_agents() {

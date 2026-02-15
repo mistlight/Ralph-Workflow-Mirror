@@ -1,12 +1,21 @@
 use std::io;
 
 use crate::git_helpers::git2_to_io_error;
+use std::path::Path;
 
 /// Get a snapshot of the current git status.
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
 pub fn git_snapshot() -> io::Result<String> {
-    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_snapshot_in_repo(Path::new("."))
+}
+
+/// Get a snapshot of git status for a specific repository root.
+///
+/// Prefer this in pipeline code where `ctx.repo_root` is known, to avoid
+/// accidentally discovering/inspecting the wrong repository.
+pub fn git_snapshot_in_repo(repo_root: &Path) -> io::Result<String> {
+    let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_snapshot_impl(&repo)
 }
 
