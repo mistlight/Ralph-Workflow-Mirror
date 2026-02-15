@@ -54,7 +54,16 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         PipelinePhase::Development => development::determine_development_effect(state),
         PipelinePhase::Review => review::determine_review_effect(state),
         PipelinePhase::CommitMessage => commit::determine_commit_effect(state),
-        PipelinePhase::FinalValidation => Effect::ValidateFinalState,
+        PipelinePhase::FinalValidation => {
+            // SAFETY CHECK: Ensure no uncommitted work before finalization
+            // This check happens before FinalizingStarted, ensuring all work is committed
+            // before the pipeline enters its terminal sequence (Finalizing -> Complete)
+            if !state.pre_termination_commit_checked {
+                return Effect::CheckUncommittedChangesBeforeTermination;
+            }
+
+            Effect::ValidateFinalState
+        }
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
         PipelinePhase::AwaitingDevFix => {
             // Completion marker emission must preempt recovery-loop effects.

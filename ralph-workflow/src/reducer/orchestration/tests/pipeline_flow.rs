@@ -20,7 +20,7 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
     let mut review_passes_run = Vec::new();
 
     // Simulate complete pipeline execution
-    let max_steps = 100; // Safety limit to prevent infinite loops (increased for commit flow)
+    let max_steps = 150; // Safety limit to prevent infinite loops (increased for commit flow + safety check)
     for step in 0..max_steps {
         phase_sequence.push(state.phase);
         let effect = determine_next_effect(&state);
@@ -369,8 +369,15 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                     PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
                 );
             }
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Pre-termination safety check - simulate clean working directory
+                state = reduce(
+                    state,
+                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
+                );
+            }
             Effect::ValidateFinalState => {
-                state = reduce(state, PipelineEvent::pipeline_completed());
+                state = reduce(state, PipelineEvent::finalizing_started());
             }
             Effect::SaveCheckpoint { .. } => {
                 // Phase transition checkpoint - continue
@@ -547,9 +554,15 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
                     PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
                 );
             }
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Pre-termination safety check - simulate clean working directory
+                state = reduce(
+                    state,
+                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
+                );
+            }
             Effect::ValidateFinalState => {
-                state = reduce(state, PipelineEvent::pipeline_completed());
-                break;
+                state = reduce(state, PipelineEvent::finalizing_started());
             }
             Effect::SaveCheckpoint { .. } => {
                 if state.phase == PipelinePhase::Complete {

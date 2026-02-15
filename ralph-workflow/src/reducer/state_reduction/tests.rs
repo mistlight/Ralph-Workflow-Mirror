@@ -5,6 +5,7 @@
 use super::*;
 use crate::agents::AgentRole;
 use crate::reducer::event::AgentErrorKind;
+use crate::reducer::event::LifecycleEvent;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::event::PipelinePhase;
 use crate::reducer::event::RebasePhase;

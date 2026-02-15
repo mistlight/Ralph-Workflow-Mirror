@@ -321,8 +321,15 @@ fn test_complete_pipeline_flow() {
                     PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
                 );
             }
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Pre-termination safety check - simulate clean working directory
+                state = reduce(
+                    state,
+                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
+                );
+            }
             Effect::ValidateFinalState => {
-                state = reduce(state, PipelineEvent::pipeline_completed());
+                state = reduce(state, PipelineEvent::finalizing_started());
             }
             Effect::SaveCheckpoint { .. } => {
                 if state.phase == PipelinePhase::Complete {
@@ -468,6 +475,13 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                 state = reduce(
                     state,
                     PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
+                );
+            }
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Pre-termination safety check - simulate clean working directory
+                state = reduce(
+                    state,
+                    PipelineEvent::lifecycle_pre_termination_commit_checked(),
                 );
             }
             Effect::ValidateFinalState => {

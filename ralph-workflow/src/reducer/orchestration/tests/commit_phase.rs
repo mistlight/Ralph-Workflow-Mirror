@@ -315,12 +315,25 @@ fn test_recovery_emits_success_after_commit_created() {
 
 #[test]
 fn test_determine_effect_final_validation() {
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::FinalValidation,
         ..create_test_state()
     };
+
+    // First cycle: pre-termination safety check
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::ValidateFinalState));
+    assert!(
+        matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
+        "FinalValidation should first check for uncommitted changes"
+    );
+
+    // After safety check passes, should derive ValidateFinalState
+    state.pre_termination_commit_checked = true;
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::ValidateFinalState),
+        "After safety check, FinalValidation should derive ValidateFinalState"
+    );
 }
 
 #[test]

@@ -44,12 +44,14 @@ fn test_reduce_finalization_full_flow() {
 /// Test the complete finalization flow from FinalValidation through effects.
 ///
 /// This tests the orchestration + reduction path:
-/// 1. FinalValidation phase -> ValidateFinalState effect
-/// 2. ValidateFinalState effect -> FinalizingStarted event
-/// 3. FinalizingStarted event -> Finalizing phase
-/// 4. Finalizing phase -> RestorePromptPermissions effect
-/// 5. RestorePromptPermissions effect -> PromptPermissionsRestored event
-/// 6. PromptPermissionsRestored event -> Complete phase
+/// 0. FinalValidation phase -> CheckUncommittedChangesBeforeTermination effect (safety check)
+/// 1. PreTerminationCommitChecked event -> FinalValidation phase (unchanged)
+/// 2. FinalValidation phase -> ValidateFinalState effect
+/// 3. ValidateFinalState effect -> FinalizingStarted event
+/// 4. FinalizingStarted event -> Finalizing phase
+/// 5. Finalizing phase -> RestorePromptPermissions effect
+/// 6. RestorePromptPermissions effect -> PromptPermissionsRestored event
+/// 7. PromptPermissionsRestored event -> Complete phase
 #[test]
 fn test_finalization_orchestration_integration() {
     use crate::reducer::mock_effect_handler::MockEffectHandler;
@@ -64,11 +66,39 @@ fn test_finalization_orchestration_integration() {
 
     let mut handler = MockEffectHandler::new(initial_state.clone());
 
-    // Step 1: Determine effect for FinalValidation
-    let effect1 = determine_next_effect(&initial_state);
+    // Step 0: Pre-termination safety check
+    let effect0 = determine_next_effect(&initial_state);
+    assert!(
+        matches!(
+            effect0,
+            crate::reducer::effect::Effect::CheckUncommittedChangesBeforeTermination
+        ),
+        "FinalValidation should first emit CheckUncommittedChangesBeforeTermination effect"
+    );
+
+    // Execute safety check, get PreTerminationCommitChecked event
+    let result0 = handler.execute_mock(effect0);
+    assert!(
+        matches!(
+            result0.event,
+            PipelineEvent::Lifecycle(LifecycleEvent::PreTerminationCommitChecked)
+        ),
+        "CheckUncommittedChangesBeforeTermination should return PreTerminationCommitChecked"
+    );
+
+    // Reduce state with safety check event
+    let state0 = reduce(initial_state.clone(), result0.event);
+    assert_eq!(state0.phase, PipelinePhase::FinalValidation);
+    assert!(
+        state0.pre_termination_commit_checked,
+        "Safety check flag should be set"
+    );
+
+    // Step 1: Determine effect for FinalValidation (after safety check)
+    let effect1 = determine_next_effect(&state0);
     assert!(
         matches!(effect1, crate::reducer::effect::Effect::ValidateFinalState),
-        "FinalValidation should emit ValidateFinalState effect"
+        "FinalValidation should emit ValidateFinalState effect after safety check"
     );
 
     // Step 2: Execute effect, get event
@@ -79,7 +109,7 @@ fn test_finalization_orchestration_integration() {
     );
 
     // Step 3: Reduce state with event
-    let state2 = reduce(initial_state, result1.event);
+    let state2 = reduce(state0, result1.event);
     assert_eq!(state2.phase, PipelinePhase::Finalizing);
     assert!(!state2.is_complete(), "Finalizing should not be complete");
 
@@ -107,13 +137,17 @@ fn test_finalization_orchestration_integration() {
 
     // Verify effects were captured
     let effects = handler.captured_effects();
-    assert_eq!(effects.len(), 2);
+    assert_eq!(effects.len(), 3);
     assert!(matches!(
         effects[0],
-        crate::reducer::effect::Effect::ValidateFinalState
+        crate::reducer::effect::Effect::CheckUncommittedChangesBeforeTermination
     ));
     assert!(matches!(
         effects[1],
+        crate::reducer::effect::Effect::ValidateFinalState
+    ));
+    assert!(matches!(
+        effects[2],
         crate::reducer::effect::Effect::RestorePromptPermissions
     ));
 }
