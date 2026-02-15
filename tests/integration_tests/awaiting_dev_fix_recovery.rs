@@ -817,3 +817,393 @@ fn test_recovery_preserves_attempt_count_on_repeated_failure() {
         );
     });
 }
+
+/// Test that recovery state reset at each escalation level works correctly.
+///
+/// This test verifies the core bug fix: RecoveryAttempted reducer actually performs
+/// state resets based on escalation level instead of just transitioning phase.
+#[test]
+fn test_recovery_state_reset_at_each_level() {
+    with_default_timeout(|| {
+        // Start with a state that has progressed through Planning
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.iteration = 1;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+        state.dev_fix_attempt_count = 0;
+        state.recovery_escalation_level = 0;
+
+        // Set some Planning phase flags to verify they get cleared
+        state.planning_prompt_prepared_iteration = Some(1);
+        state.planning_agent_invoked_iteration = Some(1);
+        state.planning_xml_extracted_iteration = Some(1);
+
+        // Level 1: Simple retry - should NOT clear flags
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Attempt 1".to_string()),
+        });
+        state = reduce(state, event);
+        assert_eq!(state.recovery_escalation_level, 1);
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 1,
+            attempt_count: 1,
+        });
+        state = reduce(state, event);
+
+        // Level 1 should preserve flags
+        assert_eq!(state.phase, PipelinePhase::Planning);
+        assert_eq!(state.planning_prompt_prepared_iteration, Some(1));
+        assert_eq!(state.planning_agent_invoked_iteration, Some(1));
+        assert_eq!(state.iteration, 1);
+
+        // Simulate failure again, escalate to level 2
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.planning_prompt_prepared_iteration = Some(1);
+        state.planning_agent_invoked_iteration = Some(1);
+
+        for i in 2..=4 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 2);
+
+        // Level 2: Phase reset - should clear phase flags
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 2,
+            attempt_count: 4,
+        });
+        state = reduce(state, event);
+
+        // Level 2 should clear phase flags but preserve iteration
+        assert_eq!(state.phase, PipelinePhase::Planning);
+        assert_eq!(state.planning_prompt_prepared_iteration, None);
+        assert_eq!(state.planning_agent_invoked_iteration, None);
+        assert_eq!(state.planning_xml_extracted_iteration, None);
+        assert_eq!(state.iteration, 1); // Iteration preserved
+
+        // Simulate failure again, escalate to level 3
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.iteration = 2; // Advance iteration
+
+        for i in 5..=7 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 3);
+
+        // Level 3: Iteration reset - should decrement iteration
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 3,
+            attempt_count: 7,
+        });
+        state = reduce(state, event);
+
+        // Level 3 should reset iteration
+        assert_eq!(state.phase, PipelinePhase::Planning);
+        assert_eq!(state.iteration, 1); // Decremented from 2 to 1
+        assert_eq!(state.planning_prompt_prepared_iteration, None);
+
+        // Simulate failure again, escalate to level 4
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.iteration = 3; // Advance iteration
+
+        for i in 8..=10 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 4);
+
+        // Level 4: Complete reset - should reset to iteration 0
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 4,
+            attempt_count: 10,
+        });
+        state = reduce(state, event);
+
+        // Level 4 should reset to iteration 0
+        assert_eq!(state.phase, PipelinePhase::Planning);
+        assert_eq!(state.iteration, 0); // Reset to 0
+        assert_eq!(state.planning_prompt_prepared_iteration, None);
+    });
+}
+
+/// Test that Level 2 recovery correctly clears Development phase flags.
+#[test]
+fn test_recovery_clears_development_flags() {
+    with_default_timeout(|| {
+        // Start in Development phase with progress flags set
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.iteration = 2;
+
+        // Set Development phase flags
+        state.development_context_prepared_iteration = Some(2);
+        state.development_prompt_prepared_iteration = Some(2);
+        state.development_agent_invoked_iteration = Some(2);
+        state.analysis_agent_invoked_iteration = Some(2);
+        state.development_xml_extracted_iteration = Some(2);
+
+        // Escalate to level 2 (phase reset)
+        for i in 1..=4 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 2);
+
+        // Level 2: Phase reset should clear Development flags
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 2,
+            attempt_count: 4,
+        });
+        state = reduce(state, event);
+
+        // Verify Development flags are cleared
+        assert_eq!(state.phase, PipelinePhase::Development);
+        assert_eq!(state.development_context_prepared_iteration, None);
+        assert_eq!(state.development_prompt_prepared_iteration, None);
+        assert_eq!(state.development_agent_invoked_iteration, None);
+        assert_eq!(state.analysis_agent_invoked_iteration, None);
+        assert_eq!(state.development_xml_extracted_iteration, None);
+        assert_eq!(state.iteration, 2); // Iteration preserved at level 2
+    });
+}
+
+/// Test that Level 2 recovery correctly clears Review phase flags.
+#[test]
+fn test_recovery_clears_review_flags() {
+    with_default_timeout(|| {
+        // Start in Review phase with progress flags set
+        let mut state = PipelineState::initial(1, 3);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Review);
+        state.reviewer_pass = 1;
+
+        // Set Review phase flags
+        state.review_context_prepared_pass = Some(1);
+        state.review_prompt_prepared_pass = Some(1);
+        state.review_agent_invoked_pass = Some(1);
+        state.review_issues_xml_extracted_pass = Some(1);
+        state.review_issues_found = true;
+        state.fix_prompt_prepared_pass = Some(1);
+        state.fix_agent_invoked_pass = Some(1);
+
+        // Escalate to level 2 (phase reset)
+        for i in 1..=4 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 2);
+
+        // Level 2: Phase reset should clear Review flags
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 2,
+            attempt_count: 4,
+        });
+        state = reduce(state, event);
+
+        // Verify Review flags are cleared
+        assert_eq!(state.phase, PipelinePhase::Review);
+        assert_eq!(state.review_context_prepared_pass, None);
+        assert_eq!(state.review_prompt_prepared_pass, None);
+        assert_eq!(state.review_agent_invoked_pass, None);
+        assert_eq!(state.review_issues_xml_extracted_pass, None);
+        assert!(!state.review_issues_found);
+        assert_eq!(state.fix_prompt_prepared_pass, None);
+        assert_eq!(state.fix_agent_invoked_pass, None);
+        assert_eq!(state.reviewer_pass, 1); // Pass preserved at level 2
+    });
+}
+
+/// Test that Level 2 recovery correctly clears CommitMessage phase flags.
+#[test]
+fn test_recovery_clears_commit_flags() {
+    with_default_timeout(|| {
+        // Start in CommitMessage phase with progress flags set
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::CommitMessage);
+        state.iteration = 3;
+
+        // Set CommitMessage phase flags
+        state.commit_prompt_prepared = true;
+        state.commit_diff_prepared = true;
+        state.commit_diff_empty = false;
+        state.commit_diff_content_id_sha256 = Some("abc123".to_string());
+        state.commit_agent_invoked = true;
+        state.commit_xml_cleaned = true;
+
+        // Escalate to level 2 (phase reset)
+        for i in 1..=4 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 2);
+
+        // Level 2: Phase reset should clear CommitMessage flags
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 2,
+            attempt_count: 4,
+        });
+        state = reduce(state, event);
+
+        // Verify CommitMessage flags are cleared
+        assert_eq!(state.phase, PipelinePhase::CommitMessage);
+        assert!(!state.commit_prompt_prepared);
+        assert!(!state.commit_diff_prepared);
+        assert!(!state.commit_diff_empty);
+        assert_eq!(state.commit_diff_content_id_sha256, None);
+        assert!(!state.commit_agent_invoked);
+        assert!(!state.commit_xml_cleaned);
+        assert_eq!(state.iteration, 3); // Iteration preserved at level 2
+    });
+}
+
+/// Test that Level 3 recovery correctly handles iteration counter floor at zero.
+#[test]
+fn test_recovery_iteration_reset_floor_at_zero() {
+    with_default_timeout(|| {
+        // Start at iteration 0
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+        state.iteration = 0;
+
+        // Escalate to level 3 (iteration reset)
+        for i in 1..=7 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.recovery_escalation_level, 3);
+
+        // Level 3: Iteration reset should stay at 0 (floor)
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 3,
+            attempt_count: 7,
+        });
+        state = reduce(state, event);
+
+        // Verify iteration stays at 0 (saturating_sub prevents underflow)
+        assert_eq!(state.phase, PipelinePhase::Planning);
+        assert_eq!(state.iteration, 0);
+    });
+}
+
+/// Test end-to-end recovery loop with multiple attempts at same level.
+///
+/// This test verifies the complete recovery loop from failure to dev-fix to recovery
+/// attempt, simulating the actual pipeline flow with multiple failed recovery attempts
+/// at the same escalation level.
+#[test]
+fn test_end_to_end_recovery_loop_with_multiple_attempts() {
+    with_default_timeout(|| {
+        // Simulate a pipeline that fails in Development phase
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 1;
+        state.development_agent_invoked_iteration = Some(1);
+        state.development_xml_extracted_iteration = Some(1);
+
+        // Simulate failure transitioning to AwaitingDevFix
+        // (This would normally come from error reducer, we simulate the transition)
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_attempt_count = 0;
+        state.recovery_escalation_level = 0;
+
+        // --- Recovery Attempt 1 (Level 1) ---
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Fixed import path".to_string()),
+        });
+        state = reduce(state, event);
+        assert_eq!(state.dev_fix_attempt_count, 1);
+        assert_eq!(state.recovery_escalation_level, 1);
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 1,
+            attempt_count: 1,
+        });
+        state = reduce(state, event);
+        assert_eq!(state.phase, PipelinePhase::Development);
+        assert_eq!(state.previous_phase, Some(PipelinePhase::AwaitingDevFix));
+        // Level 1 should preserve flags
+        assert_eq!(state.development_agent_invoked_iteration, Some(1));
+
+        // Simulate work executing and failing again
+        state.phase = PipelinePhase::AwaitingDevFix;
+
+        // --- Recovery Attempt 2 (Level 1) ---
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Fixed permission issue".to_string()),
+        });
+        state = reduce(state, event);
+        assert_eq!(state.dev_fix_attempt_count, 2);
+        assert_eq!(state.recovery_escalation_level, 1);
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 1,
+            attempt_count: 2,
+        });
+        state = reduce(state, event);
+        assert_eq!(state.phase, PipelinePhase::Development);
+
+        // Simulate work executing and failing again
+        state.phase = PipelinePhase::AwaitingDevFix;
+
+        // --- Skip to Recovery Attempt 4 (Level 2 - Phase Reset) ---
+        for i in 3..=4 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: true,
+                summary: Some(format!("Fix attempt {}", i)),
+            });
+            state = reduce(state, event);
+        }
+        assert_eq!(state.dev_fix_attempt_count, 4);
+        assert_eq!(state.recovery_escalation_level, 2);
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 2,
+            attempt_count: 4,
+        });
+        state = reduce(state, event);
+        assert_eq!(state.phase, PipelinePhase::Development);
+        // Level 2 should clear Development flags
+        assert_eq!(state.development_agent_invoked_iteration, None);
+        assert_eq!(state.development_xml_extracted_iteration, None);
+        assert_eq!(state.iteration, 1); // Iteration preserved
+
+        // Verify recovery state is still active (not cleared)
+        assert_eq!(state.dev_fix_attempt_count, 4);
+        assert_eq!(state.recovery_escalation_level, 2);
+        assert_eq!(
+            state.failed_phase_for_recovery,
+            Some(PipelinePhase::Development)
+        );
+    });
+}

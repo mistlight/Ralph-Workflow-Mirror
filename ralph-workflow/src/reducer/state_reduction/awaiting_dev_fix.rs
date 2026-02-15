@@ -85,20 +85,68 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             }
         }
         AwaitingDevFixEvent::RecoveryAttempted {
-            level: _,
+            level,
             attempt_count: _,
         } => {
+            // Recovery state transitions documented for clarity:
+            //
+            // Level 1: Retry same operation (attempts 1-3)
+            //   - No state reset, just transition back to failed phase
+            //   - Orchestration will derive the same effect that failed
+            //   - Example: If InvokeAgent failed, retry InvokeAgent
+            //
+            // Level 2: Reset to phase start (attempts 4-6)
+            //   - Clear all phase-specific progress flags
+            //   - Orchestration starts the phase from scratch
+            //   - Preserves: iteration counter, reviewer_pass, other phases
+            //   - Example: Clear development_agent_invoked_iteration, restart from PrepareDevelopmentContext
+            //
+            // Level 3: Reset iteration (attempts 7-9)
+            //   - Decrement iteration counter (floor at 0)
+            //   - Clear Planning/Development/Commit flags
+            //   - Transition to Planning phase to redo iteration
+            //   - Preserves: reviewer_pass, total_iterations
+            //
+            // Level 4: Complete reset (attempts 10+)
+            //   - Reset iteration to 0
+            //   - Clear Planning/Development/Commit flags
+            //   - Transition to Planning phase for full restart
+            //   - Preserves: reviewer_pass, total_iterations
+
             // Recovery attempt initiated - transition back to failed phase
             let target_phase = state
                 .failed_phase_for_recovery
                 .unwrap_or(PipelinePhase::Development);
 
-            PipelineState {
+            // Base state with phase transition
+            let mut new_state = PipelineState {
                 phase: target_phase,
                 previous_phase: Some(PipelinePhase::AwaitingDevFix),
                 // Keep recovery tracking fields so we can escalate if this fails
                 ..state
-            }
+            };
+
+            // Apply state reset based on escalation level
+            new_state = match level {
+                1 => {
+                    // Level 1: Simple retry - just transition back, no state reset
+                    new_state
+                }
+                2 => {
+                    // Level 2: Reset to phase start - clear phase-specific progress flags
+                    new_state.clear_phase_flags(target_phase)
+                }
+                3 => {
+                    // Level 3: Reset iteration counter - decrement iteration and restart from Planning
+                    new_state.reset_iteration()
+                }
+                _ => {
+                    // Level 4+: Complete reset - reset to iteration 0, restart from Planning
+                    new_state.reset_to_iteration_zero()
+                }
+            };
+
+            new_state
         }
         AwaitingDevFixEvent::RecoveryEscalated {
             from_level: _,
