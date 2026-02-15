@@ -400,10 +400,12 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
     );
 
     let result = result.expect("Expected effect result");
+    // After the bug fix, TriggerDevFixFlow emits DevFixTriggered and DevFixCompleted
+    // but NOT CompletionMarkerEmitted (that's now emitted by orchestration when exhausted)
     assert!(matches!(
         result.additional_events.last(),
         Some(PipelineEvent::AwaitingDevFix(
-            AwaitingDevFixEvent::CompletionMarkerEmitted { is_failure: true }
+            AwaitingDevFixEvent::DevFixCompleted { .. }
         ))
     ));
 }

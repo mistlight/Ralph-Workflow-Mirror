@@ -423,6 +423,11 @@ impl MainEffectHandler {
                 target_phase,
             } => self.emit_recovery_reset(ctx, reset_type, target_phase),
 
+            Effect::AttemptRecovery {
+                level,
+                attempt_count,
+            } => self.attempt_recovery(ctx, level, attempt_count),
+
             Effect::TriggerDevFixFlow {
                 failed_phase,
                 failed_role,

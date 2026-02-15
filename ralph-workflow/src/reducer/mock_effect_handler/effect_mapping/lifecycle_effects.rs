@@ -236,6 +236,39 @@ impl MockEffectHandler {
                 vec![],
             )),
 
+            Effect::EmitRecoveryReset {
+                reset_type: _,
+                target_phase: _,
+            } => {
+                // Mock: emit RecoveryAttempted event for the appropriate level
+                let level = match self.state.recovery_escalation_level {
+                    1 => 1,
+                    2 => 2,
+                    3 => 3,
+                    _ => 4,
+                };
+                Some((
+                    PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                        level,
+                        attempt_count: self.state.dev_fix_attempt_count,
+                    }),
+                    vec![],
+                    vec![],
+                ))
+            }
+
+            Effect::AttemptRecovery {
+                level,
+                attempt_count,
+            } => Some((
+                PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                    level,
+                    attempt_count,
+                }),
+                vec![],
+                vec![],
+            )),
+
             Effect::EnsureGitignoreEntries => Some((
                 PipelineEvent::gitignore_entries_ensured(
                     vec!["/PROMPT*".to_string(), ".agent/".to_string()],

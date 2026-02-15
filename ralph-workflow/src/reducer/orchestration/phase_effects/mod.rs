@@ -56,11 +56,55 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         PipelinePhase::CommitMessage => commit::determine_commit_effect(state),
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
-        PipelinePhase::AwaitingDevFix => Effect::TriggerDevFixFlow {
-            failed_phase: state.previous_phase.unwrap_or(PipelinePhase::Development),
-            failed_role: state.agent_chain.current_role,
-            retry_cycle: state.agent_chain.retry_cycle,
-        },
+        PipelinePhase::AwaitingDevFix => {
+            // Check if recovery attempts are exhausted
+            if state.dev_fix_triggered && state.dev_fix_attempt_count > 12 {
+                // Exhausted all recovery attempts - emit completion marker and terminate
+                return Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    reason: Some(format!(
+                        "Recovery exhausted after {} attempts in phase {:?}",
+                        state.dev_fix_attempt_count, state.failed_phase_for_recovery
+                    )),
+                };
+            }
+
+            // If dev-fix already triggered and recovery state is set, attempt recovery
+            if state.dev_fix_triggered && state.recovery_escalation_level > 0 {
+                // Derive the appropriate recovery effect based on escalation level
+                if state.recovery_escalation_level == 1 {
+                    // Level 1: Simple retry - emit RecoveryAttempted to transition back
+                    Effect::AttemptRecovery {
+                        level: state.recovery_escalation_level,
+                        attempt_count: state.dev_fix_attempt_count,
+                    }
+                } else {
+                    // Level 2+: Requires state reset - use EmitRecoveryReset
+                    use crate::reducer::effect::RecoveryResetType;
+                    let (reset_type, target_phase) = match state.recovery_escalation_level {
+                        2 => (
+                            RecoveryResetType::PhaseStart,
+                            state
+                                .failed_phase_for_recovery
+                                .unwrap_or(PipelinePhase::Development),
+                        ),
+                        3 => (RecoveryResetType::IterationReset, PipelinePhase::Planning),
+                        _ => (RecoveryResetType::CompleteReset, PipelinePhase::Planning),
+                    };
+                    Effect::EmitRecoveryReset {
+                        reset_type,
+                        target_phase,
+                    }
+                }
+            } else {
+                // First time in AwaitingDevFix or dev-fix not yet triggered
+                Effect::TriggerDevFixFlow {
+                    failed_phase: state.previous_phase.unwrap_or(PipelinePhase::Development),
+                    failed_role: state.agent_chain.current_role,
+                    retry_cycle: state.agent_chain.retry_cycle,
+                }
+            }
+        }
         PipelinePhase::Complete | PipelinePhase::Interrupted => {
             use crate::reducer::event::CheckpointTrigger;
 

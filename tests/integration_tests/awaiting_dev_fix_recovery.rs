@@ -10,7 +10,7 @@
 
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::determine_next_effect;
-use ralph_workflow::reducer::effect::Effect;
+use ralph_workflow::reducer::effect::{Effect, RecoveryResetType};
 use ralph_workflow::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::state_reduction::reduce;
@@ -287,5 +287,226 @@ fn test_successful_recovery_clears_state() {
         assert_eq!(state.dev_fix_attempt_count, 0);
         assert_eq!(state.recovery_escalation_level, 0);
         assert_eq!(state.failed_phase_for_recovery, None);
+    });
+}
+
+/// Test that DevFixCompleted does not emit CompletionMarkerEmitted.
+///
+/// This is a regression test for the bug where TriggerDevFixFlow unconditionally
+/// emitted CompletionMarkerEmitted, causing immediate termination instead of recovery.
+#[test]
+fn test_dev_fix_completion_does_not_terminate() {
+    with_default_timeout(|| {
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_attempt_count = 0;
+
+        // Simulate dev-fix completion (first attempt)
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Fixed the issue".to_string()),
+        });
+        let state = reduce(state, event);
+
+        // Should NOT transition to Interrupted
+        assert_eq!(
+            state.phase,
+            PipelinePhase::AwaitingDevFix,
+            "DevFixCompleted should not terminate, should stay in AwaitingDevFix"
+        );
+
+        // Should set recovery level
+        assert_eq!(state.recovery_escalation_level, 1);
+        assert_eq!(state.dev_fix_attempt_count, 1);
+    });
+}
+
+/// Test that only after 12+ attempts does the pipeline terminate.
+#[test]
+fn test_termination_only_after_max_attempts() {
+    with_default_timeout(|| {
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+
+        // Attempts 1-12 should not terminate
+        for i in 1..=12 {
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: false,
+                summary: None,
+            });
+            state = reduce(state, event);
+
+            assert_eq!(
+                state.phase,
+                PipelinePhase::AwaitingDevFix,
+                "Attempt {} should not terminate",
+                i
+            );
+        }
+
+        // 13th attempt should terminate
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: false,
+            summary: None,
+        });
+        state = reduce(state, event);
+
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Interrupted,
+            "After 13 attempts should terminate"
+        );
+    });
+}
+
+/// End-to-end test: failure → dev-fix → retry succeeds → pipeline continues.
+#[test]
+fn test_end_to_end_recovery_success() {
+    use ralph_workflow::reducer::event::{ErrorEvent, PromptInputEvent};
+
+    with_default_timeout(|| {
+        // Start in Development phase
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Development;
+
+        // Simulate AgentChainExhausted error
+        let error_event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+            phase: PipelinePhase::Development,
+            error: ErrorEvent::AgentChainExhausted {
+                role: AgentRole::Developer,
+                phase: PipelinePhase::Development,
+                cycle: 3,
+            },
+        });
+        let mut state = reduce(state, error_event);
+
+        // Should transition to AwaitingDevFix
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
+
+        // Lock prompt permissions for orchestration
+        state = with_locked_prompt_permissions(state);
+
+        // Orchestration should derive TriggerDevFixFlow
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::TriggerDevFixFlow { .. }),
+            "AwaitingDevFix should determine TriggerDevFixFlow effect, got {:?}",
+            effect
+        );
+
+        // Simulate dev-fix completion (success)
+        let dev_fix_event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Fixed the issue".to_string()),
+        });
+        state = reduce(state, dev_fix_event);
+        state.dev_fix_triggered = true; // Handler would set this
+
+        // Should stay in AwaitingDevFix with recovery level 1
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(state.recovery_escalation_level, 1);
+
+        // Orchestration should derive AttemptRecovery
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::AttemptRecovery { level: 1, .. }),
+            "Should derive AttemptRecovery effect, got {:?}",
+            effect
+        );
+
+        // Simulate RecoveryAttempted event
+        let recovery_event =
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                level: 1,
+                attempt_count: 1,
+            });
+        state = reduce(state, recovery_event);
+
+        // Should transition back to Development
+        assert_eq!(state.phase, PipelinePhase::Development);
+
+        // Simulate successful retry (recovery succeeds)
+        let success_event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoverySucceeded {
+            level: 1,
+            total_attempts: 1,
+        });
+        state = reduce(state, success_event);
+
+        // Recovery state should be cleared
+        assert_eq!(state.dev_fix_attempt_count, 0);
+        assert_eq!(state.recovery_escalation_level, 0);
+        assert_eq!(state.failed_phase_for_recovery, None);
+
+        // Pipeline should continue normally in Development
+        assert_eq!(state.phase, PipelinePhase::Development);
+    });
+}
+
+/// End-to-end test: multiple failures → escalate through all levels → terminate.
+#[test]
+fn test_end_to_end_escalation_and_termination() {
+    with_default_timeout(|| {
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_triggered = false;
+
+        // Simulate 12 failed recovery attempts
+        for attempt in 1..=12 {
+            // Dev-fix runs
+            state.dev_fix_triggered = false;
+            let effect = determine_next_effect(&state);
+            assert!(
+                matches!(effect, Effect::TriggerDevFixFlow { .. })
+                    || matches!(effect, Effect::AttemptRecovery { .. })
+                    || matches!(effect, Effect::EmitRecoveryReset { .. }),
+                "Attempt {}: unexpected effect {:?}",
+                attempt,
+                effect
+            );
+
+            // Dev-fix completes (failure)
+            state.dev_fix_triggered = true;
+            let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: false,
+                summary: None,
+            });
+            state = reduce(state, event);
+
+            // Should escalate properly
+            let expected_level = match attempt {
+                1..=3 => 1,
+                4..=6 => 2,
+                7..=9 => 3,
+                _ => 4,
+            };
+            assert_eq!(
+                state.recovery_escalation_level, expected_level,
+                "Attempt {} should be at level {}",
+                attempt, expected_level
+            );
+        }
+
+        // After 12 attempts, should still be at level 4 attempting recovery
+        // The 13th DevFixCompleted will cause reducer to transition to Interrupted
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(state.dev_fix_attempt_count, 12);
+        assert_eq!(state.recovery_escalation_level, 4);
+
+        // Orchestration should still derive recovery effect (level 4 = CompleteReset)
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::EmitRecoveryReset {
+                    reset_type: RecoveryResetType::CompleteReset,
+                    ..
+                }
+            ),
+            "After 12 attempts should still attempt level 4 recovery, got {:?}",
+            effect
+        );
     });
 }

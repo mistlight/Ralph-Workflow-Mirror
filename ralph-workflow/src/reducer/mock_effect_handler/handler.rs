@@ -157,7 +157,8 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                         retry_cycle,
                     });
 
-                // Emit trigger and completion events, then completion marker
+                // Emit trigger and completion events (NO CompletionMarkerEmitted)
+                // The orchestrator will decide when to emit completion marker
                 Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
                         failed_phase,
@@ -168,11 +169,6 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                     crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
                         success: false,
                         summary: Some("Mock dev-fix flow".to_string()),
-                    },
-                ))
-                .with_additional_event(PipelineEvent::AwaitingDevFix(
-                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
-                        is_failure: true,
                     },
                 )))
             }

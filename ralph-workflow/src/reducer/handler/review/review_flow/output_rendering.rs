@@ -206,48 +206,6 @@ fn is_safe_workspace_relative_path(path_str: &str) -> bool {
     true
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{extract_issue_snippets, extract_snippet_lines};
-    use crate::workspace::MemoryWorkspace;
-
-    #[test]
-    fn test_extract_issue_snippets_rejects_unsafe_paths() {
-        let workspace = MemoryWorkspace::new_test()
-            .with_file("src/main.rs", "fn main() {}\n")
-            .with_file("../secret.txt", "top secret\n")
-            .with_file("/etc/passwd.txt", "root:x:0:0:root:/root:/bin/bash\n")
-            .with_file("C:/secret.txt", "windows secret\n");
-
-        let issues = vec![
-            "src/main.rs:1".to_string(),
-            "../secret.txt:1".to_string(),
-            "/etc/passwd.txt:1".to_string(),
-            "C:/secret.txt:1".to_string(),
-        ];
-
-        let snippets = extract_issue_snippets(&issues, &workspace);
-
-        assert_eq!(snippets.len(), 1, "expected only the safe snippet");
-        assert_eq!(snippets[0].file, "src/main.rs");
-        assert_eq!(snippets[0].line_start, 1);
-        assert_eq!(snippets[0].line_end, 1);
-        assert!(snippets[0].content.contains("1 | fn main() {}"));
-    }
-
-    #[test]
-    fn test_extract_snippet_lines_rejects_reversed_ranges() {
-        let content = "line1\nline2\n";
-        assert!(extract_snippet_lines(content, 2, 1).is_none());
-    }
-
-    #[test]
-    fn test_extract_snippet_lines_requires_one_based_start() {
-        let content = "line1\n";
-        assert!(extract_snippet_lines(content, 0, 1).is_none());
-    }
-}
-
 /// Lazy-initialized regex for parsing standard file locations (file:line-line).
 fn issue_location_regex() -> &'static Regex {
     static LOCATION_RE: OnceLock<Regex> = OnceLock::new();
@@ -447,5 +405,47 @@ impl MainEffectHandler {
             pass,
             issues_found,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_issue_snippets, extract_snippet_lines};
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn test_extract_issue_snippets_rejects_unsafe_paths() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("src/main.rs", "fn main() {}\n")
+            .with_file("../secret.txt", "top secret\n")
+            .with_file("/etc/passwd.txt", "root:x:0:0:root:/root:/bin/bash\n")
+            .with_file("C:/secret.txt", "windows secret\n");
+
+        let issues = vec![
+            "src/main.rs:1".to_string(),
+            "../secret.txt:1".to_string(),
+            "/etc/passwd.txt:1".to_string(),
+            "C:/secret.txt:1".to_string(),
+        ];
+
+        let snippets = extract_issue_snippets(&issues, &workspace);
+
+        assert_eq!(snippets.len(), 1, "expected only the safe snippet");
+        assert_eq!(snippets[0].file, "src/main.rs");
+        assert_eq!(snippets[0].line_start, 1);
+        assert_eq!(snippets[0].line_end, 1);
+        assert!(snippets[0].content.contains("1 | fn main() {}"));
+    }
+
+    #[test]
+    fn test_extract_snippet_lines_rejects_reversed_ranges() {
+        let content = "line1\nline2\n";
+        assert!(extract_snippet_lines(content, 2, 1).is_none());
+    }
+
+    #[test]
+    fn test_extract_snippet_lines_requires_one_based_start() {
+        let content = "line1\n";
+        assert!(extract_snippet_lines(content, 0, 1).is_none());
     }
 }

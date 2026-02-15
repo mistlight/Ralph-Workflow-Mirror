@@ -1,7 +1,6 @@
 //! Events for AwaitingDevFix phase.
 //!
-//! This phase handles pipeline failure remediation by invoking the development
-//! agent to diagnose and fix the root cause before termination.
+//! This phase handles pipeline failure remediation with escalating recovery strategies.
 
 use crate::agents::AgentRole;
 use serde::{Deserialize, Serialize};
@@ -11,30 +10,37 @@ use crate::reducer::event::PipelinePhase;
 
 /// Events for AwaitingDevFix phase.
 ///
-/// This phase handles pipeline failure remediation by invoking the development
-/// agent to diagnose and fix the root cause before termination.
+/// This phase handles pipeline failure remediation with escalating recovery strategies.
 ///
 /// # When This Occurs
 ///
 /// The AwaitingDevFix phase is entered when the pipeline encounters a terminal
-/// failure condition (e.g., agent chain exhausted) in any phase. Instead of
-/// immediately terminating, the pipeline gives the development agent one final
-/// chance to diagnose and fix the issue.
+/// failure condition (e.g., agent chain exhausted) in any phase. The pipeline
+/// implements an aggressive recovery system with escalating strategies rather
+/// than immediate termination.
 ///
-/// # State Flow
+/// # State Flow (Updated)
 ///
 /// 1. Terminal failure detected (e.g., AgentChainExhausted)
 /// 2. Reducer transitions to AwaitingDevFix phase
 /// 3. DevFixTriggered event emitted
 /// 4. Development agent invoked with failure context
-/// 5. DevFixCompleted event emitted
-/// 6. CompletionMarkerEmitted event signals transition to Interrupted
-/// 7. Checkpoint saved
-/// 8. Pipeline exits
+/// 5. DevFixCompleted event emitted (attempt count incremented, level set)
+/// 6. RecoveryAttempted event transitions back to failed phase
+/// 7. Recovery attempt (retry same operation, or escalate to phase reset, etc.)
+/// 8. If recovery fails, repeat steps 3-7 with escalating strategies:
+///    - Level 1 (attempts 1-3): Retry same operation
+///    - Level 2 (attempts 4-6): Reset to phase start
+///    - Level 3 (attempts 7-9): Reset iteration counter
+///    - Level 4 (attempts 10-12): Reset to iteration 0
+/// 9. If all recovery levels exhausted (13+ attempts), emit CompletionMarkerEmitted
+/// 10. Checkpoint saved
+/// 11. Pipeline exits
 ///
 /// # Emitted By
 ///
-/// - Dev-fix flow handlers in `handler/dev_fix/`
+/// - Dev-fix flow handlers in `handler/lifecycle.rs`
+/// - Recovery handlers in `handler/context.rs`
 /// - Completion marker handlers
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum AwaitingDevFixEvent {

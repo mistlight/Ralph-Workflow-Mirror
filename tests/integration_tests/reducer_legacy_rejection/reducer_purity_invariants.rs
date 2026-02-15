@@ -422,6 +422,7 @@ fn test_effects_are_single_task() {
             TriggerDevFixFlow,
             TriggerLoopRecovery,
             EmitRecoveryReset,
+            AttemptRecovery,
             EmitCompletionMarkerAndTerminate,
         }
 
@@ -495,6 +496,7 @@ fn test_effects_are_single_task() {
                 Effect::TriggerDevFixFlow { .. } => EffectTask::TriggerDevFixFlow,
                 Effect::TriggerLoopRecovery { .. } => EffectTask::TriggerLoopRecovery,
                 Effect::EmitRecoveryReset { .. } => EffectTask::EmitRecoveryReset,
+                Effect::AttemptRecovery { .. } => EffectTask::AttemptRecovery,
                 Effect::EmitCompletionMarkerAndTerminate { .. } => {
                     EffectTask::EmitCompletionMarkerAndTerminate
                 }

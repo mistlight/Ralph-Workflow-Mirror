@@ -566,4 +566,19 @@ pub enum Effect {
         /// Target phase to reset to.
         target_phase: PipelinePhase,
     },
+
+    /// Attempt recovery by transitioning back to failed phase.
+    ///
+    /// This effect is derived when dev-fix completes and recovery should be attempted.
+    /// The handler emits RecoveryAttempted event which transitions back to the failed
+    /// phase, allowing normal orchestration to derive the recovery effect.
+    ///
+    /// This is used for level 1 recovery (retry same operation). For level 2+ recovery
+    /// (phase reset, iteration reset, complete reset), use EmitRecoveryReset instead.
+    AttemptRecovery {
+        /// The escalation level being attempted.
+        level: u32,
+        /// The attempt count.
+        attempt_count: u32,
+    },
 }
