@@ -98,6 +98,12 @@ pub enum AwaitingDevFixEvent {
         level: u32,
         /// Number of recovery attempts so far for this failure.
         attempt_count: u32,
+        /// Phase to resume work in after applying recovery policy.
+        ///
+        /// This is carried from the effect parameters so the reducer does not
+        /// need to trust potentially-stale `failed_phase_for_recovery` when
+        /// applying the reset.
+        target_phase: PipelinePhase,
     },
     /// Recovery escalated to a higher level.
     ///

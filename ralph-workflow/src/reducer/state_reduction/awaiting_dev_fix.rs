@@ -52,24 +52,26 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             // If it reports failure, we still attempt recovery but may need to escalate faster
             let should_attempt_recovery = new_attempt_count <= 12; // Max 12 attempts total
 
-            if !should_attempt_recovery {
-                // Exhausted all recovery attempts - emit completion marker and terminate
-                // This is the ONLY path to termination after entering AwaitingDevFix
-                return PipelineState {
-                    phase: PipelinePhase::Interrupted,
-                    previous_phase: Some(state.phase),
-                    dev_fix_attempt_count: new_attempt_count,
-                    ..state
-                };
-            }
-
-            // Prepare for recovery attempt at the determined level
-            PipelineState {
+            // Prepare for recovery attempt at the determined level.
+            //
+            // IMPORTANT: Do not transition to Interrupted directly here.
+            // Termination (if any) must happen through the single termination path:
+            // AwaitingDevFix orchestration derives Effect::EmitCompletionMarkerAndTerminate,
+            // then the reducer transitions to Interrupted when CompletionMarkerEmitted is reduced.
+            // This keeps the completion marker semantics consistent and ensures the marker
+            // includes the correct "reason" string.
+            let updated = PipelineState {
                 dev_fix_attempt_count: new_attempt_count,
                 recovery_escalation_level: new_level,
                 // Stay in AwaitingDevFix until recovery is attempted
                 ..state
+            };
+
+            if !should_attempt_recovery {
+                return updated;
             }
+
+            updated
         }
         AwaitingDevFixEvent::DevFixAgentUnavailable { .. } => {
             // Dev-fix agent unavailable (quota/usage limit), prepare for termination
@@ -87,6 +89,7 @@ pub(super) fn reduce_awaiting_dev_fix_event(
         AwaitingDevFixEvent::RecoveryAttempted {
             level,
             attempt_count: _,
+            target_phase,
         } => {
             // Recovery state transitions documented for clarity:
             //
@@ -112,11 +115,6 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             //   - Clear Planning/Development/Commit flags
             //   - Transition to Planning phase for full restart
             //   - Preserves: reviewer_pass, total_iterations
-
-            // Recovery attempt initiated - transition back to failed phase
-            let target_phase = state
-                .failed_phase_for_recovery
-                .unwrap_or(PipelinePhase::Development);
 
             // Base state with phase transition
             let mut new_state = PipelineState {
@@ -172,5 +170,56 @@ pub(super) fn reduce_awaiting_dev_fix_event(
                 ..state
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
+    use crate::reducer::reduce;
+
+    #[test]
+    fn dev_fix_completed_does_not_directly_interrupt_when_attempts_exhausted() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.dev_fix_attempt_count = 12;
+        state.recovery_escalation_level = 4;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: false,
+                summary: Some("attempt 13".to_string()),
+            }),
+        );
+
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::AwaitingDevFix,
+            "expected to remain in AwaitingDevFix so orchestration can emit completion marker"
+        );
+        assert_eq!(new_state.dev_fix_attempt_count, 13);
+    }
+
+    #[test]
+    fn recovery_attempted_uses_event_target_phase_not_state_snapshot() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.recovery_escalation_level = 2;
+        state.dev_fix_attempt_count = 4;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                level: 2,
+                attempt_count: 4,
+                target_phase: PipelinePhase::Planning,
+            }),
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Planning);
     }
 }

@@ -62,7 +62,7 @@ use super::event::{CheckpointTrigger, PipelinePhase, RebasePhase};
 use super::state::{CommitState, PipelineState, PromptMode, RebaseState};
 
 use crate::agents::AgentRole;
-use crate::reducer::effect::{ContinuationContextData, Effect, RecoveryResetType};
+use crate::reducer::effect::{ContinuationContextData, Effect};
 
 mod phase_effects;
 use phase_effects::determine_next_effect_for_phase;

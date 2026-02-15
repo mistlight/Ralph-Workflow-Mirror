@@ -123,9 +123,14 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             new_state.dev_fix_triggered = false;
             // Capture the failed phase for recovery
             new_state.failed_phase_for_recovery = Some(state.phase);
-            // Reset recovery counters for new failure
-            new_state.dev_fix_attempt_count = 0;
-            new_state.recovery_escalation_level = 0;
+
+            // CRITICAL: Preserve recovery escalation if this failure occurs immediately
+            // after a recovery attempt (previous_phase == AwaitingDevFix).
+            // Otherwise, we'd restart the recovery loop at level 1 on every repeat failure.
+            if state.previous_phase != Some(PipelinePhase::AwaitingDevFix) {
+                new_state.dev_fix_attempt_count = 0;
+                new_state.recovery_escalation_level = 0;
+            }
             new_state
         }
 
@@ -373,6 +378,35 @@ mod tests {
         assert_eq!(
             new_state.recovery_escalation_level, 0,
             "recovery_escalation_level should be reset on first failure"
+        );
+    }
+
+    #[test]
+    fn test_workspace_and_git_failures_preserve_recovery_escalation_when_already_in_recovery_loop()
+    {
+        use crate::reducer::event::PipelinePhase;
+
+        let mut state =
+            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+        state.phase = PipelinePhase::CommitMessage;
+        state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+        state.failed_phase_for_recovery = Some(PipelinePhase::CommitMessage);
+        state.dev_fix_attempt_count = 6;
+        state.recovery_escalation_level = 2;
+
+        let new_state = reduce_error(
+            &state,
+            &ErrorEvent::GitAddAllFailed {
+                kind: crate::reducer::event::WorkspaceIoErrorKind::Other,
+            },
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(new_state.dev_fix_attempt_count, 6);
+        assert_eq!(new_state.recovery_escalation_level, 2);
+        assert!(
+            !new_state.dev_fix_triggered,
+            "expected dev_fix_triggered reset when routing to AwaitingDevFix"
         );
     }
 }

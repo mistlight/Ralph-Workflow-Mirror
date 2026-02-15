@@ -15,11 +15,11 @@ impl PipelineState {
     ///
     /// # AwaitingDevFix → Interrupted Path
     ///
-    /// When the pipeline encounters a terminal failure (e.g., AgentChainExhausted),
-    /// it transitions through AwaitingDevFix phase where:
-    /// 1. TriggerDevFixFlow effect writes completion marker to filesystem
-    /// 2. Dev-fix agent is dispatched (optional remediation attempt)
-    /// 3. CompletionMarkerEmitted event transitions to Interrupted phase
+    /// When the pipeline terminates due to exhausted recovery attempts, it transitions
+    /// through AwaitingDevFix where:
+    /// 1. Orchestration derives `EmitCompletionMarkerAndTerminate`
+    /// 2. The handler writes the completion marker to filesystem
+    /// 3. CompletionMarkerEmitted transitions the reducer state to Interrupted
     ///
     /// At this point, the completion marker has been written, signaling external
     /// orchestration that the pipeline has terminated. The SaveCheckpoint effect
@@ -34,10 +34,9 @@ impl PipelineState {
     ///
     /// # Non-Terminating Pipeline Architecture
     ///
-    /// The pipeline is designed to never exit early. All failure paths route through
-    /// `AwaitingDevFix` → `TriggerDevFixFlow` → completion marker write → `Interrupted`.
-    /// This ensures orchestration can reliably detect completion via the marker file,
-    /// even when budget is exhausted or all agents fail.
+    /// Internal failures are handled via the AwaitingDevFix recovery loop.
+    /// Completion markers are emitted only when the pipeline is actually terminating
+    /// (after recovery exhaustion or defensive max-iteration recovery).
     ///
     /// Terminal states:
     /// - `Complete`: Normal successful completion
@@ -48,7 +47,7 @@ impl PipelineState {
             || (matches!(self.phase, PipelinePhase::Interrupted)
                 && (self.checkpoint_saved_count > 0
                     // CRITICAL: AwaitingDevFix→Interrupted transition means completion marker
-                    // was written during TriggerDevFixFlow. This is terminal even without
+                    // was written during EmitCompletionMarkerAndTerminate. This is terminal even without
                     // checkpoint because the failure has been properly signaled to orchestration.
                     // This prevents "Pipeline exited without completion marker" bug.
                     || matches!(self.previous_phase, Some(PipelinePhase::AwaitingDevFix))))
@@ -148,9 +147,21 @@ impl PipelineState {
     /// phase flags to restart the current iteration from Planning phase.
     pub(crate) fn reset_iteration(&self) -> Self {
         let new_iteration = self.iteration.saturating_sub(1);
+        let prompt_inputs = self
+            .prompt_inputs
+            .clone()
+            .with_planning_cleared()
+            .with_development_cleared()
+            .with_commit_cleared()
+            .with_review_cleared()
+            .with_xsd_retry_cleared();
         Self {
             iteration: new_iteration,
             phase: PipelinePhase::Planning,
+            context_cleaned: false,
+            gitignore_entries_ensured: false,
+            prompt_inputs,
+            continuation: self.continuation.clone().reset(),
             ..self.clone()
         }
         .clear_planning_flags()
@@ -163,13 +174,106 @@ impl PipelineState {
     /// Resets iteration counter to 0 and clears all phase flags for a
     /// complete restart from the beginning of the pipeline.
     pub(crate) fn reset_to_iteration_zero(&self) -> Self {
+        let prompt_inputs = self
+            .prompt_inputs
+            .clone()
+            .with_planning_cleared()
+            .with_development_cleared()
+            .with_commit_cleared()
+            .with_review_cleared()
+            .with_xsd_retry_cleared();
         Self {
             iteration: 0,
             phase: PipelinePhase::Planning,
+            context_cleaned: false,
+            gitignore_entries_ensured: false,
+            prompt_inputs,
+            continuation: self.continuation.clone().reset(),
             ..self.clone()
         }
         .clear_planning_flags()
         .clear_development_flags()
         .clear_commit_flags()
+    }
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+    use crate::reducer::state::{
+        MaterializedCommitInputs, MaterializedDevelopmentInputs, MaterializedPlanningInputs,
+        MaterializedPromptInput, PromptInputKind, PromptInputRepresentation, PromptInputsState,
+        PromptMaterializationReason,
+    };
+
+    fn mp(kind: PromptInputKind) -> MaterializedPromptInput {
+        MaterializedPromptInput {
+            kind,
+            content_id_sha256: "id".to_string(),
+            consumer_signature_sha256: "sig".to_string(),
+            original_bytes: 1,
+            final_bytes: 1,
+            model_budget_bytes: None,
+            inline_budget_bytes: None,
+            representation: PromptInputRepresentation::Inline,
+            reason: PromptMaterializationReason::WithinBudgets,
+        }
+    }
+
+    #[test]
+    fn reset_iteration_resets_global_phase_start_prereqs() {
+        let mut state = PipelineState::initial(2, 0);
+        state.iteration = 1;
+        state.context_cleaned = true;
+        state.gitignore_entries_ensured = true;
+        state.continuation.same_agent_retry_pending = true;
+        state.continuation.same_agent_retry_count = 2;
+
+        state.prompt_inputs = PromptInputsState {
+            planning: Some(MaterializedPlanningInputs {
+                iteration: 1,
+                prompt: mp(PromptInputKind::Prompt),
+            }),
+            development: Some(MaterializedDevelopmentInputs {
+                iteration: 1,
+                prompt: mp(PromptInputKind::Prompt),
+                plan: mp(PromptInputKind::Plan),
+            }),
+            commit: Some(MaterializedCommitInputs {
+                attempt: 1,
+                diff: mp(PromptInputKind::Diff),
+            }),
+            review: None,
+            xsd_retry_last_output: None,
+        };
+
+        let reset = state.reset_iteration();
+
+        assert!(!reset.context_cleaned);
+        assert!(!reset.gitignore_entries_ensured);
+        assert!(!reset.continuation.same_agent_retry_pending);
+        assert_eq!(reset.continuation.same_agent_retry_count, 0);
+        assert!(reset.prompt_inputs.planning.is_none());
+        assert!(reset.prompt_inputs.development.is_none());
+        assert!(reset.prompt_inputs.commit.is_none());
+    }
+
+    #[test]
+    fn reset_to_iteration_zero_resets_global_phase_start_prereqs() {
+        let mut state = PipelineState::initial(2, 0);
+        state.iteration = 2;
+        state.context_cleaned = true;
+        state.gitignore_entries_ensured = true;
+        state.prompt_inputs.planning = Some(MaterializedPlanningInputs {
+            iteration: 2,
+            prompt: mp(PromptInputKind::Prompt),
+        });
+
+        let reset = state.reset_to_iteration_zero();
+
+        assert_eq!(reset.iteration, 0);
+        assert!(!reset.context_cleaned);
+        assert!(!reset.gitignore_entries_ensured);
+        assert!(reset.prompt_inputs.planning.is_none());
     }
 }

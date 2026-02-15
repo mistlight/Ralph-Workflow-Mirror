@@ -49,71 +49,6 @@ mod xsd_retry_fingerprint_tests {
     }
 }
 
-/// Derive the effect for recovery based on escalation level.
-///
-/// This implements the escalating recovery hierarchy:
-/// - Level 1: Retry the same effect that failed
-/// - Level 2: Reset to phase start (clear phase-specific progress flags)
-/// - Level 3: Reset iteration counter and restart from Planning
-/// - Level 4: Reset to iteration 0 (complete restart)
-fn derive_recovery_effect(state: &PipelineState) -> Effect {
-    let level = state.recovery_escalation_level;
-    let failed_phase = state
-        .failed_phase_for_recovery
-        .unwrap_or(PipelinePhase::Development);
-
-    match level {
-        1 => {
-            // Level 1: Retry the same operation
-            // Return to failed phase and let normal orchestration derive the effect
-            match failed_phase {
-                PipelinePhase::Planning => Effect::PreparePlanningPrompt {
-                    iteration: state.iteration,
-                    prompt_mode: PromptMode::Normal,
-                },
-                PipelinePhase::Development => Effect::PrepareDevelopmentContext {
-                    iteration: state.iteration,
-                },
-                PipelinePhase::Review => Effect::PrepareReviewContext {
-                    pass: state.reviewer_pass,
-                },
-                PipelinePhase::CommitMessage => Effect::CheckCommitDiff,
-                _ => Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::Interrupt,
-                },
-            }
-        }
-        2 => {
-            // Level 2: Reset to phase start
-            // Clear phase-specific progress flags, retry from beginning of phase
-            Effect::EmitRecoveryReset {
-                reset_type: RecoveryResetType::PhaseStart,
-                target_phase: failed_phase,
-            }
-        }
-        3 => {
-            // Level 3: Reset iteration counter
-            Effect::EmitRecoveryReset {
-                reset_type: RecoveryResetType::IterationReset,
-                target_phase: PipelinePhase::Planning,
-            }
-        }
-        4 => {
-            // Level 4: Reset to iteration 0 (complete restart)
-            Effect::EmitRecoveryReset {
-                reset_type: RecoveryResetType::CompleteReset,
-                target_phase: PipelinePhase::Planning,
-            }
-        }
-        _ => {
-            // Unknown level - save checkpoint and let terminal logic handle it
-            Effect::SaveCheckpoint {
-                trigger: CheckpointTrigger::Interrupt,
-            }
-        }
-    }
-}
-
 /// Derive the effect for XSD retry based on current phase.
 ///
 /// XSD retry reuses the same agent and session if available.
@@ -314,15 +249,6 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             detected_loop: effect_fingerprint,
             loop_count: state.continuation.consecutive_same_effect_count,
         };
-    }
-
-    // Recovery in progress: if we have a recovery level set and we're not in AwaitingDevFix,
-    // it means we've just transitioned back from AwaitingDevFix and need to apply recovery
-    if state.recovery_escalation_level > 0
-        && state.phase != PipelinePhase::AwaitingDevFix
-        && state.failed_phase_for_recovery.is_some()
-    {
-        return derive_recovery_effect(state);
     }
 
     if state.continuation.context_cleanup_pending {

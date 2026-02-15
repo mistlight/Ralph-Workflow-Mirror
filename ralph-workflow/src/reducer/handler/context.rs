@@ -200,6 +200,7 @@ impl MainEffectHandler {
                     crate::reducer::effect::RecoveryResetType::CompleteReset => 4,
                 },
                 attempt_count: self.state.dev_fix_attempt_count,
+                target_phase,
             },
         )))
     }
@@ -212,6 +213,11 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::reducer::event::AwaitingDevFixEvent;
 
+        let target_phase = self
+            .state
+            .failed_phase_for_recovery
+            .unwrap_or(PipelinePhase::Development);
+
         ctx.logger.info(&format!(
             "Attempting recovery level {} (attempt {})",
             level, attempt_count
@@ -222,6 +228,7 @@ impl MainEffectHandler {
             AwaitingDevFixEvent::RecoveryAttempted {
                 level,
                 attempt_count,
+                target_phase,
             },
         )))
     }

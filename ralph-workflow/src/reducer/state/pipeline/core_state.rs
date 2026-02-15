@@ -457,11 +457,11 @@ impl PipelineState {
     ///
     /// # AwaitingDevFix → Interrupted Path
     ///
-    /// When the pipeline encounters a terminal failure (e.g., AgentChainExhausted),
-    /// it transitions through AwaitingDevFix phase where:
-    /// 1. TriggerDevFixFlow effect writes completion marker to filesystem
-    /// 2. Dev-fix agent is dispatched (optional remediation attempt)
-    /// 3. CompletionMarkerEmitted event transitions to Interrupted phase
+    /// When the pipeline terminates due to exhausted recovery attempts, it transitions
+    /// through AwaitingDevFix where:
+    /// 1. Orchestration derives `EmitCompletionMarkerAndTerminate`
+    /// 2. The handler writes the completion marker to filesystem
+    /// 3. CompletionMarkerEmitted transitions the reducer state to Interrupted
     ///
     /// At this point, the completion marker has been written, signaling external
     /// orchestration that the pipeline has terminated. The SaveCheckpoint effect

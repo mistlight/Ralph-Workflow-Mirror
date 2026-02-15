@@ -54,3 +54,7 @@ mod resume_boundary;
 // Prompt permissions lifecycle tests
 #[path = "tests/prompt_permissions.rs"]
 mod prompt_permissions;
+
+// Recovery flow regression tests
+#[path = "tests/recovery_flow.rs"]
+mod recovery_flow;

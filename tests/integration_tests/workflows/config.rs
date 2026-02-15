@@ -492,8 +492,6 @@ fn test_init_local_config_creates_file() {
 #[test]
 fn test_local_config_overrides_global() {
     with_default_timeout(|| {
-        let (mut app_handler, _effect_handler) = create_config_test_handlers();
-
         // Global config: developer_iters = 5
         // Local config: developer_iters = 10
         let env = MemoryConfigEnvironment::new()
@@ -510,17 +508,13 @@ fn test_local_config_overrides_global() {
             )
             .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
 
-        // Create config that would normally have 5 iters from global,
-        // but should get 10 from local override
-        let config = create_test_config_struct().with_developer_iters(10);
-        let executor = mock_executor_with_success();
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("config should load");
+        let unified = merged.expect("expected merged unified config");
 
-        let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
-
-        assert!(
-            result.is_ok(),
-            "Pipeline should succeed with local config override"
-        );
+        assert_eq!(unified.general.verbosity, 2);
+        assert_eq!(unified.general.developer_iters, 10);
     });
 }
 
@@ -567,8 +561,6 @@ fn test_check_config_with_local_and_global() {
 #[test]
 fn test_local_config_only_no_global() {
     with_default_timeout(|| {
-        let (mut app_handler, _effect_handler) = create_config_test_handlers();
-
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
             .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
@@ -579,17 +571,14 @@ fn test_local_config_only_no_global() {
             )
             .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
 
-        let config = create_test_config_struct()
-            .with_verbosity(ralph_workflow::config::Verbosity::Debug)
-            .with_developer_iters(8);
-        let executor = mock_executor_with_success();
+        // Validate config loading/merge directly (behavior under test).
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("local-only config should load");
 
-        let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
-
-        assert!(
-            result.is_ok(),
-            "Pipeline should work with only local config"
-        );
+        let unified = merged.expect("expected merged unified config from local file");
+        assert_eq!(unified.general.developer_iters, 8);
+        assert_eq!(unified.general.verbosity, 4);
     });
 }
 
@@ -836,8 +825,6 @@ fn test_invalid_type_detection() {
 #[test]
 fn test_worktree_config_discovery_from_subdirectory() {
     with_default_timeout(|| {
-        let (mut app_handler, _effect_handler) = create_config_test_handlers();
-
         // Simulate being in /test/worktree/src/components/
         // with config at /test/worktree/.agent/ralph-workflow.toml
         let env = MemoryConfigEnvironment::new()
@@ -850,15 +837,13 @@ fn test_worktree_config_discovery_from_subdirectory() {
             )
             .with_file("/test/worktree/PROMPT.md", STANDARD_PROMPT);
 
-        let config = create_test_config_struct().with_developer_iters(3);
-        let executor = mock_executor_with_success();
+        // Validate discovery/merge (worktree root implies local config lives at worktree root).
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("worktree config should load");
+        let unified = merged.expect("expected unified config from local worktree config");
 
-        let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
-
-        assert!(
-            result.is_ok(),
-            "Pipeline should succeed with worktree config from subdirectory"
-        );
+        assert_eq!(unified.general.developer_iters, 3);
     });
 }
 
@@ -918,8 +903,6 @@ fn test_worktree_init_local_config_from_subdirectory() {
 #[test]
 fn test_config_discovery_outside_git_repo() {
     with_default_timeout(|| {
-        let (mut app_handler, _effect_handler) = create_config_test_handlers();
-
         // No worktree_root set, simulating being outside a git repo
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -935,14 +918,16 @@ fn test_config_discovery_outside_git_repo() {
             )
             .with_file("PROMPT.md", STANDARD_PROMPT);
 
-        let config = create_test_config_struct().with_developer_iters(5);
-        let executor = mock_executor_with_success();
+        // Validate config loading directly without starting the pipeline.
+        // This isolates the behavior under test (path resolution and merge) and
+        // avoids unrelated pipeline execution timeouts.
+        let ok = ralph_workflow::cli::handle_check_config_with(
+            ralph_workflow::logger::Colors::new(),
+            &env,
+            false,
+        )
+        .is_ok();
 
-        let result = run_ralph_cli_with_env(&[], executor, config, &mut app_handler, &env);
-
-        assert!(
-            result.is_ok(),
-            "Pipeline should work with CWD-relative path when not in git repo"
-        );
+        assert!(ok, "Config discovery should work outside git repo");
     });
 }

@@ -185,6 +185,12 @@ The recovery hierarchy implements progressively more aggressive reset strategies
 - **Level 3** (attempts 7-9): Reset iteration counter, restart from Planning
 - **Level 4** (attempts 10+): Reset to iteration 0, complete restart
 
+Reset semantics for Level 3/4 are intentionally "start fresh": in addition to
+clearing phase flags, the reducer resets global phase-start prerequisites like
+`context_cleaned` and `gitignore_entries_ensured`, and clears materialized
+`prompt_inputs` / continuation state so Planning deterministically re-runs the
+full setup sequence.
+
 This ensures the pipeline is truly **non-terminating by default** for unattended operation, only exiting after exhausting all recovery strategies.
 
 ### Example: Recovery Loop with Escalation

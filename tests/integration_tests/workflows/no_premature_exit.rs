@@ -135,7 +135,8 @@ fn test_pipeline_completes_after_all_review_passes() {
         // Should transition to CommitMessage phase (last pass completed)
         assert_eq!(state.phase, PipelinePhase::CommitMessage);
         assert_eq!(state.metrics.review_passes_completed, 3);
-        assert_eq!(state.reviewer_pass, 4); // Advanced past last pass
+        // On transition to CommitMessage, reducer keeps the last completed pass index.
+        assert_eq!(state.reviewer_pass, 3);
     });
 }
 

@@ -413,10 +413,17 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
          Recovery should be attempted first."
     );
 
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted { .. })
+        )),
+        "DevFixCompleted should be emitted so the recovery loop can advance"
+    );
+
     let marker_path = Path::new(".agent/tmp/completion_marker");
     assert!(
-        workspace.exists(marker_path),
-        "Completion marker should still be written by TriggerDevFixFlow for external orchestration, \
-         but the pipeline should not emit CompletionMarkerEmitted event (recovery comes first)"
+        !workspace.exists(marker_path),
+        "Completion marker must not be written by TriggerDevFixFlow; it is written only on termination"
     );
 }

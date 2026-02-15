@@ -237,20 +237,19 @@ impl MockEffectHandler {
             )),
 
             Effect::EmitRecoveryReset {
-                reset_type: _,
-                target_phase: _,
+                reset_type,
+                target_phase,
             } => {
-                // Mock: emit RecoveryAttempted event for the appropriate level
-                let level = match self.state.recovery_escalation_level {
-                    1 => 1,
-                    2 => 2,
-                    3 => 3,
-                    _ => 4,
+                let level = match reset_type {
+                    crate::reducer::effect::RecoveryResetType::PhaseStart => 2,
+                    crate::reducer::effect::RecoveryResetType::IterationReset => 3,
+                    crate::reducer::effect::RecoveryResetType::CompleteReset => 4,
                 };
                 Some((
                     PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
                         level,
                         attempt_count: self.state.dev_fix_attempt_count,
+                        target_phase,
                     }),
                     vec![],
                     vec![],
@@ -264,6 +263,10 @@ impl MockEffectHandler {
                 PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
                     level,
                     attempt_count,
+                    target_phase: self
+                        .state
+                        .failed_phase_for_recovery
+                        .unwrap_or(PipelinePhase::Development),
                 }),
                 vec![],
                 vec![],

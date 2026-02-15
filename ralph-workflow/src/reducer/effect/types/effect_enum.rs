@@ -521,7 +521,9 @@ pub enum Effect {
     /// messages, last state) and asked to diagnose and fix the root cause.
     ///
     /// After completion (success or failure), the pipeline emits a completion
-    /// marker and transitions to Interrupted.
+    /// attempt completion event so the recovery loop can advance. Termination
+    /// (and completion marker emission) only occurs via `EmitCompletionMarkerAndTerminate`
+    /// after recovery exhaustion.
     TriggerDevFixFlow {
         /// The phase where the failure occurred.
         failed_phase: PipelinePhase,

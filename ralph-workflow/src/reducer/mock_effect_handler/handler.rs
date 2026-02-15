@@ -9,7 +9,8 @@
 //!
 //! The `execute()` method handles effects that require workspace access:
 //! - `SaveCheckpoint` - Actually saves checkpoint for resume tests
-//! - `TriggerDevFixFlow` - Writes completion marker file
+//! - `TriggerDevFixFlow` - Dispatch dev-fix flow (no termination marker)
+//! - `EmitCompletionMarkerAndTerminate` - Writes completion marker for termination tests
 //! - All other effects delegate to `execute_mock()` (see [`super::effect_mapping`])
 //!
 //! ### StatefulHandler
@@ -26,8 +27,8 @@
 //! - **SaveCheckpoint**: Integration tests verify checkpoint/resume behavior, so
 //!   the mock actually writes checkpoint files to the test workspace.
 //!
-//! - **TriggerDevFixFlow**: Tests verify completion marker file creation, so the
-//!   mock writes the marker file before emitting events.
+//! - **EmitCompletionMarkerAndTerminate**: Tests verify completion marker file creation,
+//!   so the mock writes the marker file before emitting events.
 //!
 //! This separation keeps most mock logic pure (in `effect_mapping`) while handling
 //! workspace-dependent cases here.
@@ -47,7 +48,7 @@ use super::*;
 ///
 /// Special cases that require workspace access:
 /// - `SaveCheckpoint` - Actually saves checkpoint for resume tests
-/// - `TriggerDevFixFlow` - Writes completion marker file
+/// - `EmitCompletionMarkerAndTerminate` - Writes completion marker file
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         if self.panic_on_next_execute {
@@ -130,24 +131,6 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                 failed_role,
                 retry_cycle,
             } => {
-                // Write completion marker BEFORE emitting events, matching real handler behavior
-                let marker_dir = std::path::Path::new(".agent/tmp");
-                if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
-                    ctx.logger.warn(&format!(
-                        "Failed to create completion marker directory: {}",
-                        err
-                    ));
-                }
-                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
-                let content = format!(
-                    "failure\nPipeline failure: phase={}, role={:?}, cycle={}",
-                    failed_phase, failed_role, retry_cycle
-                );
-                if let Err(err) = ctx.workspace.write(marker_path, &content) {
-                    ctx.logger
-                        .warn(&format!("Failed to write completion marker: {}", err));
-                }
-
                 // Capture the effect for test verification
                 self.captured_effects
                     .borrow_mut()
@@ -157,8 +140,9 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                         retry_cycle,
                     });
 
-                // Emit trigger and completion events (NO CompletionMarkerEmitted)
-                // The orchestrator will decide when to emit completion marker
+                // Emit trigger and completion events (NO CompletionMarkerEmitted).
+                // Completion markers are only emitted on actual termination
+                // (Effect::EmitCompletionMarkerAndTerminate).
                 Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
                         failed_phase,
@@ -171,6 +155,44 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                         summary: Some("Mock dev-fix flow".to_string()),
                     },
                 )))
+            }
+            Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
+                // Mock writes completion marker to match real handler semantics.
+                let reason_for_record = reason.clone();
+                let marker_dir = std::path::Path::new(".agent/tmp");
+                if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
+                    ctx.logger.warn(&format!(
+                        "Failed to create completion marker directory in mock: {}",
+                        err
+                    ));
+                }
+                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+                let content = if is_failure {
+                    format!(
+                        "failure\n{}",
+                        reason.clone().unwrap_or_else(|| "unknown".to_string())
+                    )
+                } else {
+                    "success\n".to_string()
+                };
+                if let Err(err) = ctx.workspace.write(marker_path, &content) {
+                    ctx.logger.warn(&format!(
+                        "Failed to write completion marker in mock: {}",
+                        err
+                    ));
+                }
+
+                self.captured_effects
+                    .borrow_mut()
+                    .push(Effect::EmitCompletionMarkerAndTerminate {
+                        is_failure,
+                        reason: reason_for_record.clone(),
+                    });
+
+                Ok(self.execute_mock(Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure,
+                    reason: reason_for_record,
+                }))
             }
             _ => Ok(self.execute_mock(effect)),
         }

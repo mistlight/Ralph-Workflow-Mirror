@@ -68,7 +68,7 @@ fn mock_effect_handler_review_validation_emits_no_issues_outcome() {
 }
 
 #[test]
-fn mock_effect_handler_trigger_dev_fix_flow_creates_tmp_dir_before_marker_write() {
+fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
     use crate::agents::{AgentRegistry, AgentRole};
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -79,114 +79,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_creates_tmp_dir_before_marker_write(
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::event::PipelinePhase;
     use crate::workspace::{MemoryWorkspace, Workspace};
-    use std::io;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-
-    #[derive(Debug)]
-    struct StrictTmpWorkspace {
-        inner: MemoryWorkspace,
-        tmp_created: AtomicBool,
-    }
-
-    impl StrictTmpWorkspace {
-        fn new(inner: MemoryWorkspace) -> Self {
-            Self {
-                inner,
-                tmp_created: AtomicBool::new(false),
-            }
-        }
-    }
-
-    impl Workspace for StrictTmpWorkspace {
-        fn root(&self) -> &Path {
-            self.inner.root()
-        }
-
-        fn read(&self, relative: &Path) -> io::Result<String> {
-            self.inner.read(relative)
-        }
-
-        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
-            self.inner.read_bytes(relative)
-        }
-
-        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
-            if relative == Path::new(".agent/tmp/completion_marker")
-                && !self.tmp_created.load(Ordering::Acquire)
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "parent dir missing (strict workspace)",
-                ));
-            }
-            self.inner.write(relative, content)
-        }
-
-        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-            self.inner.write_bytes(relative, content)
-        }
-
-        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-            self.inner.append_bytes(relative, content)
-        }
-
-        fn exists(&self, relative: &Path) -> bool {
-            self.inner.exists(relative)
-        }
-
-        fn is_file(&self, relative: &Path) -> bool {
-            self.inner.is_file(relative)
-        }
-
-        fn is_dir(&self, relative: &Path) -> bool {
-            self.inner.is_dir(relative)
-        }
-
-        fn remove(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove(relative)
-        }
-
-        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_if_exists(relative)
-        }
-
-        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_dir_all(relative)
-        }
-
-        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_dir_all_if_exists(relative)
-        }
-
-        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
-            if relative == Path::new(".agent/tmp") {
-                self.tmp_created.store(true, Ordering::Release);
-            }
-            self.inner.create_dir_all(relative)
-        }
-
-        fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
-            self.inner.read_dir(relative)
-        }
-
-        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
-            self.inner.rename(from, to)
-        }
-
-        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
-            self.inner.write_atomic(relative, content)
-        }
-
-        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
-            self.inner.set_readonly(relative)
-        }
-
-        fn set_writable(&self, relative: &Path) -> io::Result<()> {
-            self.inner.set_writable(relative)
-        }
-    }
 
     let config = Config::default();
     let colors = Colors { enabled: false };
@@ -197,9 +91,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_creates_tmp_dir_before_marker_write(
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
-    let base_workspace = MemoryWorkspace::new(repo_root.clone());
-    let run_log_context = crate::logging::RunLogContext::new(&base_workspace).unwrap();
-    let workspace = StrictTmpWorkspace::new(base_workspace);
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -230,13 +123,20 @@ fn mock_effect_handler_trigger_dev_fix_flow_creates_tmp_dir_before_marker_write(
         retry_cycle: 1,
     };
 
-    let result = handler.execute(effect, &mut ctx);
-    assert!(result.is_ok(), "TriggerDevFixFlow should not error");
+    let result = handler
+        .execute(effect, &mut ctx)
+        .expect("Expected effect result");
+    assert!(matches!(
+        result.event,
+        PipelineEvent::AwaitingDevFix(
+            crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered { .. }
+        )
+    ));
 
     let marker_path = Path::new(".agent/tmp/completion_marker");
     assert!(
-        workspace.exists(marker_path),
-        "Completion marker should be written"
+        !workspace.exists(marker_path),
+        "TriggerDevFixFlow must not write completion marker during recovery"
     );
 }
 
@@ -251,105 +151,9 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
     use crate::pipeline::Timer;
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
-    use crate::workspace::{MemoryWorkspace, Workspace};
-    use std::io;
-    use std::path::{Path, PathBuf};
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
     use std::sync::Arc;
-
-    #[derive(Debug)]
-    struct FailingMarkerWorkspace {
-        inner: MemoryWorkspace,
-    }
-
-    impl FailingMarkerWorkspace {
-        fn new(inner: MemoryWorkspace) -> Self {
-            Self { inner }
-        }
-    }
-
-    impl Workspace for FailingMarkerWorkspace {
-        fn root(&self) -> &Path {
-            self.inner.root()
-        }
-
-        fn read(&self, relative: &Path) -> io::Result<String> {
-            self.inner.read(relative)
-        }
-
-        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
-            self.inner.read_bytes(relative)
-        }
-
-        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
-            if relative == Path::new(".agent/tmp/completion_marker") {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "simulated marker write failure",
-                ));
-            }
-            self.inner.write(relative, content)
-        }
-
-        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-            self.inner.write_bytes(relative, content)
-        }
-
-        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-            self.inner.append_bytes(relative, content)
-        }
-
-        fn exists(&self, relative: &Path) -> bool {
-            self.inner.exists(relative)
-        }
-
-        fn is_file(&self, relative: &Path) -> bool {
-            self.inner.is_file(relative)
-        }
-
-        fn is_dir(&self, relative: &Path) -> bool {
-            self.inner.is_dir(relative)
-        }
-
-        fn remove(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove(relative)
-        }
-
-        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_if_exists(relative)
-        }
-
-        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_dir_all(relative)
-        }
-
-        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_dir_all_if_exists(relative)
-        }
-
-        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
-            self.inner.create_dir_all(relative)
-        }
-
-        fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
-            self.inner.read_dir(relative)
-        }
-
-        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
-            self.inner.rename(from, to)
-        }
-
-        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
-            self.inner.write_atomic(relative, content)
-        }
-
-        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
-            self.inner.set_readonly(relative)
-        }
-
-        fn set_writable(&self, relative: &Path) -> io::Result<()> {
-            self.inner.set_writable(relative)
-        }
-    }
 
     let config = Config::default();
     let colors = Colors { enabled: false };
@@ -360,9 +164,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
     let registry = AgentRegistry::new().unwrap();
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
-    let base_workspace = MemoryWorkspace::new(repo_root.clone());
-    let run_log_context = crate::logging::RunLogContext::new(&base_workspace).unwrap();
-    let workspace = FailingMarkerWorkspace::new(base_workspace);
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
     let mut ctx = PhaseContext {
         config: &config,

@@ -189,6 +189,7 @@ fn test_recovery_level_1_retry_same_operation() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 1,
             attempt_count: 1,
+            target_phase: PipelinePhase::Development,
         });
         let state = reduce(state, event);
 
@@ -198,9 +199,16 @@ fn test_recovery_level_1_retry_same_operation() {
         // When: Next effect is determined
         let effect = determine_next_effect(&state);
 
-        // Then: Should derive normal development effect (retry same operation)
+        // Then: Should derive a normal Development-phase effect (retry path).
+        // Development orchestration may need to re-initialize the agent chain before
+        // preparing context, so accept either InitializeAgentChain or PrepareDevelopmentContext.
         assert!(
-            matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Developer
+                } | Effect::PrepareDevelopmentContext { .. }
+            ),
             "Level 1 recovery should retry same operation, got {:?}",
             effect
         );
@@ -245,6 +253,9 @@ fn test_recovery_terminates_after_max_attempts() {
         let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::AwaitingDevFix;
         state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        // In real execution, TriggerDevFixFlow emits DevFixTriggered before DevFixCompleted.
+        // Termination in AwaitingDevFix is only derived once dev-fix was triggered.
+        state.dev_fix_triggered = true;
 
         // Simulate 12 failed attempts
         for _i in 1..=12 {
@@ -255,15 +266,38 @@ fn test_recovery_terminates_after_max_attempts() {
             state = reduce(state, event);
         }
 
-        // 13th attempt should terminate
+        // 13th attempt should mark exhaustion (termination is derived by orchestration)
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
             success: false,
             summary: None,
         });
         state = reduce(state, event);
 
-        assert_eq!(state.phase, PipelinePhase::Interrupted);
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
         assert_eq!(state.dev_fix_attempt_count, 13);
+
+        // Orchestration now derives explicit termination effect.
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    ..
+                }
+            ),
+            "expected termination effect after exhaustion, got: {:?}",
+            effect
+        );
+
+        // Reducer transitions to Interrupted when CompletionMarkerEmitted is applied.
+        let final_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                is_failure: true,
+            }),
+        );
+        assert_eq!(final_state.phase, PipelinePhase::Interrupted);
     });
 }
 
@@ -329,8 +363,10 @@ fn test_termination_only_after_max_attempts() {
         let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::AwaitingDevFix;
         state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        // Simulate that dev-fix flow already ran (DevFixTriggered observed).
+        state.dev_fix_triggered = true;
 
-        // Attempts 1-12 should not terminate
+        // Attempts 1-12 should not derive termination.
         for i in 1..=12 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: false,
@@ -344,20 +380,41 @@ fn test_termination_only_after_max_attempts() {
                 "Attempt {} should not terminate",
                 i
             );
+
+            let effect = determine_next_effect(&state);
+            assert!(
+                !matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
+                "Attempt {} should not derive termination effect, got {:?}",
+                i,
+                effect
+            );
         }
 
-        // 13th attempt should terminate
+        // 13th attempt should derive termination, and reducer only transitions to Interrupted
+        // after CompletionMarkerEmitted is applied.
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
             success: false,
             summary: None,
         });
         state = reduce(state, event);
 
-        assert_eq!(
-            state.phase,
-            PipelinePhase::Interrupted,
-            "After 13 attempts should terminate"
+        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(state.dev_fix_attempt_count, 13);
+
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
+            "After 13 attempts should derive termination effect, got {:?}",
+            effect
         );
+
+        let final_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                is_failure: true,
+            }),
+        );
+        assert_eq!(final_state.phase, PipelinePhase::Interrupted);
     });
 }
 
@@ -421,6 +478,7 @@ fn test_end_to_end_recovery_success() {
             PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
                 level: 1,
                 attempt_count: 1,
+                target_phase: PipelinePhase::Development,
             });
         state = reduce(state, recovery_event);
 
@@ -534,6 +592,7 @@ fn test_complete_recovery_flow_with_success() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 1,
             attempt_count: 1,
+            target_phase: PipelinePhase::Planning,
         });
         let state = reduce(state, event);
         assert_eq!(state.phase, PipelinePhase::Planning);
@@ -670,6 +729,7 @@ fn test_full_recovery_loop_with_escalation_and_success() {
             PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
                 level: 1,
                 attempt_count: 1,
+                target_phase: PipelinePhase::Development,
             });
         state = reduce(state, recovery_event);
 
@@ -723,6 +783,7 @@ fn test_full_recovery_loop_with_escalation_and_success() {
             PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
                 level: 1,
                 attempt_count: 2,
+                target_phase: PipelinePhase::Development,
             });
         state = reduce(state, recovery_event2);
 
@@ -849,6 +910,7 @@ fn test_recovery_state_reset_at_each_level() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 1,
             attempt_count: 1,
+            target_phase: PipelinePhase::Planning,
         });
         state = reduce(state, event);
 
@@ -876,6 +938,7 @@ fn test_recovery_state_reset_at_each_level() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 2,
             attempt_count: 4,
+            target_phase: PipelinePhase::Planning,
         });
         state = reduce(state, event);
 
@@ -903,6 +966,7 @@ fn test_recovery_state_reset_at_each_level() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 3,
             attempt_count: 7,
+            target_phase: PipelinePhase::Planning,
         });
         state = reduce(state, event);
 
@@ -928,6 +992,7 @@ fn test_recovery_state_reset_at_each_level() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 4,
             attempt_count: 10,
+            target_phase: PipelinePhase::Planning,
         });
         state = reduce(state, event);
 
@@ -969,6 +1034,7 @@ fn test_recovery_clears_development_flags() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 2,
             attempt_count: 4,
+            target_phase: PipelinePhase::Development,
         });
         state = reduce(state, event);
 
@@ -1016,6 +1082,7 @@ fn test_recovery_clears_review_flags() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 2,
             attempt_count: 4,
+            target_phase: PipelinePhase::Review,
         });
         state = reduce(state, event);
 
@@ -1064,6 +1131,7 @@ fn test_recovery_clears_commit_flags() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 2,
             attempt_count: 4,
+            target_phase: PipelinePhase::CommitMessage,
         });
         state = reduce(state, event);
 
@@ -1103,6 +1171,7 @@ fn test_recovery_iteration_reset_floor_at_zero() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 3,
             attempt_count: 7,
+            target_phase: PipelinePhase::Planning,
         });
         state = reduce(state, event);
 
@@ -1147,6 +1216,7 @@ fn test_end_to_end_recovery_loop_with_multiple_attempts() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 1,
             attempt_count: 1,
+            target_phase: PipelinePhase::Development,
         });
         state = reduce(state, event);
         assert_eq!(state.phase, PipelinePhase::Development);
@@ -1169,6 +1239,7 @@ fn test_end_to_end_recovery_loop_with_multiple_attempts() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 1,
             attempt_count: 2,
+            target_phase: PipelinePhase::Development,
         });
         state = reduce(state, event);
         assert_eq!(state.phase, PipelinePhase::Development);
@@ -1190,6 +1261,7 @@ fn test_end_to_end_recovery_loop_with_multiple_attempts() {
         let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
             level: 2,
             attempt_count: 4,
+            target_phase: PipelinePhase::Development,
         });
         state = reduce(state, event);
         assert_eq!(state.phase, PipelinePhase::Development);

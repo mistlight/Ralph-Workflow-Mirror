@@ -9,15 +9,16 @@
 //! When the pipeline detects a failure (agent exhaustion, validation failures),
 //! it triggers the dev-fix flow to attempt automated remediation:
 //!
-//! 1. Write failure completion marker
-//! 2. Prepare dev-fix prompt with failure context
-//! 3. Invoke dev-fix agent
-//! 4. Emit events for reducer to track dev-fix state
+//! 1. Prepare dev-fix prompt with failure context
+//! 2. Invoke dev-fix agent
+//! 3. Emit events so the reducer can advance the recovery loop
 //!
 //! # Completion Markers
 //!
 //! Completion markers are written to `.agent/tmp/completion_marker` to signal
 //! pipeline termination state (success/failure) to external orchestrators.
+//! They are emitted only when the pipeline is actually terminating via
+//! `Effect::EmitCompletionMarkerAndTerminate`.
 
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
@@ -35,17 +36,16 @@ impl MainEffectHandler {
     ///
     /// # Process
     ///
-    /// 1. Write failure completion marker immediately
-    /// 2. Load prompt/plan context from workspace
-    /// 3. Generate dev-fix prompt with failure diagnostics
-    /// 4. Invoke dev-fix agent
-    /// 5. Emit events based on agent availability and outcome
+    /// 1. Load prompt/plan context from workspace
+    /// 2. Generate dev-fix prompt with failure diagnostics
+    /// 3. Invoke dev-fix agent
+    /// 4. Emit events based on agent availability and outcome
     ///
     /// # Events Emitted
     ///
     /// - `DevFixTriggered`: Dev-fix flow initiated
     /// - `DevFixAgentUnavailable`: Agent quota/rate limit exceeded (if applicable)
-    /// - `CompletionMarkerEmitted`: Failure marker written
+    /// - `DevFixCompleted`: Attempt completed so recovery loop can advance
     /// - Additional agent events from invocation
     ///
     /// # Arguments
@@ -115,12 +115,6 @@ impl MainEffectHandler {
             .cloned()
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
-        let completion_marker_content = format!(
-            "failure\nPipeline failure: phase={}, role={:?}, cycle={}",
-            failed_phase, failed_role, retry_cycle
-        );
-        Self::write_completion_marker(ctx, &completion_marker_content, true);
-
         /// Helper function to detect agent unavailability from error messages.
         /// Checks for quota/usage/rate limit indicators in error text.
         fn is_agent_unavailable_error(err_msg: &str) -> bool {
@@ -167,6 +161,19 @@ impl MainEffectHandler {
 
         // Extract error reason for logging and summary
         let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
+
+        // In unattended mode, we need a concrete reducer-visible signal that a dev-fix
+        // attempt completed so the recovery loop can advance attempt counters and
+        // derive recovery effects. "Success" here means the dev-fix agent invocation
+        // completed without error (not that the underlying failure is fixed).
+        let dev_fix_completed = crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+            success: agent_result.is_ok() && !is_agent_unavailable,
+            summary: if agent_result.is_ok() {
+                Some("Dev-fix agent invocation completed".to_string())
+            } else {
+                error_reason.clone()
+            },
+        };
 
         let mut result = match agent_result.as_ref() {
             Ok(result) => EffectResult::with_ui(
@@ -218,7 +225,7 @@ impl MainEffectHandler {
         // (external events, not internal pipeline errors) should trigger immediate
         // completion marker emission.
 
-        Ok(result)
+        Ok(result.with_additional_event(PipelineEvent::AwaitingDevFix(dev_fix_completed)))
     }
 
     /// Emit completion marker and terminate pipeline.

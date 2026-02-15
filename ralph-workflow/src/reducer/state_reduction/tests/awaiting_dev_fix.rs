@@ -108,7 +108,7 @@ fn test_recovery_escalation_level_4_for_attempts_10_plus() {
 }
 
 #[test]
-fn test_recovery_terminated_after_12_attempts() {
+fn test_recovery_exhaustion_does_not_directly_interrupt() {
     let mut state = PipelineState::initial(1, 0);
     state.phase = PipelinePhase::AwaitingDevFix;
     state.failed_phase_for_recovery = Some(PipelinePhase::Development);
@@ -120,7 +120,7 @@ fn test_recovery_terminated_after_12_attempts() {
     });
 
     let new_state = reduce(state, event);
-    assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+    assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
     assert_eq!(new_state.dev_fix_attempt_count, 13);
 }
 
@@ -134,6 +134,7 @@ fn test_recovery_attempted_transitions_to_failed_phase() {
     let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
         level: 1,
         attempt_count: 1,
+        target_phase: PipelinePhase::Planning,
     });
 
     let new_state = reduce(state, event);
