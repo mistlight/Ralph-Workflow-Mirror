@@ -133,7 +133,7 @@ impl PipelineState {
                     ..RunMetrics::default()
                 }
             },
-            interrupted_by_user: false,
+            interrupted_by_user: checkpoint.interrupted_by_user,
             pre_termination_commit_checked: false,
         };
 

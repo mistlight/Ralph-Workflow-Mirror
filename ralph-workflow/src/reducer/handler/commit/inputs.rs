@@ -6,6 +6,18 @@
 //! - Materializing diff as inline or file reference
 //! - Computing content hashes for cache invalidation
 //!
+//! ## Diff Failure Fallback
+//!
+//! When `git diff` fails (filesystem error, corrupted git state, I/O failure),
+//! the handler does NOT emit `DiffFailed` or terminate. Instead, it uses fallback
+//! instructions that tell the AI agent to investigate what changed:
+//! - Run `git status` to see modified files
+//! - Examine file contents directly
+//! - Generate commit message based on findings
+//! - Use `<ralph-skip>` if no changes found
+//!
+//! This ensures work is never lost due to diff computation failures.
+//!
 //! ## Model Budget Management
 //!
 //! Large diffs are truncated to fit within the model's context window:

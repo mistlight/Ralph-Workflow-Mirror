@@ -32,10 +32,25 @@
 //!
 //! # Special Cases
 //!
-//! - FinalValidation phase → ValidateFinalState effect
+//! - FinalValidation phase → CheckUncommittedChangesBeforeTermination (safety check), then ValidateFinalState
 //! - Finalizing phase → RestorePromptPermissions effect
 //! - AwaitingDevFix phase → TriggerDevFixFlow effect
-//! - Complete/Interrupted phase → SaveCheckpoint effect
+//! - Complete/Interrupted phase → CheckUncommittedChangesBeforeTermination (safety check), then SaveCheckpoint
+//!
+//! ## Pre-Termination Safety Check
+//!
+//! Before any pipeline termination (Complete, Interrupted, or after FinalValidation),
+//! the orchestration derives a `CheckUncommittedChangesBeforeTermination` effect to
+//! ensure no work is lost:
+//!
+//! - If uncommitted changes exist → route to CommitMessage phase
+//! - If working directory is clean → emit PreTerminationCommitChecked and proceed
+//! - If git snapshot fails → route to AwaitingDevFix for recovery
+//!
+//! **THE ONLY EXCEPTION:** User-initiated Ctrl+C (interrupted_by_user=true) skips
+//! this check because the user explicitly chose to interrupt. All other termination
+//! paths (AwaitingDevFix exhaustion, completion marker emission, etc.) MUST commit
+//! uncommitted work before terminating.
 
 mod commit;
 mod development;
@@ -240,4 +255,116 @@ mod tests {
 
     // Dev-fix agent selection is enforced by the TriggerDevFixFlow handler.
     // Orchestration intentionally preserves the original failed role in the effect params.
+
+    #[test]
+    fn user_interrupt_skips_pre_termination_safety_check() {
+        // Test that when interrupted_by_user=true (Ctrl+C), the safety check is skipped
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Interrupted;
+        state.interrupted_by_user = true; // Key: user-initiated interrupt
+        state.pre_termination_commit_checked = false; // Safety check NOT done
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        // Should skip safety check and go directly to SaveCheckpoint
+        match effect {
+            Effect::SaveCheckpoint { trigger } => {
+                assert_eq!(trigger, crate::reducer::event::CheckpointTrigger::Interrupt);
+            }
+            other => panic!(
+                "Expected SaveCheckpoint effect when interrupted_by_user=true, got {:?}. \
+                 User interrupt should skip pre-termination safety check.",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn programmatic_interrupt_requires_pre_termination_safety_check() {
+        // Test that when interrupted_by_user=false (programmatic interrupt),
+        // the safety check is REQUIRED before termination
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Interrupted;
+        state.interrupted_by_user = false; // Key: NOT user-initiated
+        state.pre_termination_commit_checked = false; // Safety check NOT done
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        // Should derive safety check effect BEFORE proceeding to termination
+        match effect {
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Expected - safety check required
+            }
+            other => panic!(
+                "Expected CheckUncommittedChangesBeforeTermination when interrupted_by_user=false, got {:?}. \
+                 Programmatic interrupts must commit uncommitted work before terminating.",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn complete_phase_requires_pre_termination_safety_check() {
+        // Test that normal completion requires safety check
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Complete;
+        state.interrupted_by_user = false;
+        state.pre_termination_commit_checked = false;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        // Should derive safety check before completion
+        match effect {
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Expected - safety check required
+            }
+            other => panic!(
+                "Expected CheckUncommittedChangesBeforeTermination before Complete, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn final_validation_requires_pre_termination_safety_check() {
+        // Test that FinalValidation requires safety check before proceeding
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::FinalValidation;
+        state.pre_termination_commit_checked = false;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        // Should derive safety check before final validation
+        match effect {
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                // Expected - safety check required
+            }
+            other => panic!(
+                "Expected CheckUncommittedChangesBeforeTermination before FinalValidation, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn safety_check_allows_proceed_after_checked() {
+        // Test that after safety check completes, pipeline proceeds normally
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Interrupted;
+        state.interrupted_by_user = false;
+        state.pre_termination_commit_checked = true; // Safety check DONE
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        // Should proceed to checkpoint save
+        match effect {
+            Effect::SaveCheckpoint { .. } => {
+                // Expected - proceed after safety check
+            }
+            other => panic!(
+                "Expected SaveCheckpoint after safety check completes, got {:?}",
+                other
+            ),
+        }
+    }
 }

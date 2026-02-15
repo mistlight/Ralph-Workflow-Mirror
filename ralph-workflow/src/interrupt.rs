@@ -5,8 +5,17 @@
 //!
 //! When an interrupt is received, the handler will:
 //! 1. Save a checkpoint with the `Interrupted` phase
-//! 2. Clean up temporary files
-//! 3. Exit gracefully
+//! 2. Set `interrupted_by_user = true` to exempt from pre-termination commit check
+//! 3. Clean up temporary files
+//! 4. Exit gracefully
+//!
+//! ## Ctrl+C Exception for Safety Check
+//!
+//! The `interrupted_by_user` flag distinguishes user-initiated interrupts (Ctrl+C)
+//! from programmatic interrupts (AwaitingDevFix exhaustion, completion marker emission).
+//! When set to `true`, the pre-termination commit safety check is skipped because
+//! the user explicitly chose to interrupt execution. This respects user intent while
+//! ensuring all other termination paths commit uncommitted work before exiting.
 
 use std::sync::Mutex;
 
@@ -140,6 +149,11 @@ fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
         checkpoint.actual_reviewer_runs = context.run_context.actual_reviewer_runs;
         checkpoint.execution_history = Some(context.execution_history.clone());
         checkpoint.prompt_history = Some(context.prompt_history.clone());
+
+        // Mark this as a user-initiated interrupt (Ctrl+C)
+        // This exempts the pipeline from the pre-termination commit safety check
+        checkpoint.interrupted_by_user = true;
+
         save_checkpoint_with_workspace(&*context.workspace, &checkpoint)?;
     } else {
         // No checkpoint exists yet - this is early interruption

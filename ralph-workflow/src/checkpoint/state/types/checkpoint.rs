@@ -153,6 +153,18 @@ pub struct PipelineCheckpoint {
     /// Preserved across checkpoint/resume so recovery returns to the correct phase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed_phase_for_recovery: Option<crate::reducer::event::PipelinePhase>,
+
+    /// Whether this interruption was triggered by user action (Ctrl+C / SIGINT).
+    ///
+    /// When true, the pre-termination commit safety check is skipped because the
+    /// user explicitly chose to interrupt execution. All other termination paths
+    /// (AwaitingDevFix exhaustion, DiffFailed, agent failures, etc.) MUST commit
+    /// uncommitted work before terminating.
+    ///
+    /// This flag is set by the SIGINT handler when the user presses Ctrl+C and
+    /// preserved across checkpoint/resume cycles.
+    #[serde(default)]
+    pub interrupted_by_user: bool,
 }
 
 impl PipelineCheckpoint {
@@ -203,6 +215,7 @@ impl PipelineCheckpoint {
             dev_fix_attempt_count: 0,
             recovery_escalation_level: 0,
             failed_phase_for_recovery: None,
+            interrupted_by_user: false,
         }
     }
 
