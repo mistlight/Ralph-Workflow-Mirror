@@ -134,6 +134,25 @@ pub struct PipelineCheckpoint {
     /// Last template substitution log for validation and observability.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_substitution_log: Option<crate::prompts::SubstitutionLog>,
+
+    // === Recovery state (v3+) ===
+    /// Count of dev-fix recovery attempts for the current failure.
+    ///
+    /// Preserved across checkpoint/resume so escalation is deterministic.
+    #[serde(default)]
+    pub dev_fix_attempt_count: u32,
+
+    /// Current recovery escalation level (0-4).
+    ///
+    /// Preserved across checkpoint/resume so recovery does not restart at level 1.
+    #[serde(default)]
+    pub recovery_escalation_level: u32,
+
+    /// Snapshot of the phase where the current failure occurred.
+    ///
+    /// Preserved across checkpoint/resume so recovery returns to the correct phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_phase_for_recovery: Option<crate::reducer::event::PipelinePhase>,
 }
 
 impl PipelineCheckpoint {
@@ -181,6 +200,9 @@ impl PipelineCheckpoint {
             prompt_permissions: crate::reducer::state::PromptPermissionsState::default(),
             log_run_id: None,
             last_substitution_log: None,
+            dev_fix_attempt_count: 0,
+            recovery_escalation_level: 0,
+            failed_phase_for_recovery: None,
         }
     }
 

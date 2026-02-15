@@ -263,10 +263,18 @@ impl MockEffectHandler {
                 PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
                     level,
                     attempt_count,
-                    target_phase: self
-                        .state
-                        .failed_phase_for_recovery
-                        .unwrap_or(PipelinePhase::Development),
+                    target_phase: {
+                        let phase = self
+                            .state
+                            .failed_phase_for_recovery
+                            .or(self.state.previous_phase)
+                            .unwrap_or(PipelinePhase::Development);
+                        if phase == PipelinePhase::AwaitingDevFix {
+                            PipelinePhase::Development
+                        } else {
+                            phase
+                        }
+                    },
                 }),
                 vec![],
                 vec![],

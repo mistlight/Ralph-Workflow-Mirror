@@ -107,9 +107,9 @@ impl PipelineState {
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
             dev_fix_triggered: false,
-            dev_fix_attempt_count: 0,
-            recovery_escalation_level: 0,
-            failed_phase_for_recovery: None,
+            dev_fix_attempt_count: checkpoint.dev_fix_attempt_count,
+            recovery_escalation_level: checkpoint.recovery_escalation_level,
+            failed_phase_for_recovery: checkpoint.failed_phase_for_recovery,
             gitignore_entries_ensured: false,
             prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
             prompt_permissions: checkpoint.prompt_permissions,
@@ -204,6 +204,7 @@ fn map_checkpoint_rebase_state(rebase_state: &CheckpointRebaseState) -> RebaseSt
 mod tests {
     use super::*;
     use crate::reducer::event::PipelinePhase;
+    use serde_json::Value;
 
     #[test]
     fn test_clear_planning_flags() {
@@ -322,5 +323,70 @@ mod tests {
         assert_eq!(cleared.iteration, 2);
         assert_eq!(cleared.reviewer_pass, 1);
         assert_eq!(cleared.total_iterations, 10);
+    }
+
+    #[test]
+    fn checkpoint_resume_preserves_recovery_escalation_state() {
+        use crate::checkpoint::state::{AgentConfigSnapshot, CliArgsSnapshot, RebaseState};
+        use crate::checkpoint::{CheckpointBuilder, PipelinePhase as CheckpointPhase};
+
+        let checkpoint = CheckpointBuilder::new()
+            .phase(CheckpointPhase::AwaitingDevFix, 2, 5)
+            .reviewer_pass(1, 2)
+            .agents("dev", "rev")
+            .cli_args(CliArgsSnapshot {
+                developer_iters: 5,
+                reviewer_reviews: 2,
+                review_depth: None,
+                isolation_mode: true,
+                verbosity: 2,
+                show_streaming_metrics: false,
+                reviewer_json_parser: None,
+            })
+            .developer_config(AgentConfigSnapshot {
+                name: "dev".to_string(),
+                cmd: "dev".to_string(),
+                output_flag: "-o".to_string(),
+                yolo_flag: None,
+                can_commit: true,
+                model_override: None,
+                provider_override: None,
+                context_level: 1,
+            })
+            .reviewer_config(AgentConfigSnapshot {
+                name: "rev".to_string(),
+                cmd: "rev".to_string(),
+                output_flag: "-o".to_string(),
+                yolo_flag: None,
+                can_commit: true,
+                model_override: None,
+                provider_override: None,
+                context_level: 1,
+            })
+            .rebase_state(RebaseState::default())
+            .git_identity(None, None)
+            .build()
+            .expect("checkpoint should build");
+
+        let mut json: Value = serde_json::to_value(&checkpoint).expect("checkpoint to json");
+        let obj = json.as_object_mut().expect("checkpoint json object");
+        obj.insert("dev_fix_attempt_count".to_string(), Value::from(7));
+        obj.insert("recovery_escalation_level".to_string(), Value::from(3));
+        obj.insert(
+            "failed_phase_for_recovery".to_string(),
+            Value::String("CommitMessage".to_string()),
+        );
+
+        let checkpoint: PipelineCheckpoint =
+            serde_json::from_value(json).expect("checkpoint json should deserialize");
+
+        let state = PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, 1000);
+
+        assert_eq!(state.dev_fix_attempt_count, 7);
+        assert_eq!(state.recovery_escalation_level, 3);
+        assert_eq!(
+            state.failed_phase_for_recovery,
+            Some(PipelinePhase::CommitMessage)
+        );
     }
 }

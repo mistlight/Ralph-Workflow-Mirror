@@ -218,6 +218,11 @@ impl MainEffectHandler {
             .failed_phase_for_recovery
             .or(self.state.previous_phase)
             .unwrap_or(PipelinePhase::Development);
+        let target_phase = if target_phase == PipelinePhase::AwaitingDevFix {
+            PipelinePhase::Development
+        } else {
+            target_phase
+        };
 
         ctx.logger.info(&format!(
             "Attempting recovery level {} (attempt {})",

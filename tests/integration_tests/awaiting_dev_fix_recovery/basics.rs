@@ -183,3 +183,80 @@ fn attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_missing()
         ));
     });
 }
+
+#[test]
+fn attempt_recovery_never_targets_awaiting_dev_fix() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRegistry;
+        use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
+        use ralph_workflow::config::Config;
+        use ralph_workflow::executor::MockProcessExecutor;
+        use ralph_workflow::logger::{Colors, Logger};
+        use ralph_workflow::pipeline::Timer;
+        use ralph_workflow::prompts::template_context::TemplateContext;
+        use ralph_workflow::reducer::effect::{Effect, EffectHandler};
+        use ralph_workflow::reducer::event::{AwaitingDevFixEvent, PipelineEvent};
+        use ralph_workflow::reducer::handler::MainEffectHandler;
+        use ralph_workflow::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        let config = Config::default();
+        let colors = Colors::new();
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(&workspace)
+            .expect("Failed to create run log context");
+
+        let mut ctx = ralph_workflow::phases::PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor)
+                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+            run_log_context: &run_log_context,
+        };
+
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+        state.failed_phase_for_recovery = Some(PipelinePhase::AwaitingDevFix);
+
+        let mut handler = MainEffectHandler::new(state);
+        let res = handler
+            .execute(
+                Effect::AttemptRecovery {
+                    level: 1,
+                    attempt_count: 1,
+                },
+                &mut ctx,
+            )
+            .expect("effect execution should succeed");
+
+        assert!(matches!(
+            res.event,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                target_phase: PipelinePhase::Development,
+                ..
+            })
+        ));
+    });
+}

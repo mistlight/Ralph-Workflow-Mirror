@@ -213,6 +213,58 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
     ));
 }
 
+#[test]
+fn mock_attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_missing() {
+    let state = PipelineState {
+        phase: PipelinePhase::AwaitingDevFix,
+        previous_phase: Some(PipelinePhase::Review),
+        failed_phase_for_recovery: None,
+        ..PipelineState::initial(1, 0)
+    };
+    let mut handler = MockEffectHandler::new(state);
+
+    let result = handler.execute_mock(Effect::AttemptRecovery {
+        level: 1,
+        attempt_count: 1,
+    });
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::AwaitingDevFix(
+            crate::reducer::event::AwaitingDevFixEvent::RecoveryAttempted {
+                target_phase: PipelinePhase::Review,
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
+fn mock_attempt_recovery_never_targets_awaiting_dev_fix() {
+    let state = PipelineState {
+        phase: PipelinePhase::AwaitingDevFix,
+        previous_phase: Some(PipelinePhase::AwaitingDevFix),
+        failed_phase_for_recovery: Some(PipelinePhase::AwaitingDevFix),
+        ..PipelineState::initial(1, 0)
+    };
+    let mut handler = MockEffectHandler::new(state);
+
+    let result = handler.execute_mock(Effect::AttemptRecovery {
+        level: 1,
+        attempt_count: 1,
+    });
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::AwaitingDevFix(
+            crate::reducer::event::AwaitingDevFixEvent::RecoveryAttempted {
+                target_phase: PipelinePhase::Development,
+                ..
+            }
+        )
+    ));
+}
+
 /// Test that UIEvents do not affect pipeline state.
 #[test]
 fn ui_events_do_not_affect_state() {

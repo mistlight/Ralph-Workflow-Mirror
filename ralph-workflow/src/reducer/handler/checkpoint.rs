@@ -77,6 +77,11 @@ fn save_checkpoint_from_state(
         .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
     if let Some(checkpoint) = builder.build_with_workspace(ctx.workspace) {
+        let mut checkpoint = checkpoint;
+        checkpoint.dev_fix_attempt_count = state.dev_fix_attempt_count;
+        checkpoint.recovery_escalation_level = state.recovery_escalation_level;
+        checkpoint.failed_phase_for_recovery = state.failed_phase_for_recovery;
+
         let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
     }
 

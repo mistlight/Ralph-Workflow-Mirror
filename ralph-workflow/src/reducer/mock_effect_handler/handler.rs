@@ -112,6 +112,11 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                     .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
                 if let Some(checkpoint) = builder.build_with_workspace(ctx.workspace) {
+                    let mut checkpoint = checkpoint;
+                    checkpoint.dev_fix_attempt_count = self.state.dev_fix_attempt_count;
+                    checkpoint.recovery_escalation_level = self.state.recovery_escalation_level;
+                    checkpoint.failed_phase_for_recovery = self.state.failed_phase_for_recovery;
+
                     if let Err(err) = save_checkpoint_with_workspace(ctx.workspace, &checkpoint) {
                         ctx.logger
                             .warn(&format!("Failed to save checkpoint in mock: {}", err));
