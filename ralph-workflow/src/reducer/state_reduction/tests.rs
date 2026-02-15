@@ -92,3 +92,7 @@ mod template_validation;
 // AwaitingDevFix recovery escalation tests
 #[path = "tests/awaiting_dev_fix.rs"]
 mod awaiting_dev_fix;
+
+// Commit phase reducer tests
+#[path = "tests/commit_phase.rs"]
+mod commit_phase;

@@ -320,3 +320,71 @@ fn test_git_snapshot_failure_routes_to_error() {
         );
     });
 }
+
+/// Test that safety check catches the exact bug scenario from the issue.
+///
+/// This test reproduces the bug scenario where:
+/// 1. Development iteration completes successfully (code changes made)
+/// 2. Some bug causes commit phase to be skipped or bypassed
+/// 3. Pipeline attempts to transition to Complete
+/// 4. Safety check MUST execute before termination
+/// 5. If uncommitted changes exist, termination is prevented
+///
+/// Note: The MockAppEffectHandler doesn't support simulating actual uncommitted
+/// changes in git state, so this test verifies the safety check executes.
+/// The uncommitted changes error path is tested in unit tests.
+#[test]
+fn test_safety_check_prevents_lost_work_on_premature_termination() {
+    with_default_timeout(|| {
+        // Simulate the bug scenario:
+        // - Development completed (would have staged changes)
+        // - Commit phase was bypassed (commit_diff_prepared = false)
+        // - Pipeline reaches FinalValidation/Complete
+        let mut initial_state = PipelineState::initial(1, 0);
+        // Simulate that development happened but commit was skipped
+        initial_state.phase = PipelinePhase::FinalValidation;
+        initial_state.pre_termination_commit_checked = false;
+        // Key indicator of bug: commit_diff_prepared should be true if commit
+        // phase ran properly, but it's false (commit was skipped)
+
+        let mut app_handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_diff("+ new code") // Changes exist
+            .with_staged_changes(true); // Work is staged
+
+        let mut effect_handler = MockEffectHandler::new(initial_state);
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
+
+        // Key verification: Safety check MUST execute before termination
+        let safety_check_executed = effect_handler
+            .was_effect_executed(|e| matches!(e, Effect::CheckUncommittedChangesBeforeTermination));
+
+        assert!(
+            safety_check_executed,
+            "Pre-termination safety check must execute before completion, \
+             even if commit phase was bypassed by a bug"
+        );
+
+        // Safety check flag should be set
+        assert!(
+            effect_handler.state.pre_termination_commit_checked,
+            "Flag should be set after safety check executes"
+        );
+
+        // Note: In a real scenario with uncommitted changes, the safety check
+        // handler would detect them and emit an error event that routes to
+        // AwaitingDevFix. We can't test that path with MockAppEffectHandler,
+        // but the unit tests verify that behavior.
+        //
+        // This integration test verifies:
+        // 1. Safety check effect is derived when reaching termination
+        // 2. Handler executes the check regardless of prior phase state
+        // 3. The check runs even if commit phase was improperly bypassed
+    });
+}

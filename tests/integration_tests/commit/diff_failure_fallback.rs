@@ -196,6 +196,20 @@ fn test_diff_failed_event_not_emitted_by_new_code() {
             !diff_failed_emitted,
             "DiffFailed event should NOT be emitted by new handler code"
         );
+
+        // Additional verification: Even with diff failure, fallback instructions should be used
+        // This is proven by commit_diff_prepared being true
+        assert!(
+            effect_handler.state.commit_diff_prepared,
+            "Even with diff failure, fallback instructions should be written and diff marked prepared"
+        );
+
+        // Pipeline should continue to commit phase (not stuck in error state)
+        // The fact that we reached a terminal state without Interrupted proves fallback worked
+        assert!(
+            effect_handler.state.is_terminal(),
+            "Pipeline should complete normally using fallback instructions"
+        );
     });
 }
 

@@ -42,16 +42,20 @@ fn test_reduce_commit_generation_started() {
 }
 
 #[test]
-fn test_reduce_commit_diff_failed_interrupts_pipeline() {
+fn test_reduce_commit_diff_failed_is_noop_for_backward_compatibility() {
+    // DiffFailed is deprecated - new handler code uses fallback instructions instead.
+    // Event handler remains for checkpoint backward compatibility but is now a no-op.
     let state = create_test_state();
+    let original_phase = state.phase;
     let new_state = reduce(
-        state,
+        state.clone(),
         PipelineEvent::commit_diff_failed("diff failed".to_string()),
     );
 
-    assert_eq!(new_state.phase, PipelinePhase::Interrupted);
-    assert!(!new_state.commit_diff_prepared);
-    assert!(!new_state.commit_diff_empty);
+    // Event should be no-op: state unchanged (no transition to Interrupted)
+    assert_eq!(new_state.phase, original_phase);
+    assert_eq!(new_state.commit_diff_prepared, state.commit_diff_prepared);
+    assert_eq!(new_state.commit_diff_empty, state.commit_diff_empty);
 }
 
 #[test]

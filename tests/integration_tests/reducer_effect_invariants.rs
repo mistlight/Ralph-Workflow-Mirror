@@ -636,9 +636,21 @@ fn test_phases_emit_expected_effects_when_initialized() {
             Effect::PrepareReviewContext { .. }
         ));
 
-        // FinalValidation -> ValidateFinalState
+        // FinalValidation -> CheckUncommittedChangesBeforeTermination (safety check first)
         let state = PipelineState {
             phase: PipelinePhase::FinalValidation,
+            pre_termination_commit_checked: false, // Safety check not yet done
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
+        };
+        assert!(matches!(
+            determine_next_effect(&state),
+            Effect::CheckUncommittedChangesBeforeTermination
+        ));
+
+        // FinalValidation -> ValidateFinalState (after safety check completes)
+        let state = PipelineState {
+            phase: PipelinePhase::FinalValidation,
+            pre_termination_commit_checked: true, // Safety check completed
             ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(

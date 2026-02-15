@@ -1,4 +1,12 @@
 // NOTE: split from reducer/state_reduction.rs.
+//
+// IMPORTANT: The DiffFailed event is DEPRECATED as of the diff failure fallback fix.
+// When git diff fails, the handler now uses fallback instructions instead of emitting
+// DiffFailed. The event handler remains for backward compatibility with old checkpoints
+// but is a no-op to prevent incorrect termination.
+//
+// See: ralph-workflow/src/reducer/handler/commit/inputs.rs:check_commit_diff_with_result
+// for the new fallback behavior.
 
 use crate::reducer::event::*;
 use crate::reducer::state::*;
@@ -31,15 +39,19 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             ..state
         },
         // DEPRECATED: DiffFailed is no longer emitted (as of fix for missing fallback).
-        // Kept for backward compatibility with checkpoints that may contain this event.
-        // New behavior: diff failure uses fallback instructions instead of failing.
-        CommitEvent::DiffFailed { .. } => PipelineState {
-            phase: crate::reducer::event::PipelinePhase::Interrupted,
-            commit_diff_prepared: false,
-            commit_diff_empty: false,
-            commit_diff_content_id_sha256: None,
-            ..state
-        },
+        // This event is kept ONLY for backward compatibility with old checkpoints.
+        // New handler code uses fallback instructions instead of emitting DiffFailed.
+        // If this event is somehow emitted, treat as no-op to avoid termination.
+        CommitEvent::DiffFailed { error } => {
+            // Log deprecation warning if this deprecated path is hit
+            eprintln!(
+                "WARN: Deprecated DiffFailed event received: {}. \
+                 This should not happen with current handler code. \
+                 Ignoring event to prevent incorrect termination.",
+                error
+            );
+            state // Return state unchanged - no-op
+        }
         CommitEvent::DiffInvalidated { .. } => PipelineState {
             commit_diff_prepared: false,
             commit_diff_empty: false,
