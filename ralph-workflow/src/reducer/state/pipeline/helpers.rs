@@ -15,7 +15,7 @@ impl PipelineState {
     ///
     /// # AwaitingDevFix → Interrupted Path
     ///
-    /// When the pipeline terminates due to exhausted recovery attempts, it transitions
+    /// When the pipeline terminates via completion marker emission, it transitions
     /// through AwaitingDevFix where:
     /// 1. Orchestration derives `EmitCompletionMarkerAndTerminate`
     /// 2. The handler writes the completion marker to filesystem
@@ -36,7 +36,7 @@ impl PipelineState {
     ///
     /// Internal failures are handled via the AwaitingDevFix recovery loop.
     /// Completion markers are emitted only when the pipeline is actually terminating
-    /// (after recovery exhaustion or defensive max-iteration recovery).
+    /// due to explicit external/catastrophic conditions.
     ///
     /// Terminal states:
     /// - `Complete`: Normal successful completion

@@ -224,12 +224,10 @@ fn test_emit_completion_marker_does_not_transition_to_interrupted_when_write_fai
 }
 
 #[test]
-fn test_failure_completion_full_event_loop_with_logging() {
+fn test_recovery_does_not_emit_completion_marker_based_on_attempt_count() {
     with_default_timeout(|| {
-        // This test verifies the termination path only:
-        // when recovery is exhausted, orchestration derives EmitCompletionMarkerAndTerminate,
-        // the handler writes the marker, and the reducer transitions to Interrupted.
-
+        // This test verifies that internal recovery attempt counts do not cause
+        // completion marker emission. The pipeline should keep running.
         let mut fixture = Fixture::new();
         let mut ctx = fixture.ctx();
 
@@ -249,35 +247,34 @@ fn test_failure_completion_full_event_loop_with_logging() {
         let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
             .expect("Event loop should not error");
 
-        // Verify completion marker was written
-        let marker_path = Path::new(".agent/tmp/completion_marker");
+        // This test intentionally does not assert whether the loop reaches a
+        // terminal phase: depending on the mock handler mappings and phase
+        // sequencing, the run may complete or hit the max-iterations safety valve.
         assert!(
-            fixture.workspace.exists(marker_path),
-            "Completion marker should be written during termination"
+            result.final_phase != PipelinePhase::Interrupted,
+            "Internal recovery attempts must not terminate the pipeline"
         );
 
-        let marker_content = fixture
-            .workspace
-            .read(marker_path)
-            .expect("Should read completion marker");
         assert!(
-            marker_content.starts_with("failure"),
-            "Completion marker should indicate failure, got: {}",
-            marker_content
+            !fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "Completion marker must not be written for internal recovery attempts"
         );
 
-        // CRITICAL: Event loop should complete successfully
         assert!(
-            result.completed,
-            "Event loop MUST complete after failure handling. \
-             If this fails, the 'Pipeline exited without completion marker' bug has occurred. \
-             Check event loop logs for: phase, checkpoint_saved_count, exit reason."
+            !fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "Completion marker must not be written for internal recovery attempts"
         );
 
-        assert_eq!(
-            result.final_phase,
-            PipelinePhase::Interrupted,
-            "Termination should end in Interrupted"
+        assert!(
+            !handler.was_effect_executed(|e| matches!(
+                e,
+                Effect::EmitCompletionMarkerAndTerminate { .. }
+            )),
+            "EmitCompletionMarkerAndTerminate must not be executed for internal recovery attempts"
         );
     });
 }
@@ -291,57 +288,55 @@ fn test_event_loop_does_not_exit_prematurely_on_agent_exhaustion() {
         // 2. Execute TriggerDevFixFlow
         // 3. Execute RecoveryAttempted (transition back to failed phase)
         // 4. Retry the work (will fail again with mock handler)
-        // 5. Repeat up to 12 times
-        // 6. Eventually emit completion marker and transition to Interrupted
+        // 5. Repeat with escalating resets (non-terminating by default)
 
         let mut fixture = Fixture::new();
         let mut ctx = fixture.ctx();
 
-        // Start with state that has ALREADY completed 13 recovery attempts
-        // This simulates exhaustion and ensures immediate termination for the test
+        // Start with a state that has already tried many recovery attempts.
+        // This must NOT cause termination/completion marker emission.
         let mut state = PipelineState::initial(1, 1);
         state.phase = PipelinePhase::AwaitingDevFix;
         state.previous_phase = Some(PipelinePhase::Planning);
         state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
-        state.dev_fix_attempt_count = 13; // Already exhausted (>12 triggers termination)
+        state.dev_fix_attempt_count = 13;
         state.recovery_escalation_level = 4;
         state.dev_fix_triggered = true; // Dev-fix already ran
 
         let mut handler = MockEffectHandler::new(state.clone());
-        let config = EventLoopConfig {
-            max_iterations: 20, // Reduced since we expect quick termination at exhaustion
-        };
+        let config = EventLoopConfig { max_iterations: 50 };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
             .expect("Event loop should not error");
 
-        // CRITICAL: Event loop MUST report completion
+        // With a small max_iterations and a mock handler, the loop may hit the
+        // safety valve before reaching a terminal phase.
         assert!(
-            result.completed,
-            "BUG: Event loop exited without completion marker. \
-             After recovery exhaustion (12+ attempts), should emit completion marker. \
-             final_phase={:?}, events_processed={}, checkpoint_saved_count={}",
-            result.final_phase, result.events_processed, handler.state.checkpoint_saved_count
+            !result.completed,
+            "Expected to hit max_iterations safety valve in this test"
+        );
+        assert!(
+            result.final_phase != PipelinePhase::Interrupted,
+            "Internal recovery attempts must not terminate the pipeline"
         );
 
-        // Verify we reached Interrupted phase with checkpoint saved
-        assert_eq!(
-            result.final_phase,
-            PipelinePhase::Interrupted,
-            "Should transition to Interrupted after exhausting recovery attempts"
+        assert!(
+            !fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "Completion marker must not be written for internal recovery attempts"
         );
 
-        // Verify EmitCompletionMarkerAndTerminate effect was executed
-        // (MockEffectHandler captures effects but doesn't write actual files)
+        // Verify EmitCompletionMarkerAndTerminate effect was NOT executed.
         assert!(
-            handler.was_effect_executed(|e| matches!(
+            !handler.was_effect_executed(|e| matches!(
                 e,
                 Effect::EmitCompletionMarkerAndTerminate {
                     is_failure: true,
                     ..
                 }
             )),
-            "EmitCompletionMarkerAndTerminate effect should be executed after recovery exhaustion"
+            "EmitCompletionMarkerAndTerminate must not be executed for internal recovery attempts"
         );
     });
 }

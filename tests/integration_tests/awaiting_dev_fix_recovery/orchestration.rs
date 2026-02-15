@@ -1,4 +1,4 @@
-//! Orchestration-focused tests for recovery levels and termination derivation.
+//! Orchestration-focused tests for recovery levels.
 
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
@@ -79,52 +79,31 @@ fn recovery_escalation_to_level_2() {
     });
 }
 
-/// Test that recovery eventually derives termination after exhausting all levels.
+/// Recovery must NOT derive termination due to internal attempt counts.
 #[test]
-fn recovery_derives_termination_effect_after_max_attempts() {
+fn recovery_does_not_derive_termination_effect_after_many_attempts() {
     with_default_timeout(|| {
         let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::AwaitingDevFix;
         state.failed_phase_for_recovery = Some(PipelinePhase::Development);
         state.dev_fix_triggered = true;
 
-        for _ in 1..=12 {
+        for i in 1..=20 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: false,
                 summary: None,
             });
             state = reduce(state, event);
+            assert_eq!(state.phase, PipelinePhase::AwaitingDevFix, "attempt {}", i);
+
+            let effect = determine_next_effect(&state);
+            assert!(
+                !matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
+                "attempt {} should not derive termination effect, got {:?}",
+                i,
+                effect
+            );
         }
-
-        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
-            success: false,
-            summary: None,
-        });
-        state = reduce(state, event);
-
-        assert_eq!(state.phase, PipelinePhase::AwaitingDevFix);
-        assert_eq!(state.dev_fix_attempt_count, 13);
-
-        let effect = determine_next_effect(&state);
-        assert!(
-            matches!(
-                effect,
-                Effect::EmitCompletionMarkerAndTerminate {
-                    is_failure: true,
-                    ..
-                }
-            ),
-            "expected termination effect after exhaustion, got: {:?}",
-            effect
-        );
-
-        let final_state = reduce(
-            state,
-            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
-                is_failure: true,
-            }),
-        );
-        assert_eq!(final_state.phase, PipelinePhase::Interrupted);
     });
 }
 
@@ -153,16 +132,16 @@ fn dev_fix_completed_does_not_terminate() {
     });
 }
 
-/// Test that only after 12+ attempts does orchestration derive termination.
+/// Regression: recovery attempts never derive termination.
 #[test]
-fn termination_only_after_max_attempts() {
+fn recovery_never_derives_termination_effect() {
     with_default_timeout(|| {
         let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::AwaitingDevFix;
         state.failed_phase_for_recovery = Some(PipelinePhase::Development);
         state.dev_fix_triggered = true;
 
-        for i in 1..=12 {
+        for i in 1..=30 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: false,
                 summary: None,
@@ -178,19 +157,6 @@ fn termination_only_after_max_attempts() {
                 effect
             );
         }
-
-        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
-            success: false,
-            summary: None,
-        });
-        state = reduce(state, event);
-
-        assert_eq!(state.dev_fix_attempt_count, 13);
-        let effect = determine_next_effect(&state);
-        assert!(matches!(
-            effect,
-            Effect::EmitCompletionMarkerAndTerminate { .. }
-        ));
     });
 }
 
@@ -223,9 +189,9 @@ fn preserves_attempt_count_on_repeated_failure() {
     });
 }
 
-/// Orchestration derives completion after exhaustion.
+/// Orchestration does not emit completion marker based on attempts.
 #[test]
-fn orchestration_emits_completion_after_exhaustion() {
+fn orchestration_does_not_emit_completion_based_on_attempts() {
     with_default_timeout(|| {
         let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::AwaitingDevFix;
@@ -234,9 +200,10 @@ fn orchestration_emits_completion_after_exhaustion() {
         state.failed_phase_for_recovery = Some(PipelinePhase::Development);
 
         let effect = determine_next_effect(&state);
-        assert!(matches!(
-            effect,
-            Effect::EmitCompletionMarkerAndTerminate { .. }
-        ));
+        assert!(
+            !matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
+            "should not emit completion marker based on attempts, got {:?}",
+            effect
+        );
     });
 }

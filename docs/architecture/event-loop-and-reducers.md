@@ -127,7 +127,7 @@ When terminal internal failures occur:
 2. **Dev-fix invocation**: Orchestration derives `TriggerDevFixFlow` effect to diagnose and fix the issue
 3. **Recovery attempt**: After dev-fix completes, the reducer determines the appropriate recovery level based on attempt count
 4. **Escalating resets**: If recovery fails repeatedly, the system escalates through progressively more aggressive reset strategies
-5. **Only terminate after exhaustion**: Completion marker is emitted only after all recovery levels are exhausted (12+ attempts)
+5. **No termination for internal failures**: Internal failures do not cause early termination; completion markers are reserved for explicit external/catastrophic termination paths
 
 ### Escalation Levels
 
@@ -136,8 +136,7 @@ The recovery hierarchy implements escalating reset strategies:
 - **Level 1 - Retry same operation** (attempts 1-3): Dev-fix agent runs, reset error state, retry the failed effect from the same point
 - **Level 2 - Reset to phase start** (attempts 4-6): Clear phase-specific progress flags and restart the entire phase from the beginning
 - **Level 3 - Reset iteration** (attempts 7-9): Decrement iteration counter and redo Planning → Development → Commit sequence
-- **Level 4 - Reset everything** (attempts 10+): Reset to iteration 0 and start completely fresh from the beginning
-- **Termination** (attempts 13+): Only after exhausting all recovery levels does the pipeline emit `CompletionMarkerEmitted` and transition to `Interrupted`
+- **Level 4 - Reset everything** (attempts 10+): Reset to iteration 0 and start completely fresh from the beginning (and keep trying)
 
 ### Recovery State Tracking
 
@@ -166,7 +165,7 @@ the pipeline is in the recovery loop.
 This escalating recovery design ensures:
 
 - **Unattended operation**: Pipeline never gives up early, always tries progressively more aggressive recovery
-- **Bounded attempts**: Hard cap at 12 attempts prevents true infinite loops
+- **Safety valve**: The event loop's max-iteration cap prevents tight infinite loops even if the environment never converges
 - **Minimal disruption**: Start with least disruptive recovery (retry) before escalating to more expensive resets
 - **Deterministic behavior**: Recovery decisions are pure functions of attempt count and escalation level
 - **Observable progress**: Recovery events provide visibility into escalation decisions

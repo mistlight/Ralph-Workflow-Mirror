@@ -202,9 +202,7 @@ impl MainEffectHandler {
             }
         }
 
-        // Emit appropriate event based on agent availability.
-        // CompletionMarkerEmitted is ALWAYS emitted because the marker is
-        // written unconditionally at the start of TriggerDevFixFlow.
+        // Emit an additional event when the dev-fix agent is unavailable.
         if is_agent_unavailable {
             // Agent unavailable (quota/usage limit)
             result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
@@ -218,11 +216,10 @@ impl MainEffectHandler {
         // It represents completion of the dev-fix agent invocation, not a guarantee that the
         // pipeline will succeed on retry.
 
-        // CompletionMarkerEmitted is NOT emitted here. The reducer will decide
-        // whether to continue with recovery or emit completion marker based on
-        // recovery escalation level and attempt count. Only catastrophic failures
-        // (external events, not internal pipeline errors) should trigger immediate
-        // completion marker emission.
+        // CompletionMarkerEmitted is NOT emitted here. Internal pipeline failures
+        // must continue through the unattended recovery loop; completion markers are
+        // reserved for explicit external/catastrophic termination via
+        // Effect::EmitCompletionMarkerAndTerminate.
 
         Ok(result.with_additional_event(PipelineEvent::AwaitingDevFix(dev_fix_completed)))
     }

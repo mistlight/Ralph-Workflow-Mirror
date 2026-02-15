@@ -57,18 +57,6 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
         PipelinePhase::AwaitingDevFix => {
-            // Check if recovery attempts are exhausted
-            if state.dev_fix_triggered && state.dev_fix_attempt_count > 12 {
-                // Exhausted all recovery attempts - emit completion marker and terminate
-                return Effect::EmitCompletionMarkerAndTerminate {
-                    is_failure: true,
-                    reason: Some(format!(
-                        "Recovery exhausted after {} attempts in phase {:?}",
-                        state.dev_fix_attempt_count, state.failed_phase_for_recovery
-                    )),
-                };
-            }
-
             // If dev-fix already triggered and recovery state is set, attempt recovery
             if state.dev_fix_triggered && state.recovery_escalation_level > 0 {
                 // Derive the appropriate recovery effect based on escalation level

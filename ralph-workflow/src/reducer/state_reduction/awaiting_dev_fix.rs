@@ -32,7 +32,6 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             // Dev-fix attempt completed. Decide whether to:
             // 1. Attempt recovery at current level
             // 2. Escalate to next recovery level
-            // 3. Give up and terminate (only after exhausting all levels)
 
             let new_attempt_count = state.dev_fix_attempt_count + 1;
 
@@ -48,34 +47,23 @@ pub(super) fn reduce_awaiting_dev_fix_event(
                 _ => 4,
             };
 
-            // If dev-fix reports success, we can optimistically attempt recovery
-            // If it reports failure, we still attempt recovery but may need to escalate faster
-            let should_attempt_recovery = new_attempt_count <= 12; // Max 12 attempts total
-
             // Prepare for recovery attempt at the determined level.
             //
             // IMPORTANT: Do not transition to Interrupted directly here.
-            // Termination (if any) must happen through the single termination path:
-            // AwaitingDevFix orchestration derives Effect::EmitCompletionMarkerAndTerminate,
-            // then the reducer transitions to Interrupted when CompletionMarkerEmitted is reduced.
-            // This keeps the completion marker semantics consistent and ensures the marker
-            // includes the correct "reason" string.
-            let updated = PipelineState {
+            // Internal failures are handled via recovery attempts; termination is reserved
+            // for explicit external/catastrophic conditions and must go through the single
+            // completion-marker path: Effect::EmitCompletionMarkerAndTerminate ->
+            // CompletionMarkerEmitted.
+            PipelineState {
                 dev_fix_attempt_count: new_attempt_count,
                 recovery_escalation_level: new_level,
                 // Stay in AwaitingDevFix until recovery is attempted
                 ..state
-            };
-
-            if !should_attempt_recovery {
-                return updated;
             }
-
-            updated
         }
         AwaitingDevFixEvent::DevFixAgentUnavailable { .. } => {
-            // Dev-fix agent unavailable (quota/usage limit), prepare for termination
-            // Completion marker already written, pipeline will terminate gracefully
+            // Dev-fix agent unavailable (quota/usage limit). Stay in AwaitingDevFix so
+            // orchestration can keep the unattended recovery loop running.
             state
         }
         AwaitingDevFixEvent::CompletionMarkerEmitted { .. } => {
