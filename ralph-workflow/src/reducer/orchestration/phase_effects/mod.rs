@@ -57,6 +57,16 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
         PipelinePhase::AwaitingDevFix => {
+            // Completion marker emission must preempt recovery-loop effects.
+            // If the marker write failed, we must keep retrying deterministically until
+            // the marker is successfully written (CompletionMarkerEmitted).
+            if state.completion_marker_pending {
+                return Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: state.completion_marker_is_failure,
+                    reason: state.completion_marker_reason.clone(),
+                };
+            }
+
             // If dev-fix already triggered and recovery state is set, attempt recovery
             if state.dev_fix_triggered && state.recovery_escalation_level > 0 {
                 // Derive the appropriate recovery effect based on escalation level
@@ -171,6 +181,28 @@ mod tests {
             }
             other => panic!("expected TriggerDevFixFlow, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn awaiting_dev_fix_derives_completion_marker_effect_when_pending() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.completion_marker_pending = true;
+        state.completion_marker_is_failure = true;
+        state.completion_marker_reason = Some("safety_valve".to_string());
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        assert!(
+            matches!(
+                effect,
+                Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    ref reason
+                } if reason.as_deref() == Some("safety_valve")
+            ),
+            "expected EmitCompletionMarkerAndTerminate when completion_marker_pending is set, got: {effect:?}"
+        );
     }
 
     // Dev-fix agent selection is enforced by the TriggerDevFixFlow handler.

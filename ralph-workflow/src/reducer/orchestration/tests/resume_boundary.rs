@@ -73,6 +73,9 @@ fn create_resume_state(
         dev_fix_attempt_count: 0,
         recovery_escalation_level: 0,
         failed_phase_for_recovery: None,
+        completion_marker_pending: false,
+        completion_marker_is_failure: false,
+        completion_marker_reason: None,
         gitignore_entries_ensured: false,
         prompt_inputs: Default::default(),
         // Simulate that permissions were locked at original startup (resume scenario)

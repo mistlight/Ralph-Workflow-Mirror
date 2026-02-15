@@ -259,24 +259,19 @@ fn test_recovery_does_not_emit_completion_marker_based_on_attempt_count() {
         // This test intentionally does not assert whether the loop reaches a
         // terminal phase: depending on the mock handler mappings and phase
         // sequencing, the run may complete or hit the max-iterations safety valve.
-        assert!(
-            result.final_phase != PipelinePhase::Interrupted,
-            "Internal recovery attempts must not terminate the pipeline"
-        );
-
-        assert!(
-            !fixture
-                .workspace
-                .exists(Path::new(".agent/tmp/completion_marker")),
-            "Completion marker must not be written for internal recovery attempts"
-        );
-
-        assert!(
-            !fixture
-                .workspace
-                .exists(Path::new(".agent/tmp/completion_marker")),
-            "Completion marker must not be written for internal recovery attempts"
-        );
+        //
+        // If the event loop hits the AwaitingDevFix max-iterations safety valve,
+        // it will defensively write a completion marker and transition to Interrupted.
+        // That termination is NOT attempt-count policy driven; the assertion below
+        // ensures EmitCompletionMarkerAndTerminate was not executed.
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        if fixture.workspace.exists(marker_path) {
+            assert_eq!(
+                result.final_phase,
+                PipelinePhase::Interrupted,
+                "If a completion marker exists here, it must be from the safety valve"
+            );
+        }
 
         assert!(
             !handler.was_effect_executed(|e| matches!(
@@ -319,22 +314,25 @@ fn test_event_loop_does_not_exit_prematurely_on_agent_exhaustion() {
             .expect("Event loop should not error");
 
         // With a small max_iterations and a mock handler, the loop may hit the
-        // safety valve before reaching a terminal phase.
-        assert!(
-            !result.completed,
-            "Expected to hit max_iterations safety valve in this test"
-        );
-        assert!(
-            result.final_phase != PipelinePhase::Interrupted,
-            "Internal recovery attempts must not terminate the pipeline"
-        );
-
-        assert!(
-            !fixture
-                .workspace
-                .exists(Path::new(".agent/tmp/completion_marker")),
-            "Completion marker must not be written for internal recovery attempts"
-        );
+        // generic max-iterations cap OR the AwaitingDevFix safety valve.
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        let marker_exists = fixture.workspace.exists(marker_path);
+        if marker_exists {
+            assert_eq!(
+                result.final_phase,
+                PipelinePhase::Interrupted,
+                "If a completion marker exists here, it must be from the safety valve"
+            );
+        } else {
+            assert!(
+                !result.completed,
+                "Expected to hit max_iterations cap (incomplete run) in this test"
+            );
+            assert!(
+                result.final_phase != PipelinePhase::Interrupted,
+                "Without a completion marker, internal recovery attempts must not terminate the pipeline"
+            );
+        }
 
         // Verify EmitCompletionMarkerAndTerminate effect was NOT executed.
         assert!(

@@ -88,12 +88,20 @@ pub(super) fn reduce_awaiting_dev_fix_event(
             PipelineState {
                 phase: PipelinePhase::Interrupted,
                 previous_phase: Some(state.phase),
+                completion_marker_pending: false,
+                completion_marker_reason: None,
                 ..state
             }
         }
-        AwaitingDevFixEvent::CompletionMarkerWriteFailed { .. } => {
-            // Marker write failed; stay in AwaitingDevFix so orchestration can retry.
-            state
+        AwaitingDevFixEvent::CompletionMarkerWriteFailed { is_failure, error } => {
+            // Marker write failed; stay in AwaitingDevFix but set an explicit retry flag so
+            // orchestration deterministically re-derives EmitCompletionMarkerAndTerminate.
+            PipelineState {
+                completion_marker_pending: true,
+                completion_marker_is_failure: is_failure,
+                completion_marker_reason: Some(error),
+                ..state
+            }
         }
         AwaitingDevFixEvent::RecoveryAttempted {
             level,
@@ -376,5 +384,28 @@ mod tests {
         assert!(!new_state.continuation.fix_continue_pending);
         assert!(!new_state.continuation.context_write_pending);
         assert!(!new_state.continuation.context_cleanup_pending);
+    }
+
+    #[test]
+    fn completion_marker_write_failed_sets_pending_flag_for_deterministic_retry() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.completion_marker_pending = false;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerWriteFailed {
+                is_failure: true,
+                error: "disk full".to_string(),
+            }),
+        );
+
+        assert!(new_state.completion_marker_pending);
+        assert!(new_state.completion_marker_is_failure);
+        assert_eq!(
+            new_state.completion_marker_reason.as_deref(),
+            Some("disk full")
+        );
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
     }
 }

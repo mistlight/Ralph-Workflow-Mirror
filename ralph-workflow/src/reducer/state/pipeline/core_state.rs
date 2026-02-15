@@ -292,6 +292,25 @@ pub struct PipelineState {
     #[serde(default)]
     pub failed_phase_for_recovery: Option<PipelinePhase>,
 
+    /// Whether the pipeline should (re)attempt emitting a completion marker.
+    ///
+    /// This is reserved for explicit termination paths (safety valve / catastrophic
+    /// external termination), not attempt-count based recovery escalation.
+    ///
+    /// When true, orchestration must derive `Effect::EmitCompletionMarkerAndTerminate`
+    /// until it succeeds (CompletionMarkerEmitted) so external orchestration can
+    /// reliably observe termination.
+    #[serde(default)]
+    pub completion_marker_pending: bool,
+
+    /// Whether the pending completion marker represents a failure.
+    #[serde(default)]
+    pub completion_marker_is_failure: bool,
+
+    /// Optional reason to include in the completion marker for failures.
+    #[serde(default)]
+    pub completion_marker_reason: Option<String>,
+
     /// Whether gitignore entries have been ensured for this pipeline run.
     ///
     /// Set to true after Effect::EnsureGitignoreEntries completes successfully.
@@ -436,6 +455,9 @@ impl PipelineState {
             dev_fix_attempt_count: 0,
             recovery_escalation_level: 0,
             failed_phase_for_recovery: None,
+            completion_marker_pending: false,
+            completion_marker_is_failure: false,
+            completion_marker_reason: None,
             gitignore_entries_ensured: false,
             prompt_inputs: PromptInputsState::default(),
             prompt_permissions: PromptPermissionsState::default(),

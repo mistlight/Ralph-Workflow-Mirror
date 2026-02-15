@@ -4,6 +4,19 @@
 // no side effects and operate solely on the immutable state struct.
 
 impl PipelineState {
+    fn initial_phase_for_run_configuration(&self) -> PipelinePhase {
+        // Keep consistent with PipelineState::initial_with_continuation.
+        if self.total_iterations == 0 {
+            if self.total_reviewer_passes == 0 {
+                PipelinePhase::CommitMessage
+            } else {
+                PipelinePhase::Review
+            }
+        } else {
+            PipelinePhase::Planning
+        }
+    }
+
     /// Returns true if the pipeline is in a terminal state for event loop purposes.
     ///
     /// # Terminal States
@@ -147,7 +160,12 @@ impl PipelineState {
     /// Decrements the iteration counter (with floor at 0) and clears all
     /// phase flags to restart the current iteration from Planning phase.
     pub(crate) fn reset_iteration(&self) -> Self {
-        let new_iteration = self.iteration.saturating_sub(1);
+        let new_iteration = if self.total_iterations == 0 {
+            0
+        } else {
+            self.iteration.saturating_sub(1)
+        };
+        let initial_phase = self.initial_phase_for_run_configuration();
         let prompt_inputs = self
             .prompt_inputs
             .clone()
@@ -158,7 +176,7 @@ impl PipelineState {
             .with_xsd_retry_cleared();
         Self {
             iteration: new_iteration,
-            phase: PipelinePhase::Planning,
+            phase: initial_phase,
             context_cleaned: false,
             gitignore_entries_ensured: false,
             prompt_inputs,
@@ -176,6 +194,7 @@ impl PipelineState {
     /// Resets iteration counter to 0 and clears all phase flags for a
     /// complete restart from the beginning of the pipeline.
     pub(crate) fn reset_to_iteration_zero(&self) -> Self {
+        let initial_phase = self.initial_phase_for_run_configuration();
         let prompt_inputs = self
             .prompt_inputs
             .clone()
@@ -186,7 +205,7 @@ impl PipelineState {
             .with_xsd_retry_cleared();
         Self {
             iteration: 0,
-            phase: PipelinePhase::Planning,
+            phase: initial_phase,
             context_cleaned: false,
             gitignore_entries_ensured: false,
             prompt_inputs,
@@ -329,5 +348,28 @@ mod helper_tests {
         assert!(!reset.review_issues_found);
         assert!(reset.review_agent_invoked_pass.is_none());
         assert!(reset.fix_result_xml_extracted_pass.is_none());
+    }
+
+    #[test]
+    fn iteration_resets_restart_at_initial_phase_for_run_configuration() {
+        // When no development iterations are configured, the pipeline starts in Review
+        // (if review passes exist) or CommitMessage (if neither dev nor review exist).
+        // Recovery resets should use the same initial phase selection.
+
+        let state = PipelineState::initial(0, 2);
+        let reset = state.reset_to_iteration_zero();
+        assert_eq!(reset.phase, PipelinePhase::Review);
+
+        let state = PipelineState::initial(0, 0);
+        let reset = state.reset_to_iteration_zero();
+        assert_eq!(reset.phase, PipelinePhase::CommitMessage);
+
+        let state = PipelineState::initial(0, 2);
+        let reset = state.reset_iteration();
+        assert_eq!(reset.phase, PipelinePhase::Review);
+
+        let state = PipelineState::initial(0, 0);
+        let reset = state.reset_iteration();
+        assert_eq!(reset.phase, PipelinePhase::CommitMessage);
     }
 }
