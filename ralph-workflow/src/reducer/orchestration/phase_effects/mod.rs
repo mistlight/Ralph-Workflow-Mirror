@@ -172,8 +172,11 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
                 return Effect::RestorePromptPermissions;
             }
 
+            // Programmatic termination (Complete or non-user Interrupted) should NOT be
+            // classified as an interrupt. Reserve CheckpointTrigger::Interrupt for true
+            // Ctrl+C interruptions (interrupted_by_user=true path above).
             Effect::SaveCheckpoint {
-                trigger: CheckpointTrigger::Interrupt,
+                trigger: CheckpointTrigger::PhaseTransition,
             }
         }
     }
@@ -365,6 +368,44 @@ mod tests {
                 "Expected SaveCheckpoint after safety check completes, got {:?}",
                 other
             ),
+        }
+    }
+
+    #[test]
+    fn complete_saves_checkpoint_with_phase_transition_trigger_after_safety_check() {
+        use crate::reducer::event::CheckpointTrigger;
+
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Complete;
+        state.pre_termination_commit_checked = true;
+        state.interrupted_by_user = false;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        match effect {
+            Effect::SaveCheckpoint { trigger } => {
+                assert_eq!(trigger, CheckpointTrigger::PhaseTransition);
+            }
+            other => panic!("expected SaveCheckpoint, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn programmatic_interrupt_saves_checkpoint_with_phase_transition_trigger_after_safety_check() {
+        use crate::reducer::event::CheckpointTrigger;
+
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Interrupted;
+        state.pre_termination_commit_checked = true;
+        state.interrupted_by_user = false;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        match effect {
+            Effect::SaveCheckpoint { trigger } => {
+                assert_eq!(trigger, CheckpointTrigger::PhaseTransition);
+            }
+            other => panic!("expected SaveCheckpoint, got: {other:?}"),
         }
     }
 }

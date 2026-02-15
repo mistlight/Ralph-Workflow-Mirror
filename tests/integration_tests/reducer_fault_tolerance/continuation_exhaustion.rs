@@ -257,7 +257,9 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         // When: Checkpoint is saved (simulate by applying CheckpointSaved event)
         let final_state = reduce(
             interrupted_state,
-            PipelineEvent::checkpoint_saved(ralph_workflow::reducer::CheckpointTrigger::Interrupt),
+            PipelineEvent::checkpoint_saved(
+                ralph_workflow::reducer::CheckpointTrigger::PhaseTransition,
+            ),
         );
 
         // Then: Pipeline is marked as complete

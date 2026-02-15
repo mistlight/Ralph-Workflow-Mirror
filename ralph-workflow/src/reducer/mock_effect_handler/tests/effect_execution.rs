@@ -100,8 +100,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        developer_agent: "test-developer",
-        reviewer_agent: "test-reviewer",
+        developer_agent: "claude",
+        reviewer_agent: "codex",
         review_guidelines: None,
         template_context: &template_context,
         run_context: RunContext::new(),
@@ -173,8 +173,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
         logger: &logger,
         colors: &colors,
         timer: &mut timer,
-        developer_agent: "test-developer",
-        reviewer_agent: "test-reviewer",
+        developer_agent: "claude",
+        reviewer_agent: "codex",
         review_guidelines: None,
         template_context: &template_context,
         run_context: RunContext::new(),
@@ -385,5 +385,83 @@ fn mock_effect_handler_emits_xml_output_for_commit() {
             }
         )),
         "Should emit XmlOutput event for commit message"
+    );
+}
+
+#[test]
+fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::phases::PhaseContext;
+    use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::event::CheckpointTrigger;
+    use crate::workspace::{MemoryWorkspace, Workspace};
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut state = PipelineState::initial(1, 0);
+    state.interrupted_by_user = true;
+    let mut handler = MockEffectHandler::new(state);
+
+    let _ = handler
+        .execute(
+            Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::Interrupt,
+            },
+            &mut ctx,
+        )
+        .expect("mock save checkpoint should succeed");
+
+    let checkpoint_path = Path::new(".agent/checkpoint.json");
+    assert!(
+        workspace.exists(checkpoint_path),
+        "Mock handler should persist checkpoint file"
+    );
+
+    let json = workspace
+        .read(checkpoint_path)
+        .expect("checkpoint json should be readable");
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid checkpoint json");
+
+    assert_eq!(
+        v.get("interrupted_by_user").and_then(|v| v.as_bool()),
+        Some(true),
+        "Mock checkpoint must persist interrupted_by_user=true for parity with real handler"
     );
 }

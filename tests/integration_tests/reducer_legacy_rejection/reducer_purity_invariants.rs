@@ -270,12 +270,12 @@ fn test_completion_from_state_not_files() {
         // After safety check passes
         state.pre_termination_commit_checked = true;
         let effect = determine_next_effect(&state);
-        // Complete phase emits SaveCheckpoint with Interrupt trigger
+        // Complete phase emits SaveCheckpoint with PhaseTransition trigger
         assert!(
             matches!(
                 effect,
                 Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::Interrupt
+                    trigger: CheckpointTrigger::PhaseTransition
                 }
             ),
             "Should save checkpoint on complete based on state.phase, not file checks: {:?}",
@@ -663,6 +663,7 @@ fn test_effects_are_single_task() {
                 is_failure: true,
                 reason: Some("test".to_string()),
             },
+            Effect::CheckUncommittedChangesBeforeTermination,
         ];
 
         // Verify each effect maps to a single-task category.
@@ -673,8 +674,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            68,
-            "Expected 68 Effect variants; update this test if variants were added or removed"
+            69,
+            "Expected 69 Effect variants; update this test if variants were added or removed"
         );
     });
 }

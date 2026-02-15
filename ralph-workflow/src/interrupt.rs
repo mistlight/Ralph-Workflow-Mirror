@@ -131,8 +131,12 @@ pub fn setup_interrupt_handler() {
 ///
 /// * `context` - The interrupt context containing the current pipeline state
 fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
-    use crate::checkpoint::PipelinePhase;
+    use crate::checkpoint::state::{
+        calculate_file_checksum_with_workspace, AgentConfigSnapshot, CheckpointParams,
+        CliArgsSnapshotBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
+    };
     use crate::checkpoint::{load_checkpoint_with_workspace, save_checkpoint_with_workspace};
+    use std::path::Path;
 
     // Read checkpoint from file if exists, update it with Interrupted phase
     if let Ok(Some(mut checkpoint)) = load_checkpoint_with_workspace(&*context.workspace) {
@@ -156,10 +160,73 @@ fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
 
         save_checkpoint_with_workspace(&*context.workspace, &checkpoint)?;
     } else {
-        // No checkpoint exists yet - this is early interruption
-        // We can't save a full checkpoint without config/registry access
-        // Just save a minimal checkpoint marker
-        eprintln!("Note: Interrupted before first checkpoint. Minimal state saved.");
+        // No checkpoint exists yet - this is early interruption.
+        //
+        // We still MUST persist a checkpoint (not just print) so that resume can reliably
+        // honor the Ctrl+C exemption via `interrupted_by_user=true`.
+        //
+        // This checkpoint uses conservative placeholder agent snapshots because we don't
+        // have access to Config/AgentRegistry in the signal handler.
+        let prompt_md_checksum =
+            calculate_file_checksum_with_workspace(&*context.workspace, Path::new("PROMPT.md"))
+                .or_else(|| Some("unknown".to_string()));
+
+        let cli_args = CliArgsSnapshotBuilder::new(
+            context.total_iterations,
+            context.total_reviewer_passes,
+            /* review_depth */ None,
+            /* isolation_mode */ true,
+        )
+        .build();
+
+        let developer_agent = "unknown";
+        let reviewer_agent = "unknown";
+        let developer_agent_config = AgentConfigSnapshot::new(
+            developer_agent.to_string(),
+            "unknown".to_string(),
+            "-o".to_string(),
+            None,
+            /* can_commit */ true,
+        );
+        let reviewer_agent_config = AgentConfigSnapshot::new(
+            reviewer_agent.to_string(),
+            "unknown".to_string(),
+            "-o".to_string(),
+            None,
+            /* can_commit */ true,
+        );
+
+        let working_dir = context.workspace.root().to_string_lossy().to_string();
+        let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
+            phase: PipelinePhase::Interrupted,
+            iteration: context.iteration,
+            total_iterations: context.total_iterations,
+            reviewer_pass: context.reviewer_pass,
+            total_reviewer_passes: context.total_reviewer_passes,
+            developer_agent,
+            reviewer_agent,
+            cli_args,
+            developer_agent_config,
+            reviewer_agent_config,
+            rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
+            run_id: &context.run_context.run_id,
+            parent_run_id: context.run_context.parent_run_id.as_deref(),
+            resume_count: context.run_context.resume_count,
+            actual_developer_runs: context.run_context.actual_developer_runs,
+            actual_reviewer_runs: context.run_context.actual_reviewer_runs,
+            working_dir,
+            prompt_md_checksum,
+            config_path: None,
+            config_checksum: None,
+        });
+
+        checkpoint.execution_history = Some(context.execution_history.clone());
+        checkpoint.prompt_history = Some(context.prompt_history.clone());
+        checkpoint.interrupted_by_user = true;
+
+        save_checkpoint_with_workspace(&*context.workspace, &checkpoint)?;
     }
 
     Ok(())
@@ -168,6 +235,7 @@ fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checkpoint::load_checkpoint_with_workspace;
     use crate::workspace::MemoryWorkspace;
     use std::sync::Arc;
 
@@ -219,5 +287,50 @@ mod tests {
         clear_interrupt_context();
         let ctx = INTERRUPT_CONTEXT.lock().unwrap();
         assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn test_early_interrupt_persists_minimal_checkpoint_with_user_interrupt_flag() {
+        // Regression: if Ctrl+C happens before the first regular checkpoint exists,
+        // we must still persist a checkpoint (or marker) that records interrupted_by_user=true.
+        let workspace: Arc<dyn Workspace> =
+            Arc::new(MemoryWorkspace::new_test().with_file("PROMPT.md", "# prompt"));
+        let context = InterruptContext {
+            phase: crate::checkpoint::PipelinePhase::Planning,
+            iteration: 0,
+            total_iterations: 3,
+            reviewer_pass: 0,
+            total_reviewer_passes: 1,
+            run_context: crate::checkpoint::RunContext::new(),
+            execution_history: crate::checkpoint::ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            workspace: Arc::clone(&workspace),
+        };
+
+        // No checkpoint exists yet
+        assert!(
+            load_checkpoint_with_workspace(&*workspace)
+                .expect("load should not error")
+                .is_none(),
+            "test precondition: no checkpoint should exist"
+        );
+
+        save_interrupt_checkpoint(&context).expect("save should succeed");
+
+        let checkpoint = load_checkpoint_with_workspace(&*workspace)
+            .expect("checkpoint should be readable")
+            .expect("checkpoint should exist after early interrupt");
+
+        assert_eq!(
+            checkpoint.phase,
+            crate::checkpoint::PipelinePhase::Interrupted
+        );
+        assert!(checkpoint.interrupted_by_user);
+        assert!(
+            checkpoint.prompt_md_checksum.is_some(),
+            "prompt checksum must be recorded for resume validation"
+        );
+        assert_eq!(checkpoint.cli_args.developer_iters, 3);
+        assert_eq!(checkpoint.cli_args.reviewer_reviews, 1);
     }
 }

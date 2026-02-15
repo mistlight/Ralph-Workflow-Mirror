@@ -191,6 +191,7 @@ If you determine there are NO actual changes to commit, respond with:
                     checkpoint.dev_fix_attempt_count = self.state.dev_fix_attempt_count;
                     checkpoint.recovery_escalation_level = self.state.recovery_escalation_level;
                     checkpoint.failed_phase_for_recovery = self.state.failed_phase_for_recovery;
+                    checkpoint.interrupted_by_user = self.state.interrupted_by_user;
 
                     if let Err(err) = save_checkpoint_with_workspace(ctx.workspace, &checkpoint) {
                         ctx.logger

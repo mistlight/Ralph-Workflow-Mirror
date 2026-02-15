@@ -206,12 +206,16 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         CommitEvent::Skipped { .. } => {
             if let Some(resume_phase) = state.termination_resume_phase {
                 // Special case: commit was skipped by the AI during the pre-termination
-                // safety check. Treat this as an explicit decision to allow termination.
+                // safety check.
+                //
+                // SAFETY: A skip MUST NOT unblock termination when we previously detected
+                // a dirty repo. Re-run the safety check after the skip and only proceed
+                // once the repo is actually clean.
                 return PipelineState {
                     commit: CommitState::Skipped,
                     phase: resume_phase,
                     termination_resume_phase: None,
-                    pre_termination_commit_checked: true,
+                    pre_termination_commit_checked: false,
                     previous_phase: None,
                     commit_prompt_prepared: false,
                     commit_agent_invoked: false,

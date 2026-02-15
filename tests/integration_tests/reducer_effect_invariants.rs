@@ -258,6 +258,7 @@ fn test_interrupted_phase_emits_interrupt_checkpoint_save() {
         let state = PipelineState {
             phase: PipelinePhase::Interrupted,
             checkpoint_saved_count: 0,
+            interrupted_by_user: true,
             agent_chain: AgentChainState::initial().with_agents(
                 vec!["agent".to_string()],
                 vec![vec![]],

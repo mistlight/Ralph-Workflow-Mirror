@@ -125,3 +125,28 @@ fn test_post_commit_resumes_termination_phase_when_safety_commit_pending() {
         "Termination should be unblocked after safety commit completes"
     );
 }
+
+#[test]
+fn test_skip_does_not_unblock_termination_when_safety_commit_pending() {
+    // If the pre-termination safety check detected a dirty repo and routed into CommitMessage,
+    // an AI-driven "skip" must NOT unblock termination.
+    //
+    // The pipeline must re-run CheckUncommittedChangesBeforeTermination after any skip and only
+    // proceed once the repo is actually clean.
+    let mut state = PipelineState::initial(0, 0);
+    state.phase = PipelinePhase::CommitMessage;
+    state.termination_resume_phase = Some(PipelinePhase::Complete);
+    state.pre_termination_commit_checked = false;
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_skipped("no changes".to_string()),
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::Complete);
+    assert_eq!(new_state.termination_resume_phase, None);
+    assert!(
+        !new_state.pre_termination_commit_checked,
+        "Skip during safety-check commit must not unblock termination"
+    );
+}
