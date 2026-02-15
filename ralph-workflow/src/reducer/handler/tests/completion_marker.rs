@@ -10,6 +10,7 @@ use crate::prompts::template_context::TemplateContext;
 use crate::reducer::effect::{Effect, EffectHandler};
 use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
 use crate::reducer::handler::MainEffectHandler;
+use crate::reducer::state::AgentChainState;
 use crate::reducer::state::PipelineState;
 use crate::workspace::{MemoryWorkspace, Workspace};
 use std::io;
@@ -427,6 +428,63 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
         !workspace.exists(marker_path),
         "Completion marker must not be written by TriggerDevFixFlow; it is written only on termination"
     );
+}
+
+#[test]
+fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_agent() {
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(
+        MockProcessExecutor::new()
+            .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+    );
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut timer = Timer::new();
+
+    let mut ctx = build_context(ContextParams {
+        workspace: &workspace,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    });
+    ctx.developer_agent = "claude";
+
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::AwaitingDevFix;
+
+    // Simulate failure outside Development: chain currently points at a different role/agent.
+    state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["codex".to_string()],
+        vec![vec![]],
+        AgentRole::Commit,
+    );
+
+    let mut handler = MainEffectHandler::new(state);
+    handler
+        .execute(
+            Effect::TriggerDevFixFlow {
+                failed_phase: PipelinePhase::CommitMessage,
+                failed_role: AgentRole::Commit,
+                retry_cycle: 1,
+            },
+            &mut ctx,
+        )
+        .expect("TriggerDevFixFlow should succeed");
+
+    let calls = executor.agent_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].command, "claude");
 }
 
 #[test]

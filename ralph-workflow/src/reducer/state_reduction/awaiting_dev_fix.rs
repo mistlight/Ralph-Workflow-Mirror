@@ -141,7 +141,41 @@ pub(super) fn reduce_awaiting_dev_fix_event(
                 }
                 2 => {
                     // Level 2: Reset to phase start - clear phase-specific progress flags
-                    new_state.clear_phase_flags(target_phase)
+                    let mut reset = new_state.clear_phase_flags(target_phase);
+
+                    // IMPORTANT: Level 2 is a true "phase start" restart.
+                    // Clear continuation/retry flags that have higher orchestration
+                    // priority than normal phase sequencing (same-agent retry, XSD retry,
+                    // continuation pending, context write/cleanup pending).
+                    reset.continuation = reset.continuation.clone().reset();
+
+                    // Clear phase-scoped materialized prompt inputs so prompt preparation
+                    // reruns from scratch for the restarted phase.
+                    reset.prompt_inputs = match target_phase {
+                        PipelinePhase::Planning => reset
+                            .prompt_inputs
+                            .clone()
+                            .with_planning_cleared()
+                            .with_xsd_retry_cleared(),
+                        PipelinePhase::Development => reset
+                            .prompt_inputs
+                            .clone()
+                            .with_development_cleared()
+                            .with_xsd_retry_cleared(),
+                        PipelinePhase::Review => reset
+                            .prompt_inputs
+                            .clone()
+                            .with_review_cleared()
+                            .with_xsd_retry_cleared(),
+                        PipelinePhase::CommitMessage => reset
+                            .prompt_inputs
+                            .clone()
+                            .with_commit_cleared()
+                            .with_xsd_retry_cleared(),
+                        _ => reset.prompt_inputs.clone().with_xsd_retry_cleared(),
+                    };
+
+                    reset
                 }
                 3 => {
                     // Level 3: Reset iteration counter - decrement iteration and restart from Planning
@@ -306,5 +340,41 @@ mod tests {
             new_state.failed_phase_for_recovery,
             Some(PipelinePhase::CommitMessage)
         );
+    }
+
+    #[test]
+    fn level_2_phase_start_recovery_clears_retry_and_continuation_flags() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+
+        // Simulate being stuck in a retry/continuation path before recovery.
+        state.continuation.xsd_retry_pending = true;
+        state.continuation.xsd_retry_session_reuse_pending = true;
+        state.continuation.same_agent_retry_pending = true;
+        state.continuation.same_agent_retry_reason =
+            Some(crate::reducer::state::SameAgentRetryReason::Timeout);
+        state.continuation.continue_pending = true;
+        state.continuation.fix_continue_pending = true;
+        state.continuation.context_write_pending = true;
+        state.continuation.context_cleanup_pending = true;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                level: 2,
+                attempt_count: 4,
+                target_phase: PipelinePhase::CommitMessage,
+            }),
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert!(!new_state.continuation.xsd_retry_pending);
+        assert!(!new_state.continuation.xsd_retry_session_reuse_pending);
+        assert!(!new_state.continuation.same_agent_retry_pending);
+        assert!(new_state.continuation.same_agent_retry_reason.is_none());
+        assert!(!new_state.continuation.continue_pending);
+        assert!(!new_state.continuation.fix_continue_pending);
+        assert!(!new_state.continuation.context_write_pending);
+        assert!(!new_state.continuation.context_cleanup_pending);
     }
 }

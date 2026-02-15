@@ -172,4 +172,7 @@ mod tests {
             other => panic!("expected TriggerDevFixFlow, got: {other:?}"),
         }
     }
+
+    // Dev-fix agent selection is enforced by the TriggerDevFixFlow handler.
+    // Orchestration intentionally preserves the original failed role in the effect params.
 }

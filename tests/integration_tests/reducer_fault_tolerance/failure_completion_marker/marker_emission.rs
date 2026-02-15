@@ -57,6 +57,12 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         // TriggerDevFixFlow must NOT write the completion marker.
         let mut fixture = Fixture::new();
         let mut ctx = fixture.ctx();
+        // Dev-fix remediation runs under the configured developer agent.
+        // Use a registry-known agent name so TriggerDevFixFlow can resolve config.
+        ctx.developer_agent = "claude";
+        // Dev-fix remediation must run under the configured developer agent.
+        // Ensure the fixture context points at a registry-known agent.
+        ctx.developer_agent = "claude";
         let mut handler = MockEffectHandler::new(new_state.clone());
 
         let _result = handler
@@ -88,6 +94,9 @@ fn test_failed_status_dispatches_dev_fix_agent_without_emitting_completion_marke
             .expect("PLAN.md should be writable");
 
         let mut ctx = fixture.ctx();
+        // Dev-fix remediation runs under the configured developer agent.
+        // Use a registry-known agent name so TriggerDevFixFlow can resolve config.
+        ctx.developer_agent = "claude";
 
         let mut state = PipelineState {
             phase: PipelinePhase::AwaitingDevFix,

@@ -108,12 +108,10 @@ impl MainEffectHandler {
             ));
         }
 
-        let agent = self
-            .state
-            .agent_chain
-            .current_agent()
-            .cloned()
-            .unwrap_or_else(|| ctx.developer_agent.to_string());
+        // Dev-fix remediation must run under the configured developer agent.
+        // Do not reuse the current agent chain selection here: the failure may have
+        // occurred under a different role (Commit/Reviewer/Analysis).
+        let agent = ctx.developer_agent.to_string();
 
         /// Helper function to detect agent unavailability from error messages.
         /// Checks for quota/usage/rate limit indicators in error text.

@@ -21,13 +21,20 @@ impl MainEffectHandler {
         model: Option<String>,
         prompt: String,
     ) -> Result<EffectResult> {
-        // Use agent from state.agent_chain if available
-        let effective_agent = self
-            .state
-            .agent_chain
-            .current_agent()
-            .unwrap_or(&agent)
-            .clone();
+        let in_dev_fix = self.state.phase == PipelinePhase::AwaitingDevFix;
+
+        // For most phases, the reducer-driven agent chain selects the effective agent.
+        // During AwaitingDevFix, remediation must always run under the configured
+        // developer agent (not whatever agent happened to fail).
+        let effective_agent = if in_dev_fix {
+            agent.clone()
+        } else {
+            self.state
+                .agent_chain
+                .current_agent()
+                .unwrap_or(&agent)
+                .clone()
+        };
 
         // Use continuation prompt if available (from rate-limited predecessor).
         //
@@ -45,19 +52,27 @@ impl MainEffectHandler {
         // In those cases, ignoring the newly prepared prompt would silently drop the
         // retry-specific guidance and can lead to repeated failures.
         //
-        let effective_prompt = match &self.state.agent_chain.rate_limit_continuation_prompt {
-            Some(saved)
-                if saved.role == role
-                    && role != AgentRole::Analysis
-                    && !self.state.continuation.xsd_retry_session_reuse_pending
-                    && !super::retry_guidance::is_same_agent_retry_prompt(&prompt) =>
-            {
-                saved.prompt.clone()
+        let effective_prompt = if in_dev_fix {
+            prompt
+        } else {
+            match &self.state.agent_chain.rate_limit_continuation_prompt {
+                Some(saved)
+                    if saved.role == role
+                        && role != AgentRole::Analysis
+                        && !self.state.continuation.xsd_retry_session_reuse_pending
+                        && !super::retry_guidance::is_same_agent_retry_prompt(&prompt) =>
+                {
+                    saved.prompt.clone()
+                }
+                _ => prompt,
             }
-            _ => prompt,
         };
 
-        let model_name = self.state.agent_chain.current_model();
+        let model_name = if in_dev_fix {
+            None
+        } else {
+            self.state.agent_chain.current_model()
+        };
 
         ctx.logger.info(&format!(
             "Executing with agent: {}, model: {:?}",
@@ -147,6 +162,12 @@ impl MainEffectHandler {
         } else {
             "# Resume: false\n".to_string()
         };
+        let header_model_index = if in_dev_fix {
+            0
+        } else {
+            self.state.agent_chain.current_model_index
+        };
+
         let log_header = format!(
             "# Ralph Agent Invocation Log\n\
              # Role: {:?}\n\
@@ -158,7 +179,7 @@ impl MainEffectHandler {
              {}\n",
             role,
             effective_agent,
-            self.state.agent_chain.current_model_index,
+            header_model_index,
             attempt,
             self.state.phase,
             chrono::Utc::now().to_rfc3339(),
@@ -182,7 +203,9 @@ impl MainEffectHandler {
 
         // Session ID reuse for XSD retry: preserve a "reuse session id" signal across
         // prompt preparation (which clears xsd_retry_pending to avoid effect loops).
-        let session_id = if self.state.continuation.xsd_retry_session_reuse_pending {
+        let session_id = if in_dev_fix {
+            None
+        } else if self.state.continuation.xsd_retry_session_reuse_pending {
             self.state.agent_chain.last_session_id.as_deref()
         } else {
             None
@@ -208,6 +231,12 @@ impl MainEffectHandler {
             model_name.cloned().or(model.clone()),
         );
 
+        let model_index = if in_dev_fix {
+            0
+        } else {
+            self.state.agent_chain.current_model_index
+        };
+
         // Execute agent with fault-tolerant wrapper
         let config = AgentExecutionConfig {
             role,
@@ -218,7 +247,7 @@ impl MainEffectHandler {
             prompt: &effective_prompt,
             display_name: &effective_agent,
             log_prefix: &format!("{}_{}", phase_name, phase_index), // For attribution only
-            model_index: self.state.agent_chain.current_model_index,
+            model_index,
             attempt,
             logfile: &logfile,
         };
