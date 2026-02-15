@@ -153,9 +153,13 @@ These fields enable deterministic escalation decisions and are preserved in chec
 
 The `AwaitingDevFixEvent` category includes events for recovery progression:
 
-- `RecoveryAttempted { level, attempt_count }` - Recovery initiated at a specific escalation level
+- `RecoveryAttempted { level, attempt_count, target_phase }` - Recovery initiated at a specific escalation level
 - `RecoveryEscalated { from_level, to_level, reason }` - Recovery escalated to more aggressive strategy
 - `RecoverySucceeded { level, total_attempts }` - Recovery succeeded, clear recovery state and resume normal operation
+
+`target_phase` is carried from the recovery effect parameters so the reducer does not need to
+trust `failed_phase_for_recovery`, which can be stale or overwritten by subsequent errors while
+the pipeline is in the recovery loop.
 
 ### Why This Architecture
 

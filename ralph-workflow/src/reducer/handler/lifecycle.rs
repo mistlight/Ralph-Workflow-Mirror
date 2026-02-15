@@ -154,10 +154,11 @@ impl MainEffectHandler {
             .map(|err| is_agent_unavailable_error(&err.to_string()))
             .unwrap_or(false);
 
-        // Dev-fix success cannot be determined at invocation time - it requires
-        // extraction and validation of fix_result.xml. The InvocationSucceeded event
-        // only indicates the agent started successfully, not that the fix completed.
-        // DevFixCompleted will be emitted by the reducer after validation.
+        // Dev-fix "success" cannot be determined at invocation time.
+        //
+        // The agent invocation result only tells us whether the dev-fix agent ran without a
+        // tool/transport error (e.g., spawn failure, quota unavailable). It does NOT guarantee
+        // the underlying pipeline failure is fixed.
 
         // Extract error reason for logging and summary
         let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
@@ -213,11 +214,9 @@ impl MainEffectHandler {
                 },
             ));
         }
-        // Note: DevFixCompleted is NOT emitted here. The success of the dev-fix
-        // attempt can only be determined after fix_result.xml is extracted and
-        // validated, which happens in a later phase (during XML output extraction).
-        // The reducer will emit DevFixCompleted with the proper success status
-        // after validation succeeds or fails.
+        // Note: DevFixCompleted IS emitted here to advance the reducer-visible recovery loop.
+        // It represents completion of the dev-fix agent invocation, not a guarantee that the
+        // pipeline will succeed on retry.
 
         // CompletionMarkerEmitted is NOT emitted here. The reducer will decide
         // whether to continue with recovery or emit completion marker based on
@@ -258,11 +257,25 @@ impl MainEffectHandler {
             "success\n".to_string()
         };
 
-        Self::write_completion_marker(ctx, &content, is_failure);
-
-        // Emit event to transition to Interrupted
-        Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
-            crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted { is_failure },
-        )))
+        match Self::write_completion_marker(ctx, &content, is_failure) {
+            Ok(()) => {
+                // Emit event to transition to Interrupted
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure,
+                    },
+                )))
+            }
+            Err(error) => {
+                // Do NOT transition to Interrupted if the marker was not written.
+                // External orchestration relies on the marker for termination semantics.
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerWriteFailed {
+                        is_failure,
+                        error,
+                    },
+                )))
+            }
+        }
     }
 }

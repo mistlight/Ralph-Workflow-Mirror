@@ -11,23 +11,12 @@
 
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::agents::{AgentRegistry, AgentRole};
-use ralph_workflow::app::event_loop::{run_event_loop_with_handler, EventLoopConfig};
-use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
-use ralph_workflow::config::Config;
-use ralph_workflow::executor::MockProcessExecutor;
-use ralph_workflow::logger::{Colors, Logger};
-use ralph_workflow::pipeline::Timer;
-use ralph_workflow::prompts::template_context::TemplateContext;
+use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
-use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
 use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{AgentChainState, DevelopmentStatus, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
-use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 #[test]
 fn test_continuation_exhaustion_triggers_agent_fallback() {
@@ -280,99 +269,6 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
 }
 
 #[test]
-fn test_completion_marker_file_written_on_failure() {
-    with_default_timeout(|| {
-        // Given: A memory workspace and phase context
-        let repo_root = PathBuf::from("/test/repo");
-        let workspace = Arc::new(MemoryWorkspace::new(repo_root.clone()));
-
-        // Create test dependencies
-        let config = Config::default();
-        let registry = AgentRegistry::new().unwrap();
-        let colors = Colors::new();
-        let logger = Logger::new(colors);
-        let mut timer = Timer::new();
-
-        let template_context = TemplateContext::default();
-        let executor = Arc::new(MockProcessExecutor::new());
-        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
-            .expect("Failed to create run log context");
-
-        let mut phase_ctx = ralph_workflow::phases::PhaseContext {
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            developer_agent: "test-developer",
-            reviewer_agent: "test-reviewer",
-            review_guidelines: None,
-            template_context: &template_context,
-            run_context: RunContext::new(),
-            execution_history: ExecutionHistory::new(),
-            prompt_history: std::collections::HashMap::new(),
-            executor: &*executor,
-            executor_arc: Arc::clone(&executor)
-                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-            repo_root: &repo_root,
-            workspace: workspace.as_ref(),
-            run_log_context: &run_log_context,
-        };
-
-        // Given: A state where agent chain will be exhausted immediately
-        let mut initial_state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
-        initial_state.phase = PipelinePhase::Development;
-
-        // Create an exhausted agent chain
-        let agent_chain = initial_state
-            .agent_chain
-            .with_agents(
-                vec!["agent1".to_string()],
-                vec![vec![]],
-                ralph_workflow::agents::AgentRole::Developer,
-            )
-            .with_max_cycles(1);
-
-        initial_state.agent_chain = AgentChainState {
-            retry_cycle: 1,
-            ..agent_chain
-        };
-
-        // Verify it's exhausted
-        assert!(initial_state.agent_chain.is_exhausted());
-
-        // When: Run the event loop with mock handler
-        let mut handler = MockEffectHandler::new(initial_state.clone());
-        let config = EventLoopConfig {
-            max_iterations: 100,
-        };
-
-        let result =
-            run_event_loop_with_handler(&mut phase_ctx, Some(initial_state), config, &mut handler)
-                .expect("Event loop should complete");
-
-        // Then: Pipeline should complete (reach Interrupted with checkpoint)
-        assert!(result.completed, "Pipeline should complete");
-
-        // Then: Completion marker file should be written
-        let marker_path = Path::new(".agent/tmp/completion_marker");
-        assert!(
-            workspace.exists(marker_path),
-            "Completion marker file should exist"
-        );
-
-        let marker_content = workspace
-            .read(marker_path)
-            .expect("Should read completion marker");
-        assert!(
-            marker_content.starts_with("failure"),
-            "Completion marker should indicate failure, got: {}",
-            marker_content
-        );
-    });
-}
-
-#[test]
 fn test_budget_exhausted_with_failed_status_transitions_to_awaiting_dev_fix() {
     with_default_timeout(|| {
         // Given: Pipeline in Development Iteration 2 with exhausted continuation budget
@@ -464,108 +360,6 @@ fn test_budget_exhausted_with_completed_status_proceeds_to_commit() {
             new_state.phase,
             PipelinePhase::Development,
             "Should stay in Development when budget exhausted with Completed status"
-        );
-    });
-}
-
-#[test]
-fn test_budget_exhausted_continues_to_completion_via_event_loop() {
-    with_default_timeout(|| {
-        // Given: A memory workspace and phase context
-        let repo_root = PathBuf::from("/test/repo");
-        let workspace = Arc::new(MemoryWorkspace::new(repo_root.clone()));
-
-        // Create test dependencies
-        let config = Config::default();
-        let registry = AgentRegistry::new().unwrap();
-        let colors = Colors::new();
-        let logger = Logger::new(colors);
-        let mut timer = Timer::new();
-
-        let template_context = TemplateContext::default();
-        let executor = Arc::new(MockProcessExecutor::new());
-        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
-            .expect("Failed to create run log context");
-
-        let mut phase_ctx = ralph_workflow::phases::PhaseContext {
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            developer_agent: "test-developer",
-            reviewer_agent: "test-reviewer",
-            review_guidelines: None,
-            template_context: &template_context,
-            run_context: RunContext::new(),
-            execution_history: ExecutionHistory::new(),
-            prompt_history: std::collections::HashMap::new(),
-            executor: &*executor,
-            executor_arc: Arc::clone(&executor)
-                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-            repo_root: &repo_root,
-            workspace: workspace.as_ref(),
-            run_log_context: &run_log_context,
-        };
-
-        // Given: A state where budget will be exhausted immediately
-        let mut initial_state = with_locked_prompt_permissions(PipelineState::initial(3, 0));
-        initial_state.phase = PipelinePhase::Development;
-        initial_state.iteration = 2;
-
-        // Create exhausted agent chain
-        let agent_chain = initial_state
-            .agent_chain
-            .with_agents(
-                vec!["agent1".to_string()],
-                vec![vec![]],
-                AgentRole::Developer,
-            )
-            .with_max_cycles(1);
-
-        initial_state.agent_chain = AgentChainState {
-            retry_cycle: 1, // Already at max cycles, so is_exhausted() == true
-            ..agent_chain
-        };
-
-        // Verify exhaustion
-        assert!(initial_state.agent_chain.is_exhausted());
-
-        // When: Run the event loop (simulates budget exhaustion scenario)
-        let mut handler = MockEffectHandler::new(initial_state.clone());
-        let config = EventLoopConfig {
-            max_iterations: 100,
-        };
-
-        let result =
-            run_event_loop_with_handler(&mut phase_ctx, Some(initial_state), config, &mut handler)
-                .expect("Event loop should complete");
-
-        // Then: Pipeline should complete successfully (not exit early)
-        assert!(
-            result.completed,
-            "Pipeline should complete even when budget exhausted"
-        );
-        assert_eq!(
-            result.final_phase,
-            PipelinePhase::Interrupted,
-            "Final phase should be Interrupted after AwaitingDevFix flow"
-        );
-
-        // And: Completion marker should exist
-        let marker_path = Path::new(".agent/tmp/completion_marker");
-        assert!(
-            workspace.exists(marker_path),
-            "Completion marker should be written"
-        );
-
-        let marker_content = workspace
-            .read(marker_path)
-            .expect("Should read completion marker");
-        assert!(
-            marker_content.starts_with("failure"),
-            "Completion marker should indicate failure, got: {}",
-            marker_content
         );
     });
 }

@@ -89,6 +89,19 @@ pub enum AwaitingDevFixEvent {
         /// Whether this is a failure completion (true) or success (false).
         is_failure: bool,
     },
+    /// Completion marker failed to write to filesystem.
+    ///
+    /// This event is emitted when EmitCompletionMarkerAndTerminate attempts to write
+    /// `.agent/tmp/completion_marker` but the workspace write fails.
+    ///
+    /// The reducer must NOT transition to Interrupted in this case so orchestration
+    /// can retry marker emission deterministically.
+    CompletionMarkerWriteFailed {
+        /// Whether this is a failure completion (true) or success (false).
+        is_failure: bool,
+        /// Error message from the underlying workspace write.
+        error: String,
+    },
     /// Recovery attempt initiated at a specific escalation level.
     ///
     /// Emitted when the dev-fix completes and the pipeline is ready to retry.

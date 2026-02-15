@@ -347,8 +347,9 @@ fn emit_completion_marker_with_write_failure_emits_event() {
     let event = result.expect("Expected effect result").event;
     assert!(matches!(
         event,
-        PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
-            is_failure: true
+        PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerWriteFailed {
+            is_failure: true,
+            ..
         })
     ));
 }

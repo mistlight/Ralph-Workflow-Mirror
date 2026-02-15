@@ -77,8 +77,24 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("agent_chain_normalization.rs"),
     },
     SourceFile {
-        path: "awaiting_dev_fix_recovery.rs",
-        contents: include_str!("awaiting_dev_fix_recovery.rs"),
+        path: "awaiting_dev_fix_recovery/mod.rs",
+        contents: include_str!("awaiting_dev_fix_recovery/mod.rs"),
+    },
+    SourceFile {
+        path: "awaiting_dev_fix_recovery/basics.rs",
+        contents: include_str!("awaiting_dev_fix_recovery/basics.rs"),
+    },
+    SourceFile {
+        path: "awaiting_dev_fix_recovery/end_to_end.rs",
+        contents: include_str!("awaiting_dev_fix_recovery/end_to_end.rs"),
+    },
+    SourceFile {
+        path: "awaiting_dev_fix_recovery/orchestration.rs",
+        contents: include_str!("awaiting_dev_fix_recovery/orchestration.rs"),
+    },
+    SourceFile {
+        path: "awaiting_dev_fix_recovery/state_reset.rs",
+        contents: include_str!("awaiting_dev_fix_recovery/state_reset.rs"),
     },
     SourceFile {
         path: "cli/mod.rs",

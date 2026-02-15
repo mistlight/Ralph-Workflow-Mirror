@@ -90,7 +90,7 @@ fn test_max_iterations_in_awaiting_dev_fix_emits_completion_marker() {
 }
 
 #[test]
-fn test_forced_completion_transitions_to_interrupted_when_marker_write_fails() {
+fn test_forced_completion_does_not_report_complete_when_marker_write_fails() {
     with_default_timeout(|| {
         let failing_workspace = Arc::new(FailingWorkspace::new(MemoryWorkspace::new_test(), true));
         let mut fixture = Fixture::with_workspace(failing_workspace);
@@ -107,17 +107,13 @@ fn test_forced_completion_transitions_to_interrupted_when_marker_write_fails() {
             .expect("Event loop should not error");
 
         assert!(
-            result.completed,
-            "Forced completion should mark the event loop as complete"
+            !result.completed,
+            "Event loop must not report completion when completion marker cannot be written"
         );
         assert_eq!(
             result.final_phase,
-            PipelinePhase::Interrupted,
-            "Forced completion should transition to Interrupted even if marker write fails"
-        );
-        assert!(
-            handler.save_attempts > 0,
-            "SaveCheckpoint should be attempted even if marker write fails"
+            PipelinePhase::AwaitingDevFix,
+            "Should remain in AwaitingDevFix when completion marker write fails"
         );
 
         let marker_path = Path::new(".agent/tmp/completion_marker");

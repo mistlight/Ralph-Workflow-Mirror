@@ -190,16 +190,24 @@ where
         "failure\nMax iterations reached in AwaitingDevFix phase (events_processed={})",
         events_processed
     );
-    match ctx.workspace.write(marker_path, &content) {
+    let marker_written = match ctx.workspace.write(marker_path, &content) {
         Ok(()) => {
             ctx.logger
                 .info("Completion marker written for max iterations failure");
+            true
         }
         Err(err) => {
             ctx.logger.error(&format!(
                 "Failed to write completion marker for max iterations failure: {err}"
             ));
+            false
         }
+    };
+
+    // CRITICAL: Do not transition to Interrupted unless the completion marker exists.
+    // External orchestration relies on the marker to observe termination.
+    if !marker_written {
+        return RecoveryResult::FailedUnrecoverable(state, events_processed, false);
     }
 
     // Emit CompletionMarkerEmitted event

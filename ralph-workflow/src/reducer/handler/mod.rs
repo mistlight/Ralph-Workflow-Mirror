@@ -178,7 +178,11 @@ impl MainEffectHandler {
         }
     }
 
-    fn write_completion_marker(ctx: &PhaseContext<'_>, content: &str, is_failure: bool) -> bool {
+    fn write_completion_marker(
+        ctx: &PhaseContext<'_>,
+        content: &str,
+        is_failure: bool,
+    ) -> std::result::Result<(), String> {
         let marker_dir = std::path::Path::new(".agent/tmp");
         if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
             ctx.logger.warn(&format!(
@@ -194,12 +198,12 @@ impl MainEffectHandler {
                     "Completion marker written: {}",
                     if is_failure { "failure" } else { "success" }
                 ));
-                true
+                Ok(())
             }
             Err(err) => {
                 ctx.logger
                     .warn(&format!("Failed to write completion marker: {}", err));
-                false
+                Err(err.to_string())
             }
         }
     }

@@ -86,6 +86,10 @@ pub(super) fn reduce_awaiting_dev_fix_event(
                 ..state
             }
         }
+        AwaitingDevFixEvent::CompletionMarkerWriteFailed { .. } => {
+            // Marker write failed; stay in AwaitingDevFix so orchestration can retry.
+            state
+        }
         AwaitingDevFixEvent::RecoveryAttempted {
             level,
             attempt_count: _,
@@ -144,6 +148,19 @@ pub(super) fn reduce_awaiting_dev_fix_event(
                 }
             };
 
+            // Recovery must also reset agent-chain state.
+            //
+            // If the original failure was agent-chain exhaustion, leaving the chain exhausted
+            // would cause immediate re-failure on the next orchestration cycle.
+            //
+            // Semantics:
+            // - Always reset for Level 2+ recovery (phase/iteration resets imply fresh work).
+            // - Also reset for Level 1 if the chain is already exhausted.
+            if level >= 2 || new_state.agent_chain.is_exhausted() {
+                let role = new_state.agent_chain.current_role;
+                new_state.agent_chain = new_state.agent_chain.reset_for_role(role);
+            }
+
             new_state
         }
         AwaitingDevFixEvent::RecoveryEscalated {
@@ -176,8 +193,10 @@ pub(super) fn reduce_awaiting_dev_fix_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::AgentRole;
     use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
     use crate::reducer::reduce;
+    use crate::reducer::state::AgentChainState;
 
     #[test]
     fn dev_fix_completed_does_not_directly_interrupt_when_attempts_exhausted() {
@@ -221,5 +240,37 @@ mod tests {
         );
 
         assert_eq!(new_state.phase, PipelinePhase::Planning);
+    }
+
+    #[test]
+    fn recovery_attempted_resets_agent_chain_when_exhausted() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["dev".to_string()],
+                vec![vec!["model".to_string()]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+        chain.retry_cycle = 1;
+        chain.current_agent_index = 0;
+        chain.current_model_index = 0;
+        assert!(chain.is_exhausted());
+        state.agent_chain = chain;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                level: 1,
+                attempt_count: 1,
+                target_phase: PipelinePhase::Development,
+            }),
+        );
+
+        assert!(!new_state.agent_chain.is_exhausted());
+        assert_eq!(new_state.agent_chain.retry_cycle, 0);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
     }
 }

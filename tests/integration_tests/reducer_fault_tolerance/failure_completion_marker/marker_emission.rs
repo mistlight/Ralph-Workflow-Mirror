@@ -5,7 +5,7 @@
 //! Completion markers are written only when the pipeline is actually terminating
 //! (Effect::EmitCompletionMarkerAndTerminate), not when entering recovery.
 
-use super::common::Fixture;
+use super::common::{FailingWorkspace, Fixture};
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
@@ -19,6 +19,7 @@ use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 use ralph_workflow::reducer::EffectHandler;
 use std::path::Path;
+use std::sync::Arc;
 
 #[test]
 fn test_agent_chain_exhausted_emits_completion_marker() {
@@ -177,6 +178,47 @@ fn test_completion_marker_written_before_interrupted_transition() {
             new_state.phase,
             PipelinePhase::Interrupted,
             "Reducer should transition to Interrupted after CompletionMarkerEmitted"
+        );
+    });
+}
+
+#[test]
+fn test_emit_completion_marker_does_not_transition_to_interrupted_when_write_fails() {
+    with_default_timeout(|| {
+        let failing_workspace = Arc::new(FailingWorkspace::new(
+            ralph_workflow::workspace::MemoryWorkspace::new_test(),
+            true,
+        ));
+        let mut fixture = Fixture::with_workspace(failing_workspace);
+        let mut ctx = fixture.ctx();
+
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Development);
+
+        let mut handler = MainEffectHandler::new(state.clone());
+        let result = handler
+            .execute(
+                Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    reason: Some("test marker failure".to_string()),
+                },
+                &mut ctx,
+            )
+            .expect("EmitCompletionMarkerAndTerminate should not hard-error");
+
+        assert!(
+            !fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "completion marker should not be present when workspace write fails"
+        );
+
+        let new_state = reduce(state, result.event);
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::AwaitingDevFix,
+            "should remain in AwaitingDevFix so completion marker emission can be retried"
         );
     });
 }

@@ -137,6 +137,7 @@ impl PipelineState {
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,
+            commit: CommitState::NotStarted,
             ..self.clone()
         }
     }
@@ -167,6 +168,7 @@ impl PipelineState {
         .clear_planning_flags()
         .clear_development_flags()
         .clear_commit_flags()
+        .clear_review_flags()
     }
 
     /// Reset to iteration 0 (Level 4 recovery).
@@ -194,6 +196,7 @@ impl PipelineState {
         .clear_planning_flags()
         .clear_development_flags()
         .clear_commit_flags()
+        .clear_review_flags()
     }
 }
 
@@ -201,9 +204,9 @@ impl PipelineState {
 mod helper_tests {
     use super::*;
     use crate::reducer::state::{
-        MaterializedCommitInputs, MaterializedDevelopmentInputs, MaterializedPlanningInputs,
-        MaterializedPromptInput, PromptInputKind, PromptInputRepresentation, PromptInputsState,
-        PromptMaterializationReason,
+        CommitState, MaterializedCommitInputs, MaterializedDevelopmentInputs,
+        MaterializedPlanningInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason,
     };
 
     fn mp(kind: PromptInputKind) -> MaterializedPromptInput {
@@ -275,5 +278,56 @@ mod helper_tests {
         assert!(!reset.context_cleaned);
         assert!(!reset.gitignore_entries_ensured);
         assert!(reset.prompt_inputs.planning.is_none());
+    }
+
+    #[test]
+    fn clear_commit_flags_resets_commit_state_machine() {
+        let mut state = PipelineState::initial(1, 0);
+        state.commit = CommitState::Generated {
+            message: "stale".to_string(),
+        };
+        state.commit_prompt_prepared = true;
+        state.commit_diff_prepared = true;
+
+        let reset = state.clear_phase_flags(PipelinePhase::CommitMessage);
+
+        assert!(matches!(reset.commit, CommitState::NotStarted));
+        assert!(!reset.commit_prompt_prepared);
+        assert!(!reset.commit_diff_prepared);
+    }
+
+    #[test]
+    fn reset_iteration_clears_review_and_fix_flags() {
+        let mut state = PipelineState::initial(2, 0);
+        state.iteration = 1;
+
+        state.review_issues_found = true;
+        state.review_context_prepared_pass = Some(1);
+        state.fix_prompt_prepared_pass = Some(1);
+        state.fix_agent_invoked_pass = Some(1);
+
+        let reset = state.reset_iteration();
+
+        assert!(!reset.review_issues_found);
+        assert!(reset.review_context_prepared_pass.is_none());
+        assert!(reset.fix_prompt_prepared_pass.is_none());
+        assert!(reset.fix_agent_invoked_pass.is_none());
+    }
+
+    #[test]
+    fn reset_to_iteration_zero_clears_review_and_fix_flags() {
+        let mut state = PipelineState::initial(2, 0);
+        state.iteration = 2;
+
+        state.review_issues_found = true;
+        state.review_agent_invoked_pass = Some(2);
+        state.fix_result_xml_extracted_pass = Some(2);
+
+        let reset = state.reset_to_iteration_zero();
+
+        assert_eq!(reset.iteration, 0);
+        assert!(!reset.review_issues_found);
+        assert!(reset.review_agent_invoked_pass.is_none());
+        assert!(reset.fix_result_xml_extracted_pass.is_none());
     }
 }
