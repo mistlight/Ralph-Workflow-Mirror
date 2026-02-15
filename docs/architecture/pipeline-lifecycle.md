@@ -138,20 +138,43 @@ After the last configured loop completes, the pipeline transitions through:
 - `Finalizing`: cleanup effects (for example restoring prompt permissions).
 - `Complete`: terminal success.
 
-## Failure Handling: AwaitingDevFix Recovery Flow
+## Failure Handling: AwaitingDevFix Recovery Loop
 
-Ralph routes terminal failures through an escalating recovery flow designed for unattended operation:
+Ralph routes terminal failures through an **escalating recovery loop** (not a one-shot attempt) designed for unattended operation:
 
 1. **Failure detected** → Transition to `AwaitingDevFix` phase
 2. **TriggerDevFixFlow** → Invoke dev-fix agent to diagnose and fix the issue
 3. **DevFixCompleted** → Increment attempt count, determine escalation level (1-4)
 4. **RecoveryAttempted** → Transition back to failed phase, attempt recovery at determined level
-5. **Work completes successfully** → Phase orchestration detects recovery success
-6. **EmitRecoverySuccess** → Handler emits `RecoverySucceeded` event
-7. **Recovery state cleared** → Reset `dev_fix_attempt_count`, `recovery_escalation_level`, `failed_phase_for_recovery`
-8. **Normal operation resumes** → Continue from the recovered phase
-9. **If recovery fails** → Return to step 2, escalate to next level after 3 attempts
-10. **Only after 12+ attempts** → `CompletionMarkerEmitted` → `Interrupted` → `SaveCheckpoint`
+5. **Work executes** → Phase orchestration retries the work that failed
+6. **IF work succeeds** → Phase orchestration detects recovery success
+7. **EmitRecoverySuccess** → Handler emits `RecoverySucceeded` event
+8. **Recovery state cleared** → Reset `dev_fix_attempt_count`, `recovery_escalation_level`, `failed_phase_for_recovery`
+9. **Normal operation resumes** → Continue from the recovered phase
+10. **IF work fails AGAIN** → **LOOP BACK TO STEP 1** with preserved recovery state
+11. **Recovery state preserved** → Keep attempt count and escalation level for continued escalation
+12. **Only after 12+ attempts** → `CompletionMarkerEmitted` → `Interrupted` → `SaveCheckpoint`
+
+### Critical: This is a LOOP, Not One-Shot
+
+The recovery flow is designed to **repeatedly attempt recovery with escalating strategies**. 
+Each failure loops back to step 1 with an incremented attempt count and potentially higher 
+escalation level. The pipeline will retry the same work multiple times, with progressively 
+more aggressive resets, before giving up.
+
+**Recovery state preservation is critical:** When a failure occurs while already in recovery 
+(previous_phase == AwaitingDevFix), the error reducer preserves `dev_fix_attempt_count` and 
+`recovery_escalation_level` instead of resetting them. This enables escalation across multiple 
+recovery cycles rather than resetting to level 1 on each failure.
+
+**This is NOT:**
+- Run dev-fix once → terminate
+- Try recovery once → give up
+- Reset counters on each failure
+
+**This IS:**
+- Run dev-fix → retry work → if fails, run dev-fix again → retry work with reset → 
+  if fails, run dev-fix again with bigger reset → repeat up to 12 times → only then terminate
 
 ### Escalation Levels
 
@@ -163,6 +186,50 @@ The recovery hierarchy implements progressively more aggressive reset strategies
 - **Level 4** (attempts 10+): Reset to iteration 0, complete restart
 
 This ensures the pipeline is truly **non-terminating by default** for unattended operation, only exiting after exhausting all recovery strategies.
+
+### Example: Recovery Loop with Escalation
+
+```
+Iteration 0: Development agent fails (GitAddAllFailed)
+  ↓
+AwaitingDevFix: TriggerDevFixFlow (attempt 1)
+  ↓
+DevFixCompleted: "Fixed permission issue"
+  ↓
+RecoveryAttempted: Level 1 (retry same operation)
+  ↓
+Development: Try git add again... FAILS AGAIN (still has issue)
+  ↓
+AwaitingDevFix: TriggerDevFixFlow (attempt 2) ← LOOP BACK (counters preserved)
+  ↓
+DevFixCompleted: "Fixed path issue"
+  ↓
+RecoveryAttempted: Level 1 (retry same operation)
+  ↓
+Development: Try git add again... FAILS AGAIN
+  ↓
+AwaitingDevFix: TriggerDevFixFlow (attempt 3) ← LOOP BACK (counters preserved)
+  ↓
+DevFixCompleted: "Fixed file encoding"
+  ↓
+RecoveryAttempted: Level 1 (retry same operation)
+  ↓
+Development: Try git add again... FAILS AGAIN
+  ↓
+AwaitingDevFix: TriggerDevFixFlow (attempt 4) ← LOOP BACK, ESCALATE
+  ↓
+DevFixCompleted: "Reset phase state"
+  ↓
+RecoveryAttempted: Level 2 (reset to phase start) ← ESCALATED
+  ↓
+Development: Restart entire Development phase from scratch... SUCCESS
+  ↓
+EmitRecoverySuccess: Clear recovery state, resume normal operation
+  ↓
+Continue to CommitMessage phase
+```
+
+The loop can execute up to 12 times before termination.
 
 ### Recovery Success Detection
 

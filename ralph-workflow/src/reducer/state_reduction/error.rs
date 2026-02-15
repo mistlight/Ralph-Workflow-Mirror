@@ -140,11 +140,22 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::AwaitingDevFix;
             new_state.dev_fix_triggered = false; // Reset flag for new AwaitingDevFix phase
-                                                 // NEW: Capture the failed phase for recovery
+
+            // Capture the failed phase for recovery
             new_state.failed_phase_for_recovery = Some(state.phase);
-            // Reset recovery counters for new failure
-            new_state.dev_fix_attempt_count = 0;
-            new_state.recovery_escalation_level = 0;
+
+            // CRITICAL: Only reset recovery counters if this is a NEW failure
+            // (not already in recovery loop). If previous_phase is AwaitingDevFix,
+            // we're failing AGAIN after recovery attempt - keep counters to continue
+            // escalation. This enables the recovery loop instead of resetting to level 1.
+            if state.previous_phase != Some(PipelinePhase::AwaitingDevFix) {
+                // First failure - reset counters
+                new_state.dev_fix_attempt_count = 0;
+                new_state.recovery_escalation_level = 0;
+            }
+            // else: Already in recovery loop - keep existing attempt_count and level
+            // to continue escalation on next dev-fix completion
+
             new_state
         }
     }
@@ -287,6 +298,81 @@ mod tests {
         assert!(
             !new_state.dev_fix_triggered,
             "dev_fix_triggered should be reset on awaiting-dev-fix transitions"
+        );
+    }
+
+    #[test]
+    fn test_agent_chain_exhausted_preserves_recovery_state_when_already_in_recovery() {
+        use crate::agents::AgentRole;
+        use crate::reducer::event::PipelinePhase;
+
+        // Set up state that's already in recovery loop
+        let mut state =
+            PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        state.phase = PipelinePhase::Development;
+        state.previous_phase = Some(PipelinePhase::AwaitingDevFix); // Key: already in recovery
+        state.dev_fix_attempt_count = 2;
+        state.recovery_escalation_level = 1;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+
+        // Simulate failure again during recovery
+        let error = ErrorEvent::AgentChainExhausted {
+            role: AgentRole::Developer,
+            phase: PipelinePhase::Development,
+            cycle: 3,
+        };
+
+        let new_state = reduce_error(&state, &error);
+
+        // Should transition to AwaitingDevFix
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+
+        // CRITICAL: Should preserve recovery state (not reset to 0)
+        assert_eq!(
+            new_state.dev_fix_attempt_count, 2,
+            "dev_fix_attempt_count should be preserved when already in recovery loop"
+        );
+        assert_eq!(
+            new_state.recovery_escalation_level, 1,
+            "recovery_escalation_level should be preserved when already in recovery loop"
+        );
+    }
+
+    #[test]
+    fn test_agent_chain_exhausted_resets_recovery_state_on_first_failure() {
+        use crate::agents::AgentRole;
+        use crate::reducer::event::PipelinePhase;
+
+        // Set up state that's NOT in recovery (first failure)
+        let mut state =
+            PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        state.phase = PipelinePhase::Development;
+        state.previous_phase = Some(PipelinePhase::Planning); // Not AwaitingDevFix
+                                                              // Simulate stale recovery state from previous recovery
+        state.dev_fix_attempt_count = 5;
+        state.recovery_escalation_level = 2;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+
+        // Simulate first failure (not in recovery)
+        let error = ErrorEvent::AgentChainExhausted {
+            role: AgentRole::Developer,
+            phase: PipelinePhase::Development,
+            cycle: 3,
+        };
+
+        let new_state = reduce_error(&state, &error);
+
+        // Should transition to AwaitingDevFix
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+
+        // Should reset recovery state (new failure, not recovery loop)
+        assert_eq!(
+            new_state.dev_fix_attempt_count, 0,
+            "dev_fix_attempt_count should be reset on first failure"
+        );
+        assert_eq!(
+            new_state.recovery_escalation_level, 0,
+            "recovery_escalation_level should be reset on first failure"
         );
     }
 }
