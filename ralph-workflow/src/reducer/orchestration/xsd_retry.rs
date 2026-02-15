@@ -212,13 +212,15 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
     // Terminal: once aborted, drive a single checkpoint save so the event loop can
     // deterministically complete (Interrupted + checkpoint_saved_count > 0).
     if state.phase == PipelinePhase::Interrupted && state.checkpoint_saved_count == 0 {
-        // BUT: if restoration is pending, do that FIRST before saving checkpoint
+        // BUT: if restoration is pending, do that FIRST before termination effects.
         if state.prompt_permissions.restore_needed && !state.prompt_permissions.restored {
             return Effect::RestorePromptPermissions;
         }
-        return Effect::SaveCheckpoint {
-            trigger: CheckpointTrigger::Interrupt,
-        };
+
+        // Do NOT bypass the pre-termination commit safety check here.
+        // The ONLY exception is Ctrl+C (interrupted_by_user=true), which is handled
+        // in phase-specific orchestration.
+        return determine_next_effect_for_phase(state);
     }
 
     // Startup: Lock PROMPT.md permissions before any work (best-effort protection)

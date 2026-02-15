@@ -110,11 +110,20 @@ fn test_permission_lifecycle_failure_path() {
         assert_eq!(state3.phase, PipelinePhase::Interrupted);
         assert!(state3.prompt_permissions.restored);
 
-        // Step 5: Now should save checkpoint
+        // Step 5: Must run pre-termination safety check before checkpointing
         let effect3 = determine_next_effect(&state3);
         assert!(
-            matches!(effect3, Effect::SaveCheckpoint { .. }),
-            "After restore on Interrupted, should save checkpoint"
+            matches!(effect3, Effect::CheckUncommittedChangesBeforeTermination),
+            "After restore on Interrupted, should run safety check"
+        );
+
+        // Step 6: Execute safety check, then checkpoint
+        let result3 = handler.execute_mock(effect3);
+        let state4 = reduce(state3, result3.event);
+        let effect4 = determine_next_effect(&state4);
+        assert!(
+            matches!(effect4, Effect::SaveCheckpoint { .. }),
+            "After safety check on Interrupted, should save checkpoint"
         );
     });
 }
@@ -188,6 +197,7 @@ fn test_permission_restoration_on_user_interrupt() {
             phase: PipelinePhase::Interrupted,
             previous_phase: Some(PipelinePhase::Planning), // NOT AwaitingDevFix
             checkpoint_saved_count: 0,
+            interrupted_by_user: true,
             prompt_permissions: state2.prompt_permissions.clone(),
             ..state2
         };

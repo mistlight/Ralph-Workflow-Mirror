@@ -96,7 +96,7 @@ pub fn clear_interrupt_context() {
 /// Call this early in main() after initializing the pipeline context.
 pub fn setup_interrupt_handler() {
     ctrlc::set_handler(|| {
-        eprintln!("\n✋ Interrupt received! Saving checkpoint...");
+        eprintln!("\nInterrupt received; saving checkpoint...");
 
         // Try to save checkpoint if context is available
         let ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|poison| {
@@ -107,7 +107,7 @@ pub fn setup_interrupt_handler() {
             if let Err(e) = save_interrupt_checkpoint(context) {
                 eprintln!("Warning: Failed to save checkpoint: {}", e);
             } else {
-                eprintln!("✓ Checkpoint saved. Resume with: ralph --resume");
+                eprintln!("Checkpoint saved. Resume with: ralph --resume");
             }
         }
         drop(ctx); // Release lock before cleanup
@@ -238,6 +238,17 @@ mod tests {
     use crate::checkpoint::load_checkpoint_with_workspace;
     use crate::workspace::MemoryWorkspace;
     use std::sync::Arc;
+
+    #[test]
+    fn interrupt_handler_source_is_ascii_only() {
+        // Guardrail: keep interrupt handler output ASCII-only to avoid encoding/rendering
+        // issues in unattended environments.
+        let src = include_str!("interrupt.rs");
+        assert!(
+            src.is_ascii(),
+            "interrupt.rs must remain ASCII-only; found non-ASCII characters"
+        );
+    }
 
     #[test]
     fn test_interrupt_context_creation() {

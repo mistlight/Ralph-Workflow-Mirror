@@ -85,6 +85,12 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
             // If the marker write failed, we must keep retrying deterministically until
             // the marker is successfully written (CompletionMarkerEmitted).
             if state.completion_marker_pending {
+                // Completion marker emission is NOT an exception to the pre-termination
+                // commit safety check. The ONLY exception is user-initiated Ctrl+C.
+                if !state.interrupted_by_user && !state.pre_termination_commit_checked {
+                    return Effect::CheckUncommittedChangesBeforeTermination;
+                }
+
                 return Effect::EmitCompletionMarkerAndTerminate {
                     is_failure: state.completion_marker_is_failure,
                     reason: state.completion_marker_reason.clone(),
@@ -235,12 +241,36 @@ mod tests {
     }
 
     #[test]
-    fn awaiting_dev_fix_derives_completion_marker_effect_when_pending() {
+    fn awaiting_dev_fix_completion_marker_pending_requires_safety_check_first() {
         let mut state = PipelineState::initial(1, 0);
         state.phase = PipelinePhase::AwaitingDevFix;
         state.completion_marker_pending = true;
         state.completion_marker_is_failure = true;
         state.completion_marker_reason = Some("safety_valve".to_string());
+
+        // The completion marker emission is NOT an exception: programmatic termination
+        // must pass the same pre-termination commit safety check.
+        state.interrupted_by_user = false;
+        state.pre_termination_commit_checked = false;
+
+        let effect = determine_next_effect_for_phase(&state);
+
+        assert!(
+            matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
+            "expected safety check to preempt completion marker emission, got: {effect:?}"
+        );
+    }
+
+    #[test]
+    fn awaiting_dev_fix_completion_marker_pending_emits_after_safety_check() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.completion_marker_pending = true;
+        state.completion_marker_is_failure = true;
+        state.completion_marker_reason = Some("safety_valve".to_string());
+
+        state.interrupted_by_user = false;
+        state.pre_termination_commit_checked = true;
 
         let effect = determine_next_effect_for_phase(&state);
 
@@ -252,7 +282,7 @@ mod tests {
                     ref reason
                 } if reason.as_deref() == Some("safety_valve")
             ),
-            "expected EmitCompletionMarkerAndTerminate when completion_marker_pending is set, got: {effect:?}"
+            "expected EmitCompletionMarkerAndTerminate after safety check, got: {effect:?}"
         );
     }
 

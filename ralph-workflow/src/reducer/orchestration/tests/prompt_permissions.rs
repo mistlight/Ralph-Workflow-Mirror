@@ -113,7 +113,34 @@ fn test_orchestration_saves_checkpoint_after_restore_on_interrupted() {
     // When: Determining next effect
     let effect = determine_next_effect(&state);
 
-    // Then: Should proceed to SaveCheckpoint now that restoration is complete
+    // Then: Must still run the pre-termination commit safety check before checkpointing.
+    assert!(
+        matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
+        "Expected CheckUncommittedChangesBeforeTermination, got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_orchestration_saves_checkpoint_after_restore_and_safety_check_on_interrupted() {
+    // Given: State in Interrupted with permissions restored and safety check already passed
+    let state = PipelineState {
+        phase: PipelinePhase::Interrupted,
+        previous_phase: Some(PipelinePhase::AwaitingDevFix),
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: true,
+            last_warning: None,
+        },
+        checkpoint_saved_count: 0,
+        interrupted_by_user: false,
+        pre_termination_commit_checked: true,
+        ..PipelineState::initial(1, 0)
+    };
+
+    let effect = determine_next_effect(&state);
+
     assert!(
         matches!(effect, Effect::SaveCheckpoint { .. }),
         "Expected SaveCheckpoint, got {:?}",

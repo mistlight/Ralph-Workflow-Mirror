@@ -247,16 +247,32 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
 
         let final_effect = determine_next_effect(&interrupted_state);
 
-        // Then: It should save a checkpoint
+        // Then: It must run the pre-termination safety check before checkpointing.
+        assert!(
+            matches!(
+                final_effect,
+                Effect::CheckUncommittedChangesBeforeTermination
+            ),
+            "Expected CheckUncommittedChangesBeforeTermination for Interrupted phase, got {:?}",
+            final_effect
+        );
+
+        // When: Safety check passes (simulate handler emitting event)
+        let after_check_state = reduce(
+            interrupted_state,
+            PipelineEvent::pre_termination_safety_check_passed(),
+        );
+
+        let final_effect = determine_next_effect(&after_check_state);
         assert!(
             matches!(final_effect, Effect::SaveCheckpoint { .. }),
-            "Expected SaveCheckpoint for Interrupted phase, got {:?}",
+            "Expected SaveCheckpoint after safety check, got {:?}",
             final_effect
         );
 
         // When: Checkpoint is saved (simulate by applying CheckpointSaved event)
         let final_state = reduce(
-            interrupted_state,
+            after_check_state,
             PipelineEvent::checkpoint_saved(
                 ralph_workflow::reducer::CheckpointTrigger::PhaseTransition,
             ),

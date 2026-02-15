@@ -86,11 +86,15 @@ fn test_failure_status_triggers_awaiting_dev_fix_not_immediate_exit() {
             Some(PipelinePhase::AwaitingDevFix)
         );
 
-        // And: Next effect should be SaveCheckpoint
+        // And: Next effect should be the pre-termination safety check.
+        // Completion marker emission is not an exception (only Ctrl+C is).
         let next_effect = determine_next_effect(&interrupted_state);
         assert!(
-            matches!(next_effect, Effect::SaveCheckpoint { .. }),
-            "Expected SaveCheckpoint for Interrupted phase, got {:?}",
+            matches!(
+                next_effect,
+                Effect::CheckUncommittedChangesBeforeTermination
+            ),
+            "Expected CheckUncommittedChangesBeforeTermination for Interrupted phase, got {:?}",
             next_effect
         );
     });
@@ -136,11 +140,15 @@ fn test_interrupted_from_dev_fix_is_complete_before_checkpoint() {
              This is the fix for 'Pipeline exited without completion marker'."
         );
 
-        // Verify next effect is SaveCheckpoint
+        // Verify next effect is the pre-termination safety check.
+        // Completion marker emission is not an exception (only Ctrl+C is).
         let next_effect = determine_next_effect(&after_marker_state);
         assert!(
-            matches!(next_effect, Effect::SaveCheckpoint { .. }),
-            "Next effect should be SaveCheckpoint, got {:?}",
+            matches!(
+                next_effect,
+                Effect::CheckUncommittedChangesBeforeTermination
+            ),
+            "Next effect should be CheckUncommittedChangesBeforeTermination, got {:?}",
             next_effect
         );
     });

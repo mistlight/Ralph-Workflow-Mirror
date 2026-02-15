@@ -12,6 +12,8 @@ fn test_interrupted_phase_saves_checkpoint_before_abort_loop() {
     let state = PipelineState {
         phase: PipelinePhase::Interrupted,
         checkpoint_saved_count: 0,
+        interrupted_by_user: false,
+        pre_termination_commit_checked: false,
         agent_chain: AgentChainState::initial()
             .with_agents(vec!["a".to_string()], vec![vec![]], AgentRole::Reviewer)
             .with_max_cycles(0),
@@ -19,10 +21,10 @@ fn test_interrupted_phase_saves_checkpoint_before_abort_loop() {
     };
 
     let effect = determine_next_effect(&state);
+
+    // Programmatic interrupts must not bypass the pre-termination commit safety check.
     assert!(matches!(
         effect,
-        Effect::SaveCheckpoint {
-            trigger: CheckpointTrigger::Interrupt
-        }
+        Effect::CheckUncommittedChangesBeforeTermination
     ));
 }
