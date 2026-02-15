@@ -70,6 +70,9 @@ fn create_resume_state(
         checkpoint_saved_count: 0,
         continuation: crate::reducer::state::ContinuationState::new(),
         dev_fix_triggered: false,
+        dev_fix_attempt_count: 0,
+        recovery_escalation_level: 0,
+        failed_phase_for_recovery: None,
         gitignore_entries_ensured: false,
         prompt_inputs: Default::default(),
         // Simulate that permissions were locked at original startup (resume scenario)

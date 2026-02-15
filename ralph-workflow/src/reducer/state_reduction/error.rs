@@ -121,6 +121,11 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::AwaitingDevFix;
             new_state.dev_fix_triggered = false;
+            // Capture the failed phase for recovery
+            new_state.failed_phase_for_recovery = Some(state.phase);
+            // Reset recovery counters for new failure
+            new_state.dev_fix_attempt_count = 0;
+            new_state.recovery_escalation_level = 0;
             new_state
         }
 
@@ -135,6 +140,11 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::AwaitingDevFix;
             new_state.dev_fix_triggered = false; // Reset flag for new AwaitingDevFix phase
+                                                 // NEW: Capture the failed phase for recovery
+            new_state.failed_phase_for_recovery = Some(state.phase);
+            // Reset recovery counters for new failure
+            new_state.dev_fix_attempt_count = 0;
+            new_state.recovery_escalation_level = 0;
             new_state
         }
     }

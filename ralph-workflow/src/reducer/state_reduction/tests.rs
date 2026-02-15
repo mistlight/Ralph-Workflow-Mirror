@@ -87,3 +87,7 @@ mod prompt_permissions;
 // Template rendering substitution log validation tests
 #[path = "tests/template_validation.rs"]
 mod template_validation;
+
+// AwaitingDevFix recovery escalation tests
+#[path = "tests/awaiting_dev_fix.rs"]
+mod awaiting_dev_fix;

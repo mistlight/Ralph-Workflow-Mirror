@@ -261,6 +261,37 @@ pub struct PipelineState {
     #[serde(default)]
     pub dev_fix_triggered: bool,
 
+    /// Count of dev-fix recovery attempts for current failure.
+    ///
+    /// Tracks how many times we've attempted to recover from the same failure.
+    /// Reset when recovery succeeds or when moving to a different failure context.
+    /// Used to determine recovery escalation level:
+    /// - Attempts 1-3: Retry same operation (Level 1)
+    /// - Attempts 4-6: Reset to phase start (Level 2)
+    /// - Attempts 7-9: Reset iteration counter (Level 3)
+    /// - Attempts 10+: Reset to iteration 0 (Level 4)
+    #[serde(default)]
+    pub dev_fix_attempt_count: u32,
+
+    /// Current recovery escalation level.
+    ///
+    /// Tracks which recovery strategy is being applied:
+    /// - 0: No recovery in progress
+    /// - 1: Retry same operation (attempts 1-3)
+    /// - 2: Reset to phase start (attempts 4-6)
+    /// - 3: Reset iteration counter (attempts 7-9)
+    /// - 4: Reset to iteration 0 (attempts 10+)
+    #[serde(default)]
+    pub recovery_escalation_level: u32,
+
+    /// Snapshot of the phase where the current failure occurred.
+    ///
+    /// Preserved when transitioning to AwaitingDevFix so we know which phase
+    /// to return to after dev-fix completes. Set when entering AwaitingDevFix,
+    /// cleared when recovery succeeds or when reaching terminal state.
+    #[serde(default)]
+    pub failed_phase_for_recovery: Option<PipelinePhase>,
+
     /// Whether gitignore entries have been ensured for this pipeline run.
     ///
     /// Set to true after Effect::EnsureGitignoreEntries completes successfully.
@@ -402,6 +433,9 @@ impl PipelineState {
             checkpoint_saved_count: 0,
             continuation: continuation.clone(),
             dev_fix_triggered: false,
+            dev_fix_attempt_count: 0,
+            recovery_escalation_level: 0,
+            failed_phase_for_recovery: None,
             gitignore_entries_ensured: false,
             prompt_inputs: PromptInputsState::default(),
             prompt_permissions: PromptPermissionsState::default(),

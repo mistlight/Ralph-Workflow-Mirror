@@ -138,11 +138,28 @@ After the last configured loop completes, the pipeline transitions through:
 - `Finalizing`: cleanup effects (for example restoring prompt permissions).
 - `Complete`: terminal success.
 
-## Failure Handling: AwaitingDevFix -> Interrupted
+## Failure Handling: AwaitingDevFix Recovery Flow
 
-Ralph is designed to route terminal failures through a non-early-exit path:
+Ralph routes terminal failures through an escalating recovery flow designed for unattended operation:
 
-`AwaitingDevFix` -> `TriggerDevFixFlow` (writes completion marker, optional dev-fix agent) -> `Interrupted` -> `SaveCheckpoint`
+1. **Failure detected** → Transition to `AwaitingDevFix` phase
+2. **TriggerDevFixFlow** → Invoke dev-fix agent to diagnose and fix the issue
+3. **DevFixCompleted** → Increment attempt count, determine escalation level (1-4)
+4. **RecoveryAttempted** → Transition back to failed phase, attempt recovery at determined level
+5. **If recovery fails** → Return to step 2, escalate to next level after 3 attempts
+6. **If recovery succeeds** → `RecoverySucceeded` event, clear recovery state, resume normal operation
+7. **Only after 12+ attempts** → `CompletionMarkerEmitted` → `Interrupted` → `SaveCheckpoint`
+
+### Escalation Levels
+
+The recovery hierarchy implements progressively more aggressive reset strategies:
+
+- **Level 1** (attempts 1-3): Retry the same operation that failed
+- **Level 2** (attempts 4-6): Reset to phase start (clear phase-specific progress)
+- **Level 3** (attempts 7-9): Reset iteration counter, restart from Planning
+- **Level 4** (attempts 10+): Reset to iteration 0, complete restart
+
+This ensures the pipeline is truly **non-terminating by default** for unattended operation, only exiting after exhausting all recovery strategies.
 
 Terminal semantics for the event loop are implemented by `PipelineState::is_complete()` (see `ralph-workflow/src/reducer/state/pipeline.rs`).
 

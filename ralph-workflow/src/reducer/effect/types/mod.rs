@@ -27,6 +27,6 @@ mod effect_enum;
 mod effect_result;
 mod handler_trait;
 
-pub use effect_enum::{ContinuationContextData, Effect};
+pub use effect_enum::{ContinuationContextData, Effect, RecoveryResetType};
 pub use effect_result::EffectResult;
 pub use handler_trait::EffectHandler;

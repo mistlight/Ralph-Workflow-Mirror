@@ -212,13 +212,11 @@ impl MainEffectHandler {
         // The reducer will emit DevFixCompleted with the proper success status
         // after validation succeeds or fails.
 
-        // Always emit CompletionMarkerEmitted since the marker is written
-        // unconditionally when entering TriggerDevFixFlow.
-        result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
-            crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
-                is_failure: true,
-            },
-        ));
+        // CompletionMarkerEmitted is NOT emitted here. The reducer will decide
+        // whether to continue with recovery or emit completion marker based on
+        // recovery escalation level and attempt count. Only catastrophic failures
+        // (external events, not internal pipeline errors) should trigger immediate
+        // completion marker emission.
 
         Ok(result)
     }

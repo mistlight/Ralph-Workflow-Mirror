@@ -418,6 +418,11 @@ impl MainEffectHandler {
                 loop_count,
             } => self.trigger_loop_recovery(ctx, detected_loop, loop_count),
 
+            Effect::EmitRecoveryReset {
+                reset_type,
+                target_phase,
+            } => self.emit_recovery_reset(ctx, reset_type, target_phase),
+
             Effect::TriggerDevFixFlow {
                 failed_phase,
                 failed_role,

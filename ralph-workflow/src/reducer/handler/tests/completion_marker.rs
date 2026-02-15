@@ -394,23 +394,29 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
 
     assert!(
         result.is_ok(),
-        "TriggerDevFixFlow should emit completion marker even if dev-fix invocation fails"
+        "TriggerDevFixFlow should succeed even if dev-fix invocation fails"
     );
 
     let result = result.expect("Expected effect result");
+    // NEW BEHAVIOR: CompletionMarkerEmitted should NOT be emitted immediately.
+    // Instead, the pipeline should prepare for recovery after dev-fix completes.
+    // The reducer will decide whether to retry, escalate, or terminate based on
+    // the attempt count and recovery escalation level.
     assert!(
-        result.additional_events.iter().any(|event| matches!(
+        !result.additional_events.iter().any(|event| matches!(
             event,
             PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
                 is_failure: true
             })
         )),
-        "CompletionMarkerEmitted should be emitted on dev-fix invocation failure"
+        "CompletionMarkerEmitted should NOT be emitted immediately on dev-fix invocation failure. \
+         Recovery should be attempted first."
     );
 
     let marker_path = Path::new(".agent/tmp/completion_marker");
     assert!(
         workspace.exists(marker_path),
-        "Completion marker should be written even when dev-fix invocation fails"
+        "Completion marker should still be written by TriggerDevFixFlow for external orchestration, \
+         but the pipeline should not emit CompletionMarkerEmitted event (recovery comes first)"
     );
 }

@@ -83,4 +83,36 @@ pub enum AwaitingDevFixEvent {
         /// Whether this is a failure completion (true) or success (false).
         is_failure: bool,
     },
+    /// Recovery attempt initiated at a specific escalation level.
+    ///
+    /// Emitted when the dev-fix completes and the pipeline is ready to retry.
+    /// The escalation level determines the recovery strategy.
+    RecoveryAttempted {
+        /// The recovery escalation level being attempted (1-4).
+        level: u32,
+        /// Number of recovery attempts so far for this failure.
+        attempt_count: u32,
+    },
+    /// Recovery escalated to a higher level.
+    ///
+    /// Emitted when a recovery attempt fails and we escalate to a more
+    /// aggressive recovery strategy (e.g., from retry → phase reset).
+    RecoveryEscalated {
+        /// Previous escalation level.
+        from_level: u32,
+        /// New escalation level.
+        to_level: u32,
+        /// Reason for escalation.
+        reason: String,
+    },
+    /// Recovery succeeded - pipeline can resume normal operation.
+    ///
+    /// Emitted when a recovery attempt successfully fixes the issue
+    /// (e.g., the retry succeeds, or the reset phase completes).
+    RecoverySucceeded {
+        /// The escalation level that succeeded.
+        level: u32,
+        /// Total attempts before success.
+        total_attempts: u32,
+    },
 }

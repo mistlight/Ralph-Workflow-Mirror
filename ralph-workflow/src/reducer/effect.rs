@@ -53,4 +53,4 @@
 mod tests;
 mod types;
 
-pub use types::{ContinuationContextData, Effect, EffectHandler, EffectResult};
+pub use types::{ContinuationContextData, Effect, EffectHandler, EffectResult, RecoveryResetType};

@@ -115,13 +115,57 @@ Pipeline effects are granular (prepare prompt, invoke agent, extract XML, valida
 
 An effect should do one type of I/O and then report an outcome event. Avoid effects that mix multiple responsibilities (for example: invoke agent + parse output + transition phase).
 
-## Non-Terminating Failure Handling
+## Non-Terminating Failure Handling: Escalating Recovery Hierarchy
 
-The pipeline is designed to keep running and route internal failures through the state machine instead of exiting early.
+The pipeline is designed to keep running and route internal failures through an escalating recovery hierarchy instead of exiting early. This ensures true non-terminating operation for unattended pipelines.
 
-- Terminal internal failure conditions transition the state to `PipelinePhase::AwaitingDevFix`.
-- Orchestration derives a dev-fix flow effect, which emits a completion marker and then transitions to `Interrupted`.
-- The event loop should exit with `completed=true` after the checkpoint is saved for the interrupted state.
+### Recovery Flow
+
+When terminal internal failures occur:
+
+1. **Transition to AwaitingDevFix**: Pipeline phase transitions to `PipelinePhase::AwaitingDevFix`
+2. **Dev-fix invocation**: Orchestration derives `TriggerDevFixFlow` effect to diagnose and fix the issue
+3. **Recovery attempt**: After dev-fix completes, the reducer determines the appropriate recovery level based on attempt count
+4. **Escalating resets**: If recovery fails repeatedly, the system escalates through progressively more aggressive reset strategies
+5. **Only terminate after exhaustion**: Completion marker is emitted only after all recovery levels are exhausted (12+ attempts)
+
+### Escalation Levels
+
+The recovery hierarchy implements escalating reset strategies:
+
+- **Level 1 - Retry same operation** (attempts 1-3): Dev-fix agent runs, reset error state, retry the failed effect from the same point
+- **Level 2 - Reset to phase start** (attempts 4-6): Clear phase-specific progress flags and restart the entire phase from the beginning
+- **Level 3 - Reset iteration** (attempts 7-9): Decrement iteration counter and redo Planning → Development → Commit sequence
+- **Level 4 - Reset everything** (attempts 10+): Reset to iteration 0 and start completely fresh from the beginning
+- **Termination** (attempts 13+): Only after exhausting all recovery levels does the pipeline emit `CompletionMarkerEmitted` and transition to `Interrupted`
+
+### Recovery State Tracking
+
+`PipelineState` includes fields to track recovery progress:
+
+- `dev_fix_attempt_count: u32` - Number of recovery attempts for the current failure
+- `recovery_escalation_level: u32` - Current recovery strategy (0-4)
+- `failed_phase_for_recovery: Option<PipelinePhase>` - Snapshot of the phase where failure occurred
+
+These fields enable deterministic escalation decisions and are preserved in checkpoints to maintain recovery context across resumption.
+
+### Recovery Events
+
+The `AwaitingDevFixEvent` category includes events for recovery progression:
+
+- `RecoveryAttempted { level, attempt_count }` - Recovery initiated at a specific escalation level
+- `RecoveryEscalated { from_level, to_level, reason }` - Recovery escalated to more aggressive strategy
+- `RecoverySucceeded { level, total_attempts }` - Recovery succeeded, clear recovery state and resume normal operation
+
+### Why This Architecture
+
+This escalating recovery design ensures:
+
+- **Unattended operation**: Pipeline never gives up early, always tries progressively more aggressive recovery
+- **Bounded attempts**: Hard cap at 12 attempts prevents true infinite loops
+- **Minimal disruption**: Start with least disruptive recovery (retry) before escalating to more expensive resets
+- **Deterministic behavior**: Recovery decisions are pure functions of attempt count and escalation level
+- **Observable progress**: Recovery events provide visibility into escalation decisions
 
 ## Orchestration: Priority Order
 

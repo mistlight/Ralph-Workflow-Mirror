@@ -1,0 +1,164 @@
+//! Unit tests for AwaitingDevFix recovery escalation logic.
+
+use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
+use crate::reducer::state::PipelineState;
+use crate::reducer::state_reduction::reduce;
+
+#[test]
+fn test_dev_fix_completed_increments_attempt_count() {
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::AwaitingDevFix;
+    state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+
+    let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+        success: true,
+        summary: Some("Fixed".to_string()),
+    });
+
+    let new_state = reduce(state, event);
+    assert_eq!(new_state.dev_fix_attempt_count, 1);
+}
+
+#[test]
+fn test_recovery_escalation_level_1_for_attempts_1_to_3() {
+    for attempt in 1..=3 {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_attempt_count = attempt - 1;
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: false,
+            summary: None,
+        });
+
+        let new_state = reduce(state, event);
+        assert_eq!(
+            new_state.recovery_escalation_level, 1,
+            "Attempt {} should be at level 1",
+            attempt
+        );
+    }
+}
+
+#[test]
+fn test_recovery_escalation_level_2_for_attempts_4_to_6() {
+    for attempt in 4..=6 {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_attempt_count = attempt - 1;
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: false,
+            summary: None,
+        });
+
+        let new_state = reduce(state, event);
+        assert_eq!(
+            new_state.recovery_escalation_level, 2,
+            "Attempt {} should be at level 2",
+            attempt
+        );
+    }
+}
+
+#[test]
+fn test_recovery_escalation_level_3_for_attempts_7_to_9() {
+    for attempt in 7..=9 {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_attempt_count = attempt - 1;
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: false,
+            summary: None,
+        });
+
+        let new_state = reduce(state, event);
+        assert_eq!(
+            new_state.recovery_escalation_level, 3,
+            "Attempt {} should be at level 3",
+            attempt
+        );
+    }
+}
+
+#[test]
+fn test_recovery_escalation_level_4_for_attempts_10_plus() {
+    for attempt in 10..=12 {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+        state.dev_fix_attempt_count = attempt - 1;
+
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: false,
+            summary: None,
+        });
+
+        let new_state = reduce(state, event);
+        assert_eq!(
+            new_state.recovery_escalation_level, 4,
+            "Attempt {} should be at level 4",
+            attempt
+        );
+    }
+}
+
+#[test]
+fn test_recovery_terminated_after_12_attempts() {
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::AwaitingDevFix;
+    state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+    state.dev_fix_attempt_count = 12;
+
+    let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+        success: false,
+        summary: None,
+    });
+
+    let new_state = reduce(state, event);
+    assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+    assert_eq!(new_state.dev_fix_attempt_count, 13);
+}
+
+#[test]
+fn test_recovery_attempted_transitions_to_failed_phase() {
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::AwaitingDevFix;
+    state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+    state.recovery_escalation_level = 1;
+
+    let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+        level: 1,
+        attempt_count: 1,
+    });
+
+    let new_state = reduce(state, event);
+    assert_eq!(new_state.phase, PipelinePhase::Planning);
+    assert_eq!(
+        new_state.previous_phase,
+        Some(PipelinePhase::AwaitingDevFix)
+    );
+}
+
+#[test]
+fn test_recovery_succeeded_clears_recovery_state() {
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::Development;
+    state.dev_fix_attempt_count = 5;
+    state.recovery_escalation_level = 2;
+    state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+
+    let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoverySucceeded {
+        level: 2,
+        total_attempts: 5,
+    });
+
+    let new_state = reduce(state, event);
+    assert_eq!(new_state.dev_fix_attempt_count, 0);
+    assert_eq!(new_state.recovery_escalation_level, 0);
+    assert_eq!(new_state.failed_phase_for_recovery, None);
+}

@@ -421,6 +421,7 @@ fn test_effects_are_single_task() {
             CleanupCommitXml,
             TriggerDevFixFlow,
             TriggerLoopRecovery,
+            EmitRecoveryReset,
             EmitCompletionMarkerAndTerminate,
         }
 
@@ -493,6 +494,7 @@ fn test_effects_are_single_task() {
                 Effect::CleanupCommitXml => EffectTask::CleanupCommitXml,
                 Effect::TriggerDevFixFlow { .. } => EffectTask::TriggerDevFixFlow,
                 Effect::TriggerLoopRecovery { .. } => EffectTask::TriggerLoopRecovery,
+                Effect::EmitRecoveryReset { .. } => EffectTask::EmitRecoveryReset,
                 Effect::EmitCompletionMarkerAndTerminate { .. } => {
                     EffectTask::EmitCompletionMarkerAndTerminate
                 }

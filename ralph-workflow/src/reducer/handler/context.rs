@@ -177,6 +177,33 @@ impl MainEffectHandler {
         )))
     }
 
+    pub(super) fn emit_recovery_reset(
+        &self,
+        ctx: &PhaseContext<'_>,
+        reset_type: crate::reducer::effect::RecoveryResetType,
+        target_phase: crate::reducer::event::PipelinePhase,
+    ) -> Result<EffectResult> {
+        use crate::reducer::event::AwaitingDevFixEvent;
+
+        // Log the recovery reset for observability
+        ctx.logger.info(&format!(
+            "Recovery escalation: {:?} reset to phase {:?}",
+            reset_type, target_phase
+        ));
+
+        // Emit RecoveryAttempted event to signal transition back to work
+        Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+            AwaitingDevFixEvent::RecoveryAttempted {
+                level: match reset_type {
+                    crate::reducer::effect::RecoveryResetType::PhaseStart => 2,
+                    crate::reducer::effect::RecoveryResetType::IterationReset => 3,
+                    crate::reducer::effect::RecoveryResetType::CompleteReset => 4,
+                },
+                attempt_count: self.state.dev_fix_attempt_count,
+            },
+        )))
+    }
+
     pub(super) fn ensure_gitignore_entries(
         &mut self,
         ctx: &mut PhaseContext<'_>,

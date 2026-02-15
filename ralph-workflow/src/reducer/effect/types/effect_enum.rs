@@ -49,6 +49,17 @@ pub struct ContinuationContextData {
     pub next_steps: Option<String>,
 }
 
+/// Types of recovery reset operations.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum RecoveryResetType {
+    /// Reset to the start of a phase (clear phase-specific progress flags).
+    PhaseStart,
+    /// Reset iteration counter (decrement and restart from Planning).
+    IterationReset,
+    /// Complete reset (iteration 0, restart from Planning).
+    CompleteReset,
+}
+
 /// Effects represent side-effect operations.
 ///
 /// The reducer determines which effect to execute next based on state.
@@ -542,5 +553,17 @@ pub enum Effect {
         detected_loop: String,
         /// Number of times the loop was repeated.
         loop_count: u32,
+    },
+
+    /// Emit recovery reset events to escalate recovery strategy.
+    ///
+    /// This effect is derived when dev-fix recovery escalates beyond simple retry.
+    /// The handler emits events that reset state appropriately (phase start, iteration
+    /// reset, or complete reset) and then the orchestrator derives the next effect.
+    EmitRecoveryReset {
+        /// Type of reset to perform.
+        reset_type: RecoveryResetType,
+        /// Target phase to reset to.
+        target_phase: PipelinePhase,
     },
 }
