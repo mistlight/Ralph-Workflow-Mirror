@@ -68,4 +68,13 @@ pub enum LifecycleEvent {
         /// Whether .gitignore was created.
         created: bool,
     },
+    /// Pre-termination commit safety check completed.
+    ///
+    /// Emitted after checking for uncommitted changes before pipeline termination.
+    /// If this event is emitted, it means either:
+    /// 1. No uncommitted changes were found, or
+    /// 2. Uncommitted changes were found and routed to CommitMessage phase for commit
+    ///
+    /// This event sets pre_termination_commit_checked=true to allow termination to proceed.
+    PreTerminationCommitChecked,
 }

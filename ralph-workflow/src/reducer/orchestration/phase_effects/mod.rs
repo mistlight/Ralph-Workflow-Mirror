@@ -115,8 +115,32 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         PipelinePhase::Complete | PipelinePhase::Interrupted => {
             use crate::reducer::event::CheckpointTrigger;
 
-            // On Interrupted, check if restoration is pending before checkpoint
-            // (This is the non-AwaitingDevFix path, e.g., user Ctrl+C)
+            // EXCEPTION: User-initiated Ctrl+C (interrupted_by_user=true) skips safety check
+            // User explicitly chose to interrupt, so we respect that decision
+            if state.interrupted_by_user {
+                // On Interrupted, check if restoration is pending before checkpoint
+                if state.phase == PipelinePhase::Interrupted
+                    && state.prompt_permissions.restore_needed
+                    && !state.prompt_permissions.restored
+                {
+                    return Effect::RestorePromptPermissions;
+                }
+
+                return Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::Interrupt,
+                };
+            }
+
+            // SAFETY CHECK: Ensure no uncommitted work before termination
+            // This applies to ALL other termination paths:
+            // - AwaitingDevFix exhaustion → Interrupted
+            // - Completion marker emission → Interrupted
+            // - Normal completion → Complete
+            if !state.pre_termination_commit_checked {
+                return Effect::CheckUncommittedChangesBeforeTermination;
+            }
+
+            // Safety check passed - proceed with normal termination
             if state.phase == PipelinePhase::Interrupted
                 && state.prompt_permissions.restore_needed
                 && !state.prompt_permissions.restored

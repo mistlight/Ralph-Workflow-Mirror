@@ -139,17 +139,29 @@ fn test_permission_restoration_on_resume_from_interrupted() {
 
         let mut handler = MockEffectHandler::new(resumed_state.clone());
 
-        // Step 1: On resume, should still derive RestorePromptPermissions
+        // Step 1: On resume with Interrupted phase, first checks for uncommitted changes
         let effect1 = determine_next_effect(&resumed_state);
         assert!(
-            matches!(effect1, Effect::RestorePromptPermissions),
-            "Resume should restore permissions if pending, got {:?}",
+            matches!(effect1, Effect::CheckUncommittedChangesBeforeTermination),
+            "Resume should check uncommitted changes first on Interrupted, got {:?}",
             effect1
         );
 
-        // Step 2: Execute restore
+        // Execute safety check
         let result1 = handler.execute_mock(effect1);
-        let final_state = reduce(resumed_state, result1.event);
+        let state_after_check = reduce(resumed_state.clone(), result1.event);
+
+        // Step 2: After safety check, should derive RestorePromptPermissions
+        let effect2 = determine_next_effect(&state_after_check);
+        assert!(
+            matches!(effect2, Effect::RestorePromptPermissions),
+            "After safety check, should restore permissions if pending, got {:?}",
+            effect2
+        );
+
+        // Step 3: Execute restore
+        let result2 = handler.execute_mock(effect2);
+        let final_state = reduce(state_after_check, result2.event);
 
         // Step 3: Verify restoration completed, phase stays Interrupted
         assert_eq!(final_state.phase, PipelinePhase::Interrupted);

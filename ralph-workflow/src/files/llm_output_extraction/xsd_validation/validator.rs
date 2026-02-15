@@ -98,13 +98,15 @@ pub(crate) fn validate_xml_against_xsd(
     let mut body_summary: Option<String> = None;
     let mut body_details: Option<String> = None;
     let mut body_footer: Option<String> = None;
+    let mut skip_reason: Option<String> = None;
 
-    const VALID_TAGS: [&str; 5] = [
+    const VALID_TAGS: [&str; 6] = [
         "ralph-subject",
         "ralph-body",
         "ralph-body-summary",
         "ralph-body-details",
         "ralph-body-footer",
+        "ralph-skip",
     ];
 
     loop {
@@ -199,6 +201,33 @@ pub(crate) fn validate_xml_against_xsd(
                         }
                         body_footer = Some(read_text_until_end(&mut reader, b"ralph-body-footer")?);
                     }
+                    b"ralph-skip" => {
+                        if skip_reason.is_some() {
+                            return Err(duplicate_element_error("ralph-skip", "ralph-commit"));
+                        }
+                        // Check for conflicting commit message elements
+                        if subject.is_some()
+                            || body.is_some()
+                            || body_summary.is_some()
+                            || body_details.is_some()
+                            || body_footer.is_some()
+                        {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-skip".to_string(),
+                                expected: "either commit message elements OR ralph-skip, not both"
+                                    .to_string(),
+                                found: "mixed commit and skip elements".to_string(),
+                                suggestion: "Use ralph-skip alone when no commit is needed."
+                                    .to_string(),
+                                example: Some(
+                                    "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>"
+                                        .into(),
+                                ),
+                            });
+                        }
+                        skip_reason = Some(read_text_until_end(&mut reader, b"ralph-skip")?);
+                    }
                     other => {
                         // Skip unknown element but report error
                         let _ = skip_to_end(&mut reader, other);
@@ -230,12 +259,47 @@ pub(crate) fn validate_xml_against_xsd(
         }
     }
 
-    // Validate required element: subject
-    let subject = subject.ok_or_else(|| {
-        missing_required_error("ralph-subject", "ralph-commit", Some(EXAMPLE_COMMIT_XML))
-    })?;
+    // Validate that either skip_reason OR subject is present (but not both)
+    if skip_reason.is_none() && subject.is_none() {
+        return Err(XsdValidationError {
+            error_type: XsdErrorType::MissingRequiredElement,
+            element_path: "ralph-commit".to_string(),
+            expected: "either <ralph-subject> or <ralph-skip>".to_string(),
+            found: "neither commit message nor skip directive".to_string(),
+            suggestion: "Provide either a commit message or skip directive.".to_string(),
+            example: Some(EXAMPLE_COMMIT_XML.into()),
+        });
+    }
 
-    // Validate subject content
+    // If skip_reason is present, return early with skip
+    if let Some(skip) = skip_reason {
+        let skip = skip.trim();
+        if skip.is_empty() {
+            return Err(XsdValidationError {
+                error_type: XsdErrorType::InvalidContent,
+                element_path: "ralph-skip".to_string(),
+                expected: "non-empty skip reason".to_string(),
+                found: "empty skip reason".to_string(),
+                suggestion: "The <ralph-skip> must contain a reason why no commit is needed."
+                    .to_string(),
+                example: Some(
+                    "<ralph-commit><ralph-skip>No staged changes found via git status</ralph-skip></ralph-commit>"
+                        .into(),
+                ),
+            });
+        }
+        return Ok(CommitMessageElements {
+            subject: String::new(),
+            body: None,
+            body_summary: None,
+            body_details: None,
+            body_footer: None,
+            skip_reason: Some(skip.to_string()),
+        });
+    }
+
+    // Normal commit message path: validate subject
+    let subject = subject.expect("subject must be Some if skip_reason is None");
     let subject = subject.trim();
     if subject.is_empty() {
         return Err(XsdValidationError {
@@ -271,6 +335,7 @@ pub(crate) fn validate_xml_against_xsd(
         body_summary: body_summary.filter(|s| !s.is_empty()),
         body_details: body_details.filter(|s| !s.is_empty()),
         body_footer: body_footer.filter(|s| !s.is_empty()),
+        skip_reason: None,
     })
 }
 
@@ -291,6 +356,9 @@ pub(crate) struct CommitMessageElements {
     pub body_details: Option<String>,
     /// Optional body footer (for detailed format)
     pub body_footer: Option<String>,
+    /// Optional skip reason (mutually exclusive with commit message)
+    /// When present, indicates AI determined no commit is needed
+    pub skip_reason: Option<String>,
 }
 
 impl CommitMessageElements {

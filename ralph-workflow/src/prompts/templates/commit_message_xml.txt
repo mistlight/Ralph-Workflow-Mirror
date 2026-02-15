@@ -10,7 +10,7 @@
 {# VARIABLES:                                                                  #}
 {#   {{DIFF}} - The git diff to analyze (required)                             #}
 {#                                                                             #}
-{# OUTPUT FORMAT (two supported formats):                                      #}
+{# OUTPUT FORMAT (three supported formats):                                    #}
 {#                                                                             #}
 {#   Simple format (for small changes):                                        #}
 {#     <ralph-commit>                                                          #}
@@ -25,6 +25,16 @@
 {#       <ralph-body-details>Detailed bullet points</ralph-body-details>       #}
 {#       <ralph-body-footer>BREAKING CHANGE or Fixes #123</ralph-body-footer>  #}
 {#     </ralph-commit>                                                         #}
+{#                                                                             #}
+{#   Skip format (when no commit needed):                                      #}
+{#     <ralph-commit>                                                          #}
+{#       <ralph-skip>Reason why no commit is needed</ralph-skip>               #}
+{#     </ralph-commit>                                                         #}
+{#                                                                             #}
+{#   Use skip format when:                                                     #}
+{#   - git diff failed and investigation shows no actual changes               #}
+{#   - All changes were already committed                                      #}
+{#   - Only whitespace/formatting that should not be committed                 #}
 {#                                                                             #}
 {# EXTRACTION:                                                                 #}
 {#   Parsed by try_extract_xml_commit() in llm_output_extraction/commit.rs     #}

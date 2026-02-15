@@ -120,8 +120,10 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
         .check_commit_diff_with_result(&mut ctx, Err(anyhow::anyhow!("diff failed")))
         .expect("check_commit_diff_with_result should succeed");
 
+    // New behavior: diff failure uses fallback instructions instead of DiffFailed event
+    // The event should be DiffPrepared with fallback content
     assert!(matches!(
         result.event,
-        PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffFailed { .. })
+        PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { .. })
     ));
 }

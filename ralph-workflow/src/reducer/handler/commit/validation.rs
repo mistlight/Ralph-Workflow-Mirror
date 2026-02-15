@@ -69,7 +69,26 @@ impl MainEffectHandler {
             }
         };
 
-        let (message, detail) = try_extract_xml_commit_with_trace(&xml_content);
+        let (message, skip_reason, detail) = try_extract_xml_commit_with_trace(&xml_content);
+
+        // Check for skip first
+        if let Some(reason) = skip_reason {
+            // AI determined no commit needed - emit Skipped event
+            ctx.logger
+                .info(&format!("Commit skipped by AI: {}", reason));
+            let _ = ctx
+                .workspace
+                .remove_if_exists(Path::new(COMMIT_XSD_ERROR_PATH));
+            return Ok(EffectResult::with_ui(
+                PipelineEvent::commit_skipped(reason),
+                vec![UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::CommitMessage,
+                    content: xml_content,
+                    context: None,
+                }],
+            ));
+        }
+
         if message.is_none() {
             // Persist XSD error context for the XSD retry prompt.
             let _ = ctx

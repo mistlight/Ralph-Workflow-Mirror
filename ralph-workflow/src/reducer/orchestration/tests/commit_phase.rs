@@ -325,10 +325,20 @@ fn test_determine_effect_final_validation() {
 
 #[test]
 fn test_determine_effect_complete() {
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::Complete,
         ..create_test_state()
     };
+
+    // First cycle: pre-termination safety check
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::CheckUncommittedChangesBeforeTermination
+    ));
+
+    // After safety check passes, SaveCheckpoint is derived
+    state.pre_termination_commit_checked = true;
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
 }

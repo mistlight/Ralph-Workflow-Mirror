@@ -169,6 +169,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("commit/mod.rs"),
     },
     SourceFile {
+        path: "commit/diff_failure_fallback.rs",
+        contents: include_str!("commit/diff_failure_fallback.rs"),
+    },
+    SourceFile {
+        path: "commit/pre_termination_safety.rs",
+        contents: include_str!("commit/pre_termination_safety.rs"),
+    },
+    SourceFile {
         path: "common/mod.rs",
         contents: include_str!("common/mod.rs"),
     },

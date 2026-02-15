@@ -180,6 +180,19 @@ pub enum ErrorEvent {
     /// decide whether to retry, fallback, or terminate.
     GitAddAllFailed { kind: WorkspaceIoErrorKind },
 
+    /// Failed to get git status (for pre-termination check).
+    ///
+    /// When checking for uncommitted changes before termination, if `git status` fails,
+    /// this error is raised so the reducer can decide how to handle it.
+    GitStatusFailed { kind: WorkspaceIoErrorKind },
+
+    /// Pre-termination safety check found uncommitted changes.
+    ///
+    /// Before terminating the pipeline, a safety check runs to ensure no uncommitted
+    /// work exists. If uncommitted changes are found, this error is raised to force
+    /// a commit before termination.
+    PreTerminationUncommittedChanges { file_count: usize },
+
     /// Agent registry lookup failed (unknown agent).
     AgentNotFound { agent: String },
 
@@ -266,6 +279,16 @@ impl std::fmt::Display for ErrorEvent {
             }
             ErrorEvent::GitAddAllFailed { kind } => {
                 write!(f, "git add -A (stage all changes) failed ({kind:?})")
+            }
+            ErrorEvent::GitStatusFailed { kind } => {
+                write!(f, "git status (pre-termination check) failed ({kind:?})")
+            }
+            ErrorEvent::PreTerminationUncommittedChanges { file_count } => {
+                write!(
+                    f,
+                    "Pre-termination safety check: {} uncommitted file(s) found. Work must be committed before termination.",
+                    file_count
+                )
             }
             ErrorEvent::AgentNotFound { agent } => {
                 write!(f, "Agent not found: {agent}")

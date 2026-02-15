@@ -30,6 +30,9 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             prompt_inputs: state.prompt_inputs.with_commit_cleared(),
             ..state
         },
+        // DEPRECATED: DiffFailed is no longer emitted (as of fix for missing fallback).
+        // Kept for backward compatibility with checkpoints that may contain this event.
+        // New behavior: diff failure uses fallback instructions instead of failing.
         CommitEvent::DiffFailed { .. } => PipelineState {
             phase: crate::reducer::event::PipelinePhase::Interrupted,
             commit_diff_prepared: false,

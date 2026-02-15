@@ -22,6 +22,8 @@ fn create_resume_state(
         reviewer_pass,
         total_reviewer_passes,
         review_issues_found: false,
+        interrupted_by_user: false,
+        pre_termination_commit_checked: false,
         // All progress flags reset to None (simulating resume from checkpoint)
         planning_prompt_prepared_iteration: None,
         planning_xml_cleaned_iteration: None,

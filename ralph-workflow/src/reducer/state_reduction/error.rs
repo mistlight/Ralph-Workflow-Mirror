@@ -148,7 +148,14 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::WorkspaceWriteFailed { .. }
         | ErrorEvent::WorkspaceCreateDirAllFailed { .. }
         | ErrorEvent::WorkspaceRemoveFailed { .. }
-        | ErrorEvent::GitAddAllFailed { .. } => route_to_awaiting_dev_fix(state, None),
+        | ErrorEvent::GitAddAllFailed { .. }
+        | ErrorEvent::GitStatusFailed { .. } => route_to_awaiting_dev_fix(state, None),
+
+        // Pre-termination uncommitted changes is a critical error - should never happen.
+        // Route through AwaitingDevFix for investigation/remediation.
+        ErrorEvent::PreTerminationUncommittedChanges { .. } => {
+            route_to_awaiting_dev_fix(state, None)
+        }
 
         // Agent chain exhausted - transition to AwaitingDevFix for remediation attempt
         // instead of immediately terminating

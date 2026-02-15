@@ -349,6 +349,18 @@ pub struct PipelineState {
     /// Unsubstituted placeholders from the last rendered template.
     #[serde(default)]
     pub template_validation_unsubstituted: Vec<String>,
+
+    /// True if pipeline was interrupted by user signal (Ctrl+C).
+    /// This is the ONLY case where pre-termination commit safety check is skipped.
+    /// All other termination paths (AwaitingDevFix exhaustion, programmatic interrupts, etc.)
+    /// must commit before terminating.
+    #[serde(default)]
+    pub interrupted_by_user: bool,
+
+    /// True if pre-termination commit safety check has been performed.
+    /// Prevents infinite loops when checking for uncommitted changes before Complete/Interrupted.
+    #[serde(default)]
+    pub pre_termination_commit_checked: bool,
 }
 
 impl PipelineState {
@@ -465,6 +477,8 @@ impl PipelineState {
             template_validation_failed: false,
             template_validation_unsubstituted: Vec::new(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
+            interrupted_by_user: false,
+            pre_termination_commit_checked: false,
         }
     }
 

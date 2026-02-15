@@ -259,6 +259,16 @@ fn test_completion_from_state_not_files() {
         let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Complete;
 
+        // First cycle: safety check
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
+            "Complete phase first checks for uncommitted changes: {:?}",
+            effect
+        );
+
+        // After safety check passes
+        state.pre_termination_commit_checked = true;
         let effect = determine_next_effect(&state);
         // Complete phase emits SaveCheckpoint with Interrupt trigger
         assert!(
@@ -425,6 +435,7 @@ fn test_effects_are_single_task() {
             AttemptRecovery,
             EmitRecoverySuccess,
             EmitCompletionMarkerAndTerminate,
+            CheckUncommittedChangesBeforeTermination,
         }
 
         fn describe_effect_task(effect: &Effect) -> EffectTask {
@@ -501,6 +512,9 @@ fn test_effects_are_single_task() {
                 Effect::EmitRecoverySuccess { .. } => EffectTask::EmitRecoverySuccess,
                 Effect::EmitCompletionMarkerAndTerminate { .. } => {
                     EffectTask::EmitCompletionMarkerAndTerminate
+                }
+                Effect::CheckUncommittedChangesBeforeTermination => {
+                    EffectTask::CheckUncommittedChangesBeforeTermination
                 }
             }
         }

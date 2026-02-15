@@ -4,6 +4,8 @@
 //! - Commit messages are generated when developer_iters=0
 //! - CreateCommit effect is called correctly at the reducer layer
 //! - The commit message fallback system works
+//! - Diff failure fallback behavior (ralph-skip support)
+//! - Pre-termination commit safety checks
 //!
 //! Note: Tests that specifically test LLM commit message generation behavior
 //! require the commit agent to run and cannot be properly tested without the
@@ -20,6 +22,9 @@
 //! - Uses `MockAppEffectHandler` AND `MockEffectHandler` for git/filesystem isolation
 //! - NO `TempDir`, `std::fs`, or real git operations
 //! - Tests are deterministic and verify effects, not real filesystem state
+
+mod diff_failure_fallback;
+mod pre_termination_safety;
 
 use crate::common::{
     create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handlers,

@@ -189,6 +189,11 @@ pub fn run_commit_attempt(
             detail,
             None,
         ),
+        CommitExtractionOutcome::Skipped(reason) => (
+            AttemptOutcome::Success(format!("SKIPPED: {}", reason)),
+            format!("Commit skipped: {}", reason),
+            None,
+        ),
     };
     attempt_log.add_extraction_attempt(match &extraction_result {
         Some(_) => ExtractionAttempt::success("XML", detail.clone()),
@@ -329,6 +334,9 @@ pub fn generate_commit_message(
         CommitExtractionOutcome::Valid(result) => result,
         CommitExtractionOutcome::InvalidXml(detail)
         | CommitExtractionOutcome::MissingFile(detail) => anyhow::bail!(detail),
+        CommitExtractionOutcome::Skipped(reason) => {
+            anyhow::bail!("Commit skipped by AI: {}", reason)
+        }
     };
 
     archive_xml_file_with_workspace(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
@@ -479,6 +487,9 @@ pub fn generate_commit_message_with_chain(
                     _log_path: String::new(),
                     generated_prompts,
                 });
+            }
+            CommitExtractionOutcome::Skipped(reason) => {
+                last_error = Some(anyhow::anyhow!("Commit skipped by AI: {}", reason));
             }
             CommitExtractionOutcome::InvalidXml(detail)
             | CommitExtractionOutcome::MissingFile(detail) => {

@@ -370,6 +370,10 @@ impl MainEffectHandler {
 
             Effect::SkipCommit { reason } => self.skip_commit(ctx, reason),
 
+            Effect::CheckUncommittedChangesBeforeTermination => {
+                self.check_uncommitted_changes_before_termination(ctx)
+            }
+
             Effect::BackoffWait {
                 role,
                 cycle,

@@ -214,9 +214,39 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         match diff {
             Ok(diff) => self.check_commit_diff_with_content(ctx, &diff),
-            Err(err) => Ok(EffectResult::event(PipelineEvent::commit_diff_failed(
-                err.to_string(),
-            ))),
+            Err(err) => {
+                // Don't fail - substitute DIFF variable with investigation instructions
+                ctx.logger.warn(&format!(
+                    "git diff failed: {}, using fallback instructions for AI investigation",
+                    err
+                ));
+
+                let fallback_diff = format!(
+                    r#"## DIFF UNAVAILABLE - INVESTIGATION REQUIRED
+
+The `git diff` command failed with error: {}
+
+You must investigate what changed by:
+
+1. Run `git status` to see which files are modified/staged
+2. Examine the content of modified files to understand what changed
+3. Compare with recent git history if available (`git log -1 --stat`)
+4. Based on your investigation, generate an appropriate commit message
+
+If you determine there are NO actual changes to commit, respond with:
+<ralph-commit><ralph-skip>Your reason why no commit is needed</ralph-skip></ralph-commit>
+
+Example skip reasons:
+- "No staged changes found via git status"
+- "All changes were already committed"
+- "Only whitespace or formatting changes that should not be committed"
+"#,
+                    err
+                );
+
+                // Use the fallback content as the diff - it will be substituted into {{DIFF}}
+                self.check_commit_diff_with_content(ctx, &fallback_diff)
+            }
         }
     }
 

@@ -133,6 +133,8 @@ impl PipelineState {
                     ..RunMetrics::default()
                 }
             },
+            interrupted_by_user: false,
+            pre_termination_commit_checked: false,
         };
 
         let bounded_steps =

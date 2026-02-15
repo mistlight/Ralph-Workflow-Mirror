@@ -441,6 +441,16 @@ pub enum Effect {
         reason: String,
     },
 
+    /// Check for uncommitted changes before pipeline termination (single-task).
+    ///
+    /// This effect runs `git status --porcelain` to detect uncommitted work.
+    /// If changes exist, routes back to CommitMessage phase to commit them.
+    /// If no changes, emits PreTerminationCommitChecked event to proceed with termination.
+    ///
+    /// THE ONLY EXCEPTION: User-initiated Ctrl+C (interrupted_by_user=true) skips this check
+    /// and proceeds directly to termination, respecting the user's explicit interrupt choice.
+    CheckUncommittedChangesBeforeTermination,
+
     /// Wait for a retry-cycle backoff delay.
     ///
     /// This effect is emitted when the reducer determines the agent chain has

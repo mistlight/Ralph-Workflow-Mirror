@@ -78,4 +78,49 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         Ok(EffectResult::event(PipelineEvent::commit_skipped(reason)))
     }
+
+    /// Check for uncommitted changes before pipeline termination.
+    ///
+    /// Runs `git status --porcelain` to detect any uncommitted work.
+    /// If changes exist, this is a critical safety failure - the pipeline
+    /// should NOT terminate with uncommitted work.
+    ///
+    /// # Events Emitted
+    ///
+    /// - `lifecycle_pre_termination_commit_checked` - No uncommitted changes found
+    ///
+    /// # Errors
+    ///
+    /// - `PreTerminationUncommittedChanges` - Uncommitted changes detected, must commit first
+    pub(in crate::reducer::handler) fn check_uncommitted_changes_before_termination(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        use crate::git_helpers::git_snapshot;
+
+        let status = git_snapshot().map_err(|err| ErrorEvent::GitStatusFailed {
+            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+        })?;
+
+        let has_changes = !status.trim().is_empty();
+
+        if has_changes {
+            let file_count = status.lines().count();
+            ctx.logger.warn(&format!(
+                "Pre-termination safety check: Uncommitted changes detected ({} files). \
+                 This should never happen - work should be committed before termination.",
+                file_count
+            ));
+
+            // This is a critical error - we should never reach termination with uncommitted work
+            return Err(ErrorEvent::PreTerminationUncommittedChanges { file_count }.into());
+        }
+
+        ctx.logger
+            .info("Pre-termination safety check: No uncommitted changes found.");
+
+        Ok(EffectResult::event(
+            PipelineEvent::lifecycle_pre_termination_commit_checked(),
+        ))
+    }
 }
