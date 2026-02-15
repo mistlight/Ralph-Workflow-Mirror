@@ -183,6 +183,15 @@ pub(super) fn reduce_awaiting_dev_fix_event(
                         _ => reset.prompt_inputs.clone().with_xsd_retry_cleared(),
                     };
 
+                    // Planning phase has global prerequisites at the true phase start.
+                    // If we are resetting to Planning phase start, we must re-run these
+                    // prerequisite effects; otherwise orchestration will skip them and the
+                    // "phase start" reset won't actually restart from the beginning.
+                    if matches!(target_phase, PipelinePhase::Planning) {
+                        reset.context_cleaned = false;
+                        reset.gitignore_entries_ensured = false;
+                    }
+
                     reset
                 }
                 3 => {
@@ -407,5 +416,34 @@ mod tests {
             Some("disk full")
         );
         assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+    }
+
+    #[test]
+    fn level_2_planning_phase_start_recovery_resets_context_and_gitignore_prereqs() {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+
+        // Simulate having already satisfied global Planning prerequisites.
+        state.context_cleaned = true;
+        state.gitignore_entries_ensured = true;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+                level: 2,
+                attempt_count: 4,
+                target_phase: PipelinePhase::Planning,
+            }),
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Planning);
+        assert!(
+            !new_state.context_cleaned,
+            "Level 2 Planning recovery should re-run CleanupContext"
+        );
+        assert!(
+            !new_state.gitignore_entries_ensured,
+            "Level 2 Planning recovery should re-run EnsureGitignoreEntries"
+        );
     }
 }
