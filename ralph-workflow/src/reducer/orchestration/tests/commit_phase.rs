@@ -258,6 +258,62 @@ fn test_determine_effect_commit_message_rematerializes_when_consumer_signature_c
 }
 
 #[test]
+fn test_recovery_does_not_emit_success_before_create_commit() {
+    // Regression: when recovering from a commit failure, we must NOT clear recovery
+    // counters before the actually-failing operation (CreateCommit) succeeds.
+    //
+    // Previously, commit orchestration emitted EmitRecoverySuccess as soon as
+    // commit_xml_archived=true, which can be true even though CreateCommit will fail.
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::AwaitingDevFix),
+        failed_phase_for_recovery: Some(PipelinePhase::CommitMessage),
+        dev_fix_attempt_count: 2,
+        recovery_escalation_level: 1,
+        commit: CommitState::Generated {
+            message: "msg".to_string(),
+        },
+        commit_xml_archived: true,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    assert!(
+        matches!(effect, Effect::CreateCommit { .. }),
+        "expected CreateCommit (do not clear recovery state yet), got: {effect:?}"
+    );
+}
+
+#[test]
+fn test_recovery_emits_success_after_commit_created() {
+    // Once CreateCommit has succeeded (CommitState::Committed), recovery success
+    // should be emitted to clear attempt counters before continuing.
+    let state = PipelineState {
+        phase: PipelinePhase::FinalValidation,
+        failed_phase_for_recovery: Some(PipelinePhase::CommitMessage),
+        dev_fix_attempt_count: 3,
+        recovery_escalation_level: 2,
+        commit: CommitState::Committed {
+            hash: "abc123".to_string(),
+        },
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    assert!(
+        matches!(effect, Effect::EmitRecoverySuccess { .. }),
+        "expected EmitRecoverySuccess after commit created, got: {effect:?}"
+    );
+}
+
+#[test]
 fn test_determine_effect_final_validation() {
     let state = PipelineState {
         phase: PipelinePhase::FinalValidation,

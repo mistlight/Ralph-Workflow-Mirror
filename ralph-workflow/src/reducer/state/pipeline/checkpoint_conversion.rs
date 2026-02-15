@@ -217,7 +217,7 @@ mod tests {
             markdown: None,
         });
 
-        let cleared = state.clear_planning_flags();
+        let cleared = state.clear_phase_flags(PipelinePhase::Planning);
 
         assert_eq!(cleared.planning_prompt_prepared_iteration, None);
         assert_eq!(cleared.planning_agent_invoked_iteration, None);
@@ -240,7 +240,7 @@ mod tests {
                 next_steps: None,
             });
 
-        let cleared = state.clear_development_flags();
+        let cleared = state.clear_phase_flags(PipelinePhase::Development);
 
         assert_eq!(cleared.development_context_prepared_iteration, None);
         assert_eq!(cleared.development_agent_invoked_iteration, None);

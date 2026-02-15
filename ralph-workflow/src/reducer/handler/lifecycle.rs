@@ -61,7 +61,7 @@ impl MainEffectHandler {
         failed_role: crate::agents::AgentRole,
         retry_cycle: u32,
     ) -> Result<EffectResult> {
-        ctx.logger.error("⚠️  PIPELINE FAILURE DETECTED ⚠️");
+        ctx.logger.error("WARNING: PIPELINE FAILURE DETECTED");
         ctx.logger.warn(&format!(
             "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
             failed_phase, failed_role, retry_cycle

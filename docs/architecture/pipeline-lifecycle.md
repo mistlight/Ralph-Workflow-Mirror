@@ -153,7 +153,9 @@ Ralph routes terminal failures through an **escalating recovery loop** (not a on
 9. **Normal operation resumes** → Continue from the recovered phase
 10. **IF work fails AGAIN** → **LOOP BACK TO STEP 1** with preserved recovery state
 11. **Recovery state preserved** → Keep attempt count and escalation level for continued escalation
-12. **Only after 12+ attempts** → `CompletionMarkerEmitted` → `Interrupted` → `SaveCheckpoint`
+12. **Termination is not attempt-count driven** → completion markers are emitted only via explicit
+    termination effects (a safety valve / catastrophic external paths), not as part of normal
+    recovery escalation.
 
 ### Critical: This is a LOOP, Not One-Shot
 
@@ -174,7 +176,8 @@ recovery cycles rather than resetting to level 1 on each failure.
 
 **This IS:**
 - Run dev-fix → retry work → if fails, run dev-fix again → retry work with reset → 
-  if fails, run dev-fix again with bigger reset → repeat up to 12 times → only then terminate
+  if fails, run dev-fix again with bigger reset → repeat indefinitely (bounded only by the event
+  loop safety valve / explicit termination effects)
 
 ### Escalation Levels
 
@@ -191,7 +194,7 @@ clearing phase flags, the reducer resets global phase-start prerequisites like
 `prompt_inputs` / continuation state so Planning deterministically re-runs the
 full setup sequence.
 
-This ensures the pipeline is truly **non-terminating by default** for unattended operation, only exiting after exhausting all recovery strategies.
+This ensures the pipeline is truly **non-terminating by default** for unattended operation; normal recovery does not terminate the pipeline.
 
 ### Example: Recovery Loop with Escalation
 
@@ -235,7 +238,8 @@ EmitRecoverySuccess: Clear recovery state, resume normal operation
 Continue to CommitMessage phase
 ```
 
-The loop can execute up to 12 times before termination.
+The recovery loop is intended to be non-terminating for unattended operation; termination requires
+an explicit safety valve / catastrophic termination path.
 
 ### Recovery Success Detection
 

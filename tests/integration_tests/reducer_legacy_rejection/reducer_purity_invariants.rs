@@ -611,7 +611,9 @@ fn test_effects_are_single_task() {
             Effect::SaveCheckpoint {
                 trigger: CheckpointTrigger::PhaseTransition,
             },
+            Effect::EnsureGitignoreEntries,
             Effect::CleanupContext,
+            Effect::LockPromptPermissions,
             Effect::RestorePromptPermissions,
             Effect::WriteContinuationContext(ContinuationContextData {
                 iteration: 0,
@@ -626,6 +628,18 @@ fn test_effects_are_single_task() {
                 failed_phase: ralph_workflow::reducer::event::PipelinePhase::Development,
                 failed_role: AgentRole::Developer,
                 retry_cycle: 1,
+            },
+            Effect::TriggerLoopRecovery {
+                detected_loop: "test-loop".to_string(),
+                loop_count: 2,
+            },
+            Effect::EmitRecoveryReset {
+                reset_type: ralph_workflow::reducer::effect::RecoveryResetType::PhaseStart,
+                target_phase: ralph_workflow::reducer::event::PipelinePhase::Development,
+            },
+            Effect::AttemptRecovery {
+                level: 1,
+                attempt_count: 1,
             },
             Effect::EmitRecoverySuccess {
                 level: 1,
@@ -645,8 +659,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            63,
-            "Expected 63 Effect variants; update this test if variants were added or removed"
+            68,
+            "Expected 68 Effect variants; update this test if variants were added or removed"
         );
     });
 }

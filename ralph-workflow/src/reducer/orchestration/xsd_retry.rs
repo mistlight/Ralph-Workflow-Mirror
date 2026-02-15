@@ -395,5 +395,26 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         };
     }
 
+    // Recovery completion: if the pipeline entered recovery due to a commit failure,
+    // only clear recovery state AFTER CreateCommit has succeeded.
+    //
+    // Commit success is represented by CommitState::Committed (or Skipped) which occurs
+    // after the CreateCommit/SkipCommit effect has completed and the reducer advanced
+    // the phase. We intentionally do this here (not in commit-phase orchestration) so
+    // we don't clear counters before retrying a potentially failing CreateCommit.
+    if state.dev_fix_attempt_count > 0
+        && state.recovery_escalation_level > 0
+        && state.failed_phase_for_recovery == Some(PipelinePhase::CommitMessage)
+        && matches!(
+            state.commit,
+            CommitState::Committed { .. } | CommitState::Skipped
+        )
+    {
+        return Effect::EmitRecoverySuccess {
+            level: state.recovery_escalation_level,
+            total_attempts: state.dev_fix_attempt_count,
+        };
+    }
+
     determine_next_effect_for_phase(state)
 }

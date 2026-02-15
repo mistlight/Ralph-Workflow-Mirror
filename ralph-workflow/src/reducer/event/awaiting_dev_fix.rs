@@ -32,10 +32,10 @@ use crate::reducer::event::PipelinePhase;
 ///    - Level 1 (attempts 1-3): Retry same operation
 ///    - Level 2 (attempts 4-6): Reset to phase start
 ///    - Level 3 (attempts 7-9): Reset iteration counter
-///    - Level 4 (attempts 10-12): Reset to iteration 0
-/// 9. If all recovery levels exhausted (13+ attempts), emit CompletionMarkerEmitted
-/// 10. Checkpoint saved
-/// 11. Pipeline exits
+///    - Level 4 (attempts 10+): Reset to iteration 0
+/// 9. Recovery is intentionally non-terminating for unattended operation.
+///    Completion markers / termination are reserved for explicit safety valve or
+///    catastrophic external paths (not attempt-count based escalation).
 ///
 /// # Emitted By
 ///
