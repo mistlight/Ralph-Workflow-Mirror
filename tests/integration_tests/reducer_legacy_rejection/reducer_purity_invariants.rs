@@ -423,6 +423,7 @@ fn test_effects_are_single_task() {
             TriggerLoopRecovery,
             EmitRecoveryReset,
             AttemptRecovery,
+            EmitRecoverySuccess,
             EmitCompletionMarkerAndTerminate,
         }
 
@@ -497,6 +498,7 @@ fn test_effects_are_single_task() {
                 Effect::TriggerLoopRecovery { .. } => EffectTask::TriggerLoopRecovery,
                 Effect::EmitRecoveryReset { .. } => EffectTask::EmitRecoveryReset,
                 Effect::AttemptRecovery { .. } => EffectTask::AttemptRecovery,
+                Effect::EmitRecoverySuccess { .. } => EffectTask::EmitRecoverySuccess,
                 Effect::EmitCompletionMarkerAndTerminate { .. } => {
                     EffectTask::EmitCompletionMarkerAndTerminate
                 }
@@ -625,6 +627,10 @@ fn test_effects_are_single_task() {
                 failed_role: AgentRole::Developer,
                 retry_cycle: 1,
             },
+            Effect::EmitRecoverySuccess {
+                level: 1,
+                total_attempts: 1,
+            },
             Effect::EmitCompletionMarkerAndTerminate {
                 is_failure: true,
                 reason: Some("test".to_string()),
@@ -639,8 +645,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            62,
-            "Expected 62 Effect variants; update this test if variants were added or removed"
+            63,
+            "Expected 63 Effect variants; update this test if variants were added or removed"
         );
     });
 }

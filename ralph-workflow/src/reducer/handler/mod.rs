@@ -428,6 +428,11 @@ impl MainEffectHandler {
                 attempt_count,
             } => self.attempt_recovery(ctx, level, attempt_count),
 
+            Effect::EmitRecoverySuccess {
+                level,
+                total_attempts,
+            } => self.emit_recovery_success(ctx, level, total_attempts),
+
             Effect::TriggerDevFixFlow {
                 failed_phase,
                 failed_role,

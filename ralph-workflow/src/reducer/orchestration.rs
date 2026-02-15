@@ -69,6 +69,22 @@ use phase_effects::determine_next_effect_for_phase;
 
 include!("orchestration/xsd_retry.rs");
 
+/// Returns true if recovery state is active (dev-fix occurred and we transitioned back).
+///
+/// Recovery state is considered active when:
+/// - dev_fix_attempt_count > 0 (at least one recovery attempt)
+/// - recovery_escalation_level > 0 (escalation level set)
+/// - previous_phase is AwaitingDevFix (just transitioned back from recovery)
+///
+/// When recovery state is active and a phase completes successfully (e.g., Planning
+/// validates, Development completes), the orchestration should emit RecoverySucceeded
+/// to clear the recovery tracking fields and resume normal operation.
+pub(in crate::reducer::orchestration) fn is_recovery_state_active(state: &PipelineState) -> bool {
+    state.dev_fix_attempt_count > 0
+        && state.recovery_escalation_level > 0
+        && matches!(state.previous_phase, Some(PipelinePhase::AwaitingDevFix))
+}
+
 #[cfg(test)]
 #[path = "orchestration/tests.rs"]
 mod tests;

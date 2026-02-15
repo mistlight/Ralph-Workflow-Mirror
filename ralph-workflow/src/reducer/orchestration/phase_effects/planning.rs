@@ -111,6 +111,17 @@ pub(super) fn determine_planning_effect(state: &PipelineState) -> Effect {
         };
     }
 
+    // Check if recovery state is active and planning completed successfully
+    if crate::reducer::orchestration::is_recovery_state_active(state)
+        && state.planning_xml_archived_iteration == Some(state.iteration)
+    {
+        // Recovery succeeded - emit RecoverySucceeded before applying outcome
+        return Effect::EmitRecoverySuccess {
+            level: state.recovery_escalation_level,
+            total_attempts: state.dev_fix_attempt_count,
+        };
+    }
+
     let outcome = state
         .planning_validated_outcome
         .as_ref()

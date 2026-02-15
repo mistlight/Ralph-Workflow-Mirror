@@ -269,6 +269,18 @@ impl MockEffectHandler {
                 vec![],
             )),
 
+            Effect::EmitRecoverySuccess {
+                level,
+                total_attempts,
+            } => Some((
+                PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoverySucceeded {
+                    level,
+                    total_attempts,
+                }),
+                vec![],
+                vec![],
+            )),
+
             Effect::EnsureGitignoreEntries => Some((
                 PipelineEvent::gitignore_entries_ensured(
                     vec!["/PROMPT*".to_string(), ".agent/".to_string()],

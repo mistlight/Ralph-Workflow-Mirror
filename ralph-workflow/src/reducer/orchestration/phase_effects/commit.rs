@@ -115,6 +115,17 @@ pub(super) fn determine_commit_effect(state: &PipelineState) -> Effect {
             if !state.commit_xml_archived {
                 Effect::ArchiveCommitXml
             } else {
+                // Check if recovery state is active and commit validation completed successfully
+                if crate::reducer::orchestration::is_recovery_state_active(state)
+                    && state.commit_xml_archived
+                {
+                    // Recovery succeeded - emit RecoverySucceeded before creating commit
+                    return Effect::EmitRecoverySuccess {
+                        level: state.recovery_escalation_level,
+                        total_attempts: state.dev_fix_attempt_count,
+                    };
+                }
+
                 Effect::CreateCommit {
                     message: message.clone(),
                 }

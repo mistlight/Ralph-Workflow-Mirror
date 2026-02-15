@@ -146,9 +146,12 @@ Ralph routes terminal failures through an escalating recovery flow designed for 
 2. **TriggerDevFixFlow** → Invoke dev-fix agent to diagnose and fix the issue
 3. **DevFixCompleted** → Increment attempt count, determine escalation level (1-4)
 4. **RecoveryAttempted** → Transition back to failed phase, attempt recovery at determined level
-5. **If recovery fails** → Return to step 2, escalate to next level after 3 attempts
-6. **If recovery succeeds** → `RecoverySucceeded` event, clear recovery state, resume normal operation
-7. **Only after 12+ attempts** → `CompletionMarkerEmitted` → `Interrupted` → `SaveCheckpoint`
+5. **Work completes successfully** → Phase orchestration detects recovery success
+6. **EmitRecoverySuccess** → Handler emits `RecoverySucceeded` event
+7. **Recovery state cleared** → Reset `dev_fix_attempt_count`, `recovery_escalation_level`, `failed_phase_for_recovery`
+8. **Normal operation resumes** → Continue from the recovered phase
+9. **If recovery fails** → Return to step 2, escalate to next level after 3 attempts
+10. **Only after 12+ attempts** → `CompletionMarkerEmitted` → `Interrupted` → `SaveCheckpoint`
 
 ### Escalation Levels
 
@@ -160,6 +163,16 @@ The recovery hierarchy implements progressively more aggressive reset strategies
 - **Level 4** (attempts 10+): Reset to iteration 0, complete restart
 
 This ensures the pipeline is truly **non-terminating by default** for unattended operation, only exiting after exhausting all recovery strategies.
+
+### Recovery Success Detection
+
+Recovery is considered successful when:
+- `previous_phase == Some(AwaitingDevFix)` (just returned from recovery)
+- Phase-specific work completes (e.g., Planning XML archived, Development XML archived)
+- Orchestration emits `EmitRecoverySuccess` effect before applying phase outcome
+- Reducer clears recovery state (attempt_count=0, level=0, failed_phase=None)
+
+Each phase orchestration module checks `is_recovery_state_active(state)` after its archive step completes to detect successful recovery.
 
 Terminal semantics for the event loop are implemented by `PipelineState::is_complete()` (see `ralph-workflow/src/reducer/state/pipeline.rs`).
 

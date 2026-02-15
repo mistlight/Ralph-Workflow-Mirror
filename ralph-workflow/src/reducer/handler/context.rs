@@ -226,6 +226,28 @@ impl MainEffectHandler {
         )))
     }
 
+    pub(super) fn emit_recovery_success(
+        &self,
+        ctx: &PhaseContext<'_>,
+        level: u32,
+        total_attempts: u32,
+    ) -> Result<EffectResult> {
+        use crate::reducer::event::AwaitingDevFixEvent;
+
+        ctx.logger.info(&format!(
+            "Recovery succeeded at level {} after {} attempts",
+            level, total_attempts
+        ));
+
+        // Emit RecoverySucceeded event to clear recovery state
+        Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+            AwaitingDevFixEvent::RecoverySucceeded {
+                level,
+                total_attempts,
+            },
+        )))
+    }
+
     pub(super) fn ensure_gitignore_entries(
         &mut self,
         ctx: &mut PhaseContext<'_>,

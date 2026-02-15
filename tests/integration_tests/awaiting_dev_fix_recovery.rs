@@ -510,3 +510,93 @@ fn test_end_to_end_escalation_and_termination() {
         );
     });
 }
+
+/// Test complete recovery flow: failure → dev-fix → retry succeeds → recovery cleared
+#[test]
+fn test_complete_recovery_flow_with_success() {
+    with_default_timeout(|| {
+        // 1. Start with a state that has failed and entered AwaitingDevFix
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Planning);
+        state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+
+        // 2. Dev-fix completes (sets attempt_count=1, level=1)
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Fixed planning prompt".to_string()),
+        });
+        let state = reduce(state, event);
+        assert_eq!(state.dev_fix_attempt_count, 1);
+        assert_eq!(state.recovery_escalation_level, 1);
+
+        // 3. RecoveryAttempted event transitions back to Planning
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoveryAttempted {
+            level: 1,
+            attempt_count: 1,
+        });
+        let state = reduce(state, event);
+        assert_eq!(state.phase, PipelinePhase::Planning);
+        assert_eq!(state.previous_phase, Some(PipelinePhase::AwaitingDevFix));
+
+        // 4. Simulate Planning completing successfully
+        // (In real flow, orchestration would detect this and emit RecoverySucceeded)
+        let mut state = with_locked_prompt_permissions(state);
+        state.planning_xml_archived_iteration = Some(0);
+        state.planning_validated_outcome =
+            Some(ralph_workflow::reducer::state::PlanningValidatedOutcome {
+                iteration: 0,
+                valid: true,
+                markdown: None,
+            });
+
+        // 5. RecoverySucceeded clears recovery state
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::RecoverySucceeded {
+            level: 1,
+            total_attempts: 1,
+        });
+        let state = reduce(state, event);
+        assert_eq!(state.dev_fix_attempt_count, 0);
+        assert_eq!(state.recovery_escalation_level, 0);
+        assert_eq!(state.failed_phase_for_recovery, None);
+    });
+}
+
+/// Test recovery escalation: Level 1 fails → dev-fix → Level 2 succeeds
+#[test]
+fn test_recovery_escalation_from_level_1_to_level_2() {
+    with_default_timeout(|| {
+        // Start in AwaitingDevFix after first recovery attempt failed
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Planning);
+        state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+        state.dev_fix_attempt_count = 3; // Level 1 failed 3 times
+        state.recovery_escalation_level = 1;
+
+        // Dev-fix runs again (attempt 4 → level 2)
+        let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+            success: true,
+            summary: Some("Reset phase state".to_string()),
+        });
+        let state = reduce(state, event);
+        assert_eq!(state.dev_fix_attempt_count, 4);
+        assert_eq!(state.recovery_escalation_level, 2); // Escalated to level 2
+
+        // Orchestration should derive EmitRecoveryReset for level 2 (PhaseStart)
+        let mut state = with_locked_prompt_permissions(state);
+        state.dev_fix_triggered = true;
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::EmitRecoveryReset {
+                    reset_type: RecoveryResetType::PhaseStart,
+                    ..
+                }
+            ),
+            "Should emit recovery reset for level 2, got {:?}",
+            effect
+        );
+    });
+}

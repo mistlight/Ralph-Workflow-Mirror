@@ -581,4 +581,17 @@ pub enum Effect {
         /// The attempt count.
         attempt_count: u32,
     },
+
+    /// Emit RecoverySucceeded event to clear recovery state after successful work completion.
+    ///
+    /// This effect is derived when the pipeline successfully completes work after a recovery
+    /// attempt (e.g., Planning validates, Development completes). The handler emits
+    /// RecoverySucceeded event which clears recovery tracking fields (dev_fix_attempt_count,
+    /// recovery_escalation_level, failed_phase_for_recovery) and allows normal operation to resume.
+    EmitRecoverySuccess {
+        /// The escalation level that succeeded.
+        level: u32,
+        /// Total attempts before success.
+        total_attempts: u32,
+    },
 }

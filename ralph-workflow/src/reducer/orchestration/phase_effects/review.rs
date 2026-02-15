@@ -93,6 +93,17 @@ pub(super) fn determine_review_effect(state: &PipelineState) -> Effect {
             };
         }
 
+        // Check if recovery state is active and fix completed successfully
+        if crate::reducer::orchestration::is_recovery_state_active(state)
+            && state.fix_result_xml_archived_pass == Some(state.reviewer_pass)
+        {
+            // Recovery succeeded - emit RecoverySucceeded before applying outcome
+            return Effect::EmitRecoverySuccess {
+                level: state.recovery_escalation_level,
+                total_attempts: state.dev_fix_attempt_count,
+            };
+        }
+
         return Effect::ApplyFixOutcome {
             pass: state.reviewer_pass,
         };
@@ -187,6 +198,17 @@ pub(super) fn determine_review_effect(state: &PipelineState) -> Effect {
         if state.review_issues_xml_archived_pass != Some(state.reviewer_pass) {
             return Effect::ArchiveReviewIssuesXml {
                 pass: state.reviewer_pass,
+            };
+        }
+
+        // Check if recovery state is active and review completed successfully
+        if crate::reducer::orchestration::is_recovery_state_active(state)
+            && state.review_issues_xml_archived_pass == Some(state.reviewer_pass)
+        {
+            // Recovery succeeded - emit RecoverySucceeded before applying outcome
+            return Effect::EmitRecoverySuccess {
+                level: state.recovery_escalation_level,
+                total_attempts: state.dev_fix_attempt_count,
             };
         }
 
