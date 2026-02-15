@@ -371,39 +371,6 @@ After recovery, the orchestrator derives the next effect from the cleaned state,
 
 Without loop detection, the orchestrator's priority system (e.g., `xsd_retry_pending` always winning) can keep the system stuck in the same effect indefinitely. Loop recovery provides a deterministic escape path that preserves checkpoint/resume safety: the same pre-recovery state will always trigger recovery at the same threshold.
 
-## Loop Detection and Recovery
-
-Ralph includes a mandatory loop detection and recovery mechanism to prevent infinite tight loops (especially XSD retry loops when prompt paths are incorrect or files are missing).
-
-### Loop Detection
-
-The event loop tracks consecutive identical effects using a fingerprint based on:
-- Current phase
-- Current agent role  
-- Iteration/pass number
-- XSD retry status
-
-When the same effect is derived more than `max_consecutive_same_effect` times (default: 20), the orchestrator derives a `TriggerLoopRecovery` effect instead.
-
-### Recovery Behavior
-
-The loop recovery handler:
-1. Resets XSD retry state (`xsd_retry_pending = false`, `xsd_retry_count = 0`)
-2. Clears agent session ID to force fresh invocation
-3. Resets loop detection counters
-4. Logs the recovery action
-
-After recovery, orchestration derives the next effect from fresh state, breaking the loop.
-
-### Design Rationale
-
-Loop recovery is **mandatory** (not optional) because:
-- External mismatches (CWD vs workspace root) can cause retry loops that cannot converge
-- Checkpoint/resume cannot help when the same state produces the same loop
-- The system must make progress even in degraded conditions
-
-Recovery preserves determinism because it only resets retry state, not phase or iteration counters.
-
 ## See Also
 
 - `effect-system.md`

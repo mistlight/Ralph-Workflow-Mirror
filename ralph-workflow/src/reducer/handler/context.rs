@@ -216,6 +216,7 @@ impl MainEffectHandler {
         let target_phase = self
             .state
             .failed_phase_for_recovery
+            .or(self.state.previous_phase)
             .unwrap_or(PipelinePhase::Development);
 
         ctx.logger.info(&format!(

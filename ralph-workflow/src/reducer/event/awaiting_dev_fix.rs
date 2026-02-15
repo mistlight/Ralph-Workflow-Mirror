@@ -73,7 +73,8 @@ pub enum AwaitingDevFixEvent {
     /// Dev-fix agent is unavailable (quota/usage limit).
     ///
     /// Emitted when the dev-fix agent cannot be invoked due to resource limits.
-    /// The pipeline will proceed to termination without a fix attempt.
+    /// The pipeline stays in the recovery loop without a fix attempt so unattended
+    /// execution remains non-terminating by default.
     DevFixAgentUnavailable {
         /// Phase where the failure occurred.
         failed_phase: PipelinePhase,

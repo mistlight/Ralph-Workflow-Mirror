@@ -4,6 +4,7 @@
 //! Each error type has a specific recovery strategy decided by the reducer.
 
 use crate::reducer::event::ErrorEvent;
+use crate::reducer::event::PipelinePhase;
 use crate::reducer::state::PipelineState;
 
 /// Reduce error events.
@@ -13,16 +14,58 @@ use crate::reducer::state::PipelineState;
 ///
 /// # Recovery Strategies
 ///
-/// - **Continuation not supported errors**: These are invariant violations indicating
-///   that continuation mode was incorrectly passed to a phase that doesn't support it.
-///   The reducer transitions to `PipelinePhase::Interrupted`, and the event loop will
-///   observe a terminal state and stop.
+/// - **Continuation not supported errors**: Invariant violations indicating continuation
+///   mode was incorrectly passed to a phase that doesn't support it. The reducer routes
+///   through `PipelinePhase::AwaitingDevFix` so unattended execution can dispatch dev-fix
+///   and keep the pipeline non-terminating.
 ///
-/// - **Missing inputs errors**: These indicate effect sequencing bugs where a handler
-///   was called without required preconditions being met. The reducer transitions to
-///   `PipelinePhase::Interrupted`, and the event loop will observe a terminal state
-///   and stop.
+/// - **Missing inputs errors**: Effect sequencing bugs where a handler was called without
+///   required preconditions being met. These are routed through `PipelinePhase::AwaitingDevFix`
+///   so unattended remediation can proceed instead of terminating early.
 pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> PipelineState {
+    fn compute_failed_phase_for_recovery(
+        state: &PipelineState,
+        explicit_failed_phase: Option<PipelinePhase>,
+    ) -> PipelinePhase {
+        if let Some(phase) = explicit_failed_phase {
+            return phase;
+        }
+
+        if state.phase == PipelinePhase::AwaitingDevFix {
+            // Errors can occur while executing AwaitingDevFix effects (marker emission,
+            // dev-fix invocation, etc.). Never clobber the recovery target to AwaitingDevFix.
+            return state
+                .failed_phase_for_recovery
+                .or(state.previous_phase)
+                .unwrap_or(PipelinePhase::Development);
+        }
+
+        state.phase
+    }
+
+    fn route_to_awaiting_dev_fix(
+        state: &PipelineState,
+        explicit_failed_phase: Option<PipelinePhase>,
+    ) -> PipelineState {
+        let failed_phase_for_recovery =
+            compute_failed_phase_for_recovery(state, explicit_failed_phase);
+        let in_recovery_loop = state.phase == PipelinePhase::AwaitingDevFix
+            || state.previous_phase == Some(PipelinePhase::AwaitingDevFix);
+
+        let mut new_state = state.clone();
+        new_state.previous_phase = Some(state.phase);
+        new_state.phase = PipelinePhase::AwaitingDevFix;
+        new_state.dev_fix_triggered = false;
+        new_state.failed_phase_for_recovery = Some(failed_phase_for_recovery);
+
+        if !in_recovery_loop {
+            new_state.dev_fix_attempt_count = 0;
+            new_state.recovery_escalation_level = 0;
+        }
+
+        new_state
+    }
+
     match error {
         // Continuation not supported errors are invariant violations
         ErrorEvent::PlanningContinuationNotSupported
@@ -31,12 +74,7 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::CommitContinuationNotSupported => {
             // Invariant violations: route through AwaitingDevFix so unattended orchestration
             // always emits a completion marker and dispatches dev-fix, rather than terminating.
-            use crate::reducer::event::PipelinePhase;
-            let mut new_state = state.clone();
-            new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::AwaitingDevFix;
-            new_state.dev_fix_triggered = false;
-            new_state
+            route_to_awaiting_dev_fix(state, None)
         }
 
         // Missing inputs are handler bugs - route through AwaitingDevFix for remediation.
@@ -52,12 +90,7 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ValidatedCommitOutcomeMissing { .. } => {
             // Invariant violations: route through AwaitingDevFix so the pipeline never
             // exits early and a completion marker is reliably written.
-            use crate::reducer::event::PipelinePhase;
-            let mut new_state = state.clone();
-            new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::AwaitingDevFix;
-            new_state.dev_fix_triggered = false;
-            new_state
+            route_to_awaiting_dev_fix(state, None)
         }
 
         // Fix prompt file missing is recoverable - tmp artifacts can be cleaned between checkpoints.
@@ -115,24 +148,7 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::WorkspaceWriteFailed { .. }
         | ErrorEvent::WorkspaceCreateDirAllFailed { .. }
         | ErrorEvent::WorkspaceRemoveFailed { .. }
-        | ErrorEvent::GitAddAllFailed { .. } => {
-            use crate::reducer::event::PipelinePhase;
-            let mut new_state = state.clone();
-            new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::AwaitingDevFix;
-            new_state.dev_fix_triggered = false;
-            // Capture the failed phase for recovery
-            new_state.failed_phase_for_recovery = Some(state.phase);
-
-            // CRITICAL: Preserve recovery escalation if this failure occurs immediately
-            // after a recovery attempt (previous_phase == AwaitingDevFix).
-            // Otherwise, we'd restart the recovery loop at level 1 on every repeat failure.
-            if state.previous_phase != Some(PipelinePhase::AwaitingDevFix) {
-                new_state.dev_fix_attempt_count = 0;
-                new_state.recovery_escalation_level = 0;
-            }
-            new_state
-        }
+        | ErrorEvent::GitAddAllFailed { .. } => route_to_awaiting_dev_fix(state, None),
 
         // Agent chain exhausted - transition to AwaitingDevFix for remediation attempt
         // instead of immediately terminating
@@ -140,28 +156,10 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             // Transition to AwaitingDevFix phase
             // This signals orchestration to invoke the development agent to diagnose
             // and fix the pipeline failure before deciding whether to proceed or terminate
-            use crate::reducer::event::PipelinePhase;
-            let mut new_state = state.clone();
-            new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::AwaitingDevFix;
-            new_state.dev_fix_triggered = false; // Reset flag for new AwaitingDevFix phase
-
-            // Capture the failed phase for recovery
-            new_state.failed_phase_for_recovery = Some(state.phase);
-
-            // CRITICAL: Only reset recovery counters if this is a NEW failure
-            // (not already in recovery loop). If previous_phase is AwaitingDevFix,
-            // we're failing AGAIN after recovery attempt - keep counters to continue
-            // escalation. This enables the recovery loop instead of resetting to level 1.
-            if state.previous_phase != Some(PipelinePhase::AwaitingDevFix) {
-                // First failure - reset counters
-                new_state.dev_fix_attempt_count = 0;
-                new_state.recovery_escalation_level = 0;
+            if let ErrorEvent::AgentChainExhausted { phase, .. } = error {
+                return route_to_awaiting_dev_fix(state, Some(*phase));
             }
-            // else: Already in recovery loop - keep existing attempt_count and level
-            // to continue escalation on next dev-fix completion
-
-            new_state
+            route_to_awaiting_dev_fix(state, None)
         }
     }
 }
@@ -408,5 +406,83 @@ mod tests {
             !new_state.dev_fix_triggered,
             "expected dev_fix_triggered reset when routing to AwaitingDevFix"
         );
+    }
+
+    #[test]
+    fn continuation_not_supported_sets_failed_phase_and_resets_recovery_counters_on_new_failure() {
+        use crate::reducer::event::PipelinePhase;
+
+        let mut state =
+            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+        state.phase = PipelinePhase::CommitMessage;
+        state.previous_phase = Some(PipelinePhase::Planning);
+
+        // Simulate stale recovery state from a prior recovery context.
+        state.dev_fix_attempt_count = 5;
+        state.recovery_escalation_level = 2;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Planning);
+
+        let new_state = reduce_error(&state, &ErrorEvent::CommitContinuationNotSupported);
+
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(
+            new_state.failed_phase_for_recovery,
+            Some(PipelinePhase::CommitMessage)
+        );
+        assert_eq!(new_state.dev_fix_attempt_count, 0);
+        assert_eq!(new_state.recovery_escalation_level, 0);
+    }
+
+    #[test]
+    fn missing_inputs_sets_failed_phase_and_preserves_recovery_counters_when_in_recovery_loop() {
+        use crate::reducer::event::PipelinePhase;
+
+        let mut state =
+            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+        state.phase = PipelinePhase::Review;
+        state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+
+        state.dev_fix_attempt_count = 6;
+        state.recovery_escalation_level = 2;
+        state.failed_phase_for_recovery = Some(PipelinePhase::Development);
+
+        let new_state = reduce_error(&state, &ErrorEvent::ReviewInputsNotMaterialized { pass: 1 });
+
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(
+            new_state.failed_phase_for_recovery,
+            Some(PipelinePhase::Review)
+        );
+        assert_eq!(new_state.dev_fix_attempt_count, 6);
+        assert_eq!(new_state.recovery_escalation_level, 2);
+    }
+
+    #[test]
+    fn workspace_failures_do_not_overwrite_failed_phase_when_already_in_awaiting_dev_fix() {
+        use crate::reducer::event::{PipelinePhase, WorkspaceIoErrorKind};
+
+        let mut state =
+            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Review);
+        state.failed_phase_for_recovery = Some(PipelinePhase::Review);
+        state.dev_fix_attempt_count = 3;
+        state.recovery_escalation_level = 1;
+
+        let new_state = reduce_error(
+            &state,
+            &ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/out.txt".to_string(),
+                kind: WorkspaceIoErrorKind::Other,
+            },
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(
+            new_state.failed_phase_for_recovery,
+            Some(PipelinePhase::Review)
+        );
+        assert_eq!(new_state.dev_fix_attempt_count, 3);
+        assert_eq!(new_state.recovery_escalation_level, 1);
     }
 }
