@@ -171,6 +171,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 metrics: state.metrics.increment_commits_created_total(),
                 // Cloud mode: Set pending push
                 pending_push_commit: pending_push,
+                push_retry_count: 0,
+                last_push_error: None,
                 ..state
             }
         }

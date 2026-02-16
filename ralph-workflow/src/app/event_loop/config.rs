@@ -25,11 +25,18 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
         max_continue_count,
         ctx.config.max_same_agent_retries.unwrap_or(2),
     );
-    PipelineState::initial_with_continuation(
+    let mut state = PipelineState::initial_with_continuation(
         ctx.config.developer_iters,
         ctx.config.reviewer_reviews,
         continuation,
-    )
+    );
+
+    // Inject a checkpoint-safe (redacted) view of runtime cloud config.
+    // This ensures pure orchestration can derive cloud effects when enabled,
+    // without ever storing secrets in reducer state.
+    state.cloud_config = crate::config::CloudStateConfig::from(ctx.cloud_config);
+
+    state
 }
 
 /// Maximum iterations for the main event loop to prevent infinite loops.

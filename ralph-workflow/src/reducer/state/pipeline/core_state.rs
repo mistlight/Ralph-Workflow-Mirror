@@ -358,12 +358,12 @@ pub struct PipelineState {
     // In CLI mode, they remain in their default (None/false) state and are not used.
     //
     // Cloud mode is environment-variable only and not exposed to users.
-    /// Cloud configuration (enabled=false for CLI mode).
+    /// Cloud configuration (redacted) for pure orchestration.
     ///
-    /// This is set from environment variables at pipeline startup.
+    /// This is a checkpoint-safe view (no secrets) derived from runtime cloud config.
     /// When enabled=false, all cloud-specific effects are skipped.
     #[serde(default)]
-    pub cloud_config: crate::config::CloudConfig,
+    pub cloud_config: crate::config::CloudStateConfig,
 
     /// Commit SHA pending push (cloud mode only, None in CLI mode).
     ///
@@ -400,6 +400,24 @@ pub struct PipelineState {
     /// Used for metrics and observability.
     #[serde(default)]
     pub push_count: u32,
+
+    /// Consecutive push failure count for the current pending commit.
+    ///
+    /// Reset on PushCompleted or when the pending push is cleared.
+    #[serde(default)]
+    pub push_retry_count: u32,
+
+    /// Last push error message (cloud mode only).
+    ///
+    /// Used for completion reporting and observability. Must not contain secrets.
+    #[serde(default)]
+    pub last_push_error: Option<String>,
+
+    /// Commits that failed to push after exhausting retries.
+    ///
+    /// This is used for completion reporting so failures are not silent.
+    #[serde(default)]
+    pub unpushed_commits: Vec<String>,
 
     /// SHA of the last successfully pushed commit (cloud mode only).
     ///
@@ -531,12 +549,15 @@ impl PipelineState {
             template_validation_unsubstituted: Vec::new(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
             // Cloud mode fields (all default/disabled)
-            cloud_config: crate::config::CloudConfig::disabled(),
+            cloud_config: crate::config::CloudStateConfig::disabled(),
             pending_push_commit: None,
             git_auth_configured: false,
             pr_created: false,
             pr_url: None,
             push_count: 0,
+            push_retry_count: 0,
+            last_push_error: None,
+            unpushed_commits: Vec::new(),
             last_pushed_commit: None,
             pr_number: None,
         }

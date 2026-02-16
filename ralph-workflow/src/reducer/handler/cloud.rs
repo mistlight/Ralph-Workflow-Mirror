@@ -55,20 +55,21 @@ impl MainEffectHandler {
                 }
             }
             "token" => {
-                // Configure token-based authentication
-                // The token itself is in the cloud config, not passed here for security
+                // Configure token-based authentication.
+                // We intentionally do NOT embed or log the token.
+                // Push operations use a non-persistent credential helper that reads the token
+                // from environment variables at runtime.
                 ctx.logger.info(&format!(
                     "Configuring token authentication for user: {}",
                     param
                 ));
-                // Git credential helper will be configured via environment
-                // This is handled by the token being present in the config
+                std::env::set_var("GIT_TERMINAL_PROMPT", "0");
             }
             "credential-helper" => {
                 // Configure external credential helper
                 ctx.logger
                     .info(&format!("Using credential helper: {}", param));
-                // Helper is configured via git config or environment
+                std::env::set_var("GIT_TERMINAL_PROMPT", "0");
             }
             _ => {
                 ctx.logger.warn(&format!(
@@ -102,11 +103,42 @@ impl MainEffectHandler {
             if force { " (force)" } else { "" }
         ));
 
-        // Build git push command
-        let mut args = vec!["push", remote.as_str(), branch.as_str()];
-        if force {
-            args.push("--force");
+        // Build git push command.
+        // Auth is configured in a checkpoint-safe way:
+        // - ssh-key: via GIT_SSH_COMMAND (set in ConfigureGitAuth)
+        // - token: via ephemeral credential helper that reads token from env
+        // - credential-helper: via per-command credential.helper override
+        let mut argv: Vec<String> = Vec::new();
+
+        match &ctx.cloud_config.git_remote.auth_method {
+            crate::config::types::GitAuthMethod::SshKey { .. } => {}
+            crate::config::types::GitAuthMethod::Token { .. } => {
+                // This helper is executed by git via `sh -c` (leading '!').
+                // It prints credentials without ever storing secrets in repo files.
+                argv.push("-c".to_string());
+                argv.push(
+                    "credential.helper=!f() { echo username=$RALPH_GIT_TOKEN_USERNAME; echo password=$RALPH_GIT_TOKEN; }; f"
+                        .to_string(),
+                );
+                argv.push("-c".to_string());
+                argv.push("credential.useHttpPath=true".to_string());
+            }
+            crate::config::types::GitAuthMethod::CredentialHelper { helper } => {
+                argv.push("-c".to_string());
+                argv.push(format!("credential.helper={helper}"));
+                argv.push("-c".to_string());
+                argv.push("credential.useHttpPath=true".to_string());
+            }
         }
+
+        argv.push("push".to_string());
+        argv.push(remote.clone());
+        argv.push(branch.clone());
+        if force {
+            argv.push("--force".to_string());
+        }
+
+        let args: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
 
         // Execute push via executor
         let result = ctx.executor.execute("git", &args, &[], Some(ctx.repo_root));

@@ -116,7 +116,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     };
 
     // Apply checkpoint configuration restoration if resuming
-    let config = if let Some(ref checkpoint) = resume_checkpoint {
+    let mut config = if let Some(ref checkpoint) = resume_checkpoint {
         use crate::checkpoint::apply_checkpoint_to_config;
         let mut restored_config = ctx.config.clone();
         apply_checkpoint_to_config(&mut restored_config, checkpoint);
@@ -148,6 +148,17 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
                 restored_count
             ));
         }
+    }
+
+    // Cloud mode git defaults must be resolved from repo reality.
+    // In particular, push/PR head branches must be explicit branch names.
+    if config.cloud_config.enabled {
+        resolve_cloud_git_defaults(&mut config, ctx)?;
+        // Fail-fast if config is still invalid after resolving defaults.
+        config
+            .cloud_config
+            .validate()
+            .map_err(|e| anyhow::anyhow!("Cloud config validation failed: {e}"))?;
     }
 
     // Set up git helpers and agent phase
@@ -433,8 +444,19 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
 
         let result_payload = crate::cloud::types::PipelineResult {
             success,
-            commit_sha: loop_result.final_state.last_pushed_commit.clone(),
+            commit_sha: loop_result
+                .final_state
+                .last_pushed_commit
+                .clone()
+                .or_else(|| match &loop_result.final_state.commit {
+                    crate::reducer::state::CommitState::Committed { hash } => Some(hash.clone()),
+                    _ => None,
+                }),
             pr_url: loop_result.final_state.pr_url.clone(),
+            push_count: loop_result.final_state.push_count,
+            last_pushed_commit: loop_result.final_state.last_pushed_commit.clone(),
+            unpushed_commits: loop_result.final_state.unpushed_commits.clone(),
+            last_push_error: loop_result.final_state.last_push_error.clone(),
             iterations_used: loop_result.final_state.iteration,
             review_passes_used: loop_result.final_state.reviewer_pass,
             issues_found: loop_result.final_state.review_issues_found,
@@ -475,5 +497,49 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         &loop_result.final_state,
         prompt_monitor,
     );
+    Ok(())
+}
+
+fn resolve_cloud_git_defaults(
+    config: &mut crate::config::Config,
+    ctx: &PipelineContext,
+) -> anyhow::Result<()> {
+    // Default push branch to the current branch name (safe, non-secret).
+    if config.cloud_config.git_remote.push_branch.is_none() {
+        let output = ctx.executor.execute(
+            "git",
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+            &[],
+            Some(&ctx.repo_root),
+        )?;
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to detect current branch for cloud push (git rev-parse). stderr: {}",
+                output.stderr
+            ));
+        }
+
+        let branch = output.stdout.trim();
+        if branch.is_empty() || branch == "HEAD" {
+            return Err(anyhow::anyhow!(
+                "Cloud mode requires a branch name for pushing/PRs. Current ref is detached (HEAD). Set RALPH_GIT_PUSH_BRANCH explicitly."
+            ));
+        }
+        config.cloud_config.git_remote.push_branch = Some(branch.to_string());
+    }
+
+    // Defensive: reject literal HEAD even if explicitly set.
+    if config
+        .cloud_config
+        .git_remote
+        .push_branch
+        .as_deref()
+        .is_some_and(|b| b.trim() == "HEAD")
+    {
+        return Err(anyhow::anyhow!(
+            "RALPH_GIT_PUSH_BRANCH must be a branch name (not literal 'HEAD')"
+        ));
+    }
+
     Ok(())
 }

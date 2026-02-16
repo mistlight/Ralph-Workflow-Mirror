@@ -392,6 +392,85 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     );
 }
 
+#[test]
+fn test_create_initial_state_with_config_injects_cloud_state() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::types::{CloudConfig, GitAuthMethod, GitRemoteConfig};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    let config = Config {
+        developer_iters: 1,
+        reviewer_reviews: 0,
+        ..Config::default()
+    };
+
+    let cloud_config = CloudConfig {
+        enabled: true,
+        api_url: Some("https://api.example.com/v1".to_string()),
+        api_token: Some("secret".to_string()),
+        run_id: Some("run_123".to_string()),
+        heartbeat_interval_secs: 30,
+        graceful_degradation: true,
+        git_remote: GitRemoteConfig {
+            auth_method: GitAuthMethod::SshKey { key_path: None },
+            push_branch: Some("main".to_string()),
+            create_pr: false,
+            pr_title_template: None,
+            pr_body_template: None,
+            pr_base_branch: None,
+            force_push: false,
+            remote_name: "origin".to_string(),
+        },
+    };
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
+    };
+
+    let state = create_initial_state_with_config(&ctx);
+
+    assert!(
+        state.cloud_config.enabled,
+        "initial PipelineState must carry cloud enabled flag so orchestrator can emit cloud effects"
+    );
+}
+
 /// Regression test: event loop must apply EffectResult.additional_events.
 ///
 /// Without this, AgentEvent::SessionEstablished is never reduced and same-session

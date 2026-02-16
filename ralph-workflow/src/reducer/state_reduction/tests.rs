@@ -91,3 +91,7 @@ mod template_validation;
 // AwaitingDevFix recovery escalation tests
 #[path = "tests/awaiting_dev_fix.rs"]
 mod awaiting_dev_fix;
+
+// Cloud push retry semantics tests
+#[path = "tests/cloud_push_retry.rs"]
+mod cloud_push_retry;

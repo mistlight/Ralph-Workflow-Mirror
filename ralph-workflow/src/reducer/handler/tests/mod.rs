@@ -3,6 +3,7 @@
 // decomposed into single-task effects.
 
 mod analysis_handler;
+mod cloud;
 mod commit_handler;
 mod completion_marker;
 mod context_cleanup;

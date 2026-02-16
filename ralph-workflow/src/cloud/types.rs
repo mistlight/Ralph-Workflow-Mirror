@@ -53,6 +53,22 @@ pub struct PipelineResult {
     pub commit_sha: Option<String>,
     /// Pull request URL (if created)
     pub pr_url: Option<String>,
+
+    /// Number of successful push operations (cloud mode only).
+    #[serde(default)]
+    pub push_count: u32,
+
+    /// SHA of the last successfully pushed commit (if any).
+    #[serde(default)]
+    pub last_pushed_commit: Option<String>,
+
+    /// Commits that could not be pushed after retries.
+    #[serde(default)]
+    pub unpushed_commits: Vec<String>,
+
+    /// Last push error message (if any).
+    #[serde(default)]
+    pub last_push_error: Option<String>,
     /// Number of iterations used
     pub iterations_used: u32,
     /// Number of review passes used

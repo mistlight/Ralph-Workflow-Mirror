@@ -7,19 +7,18 @@
 // - No cloud effects when disabled
 
 use super::*;
-use crate::config::{CloudConfig, GitAuthMethod, GitRemoteConfig};
+use crate::config::{CloudStateConfig, GitAuthStateMethod, GitRemoteStateConfig};
 
 fn create_cloud_enabled_state() -> PipelineState {
-    let cloud_config = CloudConfig {
+    let cloud_config = CloudStateConfig {
         enabled: true,
         api_url: Some("https://api.test.com".to_string()),
-        api_token: Some("test_token".to_string()),
         run_id: Some("run_123".to_string()),
         heartbeat_interval_secs: 30,
         graceful_degradation: true,
-        git_remote: GitRemoteConfig {
-            auth_method: GitAuthMethod::SshKey { key_path: None },
-            push_branch: Some("main".to_string()),
+        git_remote: GitRemoteStateConfig {
+            auth_method: GitAuthStateMethod::SshKey { key_path: None },
+            push_branch: "main".to_string(),
             create_pr: false,
             pr_title_template: None,
             pr_body_template: None,
@@ -38,7 +37,7 @@ fn create_cloud_enabled_state() -> PipelineState {
 fn test_cloud_disabled_no_push_effects() {
     // When cloud mode is disabled, no push effects should be emitted
     let mut state = create_test_state();
-    state.cloud_config = CloudConfig::disabled();
+    state.cloud_config = CloudStateConfig::disabled();
     state.pending_push_commit = Some("abc123".to_string());
     state.git_auth_configured = false;
 
@@ -171,8 +170,7 @@ fn test_cloud_enabled_pr_already_created_no_effect() {
 fn test_cloud_enabled_token_auth_format() {
     // Test token auth formatting in ConfigureGitAuth effect
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.auth_method = GitAuthMethod::Token {
-        token: "ghp_test".to_string(),
+    state.cloud_config.git_remote.auth_method = GitAuthStateMethod::Token {
         username: "oauth2".to_string(),
     };
     state.pending_push_commit = Some("abc123".to_string());
@@ -192,7 +190,7 @@ fn test_cloud_enabled_token_auth_format() {
 fn test_cloud_enabled_credential_helper_format() {
     // Test credential helper formatting
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.auth_method = GitAuthMethod::CredentialHelper {
+    state.cloud_config.git_remote.auth_method = GitAuthStateMethod::CredentialHelper {
         helper: "gcloud".to_string(),
     };
     state.pending_push_commit = Some("abc123".to_string());

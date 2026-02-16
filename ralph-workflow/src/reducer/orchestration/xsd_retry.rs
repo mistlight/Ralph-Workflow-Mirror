@@ -406,32 +406,32 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             if !state.git_auth_configured {
                 // Format auth method for the effect
                 let auth_method = match &state.cloud_config.git_remote.auth_method {
-                    crate::config::GitAuthMethod::SshKey { key_path } => {
-                        if let Some(path) = key_path {
-                            format!("ssh-key:{}", path)
-                        } else {
-                            "ssh-key:default".to_string()
-                        }
+                    crate::config::GitAuthStateMethod::SshKey { key_path } => key_path
+                        .as_ref()
+                        .map(|p| format!("ssh-key:{p}"))
+                        .unwrap_or_else(|| "ssh-key:default".to_string()),
+                    crate::config::GitAuthStateMethod::Token { username } => {
+                        format!("token:{username}")
                     }
-                    crate::config::GitAuthMethod::Token { username, .. } => {
-                        format!("token:{}", username)
-                    }
-                    crate::config::GitAuthMethod::CredentialHelper { helper } => {
-                        format!("credential-helper:{}", helper)
+                    crate::config::GitAuthStateMethod::CredentialHelper { helper } => {
+                        format!("credential-helper:{helper}")
                     }
                 };
                 return Effect::ConfigureGitAuth { auth_method };
             }
 
             // Then push the commit
+            if state.cloud_config.git_remote.push_branch.is_empty() {
+                return Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    reason: Some(
+                        "Cloud mode is enabled but no push branch was resolved".to_string(),
+                    ),
+                };
+            }
             return Effect::PushToRemote {
                 remote: state.cloud_config.git_remote.remote_name.clone(),
-                branch: state
-                    .cloud_config
-                    .git_remote
-                    .push_branch
-                    .clone()
-                    .unwrap_or_else(|| "HEAD".to_string()),
+                branch: state.cloud_config.git_remote.push_branch.clone(),
                 force: state.cloud_config.git_remote.force_push,
                 commit_sha: commit_sha.clone(),
             };
@@ -442,6 +442,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             && state.cloud_config.git_remote.create_pr
             && !state.pr_created
         {
+            if state.cloud_config.git_remote.push_branch.is_empty() {
+                return Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    reason: Some(
+                        "Cloud mode is enabled but no PR head branch was resolved".to_string(),
+                    ),
+                };
+            }
             return Effect::CreatePullRequest {
                 base_branch: state
                     .cloud_config
@@ -449,12 +457,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     .pr_base_branch
                     .clone()
                     .unwrap_or_else(|| "main".to_string()),
-                head_branch: state
-                    .cloud_config
-                    .git_remote
-                    .push_branch
-                    .clone()
-                    .unwrap_or_else(|| "HEAD".to_string()),
+                head_branch: state.cloud_config.git_remote.push_branch.clone(),
                 title: state
                     .cloud_config
                     .git_remote

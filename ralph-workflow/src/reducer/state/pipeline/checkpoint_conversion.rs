@@ -134,12 +134,15 @@ impl PipelineState {
                 }
             },
             // Cloud mode fields (all default/disabled when loading from checkpoint)
-            cloud_config: crate::config::CloudConfig::disabled(),
+            cloud_config: crate::config::CloudStateConfig::disabled(),
             pending_push_commit: None,
             git_auth_configured: false,
             pr_created: false,
             pr_url: None,
             push_count: 0,
+            push_retry_count: 0,
+            last_push_error: None,
+            unpushed_commits: Vec::new(),
             last_pushed_commit: None,
             pr_number: None,
         };

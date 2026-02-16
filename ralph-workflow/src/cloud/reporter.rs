@@ -50,6 +50,24 @@ impl HttpCloudReporter {
         Self { config }
     }
 
+    fn build_url(api_url: &str, path: &str) -> Result<String, CloudError> {
+        let base = api_url.trim();
+        if !base.to_ascii_lowercase().starts_with("https://") {
+            return Err(CloudError::Configuration(
+                "Cloud API URL must use https://".to_string(),
+            ));
+        }
+
+        let base = base.trim_end_matches('/');
+        let path = path.trim_start_matches('/');
+
+        if path.is_empty() {
+            return Ok(base.to_string());
+        }
+
+        Ok(format!("{base}/{path}"))
+    }
+
     fn post_json<T: serde::Serialize>(&self, path: &str, body: &T) -> Result<(), CloudError> {
         let api_url = self
             .config
@@ -62,12 +80,14 @@ impl HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("API token not configured".to_string()))?;
 
-        let url = format!("{}{}", api_url, path);
+        let url = Self::build_url(api_url, path)?;
 
         // Build HTTP agent with timeout
         let agent = ureq::Agent::new_with_config(
             ureq::config::Config::builder()
                 .timeout_global(Some(std::time::Duration::from_secs(30)))
+                // Always return a Response so we can map status + body ourselves.
+                .http_status_as_error(false)
                 .build(),
         );
 
@@ -81,8 +101,16 @@ impl HttpCloudReporter {
             .send_json(json_body);
 
         match response {
-            Ok(_) => Ok(()),
-            Err(e) => Err(CloudError::NetworkError(format!("{:?}", e))),
+            Ok(mut resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    Ok(())
+                } else {
+                    let body = resp.body_mut().read_to_string().unwrap_or_default();
+                    Err(CloudError::HttpError(status.as_u16(), body))
+                }
+            }
+            Err(e) => Err(CloudError::NetworkError(e.to_string())),
         }
     }
 }
@@ -95,7 +123,7 @@ impl CloudReporter for HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
-        let path = format!("/v1/runs/{}/progress", run_id);
+        let path = format!("runs/{}/progress", run_id);
         self.post_json(&path, update)
     }
 
@@ -106,7 +134,7 @@ impl CloudReporter for HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
-        let path = format!("/v1/runs/{}/heartbeat", run_id);
+        let path = format!("runs/{}/heartbeat", run_id);
         let body = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
         });
@@ -120,7 +148,7 @@ impl CloudReporter for HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
-        let path = format!("/v1/runs/{}/complete", run_id);
+        let path = format!("runs/{}/complete", run_id);
         self.post_json(&path, result)
     }
 }
@@ -129,6 +157,25 @@ impl CloudReporter for HttpCloudReporter {
 mod tests {
     use super::*;
     use crate::config::types::CloudConfig;
+
+    #[test]
+    fn test_build_url_trims_slashes_and_joins_paths() {
+        let base = "https://api.example.com/v1/";
+        let url = HttpCloudReporter::build_url(base, "/runs/run_1/progress").unwrap();
+        assert_eq!(
+            url, "https://api.example.com/v1/runs/run_1/progress",
+            "URL join should avoid double slashes"
+        );
+    }
+
+    #[test]
+    fn test_build_url_rejects_non_https() {
+        let err = HttpCloudReporter::build_url("http://api.example.com", "/runs/x").unwrap_err();
+        match err {
+            CloudError::Configuration(_) => {}
+            other => panic!("expected Configuration error, got: {other:?}"),
+        }
+    }
 
     #[test]
     fn test_noop_reporter_returns_ok() {
@@ -149,6 +196,10 @@ mod tests {
             success: true,
             commit_sha: None,
             pr_url: None,
+            push_count: 0,
+            last_pushed_commit: None,
+            unpushed_commits: Vec::new(),
+            last_push_error: None,
             iterations_used: 1,
             review_passes_used: 0,
             issues_found: false,

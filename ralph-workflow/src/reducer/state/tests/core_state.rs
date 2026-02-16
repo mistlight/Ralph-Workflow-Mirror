@@ -8,6 +8,45 @@ fn test_pipeline_state_initial() {
 }
 
 #[test]
+fn test_pipeline_state_serialization_does_not_include_cloud_secrets() {
+    use crate::config::{CloudConfig, CloudStateConfig, GitAuthMethod, GitRemoteConfig};
+
+    let mut state = PipelineState::initial(1, 0);
+    let runtime = CloudConfig {
+        enabled: true,
+        api_url: Some("https://api.example.com/v1".to_string()),
+        api_token: Some("cloud_api_token_should_not_serialize".to_string()),
+        run_id: Some("run_123".to_string()),
+        heartbeat_interval_secs: 30,
+        graceful_degradation: true,
+        git_remote: GitRemoteConfig {
+            auth_method: GitAuthMethod::Token {
+                token: "git_token_should_not_serialize".to_string(),
+                username: "x-access-token".to_string(),
+            },
+            push_branch: Some("main".to_string()),
+            create_pr: false,
+            pr_title_template: None,
+            pr_body_template: None,
+            pr_base_branch: None,
+            force_push: false,
+            remote_name: "origin".to_string(),
+        },
+    };
+    state.cloud_config = CloudStateConfig::from(&runtime);
+
+    let json = serde_json::to_string(&state).expect("state serialization should succeed");
+    assert!(
+        !json.contains("cloud_api_token_should_not_serialize"),
+        "cloud API token must never be serialized into PipelineState JSON"
+    );
+    assert!(
+        !json.contains("git_token_should_not_serialize"),
+        "git token must never be serialized into PipelineState JSON"
+    );
+}
+
+#[test]
 fn test_agent_chain_initial() {
     let chain = AgentChainState::initial();
     assert!(chain.agents.is_empty());
