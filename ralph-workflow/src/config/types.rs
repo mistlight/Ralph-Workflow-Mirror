@@ -317,7 +317,7 @@ pub struct CloudConfig {
 ///
 /// Like CloudConfig, this is populated from env vars and not exposed
 /// to normal users.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GitRemoteConfig {
     /// Authentication method for git operations
     pub auth_method: GitAuthMethod,
@@ -361,6 +361,21 @@ pub enum GitAuthMethod {
 impl Default for GitAuthMethod {
     fn default() -> Self {
         Self::SshKey { key_path: None }
+    }
+}
+
+impl Default for GitRemoteConfig {
+    fn default() -> Self {
+        Self {
+            auth_method: GitAuthMethod::default(),
+            push_branch: None,
+            create_pr: false,
+            pr_title_template: None,
+            pr_body_template: None,
+            pr_base_branch: None,
+            force_push: false,
+            remote_name: "origin".to_string(),
+        }
     }
 }
 

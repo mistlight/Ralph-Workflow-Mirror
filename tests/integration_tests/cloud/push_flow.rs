@@ -11,8 +11,7 @@
 //! to verify orchestration logic without requiring full pipeline execution.
 
 use ralph_workflow::config::{CloudConfig, GitAuthMethod, GitRemoteConfig};
-use ralph_workflow::reducer::event::lifecycle::LifecycleEvent;
-use ralph_workflow::reducer::event::PipelineEvent;
+use ralph_workflow::reducer::event::{LifecycleEvent, PipelineEvent};
 use ralph_workflow::reducer::state::PipelineState;
 use serial_test::serial;
 

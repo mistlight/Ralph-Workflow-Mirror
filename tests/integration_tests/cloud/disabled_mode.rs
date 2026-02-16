@@ -130,6 +130,7 @@ fn test_git_remote_config_defaults_when_disabled() {
     std::env::remove_var("RALPH_GIT_AUTH_METHOD");
     std::env::remove_var("RALPH_GIT_TOKEN");
     std::env::remove_var("RALPH_GIT_CREATE_PR");
+    std::env::remove_var("RALPH_GIT_REMOTE");
 
     let config = CloudConfig::from_env();
 
