@@ -212,7 +212,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
-        let diff = crate::git_helpers::git_diff().map_err(anyhow::Error::from);
+        let diff = crate::git_helpers::git_diff_in_repo(ctx.repo_root).map_err(anyhow::Error::from);
         self.check_commit_diff_with_result(ctx, diff)
     }
 

@@ -24,6 +24,23 @@ fn mock_effect_handler_simulates_empty_diff() {
 }
 
 #[test]
+fn mock_effect_handler_execute_mock_respects_pre_termination_snapshot_dirty() {
+    let state = PipelineState::initial(1, 0);
+    let mut handler = MockEffectHandler::new(state).with_dirty_pre_termination_snapshot(3);
+
+    let result = handler.execute_mock(Effect::CheckUncommittedChangesBeforeTermination);
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Commit(
+            crate::reducer::event::CommitEvent::PreTerminationUncommittedChangesDetected {
+                file_count: 3
+            }
+        )
+    ));
+}
+
+#[test]
 fn mock_effect_handler_normal_commit_generation() {
     use crate::reducer::state::CommitValidatedOutcome;
 

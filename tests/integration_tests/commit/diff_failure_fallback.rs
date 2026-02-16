@@ -204,16 +204,32 @@ fn test_diff_failed_event_not_emitted_by_new_code() {
         run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
             .unwrap();
 
-        // Verify that DiffFailed event was never emitted
-        // Note: MockEffectHandler doesn't track processed events, so we verify
-        // indirectly by checking that the pipeline didn't transition to Interrupted
-
-        // If DiffFailed was emitted, the reducer would transition to Interrupted
-        let diff_failed_emitted = effect_handler.state.phase == PipelinePhase::Interrupted;
-
+        // Verify that DiffFailed was never emitted.
+        // This must be asserted on emitted events, not inferred from phase transitions,
+        // because DiffFailed is now a reducer no-op.
         assert!(
-            !diff_failed_emitted,
+            !effect_handler.was_event_emitted(|e| {
+                matches!(
+                    e,
+                    ralph_workflow::reducer::event::PipelineEvent::Commit(
+                        ralph_workflow::reducer::event::CommitEvent::DiffFailed { .. }
+                    )
+                )
+            }),
             "DiffFailed event should NOT be emitted by new handler code"
+        );
+
+        // Observable success path: diff preparation still happens (with fallback content).
+        assert!(
+            effect_handler.was_event_emitted(|e| {
+                matches!(
+                    e,
+                    ralph_workflow::reducer::event::PipelineEvent::Commit(
+                        ralph_workflow::reducer::event::CommitEvent::DiffPrepared { .. }
+                    )
+                )
+            }),
+            "DiffPrepared should be emitted even when git diff fails"
         );
 
         // Additional verification: Even with diff failure, fallback instructions should be used

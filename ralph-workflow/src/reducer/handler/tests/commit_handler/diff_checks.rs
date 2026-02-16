@@ -10,6 +10,7 @@ use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{AgentChainState, PipelineState};
 use crate::workspace::MemoryWorkspace;
+use crate::workspace::Workspace;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -126,4 +127,79 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
         result.event,
         PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { .. })
     ));
+}
+
+#[test]
+fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
+    use std::path::Path;
+
+    struct RestoreCwd {
+        original: PathBuf,
+    }
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
+    let workspace = MemoryWorkspace::new_test();
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+
+    let repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    let _restore = RestoreCwd {
+        original: std::env::current_dir().unwrap(),
+    };
+    std::env::set_current_dir(std::env::temp_dir()).unwrap();
+
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    let _result = handler
+        .check_commit_diff(&mut ctx)
+        .expect("check_commit_diff should succeed when repo_root is set");
+
+    let diff = workspace
+        .read(Path::new(".agent/tmp/commit_diff.txt"))
+        .expect("expected commit diff file to be written");
+    assert!(
+        !diff.starts_with("## DIFF UNAVAILABLE - INVESTIGATION REQUIRED"),
+        "Diff should be computed from ctx.repo_root even when process CWD is elsewhere"
+    );
 }

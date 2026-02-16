@@ -1,4 +1,5 @@
 use std::io;
+use std::path::Path;
 
 use crate::git_helpers::git2_to_io_error;
 use crate::workspace::Workspace;
@@ -12,6 +13,14 @@ use crate::workspace::Workspace;
 /// diffing against an empty tree using a read-only approach.
 pub fn git_diff() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_diff_impl(&repo)
+}
+
+/// Get the diff of all changes (unstaged and staged) by discovering from an explicit path.
+///
+/// This avoids coupling diff generation to the process current working directory.
+pub fn git_diff_in_repo(repo_root: &Path) -> io::Result<String> {
+    let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_diff_impl(&repo)
 }
 

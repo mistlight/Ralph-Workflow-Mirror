@@ -21,7 +21,7 @@ pub use commit::{
 };
 pub use diff::{
     get_git_diff_for_review_with_workspace, get_git_diff_from_start,
-    get_git_diff_from_start_with_workspace, git_diff, git_diff_from,
+    get_git_diff_from_start_with_workspace, git_diff, git_diff_from, git_diff_in_repo,
 };
 pub use diff_review::{DiffReviewContent, DiffTruncationLevel};
 pub use discovery::{get_hooks_dir, get_repo_root, require_git_repo};

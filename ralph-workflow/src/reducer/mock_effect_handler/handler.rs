@@ -104,10 +104,12 @@ If you determine there are NO actual changes to commit, respond with:
                     .borrow_mut()
                     .push(Effect::CheckCommitDiff);
 
-                Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
+                let event = PipelineEvent::commit_diff_prepared(
                     content.trim().is_empty(),
                     sha256_hex_str(&content),
-                )))
+                );
+                self.captured_events.borrow_mut().push(event.clone());
+                Ok(EffectResult::event(event))
             }
 
             Effect::CheckUncommittedChangesBeforeTermination => {
@@ -118,13 +120,16 @@ If you determine there are NO actual changes to commit, respond with:
                     .push(Effect::CheckUncommittedChangesBeforeTermination);
 
                 match self.pre_termination_snapshot.clone() {
-                    super::core::PreTerminationSnapshotMock::Clean => Ok(EffectResult::event(
-                        PipelineEvent::pre_termination_safety_check_passed(),
-                    )),
+                    super::core::PreTerminationSnapshotMock::Clean => {
+                        let event = PipelineEvent::pre_termination_safety_check_passed();
+                        self.captured_events.borrow_mut().push(event.clone());
+                        Ok(EffectResult::event(event))
+                    }
                     super::core::PreTerminationSnapshotMock::Dirty { file_count } => {
-                        Ok(EffectResult::event(
-                            PipelineEvent::pre_termination_uncommitted_changes_detected(file_count),
-                        ))
+                        let event =
+                            PipelineEvent::pre_termination_uncommitted_changes_detected(file_count);
+                        self.captured_events.borrow_mut().push(event.clone());
+                        Ok(EffectResult::event(event))
                     }
                     super::core::PreTerminationSnapshotMock::Error { kind } => {
                         Err(ErrorEvent::GitStatusFailed { kind }.into())

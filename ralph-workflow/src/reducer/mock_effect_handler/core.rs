@@ -38,6 +38,11 @@ pub struct MockEffectHandler {
     pub(super) captured_effects: RefCell<Vec<Effect>>,
     /// All UI events that have been emitted, in order.
     pub(super) captured_ui_events: RefCell<Vec<UIEvent>>,
+    /// All pipeline events that have been emitted by this mock handler, in order.
+    ///
+    /// This records the primary event followed by any additional events returned
+    /// in each [`EffectResult`].
+    pub(super) captured_events: RefCell<Vec<PipelineEvent>>,
     /// When true, PrepareCommitPrompt returns CommitSkipped instead of proceeding.
     pub(super) simulate_empty_diff: bool,
 
@@ -85,6 +90,7 @@ impl MockEffectHandler {
             state,
             captured_effects: RefCell::new(Vec::new()),
             captured_ui_events: RefCell::new(Vec::new()),
+            captured_events: RefCell::new(Vec::new()),
             simulate_empty_diff: false,
             simulate_commit_diff_error: None,
             simulate_commit_diff_content: None,
@@ -174,6 +180,11 @@ impl MockEffectHandler {
         self.captured_ui_events.borrow().clone()
     }
 
+    /// Get all captured pipeline events in emission order.
+    pub fn captured_events(&self) -> Vec<PipelineEvent> {
+        self.captured_events.borrow().clone()
+    }
+
     /// Check if a specific effect type was captured.
     ///
     /// # Arguments
@@ -214,6 +225,14 @@ impl MockEffectHandler {
         self.captured_ui_events.borrow().iter().any(predicate)
     }
 
+    /// Check if a specific pipeline event was emitted.
+    pub fn was_event_emitted<F>(&self, predicate: F) -> bool
+    where
+        F: Fn(&PipelineEvent) -> bool,
+    {
+        self.captured_events.borrow().iter().any(predicate)
+    }
+
     /// Clear all captured effects and UI events.
     ///
     /// Useful for resetting the mock between test cases when reusing
@@ -221,6 +240,7 @@ impl MockEffectHandler {
     pub fn clear_captured(&self) {
         self.captured_effects.borrow_mut().clear();
         self.captured_ui_events.borrow_mut().clear();
+        self.captured_events.borrow_mut().clear();
     }
 
     /// Get the number of captured effects.
@@ -231,5 +251,10 @@ impl MockEffectHandler {
     /// Get the number of captured UI events.
     pub fn ui_event_count(&self) -> usize {
         self.captured_ui_events.borrow().len()
+    }
+
+    /// Get the number of captured pipeline events.
+    pub fn event_count(&self) -> usize {
+        self.captured_events.borrow().len()
     }
 }

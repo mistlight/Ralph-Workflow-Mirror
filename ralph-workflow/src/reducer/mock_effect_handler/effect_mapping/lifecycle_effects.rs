@@ -303,12 +303,27 @@ impl MockEffectHandler {
             )),
 
             Effect::CheckUncommittedChangesBeforeTermination => {
-                // Mock always returns no uncommitted changes (clean working directory)
-                Some((
-                    PipelineEvent::pre_termination_safety_check_passed(),
-                    vec![],
-                    vec![],
-                ))
+                match self.pre_termination_snapshot.clone() {
+                    super::super::core::PreTerminationSnapshotMock::Clean => Some((
+                        PipelineEvent::pre_termination_safety_check_passed(),
+                        vec![],
+                        vec![],
+                    )),
+                    super::super::core::PreTerminationSnapshotMock::Dirty { file_count } => Some((
+                        PipelineEvent::pre_termination_uncommitted_changes_detected(file_count),
+                        vec![],
+                        vec![],
+                    )),
+                    super::super::core::PreTerminationSnapshotMock::Error { kind } => {
+                        // execute_mock() cannot return handler errors (it doesn't take PhaseContext and
+                        // doesn't return Result). Call the EffectHandler::execute() path to simulate
+                        // failures for this effect.
+                        panic!(
+                            "MockEffectHandler cannot simulate pre-termination snapshot error via execute_mock (kind={:?}); use execute() instead",
+                            kind
+                        )
+                    }
+                }
             }
 
             _ => None,

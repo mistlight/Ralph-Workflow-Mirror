@@ -85,6 +85,12 @@ impl MockEffectHandler {
                 .borrow_mut()
                 .extend(ui_events.clone());
 
+            // Capture emitted pipeline events (primary first, then additional)
+            self.captured_events.borrow_mut().push(event.clone());
+            self.captured_events
+                .borrow_mut()
+                .extend(additional_events.clone());
+
             return EffectResult {
                 event,
                 additional_events,
@@ -110,6 +116,9 @@ impl MockEffectHandler {
         self.captured_ui_events
             .borrow_mut()
             .extend(ui_events.clone());
+
+        // Capture emitted pipeline events
+        self.captured_events.borrow_mut().push(event.clone());
 
         EffectResult {
             event,
