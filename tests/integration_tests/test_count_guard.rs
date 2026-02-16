@@ -101,6 +101,22 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("cli/mod.rs"),
     },
     SourceFile {
+        path: "cloud/mod.rs",
+        contents: include_str!("cloud/mod.rs"),
+    },
+    SourceFile {
+        path: "cloud/disabled_mode.rs",
+        contents: include_str!("cloud/disabled_mode.rs"),
+    },
+    SourceFile {
+        path: "cloud/enabled_mode.rs",
+        contents: include_str!("cloud/enabled_mode.rs"),
+    },
+    SourceFile {
+        path: "cloud/push_flow.rs",
+        contents: include_str!("cloud/push_flow.rs"),
+    },
+    SourceFile {
         path: "ccs_all_delta_types_spam_reproduction.rs",
         contents: include_str!("ccs_all_delta_types_spam_reproduction.rs"),
     },
