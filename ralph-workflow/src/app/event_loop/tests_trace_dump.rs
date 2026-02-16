@@ -317,7 +317,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
 
 #[test]
 fn test_event_loop_config_creation() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let config = EventLoopConfig {
         max_iterations: 1000,
     };

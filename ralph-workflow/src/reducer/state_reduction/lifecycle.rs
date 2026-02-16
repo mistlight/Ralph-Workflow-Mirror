@@ -33,9 +33,10 @@ pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent
             pending_push_commit: None,
             ..state
         },
-        LifecycleEvent::PullRequestCreated { url, .. } => PipelineState {
+        LifecycleEvent::PullRequestCreated { url, number } => PipelineState {
             pr_created: true,
             pr_url: Some(url),
+            pr_number: Some(number),
             ..state
         },
         LifecycleEvent::PullRequestFailed { .. } => state, // Log but don't change state

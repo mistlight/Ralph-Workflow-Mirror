@@ -445,7 +445,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
 
 #[test]
 fn test_event_trace_buffer_keeps_last_n_entries() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     fn entry(iteration: usize) -> EventTraceEntry {
         EventTraceEntry {
             iteration,

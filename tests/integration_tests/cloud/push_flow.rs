@@ -188,7 +188,8 @@ fn test_force_push_can_be_enabled() {
 #[test]
 fn test_pipeline_state_has_cloud_fields() {
     let cloud_config = CloudConfig::disabled();
-    let state = PipelineState::initial_with_cloud(1, 0, cloud_config);
+    let mut state = PipelineState::initial(1, 0);
+    state.cloud_config = cloud_config;
 
     assert!(!state.cloud_config.enabled, "Cloud should be disabled");
     assert!(
@@ -207,7 +208,8 @@ fn test_pipeline_state_has_cloud_fields() {
 #[test]
 fn test_git_auth_configured_event_updates_state() {
     let cloud_config = CloudConfig::disabled();
-    let mut state = PipelineState::initial_with_cloud(1, 0, cloud_config);
+    let mut state = PipelineState::initial(1, 0);
+    state.cloud_config = cloud_config;
     state.git_auth_configured = false;
 
     let event = PipelineEvent::Lifecycle(LifecycleEvent::GitAuthConfigured);
@@ -222,7 +224,8 @@ fn test_git_auth_configured_event_updates_state() {
 #[test]
 fn test_push_completed_clears_pending_push() {
     let cloud_config = CloudConfig::disabled();
-    let mut state = PipelineState::initial_with_cloud(1, 0, cloud_config);
+    let mut state = PipelineState::initial(1, 0);
+    state.cloud_config = cloud_config;
     state.pending_push_commit = Some("abc123".to_string());
     state.push_count = 0;
 
@@ -243,7 +246,8 @@ fn test_push_completed_clears_pending_push() {
 #[test]
 fn test_push_failed_clears_pending_push() {
     let cloud_config = CloudConfig::disabled();
-    let mut state = PipelineState::initial_with_cloud(1, 0, cloud_config);
+    let mut state = PipelineState::initial(1, 0);
+    state.cloud_config = cloud_config;
     state.pending_push_commit = Some("abc123".to_string());
 
     let event = PipelineEvent::Lifecycle(LifecycleEvent::PushFailed {
@@ -267,7 +271,8 @@ fn test_push_failed_clears_pending_push() {
 #[test]
 fn test_pr_created_event_updates_state() {
     let cloud_config = CloudConfig::disabled();
-    let mut state = PipelineState::initial_with_cloud(1, 0, cloud_config);
+    let mut state = PipelineState::initial(1, 0);
+    state.cloud_config = cloud_config;
     state.pr_created = false;
 
     let event = PipelineEvent::Lifecycle(LifecycleEvent::PullRequestCreated {

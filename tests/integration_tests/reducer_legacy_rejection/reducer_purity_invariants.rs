@@ -502,6 +502,11 @@ fn test_effects_are_single_task() {
                 Effect::EmitCompletionMarkerAndTerminate { .. } => {
                     EffectTask::EmitCompletionMarkerAndTerminate
                 }
+                // Cloud mode effects (only executed when cloud mode is enabled)
+                Effect::ConfigureGitAuth { .. } => EffectTask::EnsureGitignoreEntries, // Reuse existing task
+                Effect::PushToRemote { .. } => EffectTask::CreateCommit, // Reuse existing task
+                Effect::CreatePullRequest { .. } => EffectTask::CreateCommit, // Reuse existing task
+                Effect::ReportCloudProgress { .. } => EffectTask::SaveCheckpoint, // Reuse existing task
             }
         }
 

@@ -435,80 +435,6 @@ pub enum PipelineEvent {
         /// Number of times the loop was repeated.
         loop_count: u32,
     },
-
-    // ========================================================================
-    // Cloud Mode Events (INTERNAL USE ONLY)
-    // ========================================================================
-    //
-    // These events are only emitted when cloud mode is enabled (RALPH_CLOUD_MODE=true).
-    // In CLI mode, handlers never emit these events.
-    //
-    // Cloud mode is environment-variable only and not exposed to users.
-    /// Git authentication configured successfully (cloud mode only).
-    ///
-    /// Emitted by ConfigureGitAuth effect handler after setting up git credentials
-    /// for remote operations. This signals that push operations can proceed.
-    GitAuthConfigured,
-
-    /// Push to remote completed successfully (cloud mode only).
-    ///
-    /// Emitted when a git push operation succeeds. Records which commit was
-    /// pushed and to which remote/branch.
-    PushCompleted {
-        /// Remote name (e.g., "origin")
-        remote: String,
-        /// Branch name
-        branch: String,
-        /// Commit SHA that was pushed
-        commit_sha: String,
-    },
-
-    /// Push to remote failed (cloud mode only).
-    ///
-    /// Emitted when a git push operation fails. In graceful degradation mode,
-    /// the pipeline continues despite this failure.
-    PushFailed {
-        /// Remote name (e.g., "origin")
-        remote: String,
-        /// Branch name
-        branch: String,
-        /// Error message from git
-        error: String,
-    },
-
-    /// Pull request created successfully (cloud mode only).
-    ///
-    /// Emitted when a PR is created on the remote platform (GitHub, GitLab, etc.).
-    /// Records the PR URL and number for tracking.
-    PullRequestCreated {
-        /// PR URL
-        url: String,
-        /// PR number
-        number: u32,
-    },
-
-    /// Pull request creation failed (cloud mode only).
-    ///
-    /// Emitted when PR creation fails. Includes error details for debugging.
-    PullRequestFailed {
-        /// Error message from PR creation tool (gh/glab CLI)
-        error: String,
-    },
-
-    /// Cloud progress reported successfully (cloud mode only).
-    ///
-    /// Emitted when a progress update is successfully sent to the cloud API.
-    /// Used for tracking that communication with the cloud backend is working.
-    CloudProgressReported,
-
-    /// Cloud progress report failed (cloud mode only).
-    ///
-    /// Emitted when a progress update fails to send to the cloud API.
-    /// In graceful degradation mode, the pipeline continues despite this.
-    CloudProgressFailed {
-        /// Error message from cloud reporter
-        error: String,
-    },
 }
 
 #[cfg(test)]
@@ -587,14 +513,6 @@ mod tests {
                 PipelineEvent::FinalizingStarted => "finalizing_started",
                 PipelineEvent::PromptPermissionsRestored => "prompt_permissions_restored",
                 PipelineEvent::LoopRecoveryTriggered { .. } => "loop_recovery_triggered",
-                // Cloud mode events (internal use only)
-                PipelineEvent::GitAuthConfigured => "git_auth_configured",
-                PipelineEvent::PushCompleted { .. } => "push_completed",
-                PipelineEvent::PushFailed { .. } => "push_failed",
-                PipelineEvent::PullRequestCreated { .. } => "pull_request_created",
-                PipelineEvent::PullRequestFailed { .. } => "pull_request_failed",
-                PipelineEvent::CloudProgressReported => "cloud_progress_reported",
-                PipelineEvent::CloudProgressFailed { .. } => "cloud_progress_failed",
                 // DO NOT ADD _ WILDCARD - intentionally exhaustive
             }
         }

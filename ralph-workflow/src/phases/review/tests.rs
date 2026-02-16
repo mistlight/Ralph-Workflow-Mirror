@@ -81,7 +81,7 @@ impl TestFixture {
 
 #[test]
 fn test_validate_and_process_issues_xml_archives_and_writes_markdown() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let xml_content = r#"<ralph-issues>
  <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
  </ralph-issues>"#;

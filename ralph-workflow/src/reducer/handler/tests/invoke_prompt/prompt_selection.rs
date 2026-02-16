@@ -10,7 +10,7 @@ use super::*;
 
 #[test]
 fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
     let colors = Colors { enabled: false };
@@ -87,7 +87,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 
 #[test]
 fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuation_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -182,7 +182,7 @@ RETRY PROMPT MARKER"
 
 #[test]
 fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -258,7 +258,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
 
 #[test]
 fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRole;
     use crate::executor::AgentCommandResult;
 
@@ -337,7 +337,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
 
 #[test]
 fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::state_reduction::reduce;
 
     let workspace =
@@ -511,7 +511,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
 
 #[test]
 fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_attempt_context() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
     let colors = Colors { enabled: false };

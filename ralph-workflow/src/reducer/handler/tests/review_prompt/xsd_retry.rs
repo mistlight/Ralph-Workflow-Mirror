@@ -717,7 +717,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
 
 #[test]
 fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
     assert!(
         template.contains(
@@ -729,7 +729,7 @@ fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
 
 #[test]
 fn test_fix_mode_xsd_retry_template_lists_fix_result_status_values() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
     assert!(
         template.contains("all_issues_addressed")

@@ -260,7 +260,7 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
 
 #[test]
 fn test_prepare_development_prompt_detects_unresolved_partial() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     // Test that unresolved placeholders in the template itself (not in PROMPT/PLAN content)
     // would be detected. This requires a custom template with an unresolved partial.
     // Since the default templates are well-formed, we skip this test.

@@ -89,6 +89,8 @@ impl Fixture {
             repo_root: &self.repo_root,
             workspace: self.workspace.as_ref(),
             run_log_context: &self.run_log_context,
+            cloud_reporter: None,
+            cloud_config: &ralph_workflow::config::CloudConfig::disabled(),
         }
     }
 }

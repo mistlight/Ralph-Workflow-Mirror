@@ -6,7 +6,7 @@ use crate::reducer::PipelineState;
 
 #[test]
 fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;

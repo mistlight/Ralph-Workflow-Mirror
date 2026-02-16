@@ -228,6 +228,8 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
             repo_root: &repo_root,
             workspace: &workspace,
             run_log_context: &run_log_context,
+            cloud_reporter: None,
+            cloud_config: &ralph_workflow::config::CloudConfig::disabled(),
         };
 
         // Start in FinalValidation so the loop runs without needing SaveCheckpoint.

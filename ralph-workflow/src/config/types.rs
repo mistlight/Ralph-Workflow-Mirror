@@ -425,7 +425,7 @@ impl CloudConfig {
 }
 
 impl GitRemoteConfig {
-    fn from_env() -> Self {
+    pub fn from_env() -> Self {
         let auth_method = match std::env::var("RALPH_GIT_AUTH_METHOD")
             .unwrap_or_else(|_| "ssh".to_string())
             .to_lowercase()

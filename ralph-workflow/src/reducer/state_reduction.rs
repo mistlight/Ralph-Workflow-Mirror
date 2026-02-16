@@ -112,66 +112,6 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
                 ..state
             }
         }
-
-        // ====================================================================
-        // Cloud Mode Events (INTERNAL USE ONLY)
-        // ====================================================================
-        //
-        // These events are only emitted when cloud mode is enabled.
-        // State updates are purely additive - no impact on CLI mode behavior.
-        PipelineEvent::GitAuthConfigured => PipelineState {
-            git_auth_configured: true,
-            ..state
-        },
-
-        PipelineEvent::PushCompleted {
-            commit_sha,
-            remote: _,
-            branch: _,
-        } => PipelineState {
-            // Clear pending push - commit is now on remote
-            pending_push_commit: None,
-            // Increment push count for metrics
-            push_count: state.push_count.saturating_add(1),
-            ..state
-        },
-
-        PipelineEvent::PushFailed {
-            remote: _,
-            branch: _,
-            error: _,
-        } => {
-            // Clear pending push even on failure (graceful degradation)
-            // The error is logged by the handler, no state change needed
-            PipelineState {
-                pending_push_commit: None,
-                ..state
-            }
-        }
-
-        PipelineEvent::PullRequestCreated { url, number: _ } => PipelineState {
-            pr_created: true,
-            pr_url: Some(url),
-            ..state
-        },
-
-        PipelineEvent::PullRequestFailed { error: _ } => {
-            // PR creation failed - just log the error, no state change
-            // In graceful degradation mode, the pipeline continues
-            state
-        }
-
-        PipelineEvent::CloudProgressReported => {
-            // Progress report succeeded - no state change needed
-            // This event exists for observability/testing
-            state
-        }
-
-        PipelineEvent::CloudProgressFailed { error: _ } => {
-            // Progress report failed - just log the error, no state change
-            // In graceful degradation mode, the pipeline continues
-            state
-        }
     }
 }
 

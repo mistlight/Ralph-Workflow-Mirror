@@ -213,7 +213,7 @@ impl Workspace for FailingMarkerWorkspace {
     }
 
     fn set_writable(&self, relative: &Path) -> io::Result<()> {
-        let cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud_config = crate::config::types::CloudConfig::disabled();
         self.inner.set_writable(relative)
     }
 }

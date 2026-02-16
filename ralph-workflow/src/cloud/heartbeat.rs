@@ -93,7 +93,7 @@ mod tests {
         // Should have sent 3-4 heartbeats
         let count = reporter.heartbeat_count();
         assert!(
-            count >= 3 && count <= 5,
+            (3..=5).contains(&count),
             "Expected 3-5 heartbeats, got {}",
             count
         );
