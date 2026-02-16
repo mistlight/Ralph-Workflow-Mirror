@@ -6,3 +6,4 @@ mod materialize_inputs;
 mod model_budget;
 mod outcome;
 mod prepare_prompt;
+mod validation;

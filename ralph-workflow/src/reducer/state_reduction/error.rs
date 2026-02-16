@@ -67,6 +67,22 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
     }
 
     match error {
+        ErrorEvent::UserInterruptRequested => {
+            // External termination request: transition to Interrupted so orchestration
+            // can restore PROMPT.md permissions and persist a checkpoint deterministically.
+            let mut new_state = state.clone();
+            new_state.previous_phase = Some(state.phase);
+            new_state.phase = PipelinePhase::Interrupted;
+            new_state.interrupted_by_user = true;
+
+            // If we were in a termination sub-flow, clear marker intent. Ctrl+C is not
+            // a programmatic completion marker termination path.
+            new_state.completion_marker_pending = false;
+            new_state.completion_marker_is_failure = false;
+            new_state.completion_marker_reason = None;
+            new_state
+        }
+
         // Continuation not supported errors are invariant violations
         ErrorEvent::PlanningContinuationNotSupported
         | ErrorEvent::ReviewContinuationNotSupported

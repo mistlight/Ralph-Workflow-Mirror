@@ -586,6 +586,151 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     assert_eq!(state.continuation.max_same_agent_retry_count, 5);
 }
 
+#[test]
+fn test_event_loop_honors_user_interrupt_by_transitioning_to_interrupted_and_checkpointing() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::event::{CheckpointTrigger, PipelineEvent, PipelinePhase};
+    use crate::reducer::state::PromptPermissionsState;
+    use crate::reducer::PipelineState;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct TestHandler {
+        state: PipelineState,
+        effects: Vec<Effect>,
+    }
+
+    impl TestHandler {
+        fn new(state: PipelineState) -> Self {
+            Self {
+                state,
+                effects: Vec::new(),
+            }
+        }
+    }
+
+    impl<'ctx> EffectHandler<'ctx> for TestHandler {
+        fn execute(
+            &mut self,
+            effect: Effect,
+            _ctx: &mut PhaseContext<'_>,
+        ) -> anyhow::Result<EffectResult> {
+            self.effects.push(effect.clone());
+            match effect {
+                Effect::RestorePromptPermissions => Ok(EffectResult::event(
+                    PipelineEvent::prompt_permissions_restored(),
+                )),
+                Effect::SaveCheckpoint { trigger } => Ok(EffectResult::event(
+                    PipelineEvent::checkpoint_saved(trigger),
+                )),
+                unexpected => {
+                    panic!("unexpected effect during user interrupt handling: {unexpected:?}")
+                }
+            }
+        }
+    }
+
+    impl super::StatefulHandler for TestHandler {
+        fn update_state(&mut self, state: PipelineState) {
+            self.state = state;
+        }
+    }
+
+    // Clear any prior interrupt requests (tests may run in parallel).
+    while crate::interrupt::take_user_interrupt_request() {}
+
+    // Simulate Ctrl+C.
+    crate::interrupt::request_user_interrupt();
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    // Start from a non-terminal state with restoration pending.
+    let state = PipelineState {
+        phase: PipelinePhase::Planning,
+        prompt_permissions: PromptPermissionsState {
+            locked: true,
+            restore_needed: true,
+            restored: false,
+            last_warning: None,
+        },
+        ..PipelineState::initial(1, 0)
+    };
+    let mut handler = TestHandler::new(state.clone());
+
+    let loop_config = EventLoopConfig { max_iterations: 10 };
+    let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect("event loop should run");
+
+    assert!(
+        result.completed,
+        "expected event loop to complete after user interrupt handling"
+    );
+    assert_eq!(
+        result.final_phase,
+        PipelinePhase::Interrupted,
+        "expected user interrupt to transition pipeline to Interrupted"
+    );
+    assert!(
+        result.final_state.interrupted_by_user,
+        "expected interrupted_by_user=true for Ctrl+C interruption"
+    );
+
+    assert!(
+        handler
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::RestorePromptPermissions)),
+        "expected RestorePromptPermissions to execute before checkpoint"
+    );
+    assert!(
+        handler.effects.iter().any(|e| matches!(
+            e,
+            Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::Interrupt
+            }
+        )),
+        "expected SaveCheckpoint with Interrupt trigger for Ctrl+C interruption"
+    );
+}
+
 /// TDD test: run_event_loop_with_handler should accept a generic EffectHandler
 /// allowing MockEffectHandler to be injected for testing.
 #[cfg(feature = "test-utils")]

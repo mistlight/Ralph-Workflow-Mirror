@@ -18,7 +18,7 @@
 
 use crate::logging::EventLoopLogger;
 use crate::phases::PhaseContext;
-use crate::reducer::event::{PipelineEvent, PipelinePhase};
+use crate::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use crate::reducer::{determine_next_effect, reduce, EffectHandler, PipelineState};
 use anyhow::Result;
 use std::time::Instant;
@@ -86,6 +86,10 @@ where
 
     ctx.logger.info("Starting reducer-based event loop");
 
+    // Mark event loop as active so SIGINT handler does not call process::exit().
+    // The event loop will translate interrupt requests into reducer-visible transitions.
+    let _event_loop_guard = crate::interrupt::event_loop_active_guard();
+
     while events_processed < config.max_iterations {
         // Check if we're already in a terminal state before executing any effect.
         // This handles the case where the initial state is already complete
@@ -104,6 +108,46 @@ where
                 state.phase, state.checkpoint_saved_count
             ));
             break;
+        }
+
+        // External interruption (Ctrl+C): translate to a reducer-visible transition.
+        //
+        // This preserves the reducer-driven termination sequencing (RestorePromptPermissions,
+        // SaveCheckpoint) and ensures the Ctrl+C exception behavior is encoded in state
+        // via interrupted_by_user=true.
+        if crate::interrupt::take_user_interrupt_request() {
+            let effect_str = "Signal(SIGINT)".to_string();
+            let interrupt_event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+                phase: state.phase,
+                error: ErrorEvent::UserInterruptRequested,
+            });
+            let event_str = format!("{:?}", interrupt_event);
+            let start_time = Instant::now();
+            let new_state = reduce(state.clone(), interrupt_event);
+            let duration_ms = start_time.elapsed().as_millis() as u64;
+
+            log_effect_execution(
+                ctx,
+                &mut event_loop_logger,
+                &new_state,
+                &effect_str,
+                &event_str,
+                &[],
+                duration_ms,
+            );
+
+            trace.push(build_trace_entry(
+                events_processed,
+                &new_state,
+                &effect_str,
+                &event_str,
+            ));
+            handler.update_state(new_state.clone());
+            state = new_state;
+            events_processed += 1;
+
+            // Skip normal effect execution for this iteration.
+            continue;
         }
 
         let effect = determine_next_effect(&state);

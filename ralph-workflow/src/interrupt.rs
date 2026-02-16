@@ -3,11 +3,13 @@
 //! This module provides signal handling for the Ralph pipeline, ensuring
 //! clean shutdown when the user interrupts with Ctrl+C.
 //!
-//! When an interrupt is received, the handler will:
-//! 1. Save a checkpoint with the *current operational phase* (so `--resume` continues)
-//! 2. Set `interrupted_by_user = true` to record the user-initiated interrupt
-//! 3. Clean up temporary files
-//! 4. Exit gracefully
+//! When an interrupt is received:
+//!
+//! - If the reducer event loop is running, the handler sets a global interrupt request
+//!   flag and returns. The event loop consumes that flag and performs the reducer-driven
+//!   termination sequence (RestorePromptPermissions -> SaveCheckpoint -> shutdown).
+//! - If the event loop is not running yet (early startup), the handler falls back to a
+//!   best-effort checkpoint save and exits with the standard SIGINT code (130).
 //!
 //! ## Ctrl+C Exception for Safety Check
 //!
@@ -17,6 +19,7 @@
 //! the user explicitly chose to interrupt execution. This respects user intent while
 //! ensuring all other termination paths commit uncommitted work before exiting.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use crate::workspace::Workspace;
@@ -26,6 +29,56 @@ use crate::workspace::Workspace;
 /// This is set during pipeline initialization and used by the interrupt
 /// handler to save a checkpoint when the user presses Ctrl+C.
 static INTERRUPT_CONTEXT: Mutex<Option<InterruptContext>> = Mutex::new(None);
+
+/// True when a user interrupt (SIGINT / Ctrl+C) has been requested.
+///
+/// The signal handler sets this flag. The reducer event loop consumes it and
+/// transitions the pipeline to an Interrupted state so termination effects
+/// (RestorePromptPermissions, SaveCheckpoint) execute deterministically.
+static USER_INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// True while the reducer event loop is running.
+///
+/// When true, the Ctrl+C handler must NOT call `process::exit()`.
+/// Instead it requests interruption and lets the event loop drive:
+/// - RestorePromptPermissions
+/// - SaveCheckpoint
+/// - orderly shutdown
+static EVENT_LOOP_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// RAII guard that marks the reducer event loop as active.
+pub struct EventLoopActiveGuard;
+
+impl Drop for EventLoopActiveGuard {
+    fn drop(&mut self) {
+        EVENT_LOOP_ACTIVE.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Mark the reducer event loop as active for the duration of the returned guard.
+pub fn event_loop_active_guard() -> EventLoopActiveGuard {
+    EVENT_LOOP_ACTIVE.store(true, Ordering::SeqCst);
+    EventLoopActiveGuard
+}
+
+fn is_event_loop_active() -> bool {
+    EVENT_LOOP_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Request that the running pipeline treat the run as user-interrupted.
+///
+/// This is called by the Ctrl+C handler. The event loop is responsible for
+/// consuming the request and translating it into a reducer-visible transition.
+pub fn request_user_interrupt() {
+    USER_INTERRUPT_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Consume a pending user interrupt request.
+///
+/// Returns true if an interrupt was pending.
+pub fn take_user_interrupt_request() -> bool {
+    USER_INTERRUPT_REQUESTED.swap(false, Ordering::SeqCst)
+}
 
 /// Context needed to save a checkpoint when interrupted.
 ///
@@ -96,6 +149,17 @@ pub fn clear_interrupt_context() {
 /// Call this early in main() after initializing the pipeline context.
 pub fn setup_interrupt_handler() {
     ctrlc::set_handler(|| {
+        request_user_interrupt();
+
+        // If the reducer event loop is running, do not exit here.
+        // The event loop will observe the request, restore permissions, and checkpoint.
+        if is_event_loop_active() {
+            eprintln!(
+                "\nInterrupt received; requesting graceful shutdown (waiting for checkpoint)..."
+            );
+            return;
+        }
+
         eprintln!("\nInterrupt received; saving checkpoint...");
 
         // Try to save checkpoint if context is available
@@ -111,6 +175,14 @@ pub fn setup_interrupt_handler() {
             }
         }
         drop(ctx); // Release lock before cleanup
+
+        // Best-effort: restore PROMPT.md permissions so we don't leave the repo locked.
+        // This is primarily for early-interrupt cases before the reducer event loop starts.
+        if let Some(ref context) = *INTERRUPT_CONTEXT.lock().unwrap_or_else(|p| p.into_inner()) {
+            let _ = context
+                .workspace
+                .set_writable(std::path::Path::new("PROMPT.md"));
+        }
 
         eprintln!("Cleaning up...");
         crate::git_helpers::cleanup_agent_phase_silent();

@@ -100,6 +100,14 @@ impl WorkspaceIoErrorKind {
 ///    failure modes appropriately.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum ErrorEvent {
+    /// User requested interruption (Ctrl+C / SIGINT).
+    ///
+    /// This is an external termination request, not an internal pipeline failure.
+    /// The reducer transitions to `PipelinePhase::Interrupted` and sets
+    /// `interrupted_by_user=true` so orchestration can run termination effects
+    /// deterministically (RestorePromptPermissions, SaveCheckpoint) while skipping
+    /// the pre-termination commit safety check.
+    UserInterruptRequested,
     /// Review inputs not materialized before prepare_review_prompt.
     ///
     /// This indicates an effect sequencing bug where prepare_review_prompt was called
@@ -227,6 +235,9 @@ pub enum ErrorEvent {
 impl std::fmt::Display for ErrorEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ErrorEvent::UserInterruptRequested => {
+                write!(f, "User interrupt requested (SIGINT / Ctrl+C)")
+            }
             ErrorEvent::ReviewInputsNotMaterialized { pass } => {
                 write!(
                     f,

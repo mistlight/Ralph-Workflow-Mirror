@@ -59,12 +59,17 @@ impl MainEffectHandler {
         let xml_content = match ctx.workspace.read(commit_xml) {
             Ok(s) => s,
             Err(_) => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::commit_xml_validation_failed(
-                        "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml"
-                            .to_string(),
-                        attempt,
-                    ),
+                let reason =
+                    "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml";
+                let event =
+                    PipelineEvent::commit_xml_validation_failed(reason.to_string(), attempt);
+                return Ok(EffectResult::with_ui(
+                    event,
+                    vec![UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::CommitMessage,
+                        content: reason.to_string(),
+                        context: None,
+                    }],
                 ));
             }
         };

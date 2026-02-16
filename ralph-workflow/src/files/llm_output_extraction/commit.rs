@@ -172,12 +172,44 @@ pub fn render_final_commit_message(message: &str) -> String {
     }
 
     // Step 3: Final whitespace cleanup
-    result = result
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+    //
+    // Preserve conventional blank-line separators (e.g. subject/body, body sections)
+    // while collapsing runs of blank lines and trimming trailing whitespace.
+    let mut out: Vec<String> = Vec::new();
+    let mut saw_non_blank = false;
+    let mut prev_blank = false;
+
+    for raw in result.lines() {
+        let trimmed = raw.trim();
+        let is_blank = trimmed.is_empty();
+
+        if !saw_non_blank {
+            if is_blank {
+                continue;
+            }
+            out.push(trimmed.to_string());
+            saw_non_blank = true;
+            prev_blank = false;
+            continue;
+        }
+
+        if is_blank {
+            if prev_blank {
+                continue;
+            }
+            out.push(String::new());
+            prev_blank = true;
+        } else {
+            out.push(trimmed.to_string());
+            prev_blank = false;
+        }
+    }
+
+    while out.last().is_some_and(|l| l.trim().is_empty()) {
+        out.pop();
+    }
+
+    result = out.join("\n");
 
     result
 }
@@ -203,10 +235,10 @@ mod tests {
     #[test]
     fn test_render_final_commit_message_with_literal_escapes() {
         // Test that render_final_commit_message cleans up escape sequences
-        // Note: whitespace cleanup removes blank lines
+        // Note: whitespace cleanup preserves conventional blank-line separators
         let input = "feat: add feature\n\\n\\nBody with literal escapes";
         let result = render_final_commit_message(input);
-        assert_eq!(result, "feat: add feature\nBody with literal escapes");
+        assert_eq!(result, "feat: add feature\n\nBody with literal escapes");
     }
 
     #[test]
@@ -214,7 +246,18 @@ mod tests {
         // Test that already-clean messages pass through (whitespace cleanup applied)
         let input = "feat: add feature\n\nBody text here";
         let result = render_final_commit_message(input);
-        assert_eq!(result, "feat: add feature\nBody text here");
+        assert_eq!(result, "feat: add feature\n\nBody text here");
+    }
+
+    #[test]
+    fn test_render_final_commit_message_preserves_single_blank_line_separators() {
+        // Conventional commit messages use a blank line between subject and body.
+        let input = "feat: add feature\n\nBody text here\n\nMore details";
+        let result = render_final_commit_message(input);
+        assert_eq!(
+            result,
+            "feat: add feature\n\nBody text here\n\nMore details"
+        );
     }
 
     #[test]
@@ -240,7 +283,7 @@ mod tests {
         // Test that trailing empty lines are removed
         let input = "feat: add feature\n\nBody text\n\n\n  \n  ";
         let result = render_final_commit_message(input);
-        assert_eq!(result, "feat: add feature\nBody text");
+        assert_eq!(result, "feat: add feature\n\nBody text");
     }
 
     #[test]
@@ -248,8 +291,8 @@ mod tests {
         // Test handling of mixed escape sequences
         let input = "feat: add feature\\n\\nDetails:\\r\\n\\t- item 1\\n\\t- item 2";
         let result = render_final_commit_message(input);
-        // Carriage returns normalized to newlines, tabs stripped by trim, blank lines removed
-        assert_eq!(result, "feat: add feature\nDetails:\n- item 1\n- item 2");
+        // Carriage returns normalized to newlines, tabs stripped by trim, blank line preserved
+        assert_eq!(result, "feat: add feature\n\nDetails:\n- item 1\n- item 2");
     }
 
     // =========================================================================
