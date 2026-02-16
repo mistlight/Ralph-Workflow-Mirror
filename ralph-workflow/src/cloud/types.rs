@@ -29,20 +29,66 @@ pub struct ProgressUpdate {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProgressEventType {
     PipelineStarted,
-    PhaseTransition { from: Option<String>, to: String },
-    IterationStarted { iteration: u32 },
-    IterationProgress { current: u32, total: u32 },
-    IterationCompleted { iteration: u32, status: String },
-    ReviewPassStarted { pass: u32 },
-    ReviewProgress { pass: u32, total: u32 },
-    ReviewPassCompleted { pass: u32, issues_found: bool },
-    AgentInvoked { role: String, agent: String },
-    AgentCompleted { role: String, duration_ms: u64 },
+    PhaseTransition {
+        from: Option<String>,
+        to: String,
+    },
+    IterationStarted {
+        iteration: u32,
+    },
+    IterationProgress {
+        current: u32,
+        total: u32,
+    },
+    IterationCompleted {
+        iteration: u32,
+        status: String,
+    },
+    ReviewPassStarted {
+        pass: u32,
+    },
+    ReviewProgress {
+        pass: u32,
+        total: u32,
+    },
+    ReviewPassCompleted {
+        pass: u32,
+        issues_found: bool,
+    },
+    AgentInvoked {
+        role: String,
+        agent: String,
+    },
+    AgentCompleted {
+        role: String,
+        duration_ms: u64,
+    },
     CheckpointSaved,
-    CommitCreated { sha: String },
-    PushCompleted { remote: String, branch: String },
-    PipelineCompleted { success: bool },
-    PipelineInterrupted { reason: String },
+    CommitCreated {
+        sha: String,
+    },
+    PushCompleted {
+        remote: String,
+        branch: String,
+    },
+    PushFailed {
+        remote: String,
+        branch: String,
+        error: String,
+    },
+    PullRequestCreated {
+        url: String,
+        number: u32,
+    },
+    PullRequestFailed {
+        error: String,
+    },
+    PipelineCompleted {
+        success: bool,
+    },
+    PipelineInterrupted {
+        reason: String,
+    },
     Heartbeat,
 }
 

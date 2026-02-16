@@ -14,6 +14,7 @@
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{CommitEvent, PipelineEvent};
+use crate::reducer::ui_event::UIEvent;
 use anyhow::Result;
 
 use super::MainEffectHandler;
@@ -152,36 +153,60 @@ impl MainEffectHandler {
             Ok(output) if output.status.success() => {
                 ctx.logger
                     .info(&format!("Successfully pushed to {}/{}", remote, branch));
-                Ok(EffectResult::event(PipelineEvent::Commit(
-                    CommitEvent::PushCompleted {
+
+                let ui = UIEvent::PushCompleted {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                    commit_sha: commit_sha.clone(),
+                };
+
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::Commit(CommitEvent::PushCompleted {
                         remote,
                         branch,
                         commit_sha,
-                    },
-                )))
+                    }),
+                    vec![ui],
+                ))
             }
             Ok(output) => {
                 let error = crate::cloud::redaction::redact_secrets(&output.stderr);
                 ctx.logger.warn(&format!("Git push failed: {error}"));
-                Ok(EffectResult::event(PipelineEvent::Commit(
-                    CommitEvent::PushFailed {
+
+                let ui = UIEvent::PushFailed {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                    error: error.clone(),
+                };
+
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::Commit(CommitEvent::PushFailed {
                         remote,
                         branch,
                         error,
-                    },
-                )))
+                    }),
+                    vec![ui],
+                ))
             }
             Err(e) => {
                 let error = crate::cloud::redaction::redact_secrets(&e.to_string());
                 ctx.logger
                     .warn(&format!("Git push execution failed: {error}"));
-                Ok(EffectResult::event(PipelineEvent::Commit(
-                    CommitEvent::PushFailed {
+
+                let ui = UIEvent::PushFailed {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                    error: error.clone(),
+                };
+
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::Commit(CommitEvent::PushFailed {
                         remote,
                         branch,
                         error,
-                    },
-                )))
+                    }),
+                    vec![ui],
+                ))
             }
         }
     }
@@ -231,16 +256,28 @@ impl MainEffectHandler {
                     .and_then(|s| s.parse::<u32>().ok())
                     .unwrap_or(0);
 
-                Ok(EffectResult::event(PipelineEvent::Commit(
-                    CommitEvent::PullRequestCreated { url, number },
-                )))
+                let ui = UIEvent::PullRequestCreated {
+                    url: url.clone(),
+                    number,
+                };
+
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::Commit(CommitEvent::PullRequestCreated { url, number }),
+                    vec![ui],
+                ))
             }
             Ok(output) => {
                 let error = crate::cloud::redaction::redact_secrets(&output.stderr);
                 ctx.logger.warn(&format!("PR creation failed: {error}"));
-                Ok(EffectResult::event(PipelineEvent::Commit(
-                    CommitEvent::PullRequestFailed { error },
-                )))
+
+                let ui = UIEvent::PullRequestFailed {
+                    error: error.clone(),
+                };
+
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::Commit(CommitEvent::PullRequestFailed { error }),
+                    vec![ui],
+                ))
             }
             Err(e) => {
                 // gh CLI not available, try glab (GitLab)
@@ -276,16 +313,27 @@ impl MainEffectHandler {
                             .and_then(|s| s.parse::<u32>().ok())
                             .unwrap_or(0);
 
-                        Ok(EffectResult::event(PipelineEvent::Commit(
-                            CommitEvent::PullRequestCreated { url, number },
-                        )))
+                        let ui = UIEvent::PullRequestCreated {
+                            url: url.clone(),
+                            number,
+                        };
+
+                        Ok(EffectResult::with_ui(
+                            PipelineEvent::Commit(CommitEvent::PullRequestCreated { url, number }),
+                            vec![ui],
+                        ))
                     }
                     Ok(output) => {
                         let error = crate::cloud::redaction::redact_secrets(&output.stderr);
                         ctx.logger.warn(&format!("MR creation failed: {error}"));
-                        Ok(EffectResult::event(PipelineEvent::Commit(
-                            CommitEvent::PullRequestFailed { error },
-                        )))
+                        let ui = UIEvent::PullRequestFailed {
+                            error: error.clone(),
+                        };
+
+                        Ok(EffectResult::with_ui(
+                            PipelineEvent::Commit(CommitEvent::PullRequestFailed { error }),
+                            vec![ui],
+                        ))
                     }
                     Err(e2) => {
                         let e = crate::cloud::redaction::redact_secrets(&e.to_string());
@@ -293,13 +341,17 @@ impl MainEffectHandler {
                         ctx.logger.warn(&format!(
                             "Neither gh nor glab CLI available: gh error: {e}, glab error: {e2}",
                         ));
-                        Ok(EffectResult::event(PipelineEvent::Commit(
-                            CommitEvent::PullRequestFailed {
-                                error: format!(
-                                    "Neither gh nor glab CLI available (gh: {e}, glab: {e2})",
-                                ),
-                            },
-                        )))
+
+                        let error =
+                            format!("Neither gh nor glab CLI available (gh: {e}, glab: {e2})");
+                        let ui = UIEvent::PullRequestFailed {
+                            error: error.clone(),
+                        };
+
+                        Ok(EffectResult::with_ui(
+                            PipelineEvent::Commit(CommitEvent::PullRequestFailed { error }),
+                            vec![ui],
+                        ))
                     }
                 }
             }

@@ -30,8 +30,11 @@ struct Fixture {
 
 impl Fixture {
     fn new(cloud_config: CloudConfig) -> Self {
+        Self::new_with_executor(cloud_config, Arc::new(MockProcessExecutor::new()))
+    }
+
+    fn new_with_executor(cloud_config: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
         let workspace = MemoryWorkspace::new_test();
-        let executor = Arc::new(MockProcessExecutor::new());
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let config = Config::default();
@@ -179,4 +182,112 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
         args.iter().any(|a| a == "credential.helper=gcloud"),
         "expected credential.helper override for credential-helper auth"
     );
+}
+
+#[test]
+fn test_push_to_remote_emits_ui_event_on_success() {
+    let cloud_config = CloudConfig {
+        enabled: true,
+        api_url: Some("https://api.example.com".to_string()),
+        api_token: Some("secret".to_string()),
+        run_id: Some("run_1".to_string()),
+        heartbeat_interval_secs: 30,
+        graceful_degradation: true,
+        git_remote: GitRemoteConfig {
+            auth_method: GitAuthMethod::SshKey { key_path: None },
+            push_branch: Some("main".to_string()),
+            create_pr: false,
+            pr_title_template: None,
+            pr_body_template: None,
+            pr_base_branch: None,
+            force_push: false,
+            remote_name: "origin".to_string(),
+        },
+    };
+
+    let mut fixture = Fixture::new(cloud_config);
+    let mut ctx = fixture.ctx();
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+
+    let result = handler
+        .handle_push_to_remote(
+            &mut ctx,
+            "origin".to_string(),
+            "main".to_string(),
+            false,
+            "abc123".to_string(),
+        )
+        .expect("push handler should run");
+
+    assert!(
+        result.ui_events.iter().any(|e| matches!(
+            e,
+            crate::reducer::ui_event::UIEvent::PushCompleted {
+                remote,
+                branch,
+                commit_sha
+            } if remote == "origin" && branch == "main" && commit_sha == "abc123"
+        )),
+        "expected PushCompleted UIEvent"
+    );
+}
+
+#[test]
+fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
+    let cloud_config = CloudConfig {
+        enabled: true,
+        api_url: Some("https://api.example.com".to_string()),
+        api_token: Some("secret".to_string()),
+        run_id: Some("run_1".to_string()),
+        heartbeat_interval_secs: 30,
+        graceful_degradation: true,
+        git_remote: GitRemoteConfig {
+            auth_method: GitAuthMethod::SshKey { key_path: None },
+            push_branch: Some("main".to_string()),
+            create_pr: false,
+            pr_title_template: None,
+            pr_body_template: None,
+            pr_base_branch: None,
+            force_push: false,
+            remote_name: "origin".to_string(),
+        },
+    };
+
+    let executor = Arc::new(MockProcessExecutor::new().with_error(
+        "git",
+        "HTTP 401: Bearer SECRET_TOKEN https://user:pass@example.com?access_token=abc",
+    ));
+    let mut fixture = Fixture::new_with_executor(cloud_config, executor);
+    let mut ctx = fixture.ctx();
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+
+    let result = handler
+        .handle_push_to_remote(
+            &mut ctx,
+            "origin".to_string(),
+            "main".to_string(),
+            false,
+            "abc123".to_string(),
+        )
+        .expect("push handler should run");
+
+    let mut saw = false;
+    for e in &result.ui_events {
+        if let crate::reducer::ui_event::UIEvent::PushFailed { error, .. } = e {
+            assert!(
+                !error.contains("SECRET_TOKEN"),
+                "should redact token: {error}"
+            );
+            assert!(
+                !error.contains("user:pass"),
+                "should redact userinfo: {error}"
+            );
+            assert!(
+                error.contains("<redacted>"),
+                "should contain redaction marker: {error}"
+            );
+            saw = true;
+        }
+    }
+    assert!(saw, "expected PushFailed UIEvent");
 }

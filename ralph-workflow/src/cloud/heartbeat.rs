@@ -14,6 +14,7 @@ use std::time::Duration;
 /// Automatically stops the heartbeat when dropped.
 pub struct HeartbeatGuard {
     stop_tx: Option<mpsc::Sender<()>>,
+    done_rx: Option<mpsc::Receiver<()>>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -24,6 +25,7 @@ impl HeartbeatGuard {
     /// the guard is dropped or the token is cancelled.
     pub fn start(reporter: Arc<dyn CloudReporter>, interval: Duration) -> Self {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let (done_tx, done_rx) = mpsc::channel::<()>();
 
         let handle = thread::spawn(move || {
             loop {
@@ -36,10 +38,14 @@ impl HeartbeatGuard {
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
+
+            // Signal completion so Drop can join without blocking.
+            let _ = done_tx.send(());
         });
 
         Self {
             stop_tx: Some(stop_tx),
+            done_rx: Some(done_rx),
             handle: Some(handle),
         }
     }
@@ -47,12 +53,25 @@ impl HeartbeatGuard {
 
 impl Drop for HeartbeatGuard {
     fn drop(&mut self) {
+        const DROP_JOIN_TIMEOUT: Duration = Duration::from_millis(50);
+
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
         }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+
+        // Best-effort: join promptly when possible, but never block pipeline shutdown.
+        // If the heartbeat call is stalled (e.g., network timeout), detach the thread.
+        if let Some(done_rx) = self.done_rx.take() {
+            if done_rx.recv_timeout(DROP_JOIN_TIMEOUT).is_ok() {
+                if let Some(handle) = self.handle.take() {
+                    let _ = handle.join();
+                }
+                return;
+            }
         }
+
+        // Detach worker if it didn't exit quickly.
+        let _ = self.handle.take();
     }
 }
 
@@ -114,6 +133,51 @@ mod tests {
         assert!(
             elapsed < Duration::from_millis(500),
             "drop should return promptly; elapsed={:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_drop_does_not_block_when_heartbeat_call_is_stalled() {
+        use crate::cloud::types::{CloudError, PipelineResult, ProgressUpdate};
+        use std::sync::mpsc;
+
+        struct BlockingReporter {
+            entered_tx: mpsc::Sender<()>,
+        }
+
+        impl CloudReporter for BlockingReporter {
+            fn report_progress(&self, _update: &ProgressUpdate) -> Result<(), CloudError> {
+                Ok(())
+            }
+
+            fn heartbeat(&self) -> Result<(), CloudError> {
+                let _ = self.entered_tx.send(());
+                // Simulate network stall (longer than drop timeout).
+                thread::sleep(Duration::from_millis(300));
+                Ok(())
+            }
+
+            fn report_completion(&self, _result: &PipelineResult) -> Result<(), CloudError> {
+                Ok(())
+            }
+        }
+
+        let (tx, rx) = mpsc::channel::<()>();
+        let reporter = Arc::new(BlockingReporter { entered_tx: tx });
+        let reporter_clone = Arc::clone(&reporter);
+
+        let start = Instant::now();
+        {
+            let _guard = HeartbeatGuard::start(reporter_clone, Duration::from_millis(1));
+            // Wait for the worker to enter the heartbeat call.
+            let _ = rx.recv_timeout(Duration::from_millis(250));
+        }
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < Duration::from_millis(150),
+            "drop should not block on stalled heartbeat; elapsed={:?}",
             elapsed
         );
     }

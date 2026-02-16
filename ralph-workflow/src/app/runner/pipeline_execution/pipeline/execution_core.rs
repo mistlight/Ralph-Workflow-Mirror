@@ -288,21 +288,12 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             checkpoint.clone(),
             phase_ctx.config.execution_history_limit,
         );
-        let migrated_execution_history = migrated.execution_history().clone();
 
-        base_state.phase = migrated.phase;
-        base_state.iteration = migrated.iteration;
-        base_state.total_iterations = migrated.total_iterations;
-        base_state.reviewer_pass = migrated.reviewer_pass;
-        base_state.total_reviewer_passes = migrated.total_reviewer_passes;
-        base_state.rebase = migrated.rebase;
-        base_state.replace_execution_history_bounded(
-            migrated_execution_history,
+        crate::app::event_loop::overlay_checkpoint_progress_onto_base_state(
+            &mut base_state,
+            migrated,
             phase_ctx.config.execution_history_limit,
         );
-        base_state.prompt_inputs = migrated.prompt_inputs;
-        base_state.prompt_permissions = migrated.prompt_permissions;
-        base_state.metrics = migrated.metrics;
 
         base_state
     } else {

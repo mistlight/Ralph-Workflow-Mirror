@@ -23,6 +23,31 @@ pub fn render_ui_event(event: &UIEvent) -> String {
         UIEvent::AgentActivity { agent, message } => {
             format!("🤖 [{}] {}", agent, message)
         }
+        UIEvent::PushCompleted {
+            remote,
+            branch,
+            commit_sha,
+        } => {
+            let short = &commit_sha[..7.min(commit_sha.len())];
+            format!("⬆️  Pushed {short} to {remote}/{branch}")
+        }
+        UIEvent::PushFailed {
+            remote,
+            branch,
+            error,
+        } => {
+            format!("⚠️  Push failed for {remote}/{branch}: {error}")
+        }
+        UIEvent::PullRequestCreated { url, number } => {
+            if *number > 0 {
+                format!("🔀 PR created #{number}: {url}")
+            } else {
+                format!("🔀 PR created: {url}")
+            }
+        }
+        UIEvent::PullRequestFailed { error } => {
+            format!("⚠️  PR creation failed: {error}")
+        }
         UIEvent::XmlOutput {
             xml_type,
             content,

@@ -38,6 +38,10 @@ use super::trace::{
 };
 use super::StatefulHandler;
 
+fn safe_cloud_error_string(e: &crate::cloud::types::CloudError) -> String {
+    crate::cloud::redaction::redact_secrets(&e.to_string())
+}
+
 /// Run the main event loop with the given handler and configuration.
 ///
 /// This function implements the reducer-based event loop cycle, orchestrating
@@ -225,11 +229,12 @@ where
                     ui_event_to_progress_update(ui_event, &state, ctx.cloud_config)
                 {
                     if let Err(e) = reporter.report_progress(&update) {
+                        let error = safe_cloud_error_string(&e);
                         if !ctx.cloud_config.graceful_degradation {
-                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", e));
+                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", error));
                         }
                         ctx.logger
-                            .warn(&format!("Cloud progress report failed: {}", e));
+                            .warn(&format!("Cloud progress report failed: {}", error));
                     }
                 }
             }
@@ -428,10 +433,22 @@ fn ui_event_to_progress_update(
 
     let _run_id = cloud_config.run_id.clone()?;
 
-    let mut iteration = Some(state.iteration);
-    let mut total_iterations = None;
-    let mut review_pass = Some(state.reviewer_pass);
-    let mut total_review_passes = None;
+    fn nonzero(v: u32) -> Option<u32> {
+        if v == 0 {
+            None
+        } else {
+            Some(v)
+        }
+    }
+
+    fn one_based(current_zero_based: u32, total: u32) -> Option<u32> {
+        nonzero(total).map(|t| (current_zero_based.saturating_add(1)).min(t))
+    }
+
+    let mut iteration = one_based(state.iteration, state.total_iterations);
+    let mut total_iterations = nonzero(state.total_iterations);
+    let mut review_pass = one_based(state.reviewer_pass, state.total_reviewer_passes);
+    let mut total_review_passes = nonzero(state.total_reviewer_passes);
     let mut previous_phase = state.previous_phase.as_ref().map(|p| format!("{:?}", p));
 
     let (message, event_type) = match ui_event {
@@ -489,6 +506,56 @@ fn ui_event_to_progress_update(
                     agent: agent.clone(),
                 },
             )
+        }
+        UIEvent::PushCompleted {
+            remote,
+            branch,
+            commit_sha,
+        } => {
+            let short = &commit_sha[..7.min(commit_sha.len())];
+            let message = format!("Push completed: {short} -> {remote}/{branch}");
+            (
+                message,
+                ProgressEventType::PushCompleted {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                },
+            )
+        }
+        UIEvent::PushFailed {
+            remote,
+            branch,
+            error,
+        } => {
+            let error = crate::cloud::redaction::redact_secrets(error);
+            let message = format!("Push failed: {remote}/{branch}: {error}");
+            (
+                message,
+                ProgressEventType::PushFailed {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                    error,
+                },
+            )
+        }
+        UIEvent::PullRequestCreated { url, number } => {
+            let message = if *number > 0 {
+                format!("PR created #{number}: {url}")
+            } else {
+                format!("PR created: {url}")
+            };
+            (
+                message,
+                ProgressEventType::PullRequestCreated {
+                    url: url.clone(),
+                    number: *number,
+                },
+            )
+        }
+        UIEvent::PullRequestFailed { error } => {
+            let error = crate::cloud::redaction::redact_secrets(error);
+            let message = format!("PR creation failed: {error}");
+            (message, ProgressEventType::PullRequestFailed { error })
         }
         // Don't report XmlOutput events to cloud
         UIEvent::XmlOutput { .. } => return None,
@@ -581,5 +648,78 @@ mod progress_mapping_tests {
             }
             other => panic!("unexpected event type: {other:?}"),
         }
+    }
+
+    #[test]
+    fn push_failed_maps_to_push_failed_event_type() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::CommitMessage;
+
+        let ui = UIEvent::PushFailed {
+            remote: "origin".to_string(),
+            branch: "main".to_string(),
+            error: "Bearer SECRET".to_string(),
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        match update.event_type {
+            crate::cloud::types::ProgressEventType::PushFailed {
+                remote,
+                branch,
+                error,
+            } => {
+                assert_eq!(remote, "origin");
+                assert_eq!(branch, "main");
+                assert!(!error.contains("SECRET"), "error must be redacted: {error}");
+            }
+            other => panic!("unexpected event type: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn phase_transition_uses_one_based_iteration_and_review_pass() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(5, 3);
+        state.phase = PipelinePhase::Planning;
+        state.iteration = 0;
+        state.total_iterations = 5;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 3;
+
+        let ui = UIEvent::PhaseTransition {
+            from: None,
+            to: PipelinePhase::Development,
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert_eq!(update.iteration, Some(1));
+        assert_eq!(update.total_iterations, Some(5));
+        assert_eq!(update.review_pass, Some(1));
+        assert_eq!(update.total_review_passes, Some(3));
+    }
+}
+
+#[cfg(test)]
+mod cloud_progress_error_redaction_tests {
+    use super::safe_cloud_error_string;
+
+    #[test]
+    fn cloud_progress_errors_are_redacted_and_truncated_for_logs_and_errors() {
+        let e = crate::cloud::types::CloudError::HttpError(
+            401,
+            "Bearer SECRET_TOKEN and https://user:pass@example.com?access_token=abc".to_string(),
+        );
+        let out = safe_cloud_error_string(&e);
+
+        assert!(!out.contains("SECRET_TOKEN"), "should redact tokens: {out}");
+        assert!(
+            !out.contains("user:pass"),
+            "should redact url userinfo: {out}"
+        );
+        assert!(
+            out.contains("<redacted>"),
+            "should include redaction marker: {out}"
+        );
     }
 }
