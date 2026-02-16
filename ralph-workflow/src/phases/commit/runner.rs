@@ -1,13 +1,19 @@
 // Legacy phase-based code - deprecated in favor of reducer/handler architecture
+/// Outcome of commit message generation.
+///
+/// This is intentionally an enum so callers must handle skip explicitly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitMessageOutcome {
+    /// A normal commit message ready to be written to `commit-message.txt`.
+    Message(String),
+    /// The agent determined there are no changes to commit.
+    Skipped { reason: String },
+}
+
 /// Result of commit message generation.
 #[derive(Debug)]
 pub struct CommitMessageResult {
-    /// The generated commit message
-    pub message: String,
-    /// Optional skip reason when the AI determines no commit is needed.
-    pub skip_reason: Option<String>,
-    /// Whether the generation was successful
-    pub success: bool,
+    pub outcome: CommitMessageOutcome,
     /// Path to the agent log file for debugging (currently unused)
     pub _log_path: String,
     /// Prompts that were generated during this commit generation (key -> prompt)
@@ -19,6 +25,7 @@ pub struct CommitAttemptResult {
     pub had_error: bool,
     pub output_valid: bool,
     pub message: Option<String>,
+    pub skip_reason: Option<String>,
     pub validation_detail: String,
     pub auth_failure: bool,
 }
@@ -169,37 +176,47 @@ pub fn run_commit_attempt(
             had_error,
             output_valid: false,
             message: None,
+            skip_reason: None,
             validation_detail: "Authentication error detected".to_string(),
             auth_failure: true,
         });
     }
 
     let extraction = extract_commit_message_from_file_with_workspace(ctx.workspace);
-    let (outcome, detail, extraction_result) = match extraction {
+    let (outcome, detail, extraction_result, extraction_succeeded, skip_reason) = match extraction {
         CommitExtractionOutcome::Valid(result) => (
             AttemptOutcome::Success(result.clone().into_message()),
             "Valid commit message extracted".to_string(),
             Some(result),
+            true,
+            None,
         ),
         CommitExtractionOutcome::InvalidXml(detail) => (
             AttemptOutcome::XsdValidationFailed(detail.clone()),
             detail,
+            None,
+            false,
             None,
         ),
         CommitExtractionOutcome::MissingFile(detail) => (
             AttemptOutcome::ExtractionFailed(detail.clone()),
             detail,
             None,
+            false,
+            None,
         ),
         CommitExtractionOutcome::Skipped(reason) => (
             AttemptOutcome::Success(format!("SKIPPED: {}", reason)),
             format!("Commit skipped: {}", reason),
             None,
+            true,
+            Some(reason),
         ),
     };
-    attempt_log.add_extraction_attempt(match &extraction_result {
-        Some(_) => ExtractionAttempt::success("XML", detail.clone()),
-        None => ExtractionAttempt::failure("XML", detail.clone()),
+    attempt_log.add_extraction_attempt(if extraction_succeeded {
+        ExtractionAttempt::success("XML", detail.clone())
+    } else {
+        ExtractionAttempt::failure("XML", detail.clone())
     });
     attempt_log.set_outcome(outcome.clone());
 
@@ -215,6 +232,7 @@ pub fn run_commit_attempt(
             had_error,
             output_valid: true,
             message: Some(message),
+            skip_reason: None,
             validation_detail: detail,
             auth_failure: false,
         });
@@ -222,8 +240,9 @@ pub fn run_commit_attempt(
 
     Ok(CommitAttemptResult {
         had_error,
-        output_valid: false,
+        output_valid: extraction_succeeded,
         message: None,
+        skip_reason,
         validation_detail: detail,
         auth_failure: false,
     })
@@ -339,9 +358,7 @@ pub fn generate_commit_message(
         CommitExtractionOutcome::Skipped(reason) => {
             archive_xml_file_with_workspace(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
             return Ok(CommitMessageResult {
-                message: String::new(),
-                skip_reason: Some(reason),
-                success: true,
+                outcome: CommitMessageOutcome::Skipped { reason },
                 _log_path: String::new(),
                 generated_prompts,
             });
@@ -351,9 +368,7 @@ pub fn generate_commit_message(
     archive_xml_file_with_workspace(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
 
     Ok(CommitMessageResult {
-        message: result.into_message(),
-        skip_reason: None,
-        success: true,
+        outcome: CommitMessageOutcome::Message(result.into_message()),
         _log_path: String::new(),
         generated_prompts,
     })
@@ -492,9 +507,7 @@ pub fn generate_commit_message_with_chain(
                     Path::new(xml_paths::COMMIT_MESSAGE_XML),
                 );
                 return Ok(CommitMessageResult {
-                    message: extracted.into_message(),
-                    skip_reason: None,
-                    success: true,
+                    outcome: CommitMessageOutcome::Message(extracted.into_message()),
                     _log_path: String::new(),
                     generated_prompts,
                 });
@@ -505,9 +518,7 @@ pub fn generate_commit_message_with_chain(
                     Path::new(xml_paths::COMMIT_MESSAGE_XML),
                 );
                 return Ok(CommitMessageResult {
-                    message: String::new(),
-                    skip_reason: Some(reason),
-                    success: true,
+                    outcome: CommitMessageOutcome::Skipped { reason },
                     _log_path: String::new(),
                     generated_prompts,
                 });

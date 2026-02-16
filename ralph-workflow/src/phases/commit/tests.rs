@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn test_generate_commit_message_with_chain_treats_skip_as_success() {
         // Regression: legacy plumbing should treat <ralph-skip> as a successful outcome,
-        // not an error.
+        // and represent it explicitly so callers cannot accidentally commit an empty message.
         let workspace = MemoryWorkspace::new_test().with_file(
             xml_paths::COMMIT_MESSAGE_XML,
             "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>",
@@ -346,12 +346,12 @@ mod tests {
         )
         .expect("expected skip outcome to be treated as success");
 
-        assert!(result.success);
-        assert!(
-            result.message.is_empty(),
-            "skip should not produce a message"
-        );
-        assert_eq!(result.skip_reason.as_deref(), Some("No changes found"));
+        match result.outcome {
+            CommitMessageOutcome::Skipped { reason } => {
+                assert_eq!(reason, "No changes found");
+            }
+            other => panic!("expected skipped outcome, got: {other:?}"),
+        }
     }
 
     // Tests for effective_model_budget_bytes
@@ -590,7 +590,12 @@ mod tests {
             result
         );
         let result = result.unwrap();
-        assert_eq!(result.message, "feat: fallback worked");
+        match result.outcome {
+            CommitMessageOutcome::Message(message) => {
+                assert_eq!(message, "feat: fallback worked");
+            }
+            other => panic!("expected message outcome, got: {other:?}"),
+        }
 
         // Verify both agents were tried
         let calls = executor.agent_calls();
@@ -599,6 +604,95 @@ mod tests {
             2,
             "Expected exactly 2 agent calls (ccs failed, claude succeeded), got {}",
             calls.len()
+        );
+    }
+
+    #[test]
+    fn test_run_commit_attempt_treats_skip_as_valid_output_and_logs_successful_extraction() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            xml_paths::COMMIT_MESSAGE_XML,
+            "<ralph-commit><ralph-skip>No changes found</ralph-skip></ralph-commit>",
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+            run_log_context: &run_log_context,
+        };
+
+        let result = run_commit_attempt(&mut ctx, 1, "diff --git a/a b/a\n+change\n", "claude")
+            .expect("run_commit_attempt should succeed");
+
+        assert!(
+            result.output_valid,
+            "skip should be treated as valid output"
+        );
+        assert!(
+            result.message.is_none(),
+            "skip should not produce a message"
+        );
+        assert_eq!(result.skip_reason.as_deref(), Some("No changes found"));
+
+        // Ensure the extraction attempt is recorded as success (not failure).
+        let runs = workspace
+            .read_dir(std::path::Path::new(".agent/logs/commit_generation"))
+            .expect("read_dir commit_generation");
+        let run_dir = runs
+            .into_iter()
+            .find(|e| {
+                e.is_dir()
+                    && e.file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("run_"))
+            })
+            .expect("expected a run_* directory");
+        let attempt_logs = workspace
+            .read_dir(run_dir.path())
+            .expect("read_dir run dir");
+        let attempt_log = attempt_logs
+            .into_iter()
+            .find(|e| {
+                e.is_file()
+                    && e.file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("attempt_"))
+            })
+            .expect("expected an attempt_*.log file");
+
+        let content = workspace
+            .read(attempt_log.path())
+            .expect("read attempt log");
+        assert!(
+            content.contains("XML [✓ SUCCESS]"),
+            "expected skip extraction to be logged as success; log content was:\n{content}"
         );
     }
 }

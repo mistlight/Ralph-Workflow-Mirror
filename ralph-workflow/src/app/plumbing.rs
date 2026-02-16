@@ -228,7 +228,15 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         &std::collections::HashMap::new(), // Empty prompt history for plumbing command
     )
     .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
-    let commit_message = result.message;
+    let commit_message = match result.outcome {
+        crate::phases::commit::CommitMessageOutcome::Message(message) => message,
+        crate::phases::commit::CommitMessageOutcome::Skipped { reason } => {
+            config.logger.warn(&format!(
+                "No commit needed (agent requested skip): {reason}"
+            ));
+            return Ok(());
+        }
+    };
 
     config.logger.success("Commit message generated:");
     println!();
