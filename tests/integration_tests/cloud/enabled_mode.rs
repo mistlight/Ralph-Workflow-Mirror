@@ -10,6 +10,10 @@
 
 use ralph_workflow::cloud::{CloudReporter, MockCloudReporter, ProgressEventType, ProgressUpdate};
 use ralph_workflow::config::CloudConfig;
+use ralph_workflow::reducer::effect::{Effect, EffectHandler, EffectResult};
+use ralph_workflow::reducer::event::{LifecycleEvent, PipelineEvent, PipelinePhase};
+use ralph_workflow::reducer::state::PipelineState;
+use ralph_workflow::reducer::ui_event::UIEvent;
 use serial_test::serial;
 
 use crate::test_timeout::with_default_timeout;
@@ -319,10 +323,133 @@ fn test_progress_update_serialization() {
     });
 }
 
-// TODO: Add full pipeline integration test with MockCloudReporter that:
-// - Runs ralph-workflow with cloud mode enabled
-// - Captures all progress updates via MockCloudReporter
-// - Verifies updates are sent at appropriate phase transitions
-// - Verifies heartbeats are sent periodically
-// - Verifies completion is reported at end
-// This requires setting up a full pipeline test with mocked effects
+#[test]
+fn test_cloud_mode_enabled_reports_progress_updates_from_ui_events() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRegistry;
+        use ralph_workflow::app::event_loop::{
+            run_event_loop_with_handler, EventLoopConfig, StatefulHandler,
+        };
+        use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
+        use ralph_workflow::config::Config;
+        use ralph_workflow::executor::MockProcessExecutor;
+        use ralph_workflow::logger::{Colors, Logger};
+        use ralph_workflow::pipeline::Timer;
+        use ralph_workflow::prompts::template_context::TemplateContext;
+        use ralph_workflow::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        #[derive(Debug)]
+        struct OneShotHandler {
+            state: PipelineState,
+        }
+
+        impl<'ctx> EffectHandler<'ctx> for OneShotHandler {
+            fn execute(
+                &mut self,
+                _effect: Effect,
+                _ctx: &mut ralph_workflow::phases::PhaseContext<'_>,
+            ) -> anyhow::Result<EffectResult> {
+                Ok(
+                    EffectResult::event(PipelineEvent::Lifecycle(LifecycleEvent::Completed))
+                        .with_ui_event(UIEvent::PhaseTransition {
+                            from: None,
+                            to: PipelinePhase::Planning,
+                        })
+                        .with_ui_event(UIEvent::AgentActivity {
+                            agent: "dev-agent".to_string(),
+                            message: "token=SECRET_VALUE and /home/user/.ssh/id_rsa".to_string(),
+                        }),
+                )
+            }
+        }
+
+        impl StatefulHandler for OneShotHandler {
+            fn update_state(&mut self, state: PipelineState) {
+                self.state = state;
+            }
+        }
+
+        let config = Config::default();
+        let colors = Colors::new();
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(&workspace)
+            .expect("Failed to create run log context");
+
+        let cloud_config = CloudConfig {
+            enabled: true,
+            api_url: Some("https://api.example.com".to_string()),
+            api_token: Some("token".to_string()),
+            run_id: Some("run_123".to_string()),
+            heartbeat_interval_secs: 30,
+            graceful_degradation: true,
+            git_remote: Default::default(),
+        };
+        let reporter = MockCloudReporter::new();
+
+        let mut ctx = ralph_workflow::phases::PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor)
+                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+            run_log_context: &run_log_context,
+            cloud_reporter: Some(&reporter),
+            cloud_config: &cloud_config,
+        };
+
+        let initial_state = PipelineState::initial(1, 0);
+        let mut handler = OneShotHandler {
+            state: initial_state.clone(),
+        };
+
+        let loop_config = EventLoopConfig { max_iterations: 5 };
+        let _ =
+            run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
+                .expect("event loop should run");
+
+        assert_eq!(
+            reporter.progress_count(),
+            2,
+            "Cloud mode enabled should emit progress updates for UI events"
+        );
+
+        let calls = reporter.calls();
+        let mut messages = Vec::new();
+        for call in calls {
+            if let ralph_workflow::cloud::mock::MockCloudCall::Progress(update) = call {
+                messages.push(update.message);
+            }
+        }
+        let joined = messages.join("\n");
+        assert!(
+            !joined.contains("SECRET_VALUE"),
+            "must not leak secrets: {joined}"
+        );
+        assert!(!joined.contains("id_rsa"), "must not leak paths: {joined}");
+        assert!(
+            joined.contains("dev-agent"),
+            "should retain agent identity: {joined}"
+        );
+    });
+}

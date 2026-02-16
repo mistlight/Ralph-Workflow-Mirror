@@ -495,10 +495,11 @@ fn ui_event_to_progress_update(
         }
         UIEvent::AgentActivity {
             agent,
-            message: activity_msg,
+            message: _activity_msg,
         } => {
-            // Report agent activity for progress tracking
-            let message = format!("Agent {}: {}", agent, activity_msg);
+            // Do not forward arbitrary handler-provided strings to cloud progress.
+            // AgentActivity messages can contain secrets (tokens, credentials) or sensitive paths.
+            let message = format!("Agent {agent}: activity");
             (
                 message,
                 ProgressEventType::AgentInvoked {
@@ -697,6 +698,32 @@ mod progress_mapping_tests {
         assert_eq!(update.total_iterations, Some(5));
         assert_eq!(update.review_pass, Some(1));
         assert_eq!(update.total_review_passes, Some(3));
+    }
+
+    #[test]
+    fn agent_activity_is_not_forwarded_verbatim_to_cloud_progress() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Development;
+
+        let ui = UIEvent::AgentActivity {
+            agent: "dev-agent".to_string(),
+            message: "token=SECRET_VALUE and /home/user/.ssh/id_rsa".to_string(),
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert!(
+            update.message.contains("dev-agent"),
+            "should still identify which agent produced activity"
+        );
+        assert!(
+            !update.message.contains("SECRET_VALUE"),
+            "must not forward raw activity text containing secrets"
+        );
+        assert!(
+            !update.message.contains("id_rsa"),
+            "must not forward sensitive paths from activity messages"
+        );
     }
 }
 

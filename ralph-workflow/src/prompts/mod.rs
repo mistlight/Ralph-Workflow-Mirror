@@ -39,7 +39,7 @@ pub mod review;
 pub mod reviewer;
 pub mod template_catalog;
 pub mod template_context;
-mod template_engine;
+pub(crate) mod template_engine;
 mod template_macros;
 pub mod template_registry;
 mod template_validator;

@@ -279,21 +279,13 @@ pub struct Config {
     /// Maximum execution history entries to keep in memory (default: 1000).
     /// Prevents unbounded memory growth by dropping oldest entries when limit is reached.
     pub execution_history_limit: usize,
-    /// Cloud configuration - INTERNAL USE ONLY (environment variable only).
-    ///
-    /// This field is NOT exposed in user-facing documentation or CLI help.
+    /// Cloud runtime configuration (internal).
     pub(crate) cloud_config: CloudConfig,
 }
 
-/// Cloud configuration - INTERNAL USE ONLY.
+/// Cloud runtime configuration (internal).
 ///
-/// This struct is populated exclusively from environment variables.
-/// It is NOT exposed in:
-/// - ralph-workflow.toml config file
-/// - CLI --help output  
-/// - Any user-facing documentation in the repo
-///
-/// Cloud operators learn about these env vars from cloud platform docs.
+/// This struct is loaded from environment variables when cloud mode is enabled.
 #[derive(Debug, Clone, Default)]
 pub struct CloudConfig {
     /// Enable cloud reporting mode (internal env-config).
@@ -312,10 +304,9 @@ pub struct CloudConfig {
     pub git_remote: GitRemoteConfig,
 }
 
-/// Git remote configuration - INTERNAL USE ONLY.
+/// Git remote configuration (internal).
 ///
-/// Like CloudConfig, this is populated from env vars and not exposed
-/// to normal users.
+/// Loaded from environment variables when cloud mode is enabled.
 #[derive(Debug, Clone)]
 pub struct GitRemoteConfig {
     /// Authentication method for git operations

@@ -137,9 +137,31 @@ impl MainEffectHandler {
             }
         }
 
+        let Some(refspec) = build_head_push_refspec(&branch) else {
+            let error = crate::cloud::redaction::redact_secrets(&format!(
+                "Invalid push branch name: '{branch}'"
+            ));
+            ctx.logger.warn(&format!("Git push skipped: {error}"));
+
+            let ui = UIEvent::PushFailed {
+                remote: remote.clone(),
+                branch: branch.clone(),
+                error: error.clone(),
+            };
+
+            return Ok(EffectResult::with_ui(
+                PipelineEvent::Commit(CommitEvent::PushFailed {
+                    remote,
+                    branch,
+                    error,
+                }),
+                vec![ui],
+            ));
+        };
+
         argv.push("push".to_string());
         argv.push(remote.clone());
-        argv.push(branch.clone());
+        argv.push(refspec);
         if force {
             argv.push("--force".to_string());
         }
@@ -359,6 +381,36 @@ impl MainEffectHandler {
     }
 }
 
+fn build_head_push_refspec(branch: &str) -> Option<String> {
+    let trimmed = branch.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with('-') {
+        return None;
+    }
+    if trimmed.contains(':') {
+        return None;
+    }
+    if trimmed.chars().any(|c| c.is_whitespace() || c == '\0') {
+        return None;
+    }
+
+    let full_ref = if let Some(rest) = trimmed.strip_prefix("refs/heads/") {
+        if rest.is_empty() {
+            return None;
+        }
+        trimmed.to_string()
+    } else if trimmed.starts_with("refs/") {
+        // Only refs/heads/* is allowed from config; other ref namespaces are rejected.
+        return None;
+    } else {
+        format!("refs/heads/{trimmed}")
+    };
+
+    Some(format!("HEAD:{full_ref}"))
+}
+
 fn build_git_ssh_command(key_path: &str) -> Option<String> {
     if key_path.trim().is_empty() {
         return None;
@@ -392,7 +444,7 @@ fn shell_escape_posix(s: &str) -> String {
 
 #[cfg(test)]
 mod shell_escape_tests {
-    use super::{build_git_ssh_command, shell_escape_posix};
+    use super::{build_git_ssh_command, build_head_push_refspec, shell_escape_posix};
 
     #[test]
     fn shell_escape_wraps_in_single_quotes() {
@@ -407,5 +459,18 @@ mod shell_escape_tests {
     #[test]
     fn build_git_ssh_command_rejects_newlines() {
         assert!(build_git_ssh_command("/tmp/key\n-oProxyCommand=evil").is_none());
+    }
+
+    #[test]
+    fn build_head_push_refspec_accepts_simple_branch_name() {
+        assert_eq!(
+            build_head_push_refspec("feature/run-123").as_deref(),
+            Some("HEAD:refs/heads/feature/run-123")
+        );
+    }
+
+    #[test]
+    fn build_head_push_refspec_rejects_colon_in_branch() {
+        assert!(build_head_push_refspec("main:refs/heads/evil").is_none());
     }
 }

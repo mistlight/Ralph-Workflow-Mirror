@@ -435,40 +435,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     // Cloud completion reporting - notify orchestrator of final result
     // This is done after checkpoint saving to ensure all state is persisted first
     if config.cloud_config.enabled {
-        let success = loop_result.completed
-            && matches!(
-                loop_result.final_phase,
-                crate::reducer::event::PipelinePhase::Complete
-            );
-
-        let result_payload = crate::cloud::types::PipelineResult {
-            success,
-            commit_sha: loop_result
-                .final_state
-                .last_pushed_commit
-                .clone()
-                .or_else(|| match &loop_result.final_state.commit {
-                    crate::reducer::state::CommitState::Committed { hash } => Some(hash.clone()),
-                    _ => None,
-                }),
-            pr_url: loop_result.final_state.pr_url.clone(),
-            push_count: loop_result.final_state.push_count,
-            last_pushed_commit: loop_result.final_state.last_pushed_commit.clone(),
-            unpushed_commits: loop_result.final_state.unpushed_commits.clone(),
-            last_push_error: loop_result.final_state.last_push_error.clone(),
-            iterations_used: loop_result.final_state.iteration,
-            review_passes_used: loop_result.final_state.reviewer_pass,
-            issues_found: loop_result.final_state.review_issues_found,
-            duration_secs: timer.elapsed().as_secs(),
-            error_message: if matches!(
-                loop_result.final_phase,
-                crate::reducer::event::PipelinePhase::Interrupted
-            ) {
-                Some("Pipeline interrupted".to_string())
-            } else {
-                None
-            },
-        };
+        let result_payload = build_cloud_completion_payload(&loop_result, &timer);
 
         if let Err(e) = cloud_reporter.report_completion(&result_payload) {
             let error = crate::cloud::redaction::redact_secrets(&e.to_string());
@@ -498,6 +465,77 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         prompt_monitor,
     );
     Ok(())
+}
+
+fn build_cloud_completion_payload(
+    loop_result: &crate::app::event_loop::EventLoopResult,
+    timer: &Timer,
+) -> crate::cloud::types::PipelineResult {
+    let success = loop_result.completed
+        && matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::Complete
+        );
+
+    crate::cloud::types::PipelineResult {
+        success,
+        commit_sha: loop_result.final_state.last_pushed_commit.clone().or_else(
+            || match &loop_result.final_state.commit {
+                crate::reducer::state::CommitState::Committed { hash } => Some(hash.clone()),
+                _ => None,
+            },
+        ),
+        pr_url: loop_result.final_state.pr_url.clone(),
+        push_count: loop_result.final_state.push_count,
+        last_pushed_commit: loop_result.final_state.last_pushed_commit.clone(),
+        unpushed_commits: loop_result.final_state.unpushed_commits.clone(),
+        last_push_error: loop_result.final_state.last_push_error.clone(),
+        iterations_used: loop_result.final_state.metrics.dev_iterations_completed,
+        review_passes_used: loop_result.final_state.metrics.review_passes_completed,
+        issues_found: loop_result.final_state.review_issues_found,
+        duration_secs: timer.elapsed().as_secs(),
+        error_message: if matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::Interrupted
+        ) {
+            Some("Pipeline interrupted".to_string())
+        } else {
+            None
+        },
+    }
+}
+
+#[cfg(test)]
+mod cloud_completion_payload_tests {
+    use super::build_cloud_completion_payload;
+
+    #[test]
+    fn completion_payload_reports_completed_iteration_and_review_counts_from_metrics() {
+        let mut state = crate::reducer::PipelineState::initial(10, 5);
+        state.metrics.dev_iterations_completed = 3;
+        state.metrics.review_passes_completed = 2;
+        state.iteration = 4;
+        state.reviewer_pass = 3;
+
+        let loop_result = crate::app::event_loop::EventLoopResult {
+            completed: true,
+            events_processed: 0,
+            final_phase: crate::reducer::event::PipelinePhase::Complete,
+            final_state: state,
+        };
+
+        let timer = crate::pipeline::Timer::new();
+        let payload = build_cloud_completion_payload(&loop_result, &timer);
+
+        assert_eq!(
+            payload.iterations_used, 3,
+            "iterations_used should report completed dev iterations (metrics)"
+        );
+        assert_eq!(
+            payload.review_passes_used, 2,
+            "review_passes_used should report completed review passes (metrics)"
+        );
+    }
 }
 
 fn resolve_cloud_git_defaults(

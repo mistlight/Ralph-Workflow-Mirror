@@ -128,6 +128,9 @@ fn test_cloud_enabled_create_pr_in_finalizing() {
     state.phase = PipelinePhase::Finalizing;
     state.pr_created = false;
     state.pending_push_commit = None; // No pending push
+    state.metrics.commits_created_total = 1;
+    state.push_count = 1;
+    state.last_pushed_commit = Some("abc123".to_string());
 
     let effect = determine_next_effect(&state);
 
@@ -150,6 +153,33 @@ fn test_cloud_enabled_create_pr_in_finalizing() {
 }
 
 #[test]
+fn test_cloud_enabled_create_pr_renders_title_and_body_templates() {
+    // PR title/body templates should be rendered (not passed through verbatim)
+    let mut state = create_cloud_enabled_state();
+    state.cloud_config.git_remote.create_pr = true;
+    state.cloud_config.git_remote.pr_base_branch = Some("main".to_string());
+    state.cloud_config.git_remote.pr_title_template =
+        Some("Ralph changes for {run_id}".to_string());
+    state.cloud_config.git_remote.pr_body_template = Some("Summary: {prompt_summary}".to_string());
+    state.phase = PipelinePhase::Finalizing;
+    state.pr_created = false;
+    state.pending_push_commit = None;
+    state.metrics.commits_created_total = 1;
+    state.push_count = 1;
+    state.last_pushed_commit = Some("abc123".to_string());
+
+    let effect = determine_next_effect(&state);
+
+    match effect {
+        Effect::CreatePullRequest { title, body, .. } => {
+            assert_eq!(title, "Ralph changes for run_123");
+            assert_eq!(body, "Summary: Ralph workflow run run_123");
+        }
+        other => panic!("Expected CreatePullRequest, got: {:?}", other),
+    }
+}
+
+#[test]
 fn test_cloud_enabled_pr_already_created_no_effect() {
     // When PR already created, don't emit CreatePullRequest again
     let mut state = create_cloud_enabled_state();
@@ -164,6 +194,41 @@ fn test_cloud_enabled_pr_already_created_no_effect() {
         !matches!(effect, Effect::CreatePullRequest { .. }),
         "Should not create PR twice"
     );
+}
+
+#[test]
+fn test_cloud_enabled_create_pr_is_blocked_when_commits_failed_to_push() {
+    // PR creation should not be attempted when there are known unpushed commits.
+    // Instead, surface a clear terminal failure so cloud orchestration can react.
+    let mut state = create_cloud_enabled_state();
+    state.cloud_config.git_remote.create_pr = true;
+    state.phase = PipelinePhase::Finalizing;
+    state.pr_created = false;
+    state.pending_push_commit = None;
+    state.unpushed_commits = vec!["deadbeef".to_string()];
+    state.metrics.commits_created_total = 1;
+    state.push_count = 0;
+    state.last_pushed_commit = None;
+
+    let effect = determine_next_effect(&state);
+
+    match effect {
+        Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
+            assert!(
+                is_failure,
+                "Should terminate as failure when PR is impossible"
+            );
+            let reason = reason.unwrap_or_default();
+            assert!(
+                reason.to_ascii_lowercase().contains("push"),
+                "Reason should mention push requirement: {reason}"
+            );
+        }
+        other => panic!(
+            "Expected EmitCompletionMarkerAndTerminate when unpushed commits exist, got: {:?}",
+            other
+        ),
+    }
 }
 
 #[test]

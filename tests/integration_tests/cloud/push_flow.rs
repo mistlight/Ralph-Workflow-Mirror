@@ -10,12 +10,23 @@
 //! All tests use reducer-level testing (PipelineState, effects, events)
 //! to verify orchestration logic without requiring full pipeline execution.
 
+use ralph_workflow::config::{CloudConfig, Config};
 use ralph_workflow::config::{CloudStateConfig, GitAuthMethod, GitRemoteConfig};
+use ralph_workflow::executor::MockProcessExecutor;
+use ralph_workflow::logger::{Colors, Logger};
+use ralph_workflow::pipeline::Timer;
+use ralph_workflow::prompts::template_context::TemplateContext;
+use ralph_workflow::reducer::effect::Effect;
+use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::event::{CommitEvent, PipelineEvent};
+use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::PipelineState;
+use ralph_workflow::workspace::MemoryWorkspace;
 use serial_test::serial;
 
 use crate::test_timeout::with_default_timeout;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[test]
 #[serial]
@@ -317,9 +328,207 @@ fn test_pr_created_event_updates_state() {
     });
 }
 
-// TODO: Add orchestration tests that verify:
-// - determine_next_effect() emits ConfigureGitAuth when cloud enabled and not configured
-// - determine_next_effect() emits PushToRemote when pending_push_commit is set
-// - determine_next_effect() emits CreatePullRequest in Finalizing phase when create_pr enabled
-// - These effects are NOT emitted when cloud mode is disabled
-// This requires direct testing of orchestration.rs logic with test states
+#[test]
+fn test_push_to_remote_effect_pushes_head_to_named_remote_branch() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRegistry;
+        use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
+        use ralph_workflow::logging::RunLogContext;
+        use ralph_workflow::reducer::effect::{Effect, EffectHandler};
+        use ralph_workflow::reducer::handler::MainEffectHandler;
+
+        let config = Config::default();
+        let colors = Colors::new();
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+        let run_log_context =
+            RunLogContext::new(&workspace).expect("Failed to create run log context");
+
+        let cloud_config = CloudConfig {
+            enabled: true,
+            api_url: Some("https://example.com".to_string()),
+            api_token: Some("token".to_string()),
+            run_id: Some("run-123".to_string()),
+            heartbeat_interval_secs: 30,
+            graceful_degradation: true,
+            git_remote: GitRemoteConfig {
+                auth_method: GitAuthMethod::SshKey { key_path: None },
+                push_branch: None,
+                create_pr: false,
+                pr_title_template: None,
+                pr_body_template: None,
+                pr_base_branch: None,
+                force_push: false,
+                remote_name: "origin".to_string(),
+            },
+        };
+
+        let mut ctx = ralph_workflow::phases::PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor)
+                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+            run_log_context: &run_log_context,
+            cloud_reporter: None,
+            cloud_config: &cloud_config,
+        };
+
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MainEffectHandler::new(state);
+
+        let effect = Effect::PushToRemote {
+            remote: "origin".to_string(),
+            branch: "feature/run-123".to_string(),
+            force: false,
+            commit_sha: "abc123".to_string(),
+        };
+
+        let _res = handler
+            .execute(effect, &mut ctx)
+            .expect("effect execution should succeed");
+
+        let calls = executor.execute_calls_for("git");
+        assert_eq!(calls.len(), 1, "Should execute exactly one git command");
+
+        let (_cmd, args, _env, _workdir) = &calls[0];
+
+        let expected_refspec = "HEAD:refs/heads/feature/run-123".to_string();
+        assert!(
+            args.iter().any(|a| a == &expected_refspec),
+            "git push should use an explicit HEAD refspec to avoid requiring a local branch"
+        );
+        assert!(
+            !args.iter().any(|a| a == "feature/run-123"),
+            "git push should not reference a local branch by name"
+        );
+    });
+}
+
+fn orchestration_ready_state() -> PipelineState {
+    let mut state = PipelineState::initial(1, 0);
+    state.prompt_permissions.locked = true;
+    state.gitignore_entries_ensured = true;
+    state.context_cleaned = true;
+    state
+}
+
+#[test]
+fn test_orchestration_cloud_disabled_never_emits_push_or_pr_effects() {
+    with_default_timeout(|| {
+        let mut state = orchestration_ready_state();
+        state.cloud_config = CloudStateConfig::disabled();
+        state.pending_push_commit = Some("abc123".to_string());
+        state.git_auth_configured = false;
+        state.phase = PipelinePhase::Finalizing;
+        state.cloud_config.git_remote.create_pr = true;
+
+        let effect = determine_next_effect(&state);
+
+        assert!(
+            !matches!(effect, Effect::ConfigureGitAuth { .. }),
+            "Cloud disabled must not emit ConfigureGitAuth"
+        );
+        assert!(
+            !matches!(effect, Effect::PushToRemote { .. }),
+            "Cloud disabled must not emit PushToRemote"
+        );
+        assert!(
+            !matches!(effect, Effect::CreatePullRequest { .. }),
+            "Cloud disabled must not emit CreatePullRequest"
+        );
+    });
+}
+
+#[test]
+fn test_orchestration_cloud_enabled_sequences_auth_then_push() {
+    with_default_timeout(|| {
+        let mut state = orchestration_ready_state();
+        state.cloud_config.enabled = true;
+        state.cloud_config.run_id = Some("run_123".to_string());
+        state.cloud_config.git_remote.push_branch = "feature/run-123".to_string();
+        state.pending_push_commit = Some("abc123".to_string());
+        state.git_auth_configured = false;
+
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::ConfigureGitAuth { .. }),
+            "Should configure auth before pushing"
+        );
+
+        state.git_auth_configured = true;
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::PushToRemote {
+                remote,
+                branch,
+                force: _,
+                commit_sha,
+            } => {
+                assert_eq!(remote, "origin");
+                assert_eq!(branch, "feature/run-123");
+                assert_eq!(commit_sha, "abc123");
+            }
+            other => panic!("Expected PushToRemote, got: {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn test_orchestration_cloud_enabled_creates_pr_in_finalizing_when_configured() {
+    with_default_timeout(|| {
+        let mut state = orchestration_ready_state();
+        state.cloud_config.enabled = true;
+        state.cloud_config.run_id = Some("run_123".to_string());
+        state.cloud_config.git_remote.push_branch = "feature/run-123".to_string();
+        state.cloud_config.git_remote.create_pr = true;
+        state.cloud_config.git_remote.pr_base_branch = Some("main".to_string());
+        state.cloud_config.git_remote.pr_title_template =
+            Some("Ralph changes for {run_id}".to_string());
+        state.cloud_config.git_remote.pr_body_template =
+            Some("Summary: {prompt_summary}".to_string());
+
+        state.phase = PipelinePhase::Finalizing;
+        state.pr_created = false;
+        state.pending_push_commit = None;
+        state.push_count = 1;
+        state.last_pushed_commit = Some("abc123".to_string());
+        state.metrics.commits_created_total = 1;
+
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::CreatePullRequest {
+                base_branch,
+                head_branch,
+                title,
+                body,
+            } => {
+                assert_eq!(base_branch, "main");
+                assert_eq!(head_branch, "feature/run-123");
+                assert_eq!(title, "Ralph changes for run_123");
+                assert_eq!(body, "Summary: Ralph workflow run run_123");
+            }
+            other => panic!("Expected CreatePullRequest, got: {other:?}"),
+        }
+    });
+}
