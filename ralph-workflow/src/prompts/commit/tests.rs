@@ -433,3 +433,31 @@ fn test_context_based_commit_uses_workspace_paths() {
         "Prompt should contain absolute paths from workspace"
     );
 }
+
+#[test]
+fn commit_message_xsd_allows_code_in_skip_reason() {
+    // The Rust validator reads text via helpers that support inline <code> elements.
+    // The published schema must match by typing ralph-skip as TextWithCodeType.
+    assert!(
+        super::COMMIT_MESSAGE_XSD_SCHEMA
+            .contains("<xs:element name=\"ralph-skip\" type=\"TextWithCodeType\""),
+        "commit_message.xsd must type ralph-skip as TextWithCodeType"
+    );
+}
+
+#[test]
+fn commit_message_xsd_disallows_mixed_simple_and_detailed_body_forms() {
+    // The Rust validator rejects mixing <ralph-body> with detailed tags.
+    // The schema should not model them as siblings in the same sequence.
+    // The old schema modelled these as adjacent elements in the same sequence.
+    // We assert that exact permissive pattern is gone.
+    let old_permissive_pattern = Regex::new(
+        r#"(?s)<xs:element\s+name=\"ralph-body\"\s+type=\"TextWithCodeType\"\s+minOccurs=\"0\"\s*/>\s*<xs:element\s+name=\"ralph-body-summary\""#,
+    )
+    .expect("regex");
+
+    assert!(
+        !old_permissive_pattern.is_match(super::COMMIT_MESSAGE_XSD_SCHEMA),
+        "commit_message.xsd must not allow ralph-body and detailed tags in the same sequence"
+    );
+}

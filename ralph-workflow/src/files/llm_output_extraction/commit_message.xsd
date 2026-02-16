@@ -20,13 +20,18 @@
         <!-- Normal commit message -->
         <xs:sequence>
           <xs:element name="ralph-subject" type="TextWithCodeType"/>
-          <xs:element name="ralph-body" type="TextWithCodeType" minOccurs="0"/>
-          <xs:element name="ralph-body-summary" type="TextWithCodeType" minOccurs="0"/>
-          <xs:element name="ralph-body-details" type="TextWithCodeType" minOccurs="0"/>
-          <xs:element name="ralph-body-footer" type="TextWithCodeType" minOccurs="0"/>
+          <!-- Body is mutually exclusive: either simple <ralph-body> OR detailed tags. -->
+          <xs:choice minOccurs="0">
+            <xs:element name="ralph-body" type="TextWithCodeType"/>
+            <xs:all>
+              <xs:element name="ralph-body-summary" type="TextWithCodeType" minOccurs="0"/>
+              <xs:element name="ralph-body-details" type="TextWithCodeType" minOccurs="0"/>
+              <xs:element name="ralph-body-footer" type="TextWithCodeType" minOccurs="0"/>
+            </xs:all>
+          </xs:choice>
         </xs:sequence>
         <!-- Skip commit (no changes found) -->
-        <xs:element name="ralph-skip" type="xs:string"/>
+        <xs:element name="ralph-skip" type="TextWithCodeType"/>
       </xs:choice>
     </xs:complexType>
   </xs:element>

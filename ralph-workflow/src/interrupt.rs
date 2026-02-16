@@ -4,8 +4,8 @@
 //! clean shutdown when the user interrupts with Ctrl+C.
 //!
 //! When an interrupt is received, the handler will:
-//! 1. Save a checkpoint with the `Interrupted` phase
-//! 2. Set `interrupted_by_user = true` to exempt from pre-termination commit check
+//! 1. Save a checkpoint with the *current operational phase* (so `--resume` continues)
+//! 2. Set `interrupted_by_user = true` to record the user-initiated interrupt
 //! 3. Clean up temporary files
 //! 4. Exit gracefully
 //!
@@ -121,11 +121,11 @@ pub fn setup_interrupt_handler() {
 
 /// Save a checkpoint when the pipeline is interrupted.
 ///
-/// This function creates a checkpoint with the `Interrupted` phase,
-/// which has the highest phase rank so resuming will run the full pipeline.
+/// This function persists a checkpoint that records the *current operational phase*
+/// and sets `interrupted_by_user=true`.
 ///
-/// The original phase information is preserved for display purposes
-/// by updating the checkpoint with current progress information.
+/// We intentionally do NOT overwrite the phase to `Interrupted` because that makes
+/// `--resume` terminate immediately in `PipelinePhase::Interrupted`.
 ///
 /// # Arguments
 ///
@@ -133,18 +133,15 @@ pub fn setup_interrupt_handler() {
 fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
     use crate::checkpoint::state::{
         calculate_file_checksum_with_workspace, AgentConfigSnapshot, CheckpointParams,
-        CliArgsSnapshotBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
+        CliArgsSnapshotBuilder, PipelineCheckpoint, RebaseState,
     };
     use crate::checkpoint::{load_checkpoint_with_workspace, save_checkpoint_with_workspace};
     use std::path::Path;
 
-    // Read checkpoint from file if exists, update it with Interrupted phase
+    // Read checkpoint from file if exists, update it with current operational phase
     if let Ok(Some(mut checkpoint)) = load_checkpoint_with_workspace(&*context.workspace) {
-        // Store the original phase for reference (it will be overwritten below)
-        let _original_phase = context.phase;
-
-        // Update existing checkpoint to Interrupted phase with current progress
-        checkpoint.phase = PipelinePhase::Interrupted;
+        // Update existing checkpoint with current operational phase and progress.
+        checkpoint.phase = context.phase;
         checkpoint.iteration = context.iteration;
         checkpoint.total_iterations = context.total_iterations;
         checkpoint.reviewer_pass = context.reviewer_pass;
@@ -198,7 +195,7 @@ fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
 
         let working_dir = context.workspace.root().to_string_lossy().to_string();
         let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
-            phase: PipelinePhase::Interrupted,
+            phase: context.phase,
             iteration: context.iteration,
             total_iterations: context.total_iterations,
             reviewer_pass: context.reviewer_pass,
@@ -332,10 +329,9 @@ mod tests {
             .expect("checkpoint should be readable")
             .expect("checkpoint should exist after early interrupt");
 
-        assert_eq!(
-            checkpoint.phase,
-            crate::checkpoint::PipelinePhase::Interrupted
-        );
+        // On Ctrl+C we persist the *current operational phase* so `--resume`
+        // continues work instead of immediately terminating in Interrupted phase.
+        assert_eq!(checkpoint.phase, context.phase);
         assert!(checkpoint.interrupted_by_user);
         assert!(
             checkpoint.prompt_md_checksum.is_some(),
@@ -343,5 +339,92 @@ mod tests {
         );
         assert_eq!(checkpoint.cli_args.developer_iters, 3);
         assert_eq!(checkpoint.cli_args.reviewer_reviews, 1);
+    }
+
+    #[test]
+    fn test_interrupt_checkpoint_does_not_overwrite_existing_checkpoint_phase() {
+        // Regression: if a checkpoint already exists, Ctrl+C should NOT overwrite the
+        // saved phase to Interrupted. Doing so makes `--resume` terminate immediately.
+        let workspace: Arc<dyn Workspace> =
+            Arc::new(MemoryWorkspace::new_test().with_file("PROMPT.md", "# prompt"));
+
+        // Seed an existing checkpoint on disk.
+        // Use the full from_params constructor to avoid builder preconditions.
+        let run_context = crate::checkpoint::RunContext::new();
+        let cli_args = crate::checkpoint::state::CliArgsSnapshotBuilder::new(
+            /* developer_iters */ 3, /* reviewer_reviews */ 1,
+            /* review_depth */ None, /* isolation_mode */ true,
+        )
+        .build();
+
+        let developer_agent_config = crate::checkpoint::state::AgentConfigSnapshot::new(
+            "dev".to_string(),
+            "dev".to_string(),
+            "-o".to_string(),
+            None,
+            /* can_commit */ true,
+        );
+        let reviewer_agent_config = crate::checkpoint::state::AgentConfigSnapshot::new(
+            "rev".to_string(),
+            "rev".to_string(),
+            "-o".to_string(),
+            None,
+            /* can_commit */ true,
+        );
+
+        let working_dir = workspace.root().to_string_lossy().to_string();
+        let mut existing = crate::checkpoint::state::PipelineCheckpoint::from_params(
+            crate::checkpoint::state::CheckpointParams {
+                phase: crate::checkpoint::PipelinePhase::Development,
+                iteration: 1,
+                total_iterations: 3,
+                reviewer_pass: 0,
+                total_reviewer_passes: 1,
+                developer_agent: "dev",
+                reviewer_agent: "rev",
+                cli_args,
+                developer_agent_config,
+                reviewer_agent_config,
+                rebase_state: crate::checkpoint::state::RebaseState::default(),
+                git_user_name: None,
+                git_user_email: None,
+                run_id: &run_context.run_id,
+                parent_run_id: run_context.parent_run_id.as_deref(),
+                resume_count: run_context.resume_count,
+                actual_developer_runs: run_context.actual_developer_runs,
+                actual_reviewer_runs: run_context.actual_reviewer_runs,
+                working_dir,
+                prompt_md_checksum: Some("seed".to_string()),
+                config_path: None,
+                config_checksum: None,
+            },
+        );
+        existing.interrupted_by_user = false;
+        crate::checkpoint::save_checkpoint_with_workspace(&*workspace, &existing)
+            .expect("seed checkpoint should save");
+
+        let context = InterruptContext {
+            phase: crate::checkpoint::PipelinePhase::Development,
+            iteration: 1,
+            total_iterations: 3,
+            reviewer_pass: 0,
+            total_reviewer_passes: 1,
+            run_context: crate::checkpoint::RunContext::new(),
+            execution_history: crate::checkpoint::ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            workspace: Arc::clone(&workspace),
+        };
+
+        save_interrupt_checkpoint(&context).expect("interrupt save should succeed");
+
+        let checkpoint = load_checkpoint_with_workspace(&*workspace)
+            .expect("checkpoint should be readable")
+            .expect("checkpoint should exist");
+
+        assert_eq!(
+            checkpoint.phase,
+            crate::checkpoint::PipelinePhase::Development
+        );
+        assert!(checkpoint.interrupted_by_user);
     }
 }
