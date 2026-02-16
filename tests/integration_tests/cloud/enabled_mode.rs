@@ -61,17 +61,26 @@ fn test_mock_cloud_reporter_captures_heartbeat() {
 fn test_mock_cloud_reporter_captures_completion() {
     let reporter = MockCloudReporter::new();
 
-    reporter
-        .report_completion(true, "Pipeline completed successfully")
-        .unwrap();
+    let result = ralph_workflow::cloud::PipelineResult {
+        success: true,
+        commit_sha: Some("abc123".to_string()),
+        pr_url: None,
+        iterations_used: 1,
+        review_passes_used: 0,
+        issues_found: false,
+        duration_secs: 100,
+        error_message: None,
+    };
+
+    reporter.report_completion(&result).unwrap();
 
     let calls = reporter.calls();
     assert_eq!(calls.len(), 1, "Should have exactly one call");
 
     match &calls[0] {
-        ralph_workflow::cloud::mock::MockCloudCall::Completion { success, message } => {
-            assert!(success, "Completion should be successful");
-            assert_eq!(message, "Pipeline completed successfully");
+        ralph_workflow::cloud::mock::MockCloudCall::Completion(result) => {
+            assert!(result.success, "Completion should be successful");
+            assert_eq!(result.commit_sha.as_deref(), Some("abc123"));
         }
         _ => panic!("Expected Completion call"),
     }

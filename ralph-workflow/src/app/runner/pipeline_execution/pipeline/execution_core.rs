@@ -422,6 +422,42 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         }
     }
 
+    // Cloud completion reporting - notify orchestrator of final result
+    // This is done after checkpoint saving to ensure all state is persisted first
+    if config.cloud_config.enabled {
+        let success = loop_result.completed
+            && matches!(
+                loop_result.final_phase,
+                crate::reducer::event::PipelinePhase::Complete
+            );
+
+        let result_payload = crate::cloud::types::PipelineResult {
+            success,
+            commit_sha: loop_result.final_state.last_pushed_commit.clone(),
+            pr_url: loop_result.final_state.pr_url.clone(),
+            iterations_used: loop_result.final_state.iteration,
+            review_passes_used: loop_result.final_state.reviewer_pass,
+            issues_found: loop_result.final_state.review_issues_found,
+            duration_secs: timer.elapsed().as_secs(),
+            error_message: if matches!(
+                loop_result.final_phase,
+                crate::reducer::event::PipelinePhase::Interrupted
+            ) {
+                Some("Pipeline interrupted".to_string())
+            } else {
+                None
+            },
+        };
+
+        if let Err(e) = cloud_reporter.report_completion(&result_payload) {
+            if !config.cloud_config.graceful_degradation {
+                return Err(anyhow::anyhow!("Cloud completion report failed: {}", e));
+            }
+            ctx.logger
+                .warn(&format!("Cloud completion report failed: {}", e));
+        }
+    }
+
     // Post-pipeline operations
     check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
     update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;

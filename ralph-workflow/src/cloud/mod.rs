@@ -22,7 +22,7 @@ pub mod types;
 
 pub use heartbeat::HeartbeatGuard;
 pub use reporter::{CloudReporter, HttpCloudReporter, NoopCloudReporter};
-pub use types::{CloudError, ProgressEventType, ProgressUpdate};
+pub use types::{CloudError, PipelineResult, ProgressEventType, ProgressUpdate};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock;

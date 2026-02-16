@@ -1,13 +1,13 @@
 //! Mock cloud reporter for testing.
 
-use super::{CloudError, CloudReporter, ProgressUpdate};
+use super::{CloudError, CloudReporter, PipelineResult, ProgressUpdate};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub enum MockCloudCall {
     Progress(ProgressUpdate),
     Heartbeat,
-    Completion { success: bool, message: String },
+    Completion(PipelineResult),
 }
 
 /// Mock cloud reporter that records all calls for test verification.
@@ -78,14 +78,14 @@ impl CloudReporter for MockCloudReporter {
         Ok(())
     }
 
-    fn report_completion(&self, success: bool, message: &str) -> Result<(), CloudError> {
+    fn report_completion(&self, result: &PipelineResult) -> Result<(), CloudError> {
         if *self.should_fail.lock().unwrap() {
             return Err(CloudError::NetworkError("Mock failure".to_string()));
         }
-        self.calls.lock().unwrap().push(MockCloudCall::Completion {
-            success,
-            message: message.to_string(),
-        });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCloudCall::Completion(result.clone()));
         Ok(())
     }
 }

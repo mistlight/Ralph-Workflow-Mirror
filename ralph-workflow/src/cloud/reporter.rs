@@ -1,6 +1,6 @@
 //! Cloud reporter trait and implementations.
 
-use super::types::{CloudError, ProgressUpdate};
+use super::types::{CloudError, PipelineResult, ProgressUpdate};
 use crate::config::types::CloudConfig;
 
 /// Reports pipeline progress to a cloud API.
@@ -15,7 +15,7 @@ pub trait CloudReporter: Send + Sync {
     fn heartbeat(&self) -> Result<(), CloudError>;
 
     /// Report pipeline completion with final results.
-    fn report_completion(&self, success: bool, message: &str) -> Result<(), CloudError>;
+    fn report_completion(&self, result: &PipelineResult) -> Result<(), CloudError>;
 }
 
 /// No-op cloud reporter for CLI mode.
@@ -33,7 +33,7 @@ impl CloudReporter for NoopCloudReporter {
         Ok(())
     }
 
-    fn report_completion(&self, _success: bool, _message: &str) -> Result<(), CloudError> {
+    fn report_completion(&self, _result: &PipelineResult) -> Result<(), CloudError> {
         Ok(())
     }
 }
@@ -113,7 +113,7 @@ impl CloudReporter for HttpCloudReporter {
         self.post_json(&path, &body)
     }
 
-    fn report_completion(&self, success: bool, message: &str) -> Result<(), CloudError> {
+    fn report_completion(&self, result: &PipelineResult) -> Result<(), CloudError> {
         let run_id = self
             .config
             .run_id
@@ -121,12 +121,7 @@ impl CloudReporter for HttpCloudReporter {
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
         let path = format!("/v1/runs/{}/complete", run_id);
-        let body = serde_json::json!({
-            "success": success,
-            "message": message,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-        });
-        self.post_json(&path, &body)
+        self.post_json(&path, result)
     }
 }
 
@@ -150,9 +145,20 @@ mod tests {
             event_type: super::super::types::ProgressEventType::PipelineStarted,
         };
 
+        let result = super::super::types::PipelineResult {
+            success: true,
+            commit_sha: None,
+            pr_url: None,
+            iterations_used: 1,
+            review_passes_used: 0,
+            issues_found: false,
+            duration_secs: 100,
+            error_message: None,
+        };
+
         assert!(reporter.report_progress(&update).is_ok());
         assert!(reporter.heartbeat().is_ok());
-        assert!(reporter.report_completion(true, "Done").is_ok());
+        assert!(reporter.report_completion(&result).is_ok());
     }
 
     #[test]

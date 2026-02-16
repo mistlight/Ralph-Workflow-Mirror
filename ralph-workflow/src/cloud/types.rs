@@ -44,6 +44,27 @@ pub enum ProgressEventType {
     Heartbeat,
 }
 
+/// Pipeline result payload for completion reporting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineResult {
+    /// Whether the pipeline completed successfully
+    pub success: bool,
+    /// Final commit SHA (if any)
+    pub commit_sha: Option<String>,
+    /// Pull request URL (if created)
+    pub pr_url: Option<String>,
+    /// Number of iterations used
+    pub iterations_used: u32,
+    /// Number of review passes used
+    pub review_passes_used: u32,
+    /// Whether issues were found
+    pub issues_found: bool,
+    /// Pipeline duration in seconds
+    pub duration_secs: u64,
+    /// Error message if pipeline failed
+    pub error_message: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CloudError {
     #[error("Configuration error: {0}")]
