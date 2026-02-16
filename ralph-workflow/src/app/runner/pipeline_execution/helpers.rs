@@ -101,6 +101,7 @@ fn create_phase_context_with_config<'ctx>(
     review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
     run_context: &'ctx crate::checkpoint::RunContext,
     resume_checkpoint: Option<&PipelineCheckpoint>,
+    cloud_reporter: &'ctx dyn crate::cloud::CloudReporter,
 ) -> PhaseContext<'ctx> {
     // Restore execution history and prompt history from checkpoint if available.
     // IMPORTANT: When loading from checkpoint, we MUST enforce the configured
@@ -139,6 +140,12 @@ fn create_phase_context_with_config<'ctx>(
         repo_root: &ctx.repo_root,
         workspace: &*ctx.workspace,
         run_log_context: &ctx.run_log_context,
+        cloud_reporter: if config.cloud_config.enabled {
+            Some(cloud_reporter)
+        } else {
+            None
+        },
+        cloud_config: &config.cloud_config,
     }
 }
 

@@ -36,7 +36,10 @@ pub mod unified;
 pub mod validation;
 
 // Re-export main types at module level for convenience
-pub use types::{Config, ReviewDepth, Verbosity};
+pub use types::{
+    CloudConfig, CloudStateConfig, Config, GitAuthMethod, GitAuthStateMethod, GitRemoteConfig,
+    GitRemoteStateConfig, ReviewDepth, Verbosity,
+};
 
 // Re-export unified config types for --init-global handling
 pub use unified::{

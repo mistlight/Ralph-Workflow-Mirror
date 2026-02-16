@@ -51,7 +51,9 @@ pub use config::{EventLoopConfig, EventLoopResult, MAX_EVENT_LOOP_ITERATIONS};
 pub use core::{run_event_loop, run_event_loop_with_handler, StatefulHandler};
 
 // Re-export for internal use within app module
-pub(crate) use config::create_initial_state_with_config;
+pub(crate) use config::{
+    create_initial_state_with_config, overlay_checkpoint_progress_onto_base_state,
+};
 
 #[cfg(test)]
 mod tests_checkpoint;

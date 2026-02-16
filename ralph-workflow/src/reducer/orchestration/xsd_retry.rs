@@ -397,6 +397,96 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         };
     }
 
+    // Cloud mode orchestration: sequence cloud-specific operations
+    // CRITICAL: All cloud-specific logic is guarded by cloud_config.enabled check.
+    // When cloud mode is disabled, this entire block is skipped and behavior is
+    // identical to current CLI behavior.
+    if state.cloud_config.enabled {
+        // After a successful commit, push immediately (cloud mode only)
+        if let Some(commit_sha) = &state.pending_push_commit {
+            // Configure git auth first if not done yet
+            if !state.git_auth_configured {
+                // Format auth method for the effect
+                let auth_method = match &state.cloud_config.git_remote.auth_method {
+                    crate::config::GitAuthStateMethod::SshKey { key_path } => key_path
+                        .as_ref()
+                        .map(|p| format!("ssh-key:{p}"))
+                        .unwrap_or_else(|| "ssh-key:default".to_string()),
+                    crate::config::GitAuthStateMethod::Token { username } => {
+                        format!("token:{username}")
+                    }
+                    crate::config::GitAuthStateMethod::CredentialHelper { helper } => {
+                        format!("credential-helper:{helper}")
+                    }
+                };
+                return Effect::ConfigureGitAuth { auth_method };
+            }
+
+            // Then push the commit
+            if state.cloud_config.git_remote.push_branch.is_empty() {
+                return Effect::EmitCompletionMarkerAndTerminate {
+                    is_failure: true,
+                    reason: Some(
+                        "Cloud mode is enabled but no push branch was resolved".to_string(),
+                    ),
+                };
+            }
+            return Effect::PushToRemote {
+                remote: state.cloud_config.git_remote.remote_name.clone(),
+                branch: state.cloud_config.git_remote.push_branch.clone(),
+                force: state.cloud_config.git_remote.force_push,
+                commit_sha: commit_sha.clone(),
+            };
+        }
+
+        // In Finalizing phase, create PR if configured
+        if state.phase == PipelinePhase::Finalizing
+            && state.cloud_config.git_remote.create_pr
+            && !state.pr_created
+        {
+            // PR creation is only meaningful if we actually produced commits.
+            // If no commits were created, skip PR creation even if configured.
+            if state.metrics.commits_created_total == 0 {
+                // Fall through to normal phase effects (finalization/cleanup).
+                // Completion reporting will still include push_count/unpushed_commits.
+            } else {
+                if !state.unpushed_commits.is_empty()
+                    || state.push_count == 0
+                    || state.last_pushed_commit.is_none()
+                {
+                    return Effect::EmitCompletionMarkerAndTerminate {
+                        is_failure: true,
+                        reason: Some(
+                            "Cannot create PR because required pushes did not succeed (unpushed commits remain)"
+                                .to_string(),
+                        ),
+                    };
+                }
+
+                if state.cloud_config.git_remote.push_branch.is_empty() {
+                    return Effect::EmitCompletionMarkerAndTerminate {
+                        is_failure: true,
+                        reason: Some(
+                            "Cloud mode is enabled but no PR head branch was resolved".to_string(),
+                        ),
+                    };
+                }
+                let (title, body) = render_cloud_pr_title_and_body(state);
+                return Effect::CreatePullRequest {
+                    base_branch: state
+                        .cloud_config
+                        .git_remote
+                        .pr_base_branch
+                        .clone()
+                        .unwrap_or_else(|| "main".to_string()),
+                    head_branch: state.cloud_config.git_remote.push_branch.clone(),
+                    title,
+                    body,
+                };
+            }
+        }
+    }
+
     // Recovery completion: if the pipeline entered recovery due to a commit failure,
     // only clear recovery state AFTER CreateCommit has succeeded.
     //
@@ -419,4 +509,113 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
     }
 
     determine_next_effect_for_phase(state)
+}
+
+fn render_cloud_pr_title_and_body(state: &PipelineState) -> (String, String) {
+    use std::collections::HashMap;
+
+    let run_id = state.cloud_config.run_id.as_deref().unwrap_or("unknown");
+
+    // Intentionally avoid using any prompt text or other potentially sensitive input.
+    // This value is safe to publish in a PR title/body.
+    let prompt_summary = format!("Ralph workflow run {run_id}");
+
+    let mut vars: HashMap<&str, String> = HashMap::new();
+    vars.insert("run_id", run_id.to_string());
+    vars.insert("prompt_summary", prompt_summary);
+
+    let default_title = "Ralph workflow changes".to_string();
+
+    let title = state
+        .cloud_config
+        .git_remote
+        .pr_title_template
+        .as_deref()
+        .and_then(|t| try_render_cloud_pr_template(t, &vars))
+        .unwrap_or(default_title);
+
+    let body = state
+        .cloud_config
+        .git_remote
+        .pr_body_template
+        .as_deref()
+        .and_then(|t| try_render_cloud_pr_template(t, &vars))
+        .unwrap_or_default();
+
+    (title, body)
+}
+
+fn try_render_cloud_pr_template(
+    template: &str,
+    vars: &std::collections::HashMap<&str, String>,
+) -> Option<String> {
+    let converted = convert_cloud_pr_template_placeholders(template)?;
+
+    let partials: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let t = crate::prompts::template_engine::Template::new(&converted);
+    t.render_with_partials(vars, &partials).ok()
+}
+
+fn convert_cloud_pr_template_placeholders(input: &str) -> Option<String> {
+    // Supported placeholders are documented as {run_id} and {prompt_summary}.
+    // We render them using the existing template engine's {{var}} syntax.
+    const ALLOWED: [&str; 2] = ["run_id", "prompt_summary"];
+
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != '{' {
+            out.push(ch);
+            continue;
+        }
+
+        // Preserve template-engine escapes/variables like {{run_id}}.
+        if chars.peek() == Some(&'{') {
+            out.push('{');
+            out.push('{');
+            let _ = chars.next();
+            continue;
+        }
+
+        let mut name = String::new();
+        while let Some(&next) = chars.peek() {
+            if next == '}' {
+                break;
+            }
+            name.push(next);
+            let _ = chars.next();
+        }
+
+        // No closing brace; treat as literal.
+        if chars.peek() != Some(&'}') {
+            out.push('{');
+            out.push_str(&name);
+            continue;
+        }
+        let _ = chars.next();
+
+        let trimmed = name.trim();
+        if is_simple_placeholder_name(trimmed) {
+            if ALLOWED.contains(&trimmed) {
+                out.push_str("{{");
+                out.push_str(trimmed);
+                out.push_str("}}");
+            } else {
+                // Fail-fast: unknown placeholders must not pass through verbatim.
+                return None;
+            }
+        } else {
+            // Not a placeholder shape; keep original braces.
+            out.push('{');
+            out.push_str(&name);
+            out.push('}');
+        }
+    }
+
+    Some(out)
+}
+
+fn is_simple_placeholder_name(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }

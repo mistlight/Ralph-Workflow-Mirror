@@ -58,3 +58,7 @@ mod prompt_permissions;
 // Recovery flow regression tests
 #[path = "tests/recovery_flow.rs"]
 mod recovery_flow;
+
+// Cloud mode orchestration tests
+#[path = "tests/cloud_push.rs"]
+mod cloud_push;

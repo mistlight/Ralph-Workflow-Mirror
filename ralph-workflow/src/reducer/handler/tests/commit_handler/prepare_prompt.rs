@@ -24,6 +24,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_prepare_commit_prompt_does_not_emit_generation_started() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -57,6 +58,8 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -88,6 +91,7 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
 
 #[test]
 fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("commit_message_xml.txt");
     fs::write(&template_path, "Diff:\n{{DIFF}}\nMissing: {{MISSING}}\n")
@@ -127,6 +131,8 @@ fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -169,6 +175,7 @@ fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
 
 #[test]
 fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // The XSD retry prompt now validates that required input files exist.
     // This test provides those files to verify the retry prompt generation works.
     let workspace = MemoryWorkspace::new_test()
@@ -210,6 +217,8 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -249,6 +258,7 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
 
 #[test]
 fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     let workspace = MemoryWorkspace::new_test()
@@ -286,6 +296,8 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -325,6 +337,7 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
 
 #[test]
 fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_COMMIT_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
@@ -361,6 +374,8 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -405,6 +420,7 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
 
 #[test]
 fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_COMMIT_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
@@ -441,6 +457,8 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -508,6 +526,7 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
 /// the already-truncated content instead of re-truncating.
 #[test]
 fn test_prepare_commit_prompt_uses_materialized_diff() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::state::{
         MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
         PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
@@ -554,6 +573,8 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -613,6 +634,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
 
 #[test]
 fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_diff_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::state::{
         MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
         PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
@@ -656,6 +678,8 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -705,6 +729,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
 
 #[test]
 fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_reference_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::state::{
         MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
         PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
@@ -748,6 +773,8 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

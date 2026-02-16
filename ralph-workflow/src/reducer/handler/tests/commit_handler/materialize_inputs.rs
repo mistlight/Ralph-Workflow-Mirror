@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
@@ -49,6 +50,8 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -82,6 +85,7 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
 
 #[test]
 fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
 
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(250_000));
@@ -120,6 +124,8 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -169,6 +175,7 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
 
 #[test]
 fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::ui_event::UIEvent;
 
@@ -209,6 +216,8 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -258,6 +267,7 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
 
 #[test]
 fn test_materialize_commit_inputs_records_correct_materialization_reason() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
 
@@ -298,6 +308,8 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -332,6 +344,7 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
 
 #[test]
 fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_referenced() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::{PromptInputRepresentation, PromptMaterializationReason};
     use std::path::PathBuf;
@@ -379,6 +392,8 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -431,6 +446,7 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
 
 #[test]
 fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
 
@@ -471,6 +487,8 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

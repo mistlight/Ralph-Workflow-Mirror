@@ -106,6 +106,9 @@ where
     print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
+    // Initialize cloud reporter (for testing, always use Noop)
+    let cloud_reporter = crate::cloud::NoopCloudReporter;
+
     // Create phase context and save starting commit
     let mut timer = Timer::new();
     let mut phase_ctx = create_phase_context_with_config(
@@ -115,6 +118,7 @@ where
         review_guidelines.as_ref(),
         &run_context,
         resume_checkpoint.as_ref(),
+        &cloud_reporter,
     );
     save_start_commit_or_warn(ctx);
 
@@ -160,16 +164,11 @@ where
             phase_ctx.config.execution_history_limit,
         );
 
-        base_state.phase = migrated.phase;
-        base_state.iteration = migrated.iteration;
-        base_state.total_iterations = migrated.total_iterations;
-        base_state.reviewer_pass = migrated.reviewer_pass;
-        base_state.total_reviewer_passes = migrated.total_reviewer_passes;
-        base_state.rebase = migrated.rebase;
-        base_state.execution_history = migrated.execution_history;
-        base_state.prompt_inputs = migrated.prompt_inputs;
-        base_state.prompt_permissions = migrated.prompt_permissions;
-        base_state.metrics = migrated.metrics;
+        crate::app::event_loop::overlay_checkpoint_progress_onto_base_state(
+            &mut base_state,
+            migrated,
+            phase_ctx.config.execution_history_limit,
+        );
 
         base_state
     } else {

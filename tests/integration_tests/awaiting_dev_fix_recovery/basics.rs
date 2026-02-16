@@ -3,6 +3,7 @@
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
+use ralph_workflow::config::CloudConfig;
 use ralph_workflow::reducer::determine_next_effect;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
@@ -135,6 +136,7 @@ fn attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_missing()
         let workspace = MemoryWorkspace::new(repo_root.clone());
         let run_log_context = ralph_workflow::logging::RunLogContext::new(&workspace)
             .expect("Failed to create run log context");
+        let cloud_config = CloudConfig::disabled();
 
         let mut ctx = ralph_workflow::phases::PhaseContext {
             config: &config,
@@ -155,6 +157,8 @@ fn attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_missing()
             repo_root: &repo_root,
             workspace: &workspace,
             run_log_context: &run_log_context,
+            cloud_reporter: None,
+            cloud_config: &cloud_config,
         };
 
         let mut state = PipelineState::initial(1, 0);
@@ -213,6 +217,7 @@ fn attempt_recovery_never_targets_awaiting_dev_fix() {
         let workspace = MemoryWorkspace::new(repo_root.clone());
         let run_log_context = ralph_workflow::logging::RunLogContext::new(&workspace)
             .expect("Failed to create run log context");
+        let cloud_config = CloudConfig::disabled();
 
         let mut ctx = ralph_workflow::phases::PhaseContext {
             config: &config,
@@ -233,6 +238,8 @@ fn attempt_recovery_never_targets_awaiting_dev_fix() {
             repo_root: &repo_root,
             workspace: &workspace,
             run_log_context: &run_log_context,
+            cloud_reporter: None,
+            cloud_config: &cloud_config,
         };
 
         let mut state = PipelineState::initial(1, 0);

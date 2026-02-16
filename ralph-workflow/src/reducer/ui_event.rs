@@ -77,6 +77,30 @@ pub enum UIEvent {
     /// Agent activity notification.
     AgentActivity { agent: String, message: String },
 
+    /// Cloud-mode git push completed.
+    PushCompleted {
+        remote: String,
+        branch: String,
+        commit_sha: String,
+    },
+
+    /// Cloud-mode git push failed.
+    ///
+    /// The error string MUST already be redacted (no credentials).
+    PushFailed {
+        remote: String,
+        branch: String,
+        error: String,
+    },
+
+    /// Cloud-mode pull request created.
+    PullRequestCreated { url: String, number: u32 },
+
+    /// Cloud-mode pull request creation failed.
+    ///
+    /// The error string MUST already be redacted (no credentials).
+    PullRequestFailed { error: String },
+
     /// XML output requiring semantic rendering.
     ///
     /// Phase functions emit raw XML content through this event,

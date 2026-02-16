@@ -295,6 +295,8 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &config.cloud_config,
     };
 
     let ctx = ConflictResolutionContext {

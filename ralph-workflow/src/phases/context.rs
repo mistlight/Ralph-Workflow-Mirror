@@ -95,6 +95,16 @@ pub struct PhaseContext<'a> {
     /// (`.agent/logs-<run_id>/`). This ensures all logs from a single
     /// pipeline invocation are grouped together for easy debugging.
     pub run_log_context: &'a RunLogContext,
+    /// Cloud reporter for progress updates (None in CLI mode).
+    ///
+    /// When cloud mode is disabled, this is None and no cloud reporting occurs.
+    /// When enabled, this is Some(&dyn CloudReporter) for API communication.
+    pub cloud_reporter: Option<&'a dyn crate::cloud::CloudReporter>,
+    /// Cloud configuration.
+    ///
+    /// When cloud mode is disabled (enabled=false), all cloud-specific
+    /// logic is skipped throughout the pipeline.
+    pub cloud_config: &'a crate::config::types::CloudConfig,
 }
 
 impl PhaseContext<'_> {
@@ -238,6 +248,8 @@ mod tests {
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
             run_log_context: &fixture.run_log_context,
+            cloud_reporter: None,
+            cloud_config: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -280,6 +292,8 @@ mod tests {
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
             run_log_context: &fixture.run_log_context,
+            cloud_reporter: None,
+            cloud_config: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -314,6 +328,8 @@ mod tests {
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
             run_log_context: &fixture.run_log_context,
+            cloud_reporter: None,
+            cloud_config: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);

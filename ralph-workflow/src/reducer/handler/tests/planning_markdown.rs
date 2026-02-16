@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent");
 
     let colors = Colors { enabled: false };
@@ -49,6 +50,8 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -78,6 +81,7 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
 
 #[test]
 fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent");
 
     let colors = Colors { enabled: false };
@@ -110,6 +114,8 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

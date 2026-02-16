@@ -116,7 +116,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     };
 
     // Apply checkpoint configuration restoration if resuming
-    let config = if let Some(ref checkpoint) = resume_checkpoint {
+    let mut config = if let Some(ref checkpoint) = resume_checkpoint {
         use crate::checkpoint::apply_checkpoint_to_config;
         let mut restored_config = ctx.config.clone();
         apply_checkpoint_to_config(&mut restored_config, checkpoint);
@@ -148,6 +148,17 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
                 restored_count
             ));
         }
+    }
+
+    // Cloud mode git defaults must be resolved from repo reality.
+    // In particular, push/PR head branches must be explicit branch names.
+    if config.cloud_config.enabled {
+        resolve_cloud_git_defaults(&mut config, ctx)?;
+        // Fail-fast if config is still invalid after resolving defaults.
+        config
+            .cloud_config
+            .validate()
+            .map_err(|e| anyhow::anyhow!("Cloud config validation failed: {e}"))?;
     }
 
     // Set up git helpers and agent phase
@@ -197,6 +208,27 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
+    // Initialize cloud reporter if cloud mode is enabled
+    use crate::cloud::{CloudReporter, HeartbeatGuard, HttpCloudReporter, NoopCloudReporter};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let cloud_reporter: Arc<dyn CloudReporter> = if config.cloud_config.enabled {
+        Arc::new(HttpCloudReporter::new(config.cloud_config.clone()))
+    } else {
+        Arc::new(NoopCloudReporter)
+    };
+
+    // Start heartbeat if cloud mode enabled
+    let _heartbeat_guard = if config.cloud_config.enabled {
+        Some(HeartbeatGuard::start(
+            Arc::clone(&cloud_reporter),
+            Duration::from_secs(config.cloud_config.heartbeat_interval_secs as u64),
+        ))
+    } else {
+        None
+    };
+
     // Create phase context and save starting commit
     let mut timer = Timer::new();
     let mut phase_ctx = create_phase_context_with_config(
@@ -206,6 +238,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         review_guidelines.as_ref(),
         &run_context,
         resume_checkpoint.as_ref(),
+        cloud_reporter.as_ref(),
     );
     save_start_commit_or_warn(ctx);
 
@@ -255,21 +288,12 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             checkpoint.clone(),
             phase_ctx.config.execution_history_limit,
         );
-        let migrated_execution_history = migrated.execution_history().clone();
 
-        base_state.phase = migrated.phase;
-        base_state.iteration = migrated.iteration;
-        base_state.total_iterations = migrated.total_iterations;
-        base_state.reviewer_pass = migrated.reviewer_pass;
-        base_state.total_reviewer_passes = migrated.total_reviewer_passes;
-        base_state.rebase = migrated.rebase;
-        base_state.replace_execution_history_bounded(
-            migrated_execution_history,
+        crate::app::event_loop::overlay_checkpoint_progress_onto_base_state(
+            &mut base_state,
+            migrated,
             phase_ctx.config.execution_history_limit,
         );
-        base_state.prompt_inputs = migrated.prompt_inputs;
-        base_state.prompt_permissions = migrated.prompt_permissions;
-        base_state.metrics = migrated.metrics;
 
         base_state
     } else {
@@ -396,7 +420,30 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
         if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
+            let mut checkpoint = checkpoint;
+            if loop_result.final_state.cloud_config.enabled {
+                checkpoint.cloud_state = Some(
+                    crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(
+                        &loop_result.final_state,
+                    ),
+                );
+            }
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+        }
+    }
+
+    // Cloud completion reporting - notify orchestrator of final result
+    // This is done after checkpoint saving to ensure all state is persisted first
+    if config.cloud_config.enabled {
+        let result_payload = build_cloud_completion_payload(&loop_result, &timer);
+
+        if let Err(e) = cloud_reporter.report_completion(&result_payload) {
+            let error = crate::cloud::redaction::redact_secrets(&e.to_string());
+            if !config.cloud_config.graceful_degradation {
+                return Err(anyhow::anyhow!("Cloud completion report failed: {}", error));
+            }
+            ctx.logger
+                .warn(&format!("Cloud completion report failed: {}", error));
         }
     }
 
@@ -417,5 +464,121 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         &loop_result.final_state,
         prompt_monitor,
     );
+    Ok(())
+}
+
+fn build_cloud_completion_payload(
+    loop_result: &crate::app::event_loop::EventLoopResult,
+    timer: &Timer,
+) -> crate::cloud::types::PipelineResult {
+    let success = loop_result.completed
+        && matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::Complete
+        );
+
+    crate::cloud::types::PipelineResult {
+        success,
+        commit_sha: loop_result.final_state.last_pushed_commit.clone().or_else(
+            || match &loop_result.final_state.commit {
+                crate::reducer::state::CommitState::Committed { hash } => Some(hash.clone()),
+                _ => None,
+            },
+        ),
+        pr_url: loop_result.final_state.pr_url.clone(),
+        push_count: loop_result.final_state.push_count,
+        last_pushed_commit: loop_result.final_state.last_pushed_commit.clone(),
+        unpushed_commits: loop_result.final_state.unpushed_commits.clone(),
+        last_push_error: loop_result.final_state.last_push_error.clone(),
+        iterations_used: loop_result.final_state.metrics.dev_iterations_completed,
+        review_passes_used: loop_result.final_state.metrics.review_passes_completed,
+        issues_found: loop_result.final_state.review_issues_found,
+        duration_secs: timer.elapsed().as_secs(),
+        error_message: if matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::Interrupted
+        ) {
+            Some("Pipeline interrupted".to_string())
+        } else {
+            None
+        },
+    }
+}
+
+#[cfg(test)]
+mod cloud_completion_payload_tests {
+    use super::build_cloud_completion_payload;
+
+    #[test]
+    fn completion_payload_reports_completed_iteration_and_review_counts_from_metrics() {
+        let mut state = crate::reducer::PipelineState::initial(10, 5);
+        state.metrics.dev_iterations_completed = 3;
+        state.metrics.review_passes_completed = 2;
+        state.iteration = 4;
+        state.reviewer_pass = 3;
+
+        let loop_result = crate::app::event_loop::EventLoopResult {
+            completed: true,
+            events_processed: 0,
+            final_phase: crate::reducer::event::PipelinePhase::Complete,
+            final_state: state,
+        };
+
+        let timer = crate::pipeline::Timer::new();
+        let payload = build_cloud_completion_payload(&loop_result, &timer);
+
+        assert_eq!(
+            payload.iterations_used, 3,
+            "iterations_used should report completed dev iterations (metrics)"
+        );
+        assert_eq!(
+            payload.review_passes_used, 2,
+            "review_passes_used should report completed review passes (metrics)"
+        );
+    }
+}
+
+fn resolve_cloud_git_defaults(
+    config: &mut crate::config::Config,
+    ctx: &PipelineContext,
+) -> anyhow::Result<()> {
+    // Default push branch to the current branch name (safe, non-secret).
+    if config.cloud_config.git_remote.push_branch.is_none() {
+        let output = ctx.executor.execute(
+            "git",
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+            &[],
+            Some(&ctx.repo_root),
+        )?;
+        if !output.status.success() {
+            let stderr = crate::cloud::redaction::redact_secrets(&output.stderr);
+            return Err(anyhow::anyhow!(
+                "Failed to detect current branch for cloud push (git rev-parse). stderr: {}",
+                stderr
+            ));
+        }
+
+        let branch = output.stdout.trim();
+        if branch.is_empty() || branch == "HEAD" {
+            return Err(anyhow::anyhow!(
+                "Cloud mode requires a branch name for pushing/PRs. Current ref is detached (HEAD). Set RALPH_GIT_PUSH_BRANCH explicitly."
+            ));
+        }
+        config.cloud_config.git_remote.push_branch = Some(branch.to_string());
+    }
+
+    // Defensive: reject literal HEAD even if explicitly set.
+    if config
+        .cloud_config
+        .git_remote
+        .push_branch
+        .as_deref()
+        .is_some_and(|b| b.trim() == "HEAD")
+    {
+        return Err(anyhow::anyhow!(
+            "RALPH_GIT_PUSH_BRANCH must be a branch name (not literal 'HEAD')"
+        ));
+    }
+
     Ok(())
 }

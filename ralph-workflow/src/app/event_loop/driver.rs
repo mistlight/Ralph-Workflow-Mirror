@@ -38,6 +38,10 @@ use super::trace::{
 };
 use super::StatefulHandler;
 
+fn safe_cloud_error_string(e: &crate::cloud::types::CloudError) -> String {
+    crate::cloud::redaction::redact_secrets(&e.to_string())
+}
+
 /// Run the main event loop with the given handler and configuration.
 ///
 /// This function implements the reducer-based event loop cycle, orchestrating
@@ -195,17 +199,23 @@ where
             }
         };
 
+        let crate::reducer::effect::EffectResult {
+            event,
+            additional_events,
+            ui_events,
+        } = result;
+
         // Display UI events (does not affect state)
-        for ui_event in &result.ui_events {
+        for ui_event in &ui_events {
             ctx.logger
                 .info(&crate::rendering::render_ui_event(ui_event));
         }
 
-        let event_str = format!("{:?}", result.event);
+        let event_str = format!("{:?}", event);
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
         // Apply pipeline event to state (reducer remains pure)
-        let new_state = reduce(state, result.event.clone());
+        let new_state = reduce(state, event.clone());
 
         // Log to event loop log (best-effort, does not affect correctness)
         log_effect_execution(
@@ -214,7 +224,7 @@ where
             &new_state,
             &effect_str,
             &event_str,
-            &result.additional_events,
+            &additional_events,
             duration_ms,
         );
 
@@ -229,9 +239,9 @@ where
         events_processed += 1;
 
         // Apply additional pipeline events in order.
-        for event in result.additional_events {
-            let event_str = format!("{:?}", event);
-            let additional_state = reduce(state, event);
+        for additional_event in additional_events {
+            let event_str = format!("{:?}", additional_event);
+            let additional_state = reduce(state, additional_event);
             trace.push(build_trace_entry(
                 events_processed,
                 &additional_state,
@@ -254,6 +264,25 @@ where
             ..state
         };
         handler.update_state(state.clone());
+
+        // Cloud progress reporting - ONLY when enabled.
+        // Report based on the post-reduction state so phase/iteration values do not lag.
+        if let Some(reporter) = ctx.cloud_reporter {
+            for ui_event in &ui_events {
+                if let Some(update) =
+                    ui_event_to_progress_update(ui_event, &state, ctx.cloud_config)
+                {
+                    if let Err(e) = reporter.report_progress(&update) {
+                        let error = safe_cloud_error_string(&e);
+                        if !ctx.cloud_config.graceful_degradation {
+                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", error));
+                        }
+                        ctx.logger
+                            .warn(&format!("Cloud progress report failed: {}", error));
+                    }
+                }
+            }
+        }
 
         // Check completion AFTER effect execution and state update.
         // This ensures that transitions to terminal phases (e.g., Interrupted)
@@ -432,5 +461,336 @@ pub(super) fn log_effect_execution(
     }) {
         ctx.logger
             .warn(&format!("Failed to write to event loop log: {}", e));
+    }
+}
+
+/// Convert a UI event to a progress update for cloud reporting.
+///
+/// Returns None for events that don't warrant cloud progress updates.
+fn ui_event_to_progress_update(
+    ui_event: &crate::reducer::ui_event::UIEvent,
+    state: &PipelineState,
+    cloud_config: &crate::config::CloudConfig,
+) -> Option<crate::cloud::types::ProgressUpdate> {
+    use crate::cloud::types::{ProgressEventType, ProgressUpdate};
+    use crate::reducer::ui_event::UIEvent;
+
+    let _run_id = cloud_config.run_id.clone()?;
+
+    fn nonzero(v: u32) -> Option<u32> {
+        if v == 0 {
+            None
+        } else {
+            Some(v)
+        }
+    }
+
+    fn one_based(current_zero_based: u32, total: u32) -> Option<u32> {
+        nonzero(total).map(|t| (current_zero_based.saturating_add(1)).min(t))
+    }
+
+    let mut iteration = one_based(state.iteration, state.total_iterations);
+    let mut total_iterations = nonzero(state.total_iterations);
+    let mut review_pass = one_based(state.reviewer_pass, state.total_reviewer_passes);
+    let mut total_review_passes = nonzero(state.total_reviewer_passes);
+    let mut previous_phase = state.previous_phase.as_ref().map(|p| format!("{:?}", p));
+
+    let (message, event_type) = match ui_event {
+        UIEvent::PhaseTransition { from, to } => {
+            let from_str = from.as_ref().map(|p| format!("{:?}", p));
+            let to_str = format!("{:?}", to);
+            previous_phase = from_str.clone();
+            let message = format!(
+                "Phase transition: {} -> {}",
+                from_str.as_deref().unwrap_or("None"),
+                to_str
+            );
+            (
+                message,
+                ProgressEventType::PhaseTransition {
+                    from: from_str,
+                    to: to_str,
+                },
+            )
+        }
+        UIEvent::IterationProgress { current, total } => {
+            let message = format!("Development iteration {}/{}", current, total);
+            iteration = Some(*current);
+            total_iterations = Some(*total);
+            (
+                message,
+                ProgressEventType::IterationProgress {
+                    current: *current,
+                    total: *total,
+                },
+            )
+        }
+        UIEvent::ReviewProgress { pass, total } => {
+            let message = format!("Review pass {}/{}", pass, total);
+            review_pass = Some(*pass);
+            total_review_passes = Some(*total);
+            (
+                message,
+                ProgressEventType::ReviewProgress {
+                    pass: *pass,
+                    total: *total,
+                },
+            )
+        }
+        UIEvent::AgentActivity {
+            agent,
+            message: _activity_msg,
+        } => {
+            // Do not forward arbitrary handler-provided strings to cloud progress.
+            // AgentActivity messages can contain secrets (tokens, credentials) or sensitive paths.
+            let message = format!("Agent {agent}: activity");
+            (
+                message,
+                ProgressEventType::AgentInvoked {
+                    role: "Agent".to_string(),
+                    agent: agent.clone(),
+                },
+            )
+        }
+        UIEvent::PushCompleted {
+            remote,
+            branch,
+            commit_sha,
+        } => {
+            let short = &commit_sha[..7.min(commit_sha.len())];
+            let message = format!("Push completed: {short} -> {remote}/{branch}");
+            (
+                message,
+                ProgressEventType::PushCompleted {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                },
+            )
+        }
+        UIEvent::PushFailed {
+            remote,
+            branch,
+            error,
+        } => {
+            let error = crate::cloud::redaction::redact_secrets(error);
+            let message = format!("Push failed: {remote}/{branch}: {error}");
+            (
+                message,
+                ProgressEventType::PushFailed {
+                    remote: remote.clone(),
+                    branch: branch.clone(),
+                    error,
+                },
+            )
+        }
+        UIEvent::PullRequestCreated { url, number } => {
+            let message = if *number > 0 {
+                format!("PR created #{number}: {url}")
+            } else {
+                format!("PR created: {url}")
+            };
+            (
+                message,
+                ProgressEventType::PullRequestCreated {
+                    url: url.clone(),
+                    number: *number,
+                },
+            )
+        }
+        UIEvent::PullRequestFailed { error } => {
+            let error = crate::cloud::redaction::redact_secrets(error);
+            let message = format!("PR creation failed: {error}");
+            (message, ProgressEventType::PullRequestFailed { error })
+        }
+        // Don't report XmlOutput events to cloud
+        UIEvent::XmlOutput { .. } => return None,
+    };
+
+    Some(ProgressUpdate {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        phase: format!("{:?}", state.phase),
+        previous_phase,
+        iteration,
+        total_iterations,
+        review_pass,
+        total_review_passes,
+        message,
+        event_type,
+    })
+}
+
+#[cfg(test)]
+mod progress_mapping_tests {
+    use super::ui_event_to_progress_update;
+    use crate::config::types::{CloudConfig, GitAuthMethod, GitRemoteConfig};
+    use crate::reducer::event::PipelinePhase;
+    use crate::reducer::state::PipelineState;
+    use crate::reducer::ui_event::UIEvent;
+
+    fn cloud_config_for_test() -> CloudConfig {
+        CloudConfig {
+            enabled: true,
+            api_url: Some("https://api.example.com".to_string()),
+            api_token: Some("secret".to_string()),
+            run_id: Some("run_1".to_string()),
+            heartbeat_interval_secs: 30,
+            graceful_degradation: true,
+            git_remote: GitRemoteConfig {
+                auth_method: GitAuthMethod::SshKey { key_path: None },
+                push_branch: Some("main".to_string()),
+                create_pr: false,
+                pr_title_template: None,
+                pr_body_template: None,
+                pr_base_branch: None,
+                force_push: false,
+                remote_name: "origin".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn iteration_progress_maps_to_iteration_progress_event_type() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(10, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 99;
+
+        let ui = UIEvent::IterationProgress {
+            current: 2,
+            total: 5,
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert_eq!(update.iteration, Some(2));
+        assert_eq!(update.total_iterations, Some(5));
+
+        match update.event_type {
+            crate::cloud::types::ProgressEventType::IterationProgress { current, total } => {
+                assert_eq!(current, 2);
+                assert_eq!(total, 5);
+            }
+            other => panic!("unexpected event type: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn review_progress_maps_to_review_progress_event_type() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(10, 0);
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 99;
+
+        let ui = UIEvent::ReviewProgress { pass: 1, total: 3 };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert_eq!(update.review_pass, Some(1));
+        assert_eq!(update.total_review_passes, Some(3));
+
+        match update.event_type {
+            crate::cloud::types::ProgressEventType::ReviewProgress { pass, total } => {
+                assert_eq!(pass, 1);
+                assert_eq!(total, 3);
+            }
+            other => panic!("unexpected event type: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn push_failed_maps_to_push_failed_event_type() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::CommitMessage;
+
+        let ui = UIEvent::PushFailed {
+            remote: "origin".to_string(),
+            branch: "main".to_string(),
+            error: "Bearer SECRET".to_string(),
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        match update.event_type {
+            crate::cloud::types::ProgressEventType::PushFailed {
+                remote,
+                branch,
+                error,
+            } => {
+                assert_eq!(remote, "origin");
+                assert_eq!(branch, "main");
+                assert!(!error.contains("SECRET"), "error must be redacted: {error}");
+            }
+            other => panic!("unexpected event type: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn phase_transition_uses_one_based_iteration_and_review_pass() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(5, 3);
+        state.phase = PipelinePhase::Planning;
+        state.iteration = 0;
+        state.total_iterations = 5;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 3;
+
+        let ui = UIEvent::PhaseTransition {
+            from: None,
+            to: PipelinePhase::Development,
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert_eq!(update.iteration, Some(1));
+        assert_eq!(update.total_iterations, Some(5));
+        assert_eq!(update.review_pass, Some(1));
+        assert_eq!(update.total_review_passes, Some(3));
+    }
+
+    #[test]
+    fn agent_activity_is_not_forwarded_verbatim_to_cloud_progress() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Development;
+
+        let ui = UIEvent::AgentActivity {
+            agent: "dev-agent".to_string(),
+            message: "token=SECRET_VALUE and /home/user/.ssh/id_rsa".to_string(),
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert!(
+            update.message.contains("dev-agent"),
+            "should still identify which agent produced activity"
+        );
+        assert!(
+            !update.message.contains("SECRET_VALUE"),
+            "must not forward raw activity text containing secrets"
+        );
+        assert!(
+            !update.message.contains("id_rsa"),
+            "must not forward sensitive paths from activity messages"
+        );
+    }
+}
+
+#[cfg(test)]
+mod cloud_progress_error_redaction_tests {
+    use super::safe_cloud_error_string;
+
+    #[test]
+    fn cloud_progress_errors_are_redacted_and_truncated_for_logs_and_errors() {
+        let e = crate::cloud::types::CloudError::HttpError(
+            401,
+            "Bearer SECRET_TOKEN and https://user:pass@example.com?access_token=abc".to_string(),
+        );
+        let out = safe_cloud_error_string(&e);
+
+        assert!(!out.contains("SECRET_TOKEN"), "should redact tokens: {out}");
+        assert!(
+            !out.contains("user:pass"),
+            "should redact url userinfo: {out}"
+        );
+        assert!(
+            out.contains("<redacted>"),
+            "should include redaction marker: {out}"
+        );
     }
 }

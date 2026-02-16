@@ -213,6 +213,7 @@ impl Workspace for FailingMarkerWorkspace {
     }
 
     fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        let _cloud_config = crate::config::types::CloudConfig::disabled();
         self.inner.set_writable(relative)
     }
 }
@@ -232,7 +233,10 @@ struct ContextParams<'a> {
     run_log_context: &'a crate::logging::RunLogContext,
 }
 
-fn build_context<'a>(params: ContextParams<'a>) -> PhaseContext<'a> {
+fn build_context<'a>(
+    params: ContextParams<'a>,
+    cloud_config: &'a crate::config::types::CloudConfig,
+) -> PhaseContext<'a> {
     PhaseContext {
         config: params.config,
         registry: params.registry,
@@ -251,11 +255,14 @@ fn build_context<'a>(params: ContextParams<'a>) -> PhaseContext<'a> {
         repo_root: params.repo_root,
         workspace: params.workspace,
         run_log_context: params.run_log_context,
+        cloud_reporter: None,
+        cloud_config,
     }
 }
 
 #[test]
 fn emit_completion_marker_creates_tmp_dir_before_write() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -267,18 +274,21 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(ContextParams {
-        workspace: &workspace,
-        repo_root: &repo_root,
-        executor: &executor,
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        template_context: &template_context,
-        timer: &mut timer,
-        run_log_context: &run_log_context,
-    });
+    let mut ctx = build_context(
+        ContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            timer: &mut timer,
+            run_log_context: &run_log_context,
+        },
+        &cloud_config,
+    );
 
     let state = PipelineState::initial(1, 0);
     let mut handler = MainEffectHandler::new(state);
@@ -305,6 +315,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
 
 #[test]
 fn emit_completion_marker_with_write_failure_emits_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -316,18 +327,21 @@ fn emit_completion_marker_with_write_failure_emits_event() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(ContextParams {
-        workspace: &workspace,
-        repo_root: &repo_root,
-        executor: &executor,
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        template_context: &template_context,
-        timer: &mut timer,
-        run_log_context: &run_log_context,
-    });
+    let mut ctx = build_context(
+        ContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            timer: &mut timer,
+            run_log_context: &run_log_context,
+        },
+        &cloud_config,
+    );
 
     let state = PipelineState::initial(1, 0);
     let mut handler = MainEffectHandler::new(state);
@@ -357,6 +371,7 @@ fn emit_completion_marker_with_write_failure_emits_event() {
 
 #[test]
 fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -368,18 +383,21 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(ContextParams {
-        workspace: &workspace,
-        repo_root: &repo_root,
-        executor: &executor,
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        template_context: &template_context,
-        timer: &mut timer,
-        run_log_context: &run_log_context,
-    });
+    let mut ctx = build_context(
+        ContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            timer: &mut timer,
+            run_log_context: &run_log_context,
+        },
+        &cloud_config,
+    );
     ctx.developer_agent = "missing-agent";
 
     let state = PipelineState::initial(1, 0);
@@ -432,6 +450,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
 
 #[test]
 fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_agent() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -446,18 +465,21 @@ fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_age
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(ContextParams {
-        workspace: &workspace,
-        repo_root: &repo_root,
-        executor: &executor,
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        template_context: &template_context,
-        timer: &mut timer,
-        run_log_context: &run_log_context,
-    });
+    let mut ctx = build_context(
+        ContextParams {
+            workspace: &workspace,
+            repo_root: &repo_root,
+            executor: &executor,
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            template_context: &template_context,
+            timer: &mut timer,
+            run_log_context: &run_log_context,
+        },
+        &cloud_config,
+    );
     ctx.developer_agent = "claude";
 
     let mut state = PipelineState::initial(1, 0);
@@ -595,6 +617,7 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
     let executor = std::sync::Arc::new(MockProcessExecutor::new());
     let executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -613,6 +636,8 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
         repo_root: repo_root.as_path(),
         workspace: workspace.as_ref(),
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut state = PipelineState::initial(1, 0);

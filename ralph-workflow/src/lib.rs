@@ -91,6 +91,7 @@ pub mod app;
 pub mod banner;
 pub mod checkpoint;
 pub mod cli;
+pub mod cloud;
 pub mod common;
 pub mod config;
 pub mod diagnostics;

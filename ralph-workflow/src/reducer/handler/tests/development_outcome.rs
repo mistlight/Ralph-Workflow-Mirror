@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.development_validated_outcome = Some(DevelopmentValidatedOutcome {
         iteration: 0,
@@ -62,6 +63,8 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let result = handler

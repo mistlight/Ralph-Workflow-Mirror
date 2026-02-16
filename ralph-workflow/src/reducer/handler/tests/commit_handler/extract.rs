@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_extract_commit_xml_emits_missing_event_when_absent() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -49,6 +50,8 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

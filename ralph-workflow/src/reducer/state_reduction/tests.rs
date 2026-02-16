@@ -96,3 +96,7 @@ mod awaiting_dev_fix;
 // Commit phase reducer tests
 #[path = "tests/commit_phase.rs"]
 mod commit_phase;
+
+// Cloud push retry semantics tests
+#[path = "tests/cloud_push_retry.rs"]
+mod cloud_push_retry;

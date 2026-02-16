@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // Regression: analysis should still run even when PLAN.md is missing or git diff cannot
     // be generated. These inputs should be substituted with placeholders.
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
@@ -52,6 +53,8 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
     let mut handler = MainEffectHandler::new(PipelineState {
         phase: crate::reducer::event::PipelinePhase::Development,
@@ -86,6 +89,7 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
 
 #[test]
 fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // When git diff generation succeeds, the handler should still write/update
     // `.agent/DIFF.backup` as a best-effort fallback for prompt materialization.
     let workspace = MemoryWorkspace::new_test()
@@ -125,6 +129,8 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
     let mut handler = MainEffectHandler::new(PipelineState {
         phase: crate::reducer::event::PipelinePhase::Development,

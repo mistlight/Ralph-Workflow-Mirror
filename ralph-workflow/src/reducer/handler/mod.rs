@@ -114,6 +114,7 @@ mod agent;
 mod analysis;
 mod chain;
 mod checkpoint;
+mod cloud;
 mod commit;
 mod context;
 mod development;
@@ -450,6 +451,25 @@ impl MainEffectHandler {
             Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
                 Self::emit_completion_marker_and_terminate(ctx, is_failure, reason)
             }
+
+            // Cloud mode effects - only executed when cloud mode is enabled
+            Effect::ConfigureGitAuth { auth_method } => {
+                self.handle_configure_git_auth(ctx, auth_method)
+            }
+
+            Effect::PushToRemote {
+                remote,
+                branch,
+                force,
+                commit_sha,
+            } => self.handle_push_to_remote(ctx, remote, branch, force, commit_sha),
+
+            Effect::CreatePullRequest {
+                base_branch,
+                head_branch,
+                title,
+                body,
+            } => self.handle_create_pull_request(ctx, base_branch, head_branch, title, body),
         }
     }
 }

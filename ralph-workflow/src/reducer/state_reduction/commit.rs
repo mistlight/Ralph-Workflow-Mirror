@@ -12,6 +12,8 @@ use crate::reducer::event::*;
 use crate::reducer::state::*;
 
 pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineState {
+    const MAX_CONSECUTIVE_PUSH_FAILURES: u32 = 3;
+
     match event {
         CommitEvent::GenerationStarted => PipelineState {
             commit: CommitState::Generating {
@@ -176,6 +178,14 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             } else {
                 state.continuation.clone()
             };
+
+            // Cloud mode: mark commit as pending push
+            let pending_push = if state.cloud_config.enabled {
+                Some(hash.clone())
+            } else {
+                None
+            };
+
             PipelineState {
                 commit: CommitState::Committed { hash },
                 phase: next_phase,
@@ -187,9 +197,54 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 agent_chain,
                 continuation,
                 metrics: state.metrics.increment_commits_created_total(),
+                // Cloud mode: Set pending push
+                pending_push_commit: pending_push,
+                push_retry_count: 0,
+                last_push_error: None,
                 ..state
             }
         }
+
+        CommitEvent::GitAuthConfigured => PipelineState {
+            git_auth_configured: true,
+            ..state
+        },
+
+        CommitEvent::PushCompleted { commit_sha, .. } => PipelineState {
+            pending_push_commit: None,
+            push_count: state.push_count + 1,
+            push_retry_count: 0,
+            last_push_error: None,
+            last_pushed_commit: Some(commit_sha),
+            ..state
+        },
+
+        CommitEvent::PushFailed { error, .. } => {
+            let error = crate::cloud::redaction::redact_secrets(&error);
+            let mut next = PipelineState {
+                push_retry_count: state.push_retry_count.saturating_add(1),
+                last_push_error: Some(error),
+                ..state
+            };
+
+            if next.push_retry_count >= MAX_CONSECUTIVE_PUSH_FAILURES {
+                if let Some(commit) = next.pending_push_commit.take() {
+                    next.unpushed_commits.push(commit);
+                }
+                next.push_retry_count = 0;
+            }
+
+            next
+        }
+
+        CommitEvent::PullRequestCreated { url, number } => PipelineState {
+            pr_created: true,
+            pr_url: Some(url),
+            pr_number: Some(number),
+            ..state
+        },
+
+        CommitEvent::PullRequestFailed { .. } => state,
         CommitEvent::GenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
             commit_prompt_prepared: false,

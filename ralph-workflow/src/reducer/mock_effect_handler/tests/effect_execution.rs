@@ -111,6 +111,7 @@ fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -129,6 +130,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -184,6 +187,7 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -202,6 +206,8 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -431,6 +437,7 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let cloud_config = crate::config::types::CloudConfig::disabled();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -450,6 +457,8 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut state = PipelineState::initial(1, 0);
@@ -509,6 +518,7 @@ fn mock_execute_save_checkpoint_captures_effect_once() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let cloud_config = crate::config::types::CloudConfig::disabled();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -528,6 +538,8 @@ fn mock_execute_save_checkpoint_captures_effect_once() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -578,6 +590,7 @@ fn mock_execute_emit_completion_marker_captures_effect_once() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+    let cloud_config = crate::config::types::CloudConfig::disabled();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -597,6 +610,8 @@ fn mock_execute_emit_completion_marker_captures_effect_once() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState::initial(1, 0);

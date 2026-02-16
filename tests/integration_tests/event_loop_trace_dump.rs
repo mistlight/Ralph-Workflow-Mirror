@@ -42,6 +42,7 @@ struct Fixture {
     repo_root: PathBuf,
     workspace: Arc<MemoryWorkspace>,
     run_log_context: ralph_workflow::logging::RunLogContext,
+    cloud_config: ralph_workflow::config::CloudConfig,
 }
 
 impl Fixture {
@@ -68,6 +69,7 @@ impl Fixture {
             repo_root,
             workspace,
             run_log_context,
+            cloud_config: ralph_workflow::config::CloudConfig::disabled(),
         }
     }
 
@@ -97,6 +99,7 @@ impl Fixture {
             repo_root,
             workspace,
             run_log_context,
+            cloud_config: ralph_workflow::config::CloudConfig::disabled(),
         }
     }
 
@@ -120,6 +123,8 @@ impl Fixture {
             repo_root: Path::new(&self.repo_root),
             workspace: self.workspace.as_ref(),
             run_log_context: &self.run_log_context,
+            cloud_reporter: None,
+            cloud_config: &self.cloud_config,
         }
     }
 }

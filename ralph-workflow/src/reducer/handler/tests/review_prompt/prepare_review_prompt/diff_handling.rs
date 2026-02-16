@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untracked() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -56,6 +57,8 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -94,6 +97,7 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
 
 #[test]
 fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let large_diff = "d".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 1);
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -132,6 +136,8 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -162,6 +168,7 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
 
 #[test]
 fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_instructions() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -198,6 +205,8 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -241,6 +250,7 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
 
 #[test]
 fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_fallback() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -276,6 +286,8 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

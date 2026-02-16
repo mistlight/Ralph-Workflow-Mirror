@@ -28,6 +28,7 @@ struct TestFixture {
     repo_root: PathBuf,
     workspace: MemoryWorkspace,
     run_log_context: crate::logging::RunLogContext,
+    cloud_config: crate::config::types::CloudConfig,
 }
 
 impl TestFixture {
@@ -49,6 +50,7 @@ impl TestFixture {
             repo_root,
             workspace,
             run_log_context,
+            cloud_config: crate::config::types::CloudConfig::disabled(),
         }
     }
 
@@ -71,12 +73,15 @@ impl TestFixture {
             repo_root: self.repo_root.as_path(),
             workspace: &self.workspace,
             run_log_context: &self.run_log_context,
+            cloud_reporter: None,
+            cloud_config: &self.cloud_config,
         }
     }
 }
 
 #[test]
 fn test_validate_and_process_issues_xml_archives_and_writes_markdown() {
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     let xml_content = r#"<ralph-issues>
  <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
  </ralph-issues>"#;
@@ -125,6 +130,7 @@ fn test_validate_and_process_issues_xml_archives_and_writes_markdown() {
 
 #[test]
 fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -159,6 +165,8 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let _ =
@@ -175,6 +183,7 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
 
 #[test]
 fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "# Prompt\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt\n")
@@ -213,6 +222,8 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let resume_ctx: Option<&crate::checkpoint::restore::ResumeContext> = None;
@@ -238,6 +249,7 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
 
 #[test]
 fn test_run_review_pass_errors_on_missing_template_variables() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("review_xml.txt");
     fs::write(
@@ -278,6 +290,8 @@ fn test_run_review_pass_errors_on_missing_template_variables() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let err =
@@ -294,6 +308,7 @@ fn test_run_review_pass_errors_on_missing_template_variables() {
 
 #[test]
 fn test_run_fix_pass_errors_on_missing_template_variables() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("fix_mode_xml.txt");
     fs::write(
@@ -338,6 +353,8 @@ fn test_run_fix_pass_errors_on_missing_template_variables() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let resume_ctx: Option<&crate::checkpoint::restore::ResumeContext> = None;

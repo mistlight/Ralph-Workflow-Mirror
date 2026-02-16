@@ -369,6 +369,89 @@ pub struct PipelineState {
     /// Prevents infinite loops when checking for uncommitted changes before Complete/Interrupted.
     #[serde(default)]
     pub pre_termination_commit_checked: bool,
+
+    // ========================================================================
+    // Cloud Mode State Fields (INTERNAL USE ONLY)
+    // ========================================================================
+    //
+    // These fields are only populated when cloud mode is enabled (internal env-config).
+    // In CLI mode, they remain in their default (None/false) state and are not used.
+    //
+    // Cloud mode is environment-variable only and not exposed to users.
+    /// Cloud configuration (redacted) for pure orchestration.
+    ///
+    /// This is a checkpoint-safe view (no secrets) derived from runtime cloud config.
+    /// When enabled=false, all cloud-specific effects are skipped.
+    #[serde(default)]
+    pub cloud_config: crate::config::CloudStateConfig,
+
+    /// Commit SHA pending push (cloud mode only, None in CLI mode).
+    ///
+    /// Set when CommitCreated event is reduced in cloud mode.
+    /// Cleared when CommitEvent::PushCompleted is reduced.
+    /// Used by orchestration to emit PushToRemote effects.
+    #[serde(default)]
+    pub pending_push_commit: Option<String>,
+
+    /// Whether git auth has been configured this run (cloud mode only).
+    ///
+    /// Set to true when CommitEvent::GitAuthConfigured is reduced.
+    /// Used to avoid re-configuring authentication on every push.
+    #[serde(default)]
+    pub git_auth_configured: bool,
+
+    /// Whether PR has been created (cloud mode only).
+    ///
+    /// Set to true when CommitEvent::PullRequestCreated is reduced.
+    /// Prevents duplicate PR creation attempts.
+    #[serde(default)]
+    pub pr_created: bool,
+
+    /// URL of created PR (cloud mode only).
+    ///
+    /// Populated when CommitEvent::PullRequestCreated is reduced.
+    /// Used for reporting and observability.
+    #[serde(default)]
+    pub pr_url: Option<String>,
+
+    /// Count of successful push operations (cloud mode only).
+    ///
+    /// Incremented when CommitEvent::PushCompleted is reduced.
+    /// Used for metrics and observability.
+    #[serde(default)]
+    pub push_count: u32,
+
+    /// Consecutive push failure count for the current pending commit.
+    ///
+    /// Reset on CommitEvent::PushCompleted or when the pending push is cleared.
+    #[serde(default)]
+    pub push_retry_count: u32,
+
+    /// Last push error message (cloud mode only).
+    ///
+    /// Used for completion reporting and observability. Must not contain secrets.
+    #[serde(default)]
+    pub last_push_error: Option<String>,
+
+    /// Commits that failed to push after exhausting retries.
+    ///
+    /// This is used for completion reporting so failures are not silent.
+    #[serde(default)]
+    pub unpushed_commits: Vec<String>,
+
+    /// SHA of the last successfully pushed commit (cloud mode only).
+    ///
+    /// Updated when CommitEvent::PushCompleted is reduced.
+    /// Used for observability and debugging.
+    #[serde(default)]
+    pub last_pushed_commit: Option<String>,
+
+    /// PR number for the created pull request (cloud mode only).
+    ///
+    /// Populated when CommitEvent::PullRequestCreated is reduced.
+    /// Used for reporting and observability.
+    #[serde(default)]
+    pub pr_number: Option<u32>,
 }
 
 impl PipelineState {
@@ -488,6 +571,18 @@ impl PipelineState {
             interrupted_by_user: false,
             termination_resume_phase: None,
             pre_termination_commit_checked: false,
+            // Cloud mode fields (all default/disabled)
+            cloud_config: crate::config::CloudStateConfig::disabled(),
+            pending_push_commit: None,
+            git_auth_configured: false,
+            pr_created: false,
+            pr_url: None,
+            push_count: 0,
+            push_retry_count: 0,
+            last_push_error: None,
+            unpushed_commits: Vec::new(),
+            last_pushed_commit: None,
+            pr_number: None,
         }
     }
 

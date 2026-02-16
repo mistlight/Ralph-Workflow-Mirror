@@ -6,6 +6,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_prepare_development_prompt_emits_template_invalid_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // Test that {{}} braces in PROMPT.md content don't cause false positive validation errors.
     //
     // With the new log-based validation (vs old regex-based), template values containing
@@ -52,6 +53,8 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -82,6 +85,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
 
 #[test]
 fn test_prepare_development_prompt_emits_template_rendered_on_validation_failure() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("developer_iteration_xml.txt");
     fs::write(
@@ -128,6 +132,8 @@ fn test_prepare_development_prompt_emits_template_rendered_on_validation_failure
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -168,6 +174,7 @@ fn test_prepare_development_prompt_emits_template_rendered_on_validation_failure
 
 #[test]
 fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -213,6 +220,8 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -251,6 +260,7 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
 
 #[test]
 fn test_prepare_development_prompt_detects_unresolved_partial() {
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     // Test that unresolved placeholders in the template itself (not in PROMPT/PLAN content)
     // would be detected. This requires a custom template with an unresolved partial.
     // Since the default templates are well-formed, we skip this test.
@@ -259,6 +269,7 @@ fn test_prepare_development_prompt_detects_unresolved_partial() {
 
 #[test]
 fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "# Prompt\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -296,6 +307,8 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

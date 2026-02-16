@@ -3,6 +3,7 @@ use super::{run_event_loop_with_handler, EventLoopConfig};
 
 #[test]
 fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -52,6 +53,8 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -76,6 +79,7 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
 
 #[test]
 fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev_iteration() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -125,6 +129,8 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -161,6 +167,7 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
 
 #[test]
 fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -210,6 +217,8 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -258,6 +267,7 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
 
 #[test]
 fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -307,6 +317,8 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -351,6 +363,7 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
 
 #[test]
 fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_reviews_nonzero() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -400,6 +413,8 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -430,6 +445,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
 
 #[test]
 fn test_event_trace_buffer_keeps_last_n_entries() {
+    let _cloud_config = crate::config::types::CloudConfig::disabled();
     fn entry(iteration: usize) -> EventTraceEntry {
         EventTraceEntry {
             iteration,

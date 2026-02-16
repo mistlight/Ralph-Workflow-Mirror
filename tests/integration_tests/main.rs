@@ -44,6 +44,7 @@ mod ccs_streaming_spam_all_deltas;
 mod ccs_wrapping_comprehensive;
 mod ccs_wrapping_waterfall_reproduction;
 mod cli;
+mod cloud;
 mod codex_duplicate_item_completed;
 mod codex_reasoning_spam_regression;
 mod commit;
