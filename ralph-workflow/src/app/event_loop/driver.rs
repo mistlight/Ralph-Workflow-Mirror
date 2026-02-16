@@ -151,35 +151,23 @@ where
             }
         };
 
+        let crate::reducer::effect::EffectResult {
+            event,
+            additional_events,
+            ui_events,
+        } = result;
+
         // Display UI events (does not affect state)
-        for ui_event in &result.ui_events {
+        for ui_event in &ui_events {
             ctx.logger
                 .info(&crate::rendering::render_ui_event(ui_event));
         }
 
-        // Cloud progress reporting - ONLY when enabled
-        // When cloud_reporter is None (CLI mode), nothing happens here
-        if let Some(reporter) = ctx.cloud_reporter {
-            for ui_event in &result.ui_events {
-                if let Some(update) =
-                    ui_event_to_progress_update(ui_event, &state, ctx.cloud_config)
-                {
-                    if let Err(e) = reporter.report_progress(&update) {
-                        if !ctx.cloud_config.graceful_degradation {
-                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", e));
-                        }
-                        ctx.logger
-                            .warn(&format!("Cloud progress report failed: {}", e));
-                    }
-                }
-            }
-        }
-
-        let event_str = format!("{:?}", result.event);
+        let event_str = format!("{:?}", event);
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
         // Apply pipeline event to state (reducer remains pure)
-        let new_state = reduce(state, result.event.clone());
+        let new_state = reduce(state, event.clone());
 
         // Log to event loop log (best-effort, does not affect correctness)
         log_effect_execution(
@@ -188,7 +176,7 @@ where
             &new_state,
             &effect_str,
             &event_str,
-            &result.additional_events,
+            &additional_events,
             duration_ms,
         );
 
@@ -203,9 +191,9 @@ where
         events_processed += 1;
 
         // Apply additional pipeline events in order.
-        for event in result.additional_events {
-            let event_str = format!("{:?}", event);
-            let additional_state = reduce(state, event);
+        for additional_event in additional_events {
+            let event_str = format!("{:?}", additional_event);
+            let additional_state = reduce(state, additional_event);
             trace.push(build_trace_entry(
                 events_processed,
                 &additional_state,
@@ -228,6 +216,24 @@ where
             ..state
         };
         handler.update_state(state.clone());
+
+        // Cloud progress reporting - ONLY when enabled.
+        // Report based on the post-reduction state so phase/iteration values do not lag.
+        if let Some(reporter) = ctx.cloud_reporter {
+            for ui_event in &ui_events {
+                if let Some(update) =
+                    ui_event_to_progress_update(ui_event, &state, ctx.cloud_config)
+                {
+                    if let Err(e) = reporter.report_progress(&update) {
+                        if !ctx.cloud_config.graceful_degradation {
+                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", e));
+                        }
+                        ctx.logger
+                            .warn(&format!("Cloud progress report failed: {}", e));
+                    }
+                }
+            }
+        }
 
         // Check completion AFTER effect execution and state update.
         // This ensures that transitions to terminal phases (e.g., Interrupted)
@@ -422,10 +428,17 @@ fn ui_event_to_progress_update(
 
     let _run_id = cloud_config.run_id.clone()?;
 
+    let mut iteration = Some(state.iteration);
+    let mut total_iterations = None;
+    let mut review_pass = Some(state.reviewer_pass);
+    let mut total_review_passes = None;
+    let mut previous_phase = state.previous_phase.as_ref().map(|p| format!("{:?}", p));
+
     let (message, event_type) = match ui_event {
         UIEvent::PhaseTransition { from, to } => {
             let from_str = from.as_ref().map(|p| format!("{:?}", p));
             let to_str = format!("{:?}", to);
+            previous_phase = from_str.clone();
             let message = format!(
                 "Phase transition: {} -> {}",
                 from_str.as_deref().unwrap_or("None"),
@@ -441,18 +454,26 @@ fn ui_event_to_progress_update(
         }
         UIEvent::IterationProgress { current, total } => {
             let message = format!("Development iteration {}/{}", current, total);
+            iteration = Some(*current);
+            total_iterations = Some(*total);
             (
                 message,
-                ProgressEventType::IterationStarted {
-                    iteration: *current,
+                ProgressEventType::IterationProgress {
+                    current: *current,
+                    total: *total,
                 },
             )
         }
         UIEvent::ReviewProgress { pass, total } => {
             let message = format!("Review pass {}/{}", pass, total);
+            review_pass = Some(*pass);
+            total_review_passes = Some(*total);
             (
                 message,
-                ProgressEventType::ReviewPassStarted { pass: *pass },
+                ProgressEventType::ReviewProgress {
+                    pass: *pass,
+                    total: *total,
+                },
             )
         }
         UIEvent::AgentActivity {
@@ -476,14 +497,89 @@ fn ui_event_to_progress_update(
     Some(ProgressUpdate {
         timestamp: chrono::Utc::now().to_rfc3339(),
         phase: format!("{:?}", state.phase),
-        previous_phase: state.previous_phase.as_ref().map(|p| format!("{:?}", p)),
-        iteration: Some(state.iteration),
-        // Note: total iterations and review passes are not tracked in state,
-        // they would need to be added to metrics if exact totals are required
-        total_iterations: None,
-        review_pass: Some(state.reviewer_pass),
-        total_review_passes: None,
+        previous_phase,
+        iteration,
+        total_iterations,
+        review_pass,
+        total_review_passes,
         message,
         event_type,
     })
+}
+
+#[cfg(test)]
+mod progress_mapping_tests {
+    use super::ui_event_to_progress_update;
+    use crate::config::types::{CloudConfig, GitAuthMethod, GitRemoteConfig};
+    use crate::reducer::event::PipelinePhase;
+    use crate::reducer::state::PipelineState;
+    use crate::reducer::ui_event::UIEvent;
+
+    fn cloud_config_for_test() -> CloudConfig {
+        CloudConfig {
+            enabled: true,
+            api_url: Some("https://api.example.com".to_string()),
+            api_token: Some("secret".to_string()),
+            run_id: Some("run_1".to_string()),
+            heartbeat_interval_secs: 30,
+            graceful_degradation: true,
+            git_remote: GitRemoteConfig {
+                auth_method: GitAuthMethod::SshKey { key_path: None },
+                push_branch: Some("main".to_string()),
+                create_pr: false,
+                pr_title_template: None,
+                pr_body_template: None,
+                pr_base_branch: None,
+                force_push: false,
+                remote_name: "origin".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn iteration_progress_maps_to_iteration_progress_event_type() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(10, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 99;
+
+        let ui = UIEvent::IterationProgress {
+            current: 2,
+            total: 5,
+        };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert_eq!(update.iteration, Some(2));
+        assert_eq!(update.total_iterations, Some(5));
+
+        match update.event_type {
+            crate::cloud::types::ProgressEventType::IterationProgress { current, total } => {
+                assert_eq!(current, 2);
+                assert_eq!(total, 5);
+            }
+            other => panic!("unexpected event type: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn review_progress_maps_to_review_progress_event_type() {
+        let cloud = cloud_config_for_test();
+        let mut state = PipelineState::initial(10, 0);
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 99;
+
+        let ui = UIEvent::ReviewProgress { pass: 1, total: 3 };
+        let update = ui_event_to_progress_update(&ui, &state, &cloud).expect("update");
+
+        assert_eq!(update.review_pass, Some(1));
+        assert_eq!(update.total_review_passes, Some(3));
+
+        match update.event_type {
+            crate::cloud::types::ProgressEventType::ReviewProgress { pass, total } => {
+                assert_eq!(pass, 1);
+                assert_eq!(total, 3);
+            }
+            other => panic!("unexpected event type: {other:?}"),
+        }
+    }
 }

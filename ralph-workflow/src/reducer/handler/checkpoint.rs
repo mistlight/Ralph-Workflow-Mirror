@@ -82,6 +82,11 @@ fn save_checkpoint_from_state(
         checkpoint.recovery_escalation_level = state.recovery_escalation_level;
         checkpoint.failed_phase_for_recovery = state.failed_phase_for_recovery;
 
+        if state.cloud_config.enabled {
+            checkpoint.cloud_state =
+                Some(crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(state));
+        }
+
         let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
     }
 

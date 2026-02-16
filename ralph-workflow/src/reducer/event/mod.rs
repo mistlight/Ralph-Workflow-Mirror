@@ -476,13 +476,6 @@ mod tests {
                 LifecycleEvent::Resumed { .. } => "resumed",
                 LifecycleEvent::Completed => "completed",
                 LifecycleEvent::GitignoreEntriesEnsured { .. } => "gitignore_ensured",
-                LifecycleEvent::GitAuthConfigured => "git_auth_configured",
-                LifecycleEvent::PushCompleted { .. } => "push_completed",
-                LifecycleEvent::PushFailed { .. } => "push_failed",
-                LifecycleEvent::PullRequestCreated { .. } => "pull_request_created",
-                LifecycleEvent::PullRequestFailed { .. } => "pull_request_failed",
-                LifecycleEvent::CloudProgressReported => "cloud_progress_reported",
-                LifecycleEvent::CloudProgressFailed { .. } => "cloud_progress_failed",
                 // DO NOT ADD _ WILDCARD - intentionally exhaustive
             }
         }

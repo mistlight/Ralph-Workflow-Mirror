@@ -43,6 +43,60 @@ impl PipelineState {
             .map(|h| h.steps)
             .unwrap_or_default();
 
+        let cloud_state = checkpoint.cloud_state.take();
+        let (
+            cloud_config,
+            pending_push_commit,
+            git_auth_configured,
+            pr_created,
+            pr_url,
+            pr_number,
+            push_count,
+            push_retry_count,
+            last_push_error,
+            unpushed_commits,
+            last_pushed_commit,
+        ) = if let Some(cs) = cloud_state.as_ref() {
+            // Preserve checkpoint-safe cloud state for correct resume semantics.
+            // Note: git auth configuration can be re-run safely; however, restoring
+            // `git_auth_configured=true` for SSH key paths would skip the env-var
+            // setup in a new process. Reset it in that case.
+            let git_auth_configured = match &cs.cloud_config.git_remote.auth_method {
+                crate::config::GitAuthStateMethod::SshKey { key_path } if key_path.is_some() => {
+                    false
+                }
+                _ => cs.git_auth_configured,
+            };
+
+            (
+                cs.cloud_config.clone(),
+                cs.pending_push_commit.clone(),
+                git_auth_configured,
+                cs.pr_created,
+                cs.pr_url.clone(),
+                cs.pr_number,
+                cs.push_count,
+                cs.push_retry_count,
+                cs.last_push_error.clone(),
+                cs.unpushed_commits.clone(),
+                cs.last_pushed_commit.clone(),
+            )
+        } else {
+            (
+                crate::config::CloudStateConfig::disabled(),
+                None,
+                false,
+                false,
+                None,
+                None,
+                0,
+                0,
+                None,
+                Vec::new(),
+                None,
+            )
+        };
+
         let mut state = PipelineState {
             phase: map_checkpoint_phase(checkpoint.phase),
             previous_phase: None,
@@ -133,18 +187,18 @@ impl PipelineState {
                     ..RunMetrics::default()
                 }
             },
-            // Cloud mode fields (all default/disabled when loading from checkpoint)
-            cloud_config: crate::config::CloudStateConfig::disabled(),
-            pending_push_commit: None,
-            git_auth_configured: false,
-            pr_created: false,
-            pr_url: None,
-            push_count: 0,
-            push_retry_count: 0,
-            last_push_error: None,
-            unpushed_commits: Vec::new(),
-            last_pushed_commit: None,
-            pr_number: None,
+            // Cloud mode fields (checkpoint-safe, credential-free)
+            cloud_config,
+            pending_push_commit,
+            git_auth_configured,
+            pr_created,
+            pr_url,
+            push_count,
+            push_retry_count,
+            last_push_error,
+            unpushed_commits,
+            last_pushed_commit,
+            pr_number,
         };
 
         let bounded_steps =
@@ -403,5 +457,98 @@ mod tests {
             state.failed_phase_for_recovery,
             Some(PipelinePhase::CommitMessage)
         );
+    }
+
+    #[test]
+    fn checkpoint_resume_preserves_cloud_state_when_present() {
+        use crate::checkpoint::state::CloudCheckpointState;
+        use crate::checkpoint::state::{AgentConfigSnapshot, CliArgsSnapshot, RebaseState};
+        use crate::checkpoint::{CheckpointBuilder, PipelinePhase as CheckpointPhase};
+        use crate::config::{CloudStateConfig, GitAuthStateMethod, GitRemoteStateConfig};
+
+        let mut checkpoint = CheckpointBuilder::new()
+            .phase(CheckpointPhase::Development, 1, 3)
+            .reviewer_pass(0, 1)
+            .agents("dev", "rev")
+            .cli_args(CliArgsSnapshot {
+                developer_iters: 3,
+                reviewer_reviews: 1,
+                review_depth: None,
+                isolation_mode: true,
+                verbosity: 2,
+                show_streaming_metrics: false,
+                reviewer_json_parser: None,
+            })
+            .developer_config(AgentConfigSnapshot {
+                name: "dev".to_string(),
+                cmd: "dev".to_string(),
+                output_flag: "-o".to_string(),
+                yolo_flag: None,
+                can_commit: true,
+                model_override: None,
+                provider_override: None,
+                context_level: 1,
+            })
+            .reviewer_config(AgentConfigSnapshot {
+                name: "rev".to_string(),
+                cmd: "rev".to_string(),
+                output_flag: "-o".to_string(),
+                yolo_flag: None,
+                can_commit: true,
+                model_override: None,
+                provider_override: None,
+                context_level: 1,
+            })
+            .rebase_state(RebaseState::default())
+            .git_identity(None, None)
+            .build()
+            .expect("checkpoint should build");
+
+        checkpoint.cloud_state = Some(CloudCheckpointState {
+            cloud_config: CloudStateConfig {
+                enabled: true,
+                api_url: Some("https://api.example.com".to_string()),
+                run_id: Some("run_123".to_string()),
+                heartbeat_interval_secs: 30,
+                graceful_degradation: true,
+                git_remote: GitRemoteStateConfig {
+                    auth_method: GitAuthStateMethod::SshKey { key_path: None },
+                    push_branch: "feature/x".to_string(),
+                    create_pr: true,
+                    pr_title_template: None,
+                    pr_body_template: None,
+                    pr_base_branch: Some("main".to_string()),
+                    force_push: false,
+                    remote_name: "origin".to_string(),
+                },
+            },
+            pending_push_commit: Some("abc123".to_string()),
+            git_auth_configured: true,
+            pr_created: true,
+            pr_url: Some("https://example.com/pr/1".to_string()),
+            pr_number: Some(1),
+            push_count: 2,
+            push_retry_count: 1,
+            last_push_error: Some("Git push failed: https://<redacted>@github.com".to_string()),
+            unpushed_commits: vec!["deadbeef".to_string()],
+            last_pushed_commit: Some("beadfeed".to_string()),
+        });
+
+        let state = PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, 1000);
+
+        assert!(state.cloud_config.enabled);
+        assert_eq!(state.pending_push_commit.as_deref(), Some("abc123"));
+        assert!(state.git_auth_configured);
+        assert!(state.pr_created);
+        assert_eq!(state.pr_url.as_deref(), Some("https://example.com/pr/1"));
+        assert_eq!(state.pr_number, Some(1));
+        assert_eq!(state.push_count, 2);
+        assert_eq!(state.push_retry_count, 1);
+        assert!(state
+            .last_push_error
+            .as_deref()
+            .is_some_and(|e| e.contains("<redacted>")));
+        assert!(state.unpushed_commits.iter().any(|c| c == "deadbeef"));
+        assert_eq!(state.last_pushed_commit.as_deref(), Some("beadfeed"));
     }
 }

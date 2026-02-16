@@ -11,7 +11,7 @@
 //! to verify orchestration logic without requiring full pipeline execution.
 
 use ralph_workflow::config::{CloudStateConfig, GitAuthMethod, GitRemoteConfig};
-use ralph_workflow::reducer::event::{LifecycleEvent, PipelineEvent};
+use ralph_workflow::reducer::event::{CommitEvent, PipelineEvent};
 use ralph_workflow::reducer::state::PipelineState;
 use serial_test::serial;
 
@@ -232,7 +232,7 @@ fn test_git_auth_configured_event_updates_state() {
         state.cloud_config = cloud_config;
         state.git_auth_configured = false;
 
-        let event = PipelineEvent::Lifecycle(LifecycleEvent::GitAuthConfigured);
+        let event = PipelineEvent::Commit(CommitEvent::GitAuthConfigured);
         let new_state = ralph_workflow::reducer::reduce(state, event);
 
         assert!(
@@ -251,7 +251,7 @@ fn test_push_completed_clears_pending_push() {
         state.pending_push_commit = Some("abc123".to_string());
         state.push_count = 0;
 
-        let event = PipelineEvent::Lifecycle(LifecycleEvent::PushCompleted {
+        let event = PipelineEvent::Commit(CommitEvent::PushCompleted {
             remote: "origin".to_string(),
             branch: "main".to_string(),
             commit_sha: "abc123".to_string(),
@@ -275,7 +275,7 @@ fn test_push_failed_keeps_pending_push_for_retry() {
         state.pending_push_commit = Some("abc123".to_string());
         state.push_count = 0;
 
-        let event = PipelineEvent::Lifecycle(LifecycleEvent::PushFailed {
+        let event = PipelineEvent::Commit(CommitEvent::PushFailed {
             remote: "origin".to_string(),
             branch: "main".to_string(),
             error: "Network timeout".to_string(),
@@ -302,7 +302,7 @@ fn test_pr_created_event_updates_state() {
         state.cloud_config = cloud_config;
         state.pr_created = false;
 
-        let event = PipelineEvent::Lifecycle(LifecycleEvent::PullRequestCreated {
+        let event = PipelineEvent::Commit(CommitEvent::PullRequestCreated {
             url: "https://github.com/user/repo/pull/123".to_string(),
             number: 123,
         });

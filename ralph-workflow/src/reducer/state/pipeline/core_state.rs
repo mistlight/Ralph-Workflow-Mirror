@@ -354,7 +354,7 @@ pub struct PipelineState {
     // Cloud Mode State Fields (INTERNAL USE ONLY)
     // ========================================================================
     //
-    // These fields are only populated when cloud mode is enabled (RALPH_CLOUD_MODE=true).
+    // These fields are only populated when cloud mode is enabled (internal env-config).
     // In CLI mode, they remain in their default (None/false) state and are not used.
     //
     // Cloud mode is environment-variable only and not exposed to users.
@@ -368,42 +368,42 @@ pub struct PipelineState {
     /// Commit SHA pending push (cloud mode only, None in CLI mode).
     ///
     /// Set when CommitCreated event is reduced in cloud mode.
-    /// Cleared when PushCompleted event is reduced.
+    /// Cleared when CommitEvent::PushCompleted is reduced.
     /// Used by orchestration to emit PushToRemote effects.
     #[serde(default)]
     pub pending_push_commit: Option<String>,
 
     /// Whether git auth has been configured this run (cloud mode only).
     ///
-    /// Set to true when GitAuthConfigured event is reduced.
+    /// Set to true when CommitEvent::GitAuthConfigured is reduced.
     /// Used to avoid re-configuring authentication on every push.
     #[serde(default)]
     pub git_auth_configured: bool,
 
     /// Whether PR has been created (cloud mode only).
     ///
-    /// Set to true when PullRequestCreated event is reduced.
+    /// Set to true when CommitEvent::PullRequestCreated is reduced.
     /// Prevents duplicate PR creation attempts.
     #[serde(default)]
     pub pr_created: bool,
 
     /// URL of created PR (cloud mode only).
     ///
-    /// Populated when PullRequestCreated event is reduced.
+    /// Populated when CommitEvent::PullRequestCreated is reduced.
     /// Used for reporting and observability.
     #[serde(default)]
     pub pr_url: Option<String>,
 
     /// Count of successful push operations (cloud mode only).
     ///
-    /// Incremented when PushCompleted event is reduced.
+    /// Incremented when CommitEvent::PushCompleted is reduced.
     /// Used for metrics and observability.
     #[serde(default)]
     pub push_count: u32,
 
     /// Consecutive push failure count for the current pending commit.
     ///
-    /// Reset on PushCompleted or when the pending push is cleared.
+    /// Reset on CommitEvent::PushCompleted or when the pending push is cleared.
     #[serde(default)]
     pub push_retry_count: u32,
 
@@ -421,14 +421,14 @@ pub struct PipelineState {
 
     /// SHA of the last successfully pushed commit (cloud mode only).
     ///
-    /// Updated when PushCompleted event is reduced.
+    /// Updated when CommitEvent::PushCompleted is reduced.
     /// Used for observability and debugging.
     #[serde(default)]
     pub last_pushed_commit: Option<String>,
 
     /// PR number for the created pull request (cloud mode only).
     ///
-    /// Populated when PullRequestCreated event is reduced.
+    /// Populated when CommitEvent::PullRequestCreated is reduced.
     /// Used for reporting and observability.
     #[serde(default)]
     pub pr_number: Option<u32>,

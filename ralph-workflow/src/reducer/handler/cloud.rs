@@ -13,7 +13,7 @@
 
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{LifecycleEvent, PipelineEvent};
+use crate::reducer::event::{CommitEvent, PipelineEvent};
 use anyhow::Result;
 
 use super::MainEffectHandler;
@@ -42,12 +42,17 @@ impl MainEffectHandler {
             "ssh-key" => {
                 // Configure SSH key authentication
                 if *param != "default" {
-                    // Set GIT_SSH_COMMAND to use specific key
-                    let ssh_command =
-                        format!("ssh -i {} -o StrictHostKeyChecking=accept-new", param);
-                    std::env::set_var("GIT_SSH_COMMAND", &ssh_command);
-                    ctx.logger
-                        .info(&format!("Set GIT_SSH_COMMAND to use key: {}", param));
+                    // Set GIT_SSH_COMMAND to use specific key.
+                    // Git may execute this via a shell; treat the key path as untrusted.
+                    if let Some(cmd) = build_git_ssh_command(param) {
+                        std::env::set_var("GIT_SSH_COMMAND", &cmd);
+                        ctx.logger
+                            .info("Set GIT_SSH_COMMAND to use provided SSH key");
+                    } else {
+                        ctx.logger.warn(
+                            "Invalid SSH key path for cloud git auth; falling back to default SSH",
+                        );
+                    }
                 } else {
                     // Use default SSH key (SSH_AUTH_SOCK or ~/.ssh/id_rsa)
                     ctx.logger
@@ -79,8 +84,8 @@ impl MainEffectHandler {
             }
         }
 
-        Ok(EffectResult::event(PipelineEvent::Lifecycle(
-            LifecycleEvent::GitAuthConfigured,
+        Ok(EffectResult::event(PipelineEvent::Commit(
+            CommitEvent::GitAuthConfigured,
         )))
     }
 
@@ -147,8 +152,8 @@ impl MainEffectHandler {
             Ok(output) if output.status.success() => {
                 ctx.logger
                     .info(&format!("Successfully pushed to {}/{}", remote, branch));
-                Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                    LifecycleEvent::PushCompleted {
+                Ok(EffectResult::event(PipelineEvent::Commit(
+                    CommitEvent::PushCompleted {
                         remote,
                         branch,
                         commit_sha,
@@ -156,24 +161,25 @@ impl MainEffectHandler {
                 )))
             }
             Ok(output) => {
-                ctx.logger
-                    .warn(&format!("Git push failed: {}", output.stderr));
-                Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                    LifecycleEvent::PushFailed {
+                let error = crate::cloud::redaction::redact_secrets(&output.stderr);
+                ctx.logger.warn(&format!("Git push failed: {error}"));
+                Ok(EffectResult::event(PipelineEvent::Commit(
+                    CommitEvent::PushFailed {
                         remote,
                         branch,
-                        error: output.stderr,
+                        error,
                     },
                 )))
             }
             Err(e) => {
+                let error = crate::cloud::redaction::redact_secrets(&e.to_string());
                 ctx.logger
-                    .warn(&format!("Git push execution failed: {}", e));
-                Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                    LifecycleEvent::PushFailed {
+                    .warn(&format!("Git push execution failed: {error}"));
+                Ok(EffectResult::event(PipelineEvent::Commit(
+                    CommitEvent::PushFailed {
                         remote,
                         branch,
-                        error: e.to_string(),
+                        error,
                     },
                 )))
             }
@@ -225,17 +231,15 @@ impl MainEffectHandler {
                     .and_then(|s| s.parse::<u32>().ok())
                     .unwrap_or(0);
 
-                Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                    LifecycleEvent::PullRequestCreated { url, number },
+                Ok(EffectResult::event(PipelineEvent::Commit(
+                    CommitEvent::PullRequestCreated { url, number },
                 )))
             }
             Ok(output) => {
-                ctx.logger
-                    .warn(&format!("PR creation failed: {}", output.stderr));
-                Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                    LifecycleEvent::PullRequestFailed {
-                        error: output.stderr,
-                    },
+                let error = crate::cloud::redaction::redact_secrets(&output.stderr);
+                ctx.logger.warn(&format!("PR creation failed: {error}"));
+                Ok(EffectResult::event(PipelineEvent::Commit(
+                    CommitEvent::PullRequestFailed { error },
                 )))
             }
             Err(e) => {
@@ -272,29 +276,27 @@ impl MainEffectHandler {
                             .and_then(|s| s.parse::<u32>().ok())
                             .unwrap_or(0);
 
-                        Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                            LifecycleEvent::PullRequestCreated { url, number },
+                        Ok(EffectResult::event(PipelineEvent::Commit(
+                            CommitEvent::PullRequestCreated { url, number },
                         )))
                     }
                     Ok(output) => {
-                        ctx.logger
-                            .warn(&format!("MR creation failed: {}", output.stderr));
-                        Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                            LifecycleEvent::PullRequestFailed {
-                                error: output.stderr,
-                            },
+                        let error = crate::cloud::redaction::redact_secrets(&output.stderr);
+                        ctx.logger.warn(&format!("MR creation failed: {error}"));
+                        Ok(EffectResult::event(PipelineEvent::Commit(
+                            CommitEvent::PullRequestFailed { error },
                         )))
                     }
                     Err(e2) => {
+                        let e = crate::cloud::redaction::redact_secrets(&e.to_string());
+                        let e2 = crate::cloud::redaction::redact_secrets(&e2.to_string());
                         ctx.logger.warn(&format!(
-                            "Neither gh nor glab CLI available: gh error: {}, glab error: {}",
-                            e, e2
+                            "Neither gh nor glab CLI available: gh error: {e}, glab error: {e2}",
                         ));
-                        Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                            LifecycleEvent::PullRequestFailed {
+                        Ok(EffectResult::event(PipelineEvent::Commit(
+                            CommitEvent::PullRequestFailed {
                                 error: format!(
-                                    "Neither gh nor glab CLI available (gh: {}, glab: {})",
-                                    e, e2
+                                    "Neither gh nor glab CLI available (gh: {e}, glab: {e2})",
                                 ),
                             },
                         )))
@@ -303,36 +305,55 @@ impl MainEffectHandler {
             }
         }
     }
+}
 
-    /// Report progress to cloud API.
-    ///
-    /// Sends progress update to cloud reporter if available.
-    pub(super) fn handle_report_cloud_progress(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        update: crate::cloud::types::ProgressUpdate,
-    ) -> Result<EffectResult> {
-        if let Some(reporter) = ctx.cloud_reporter {
-            match reporter.report_progress(&update) {
-                Ok(()) => Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                    LifecycleEvent::CloudProgressReported,
-                ))),
-                Err(e) => {
-                    // Graceful degradation: log but don't fail pipeline
-                    ctx.logger
-                        .warn(&format!("Cloud progress report failed: {}", e));
-                    Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                        LifecycleEvent::CloudProgressFailed {
-                            error: e.to_string(),
-                        },
-                    )))
-                }
-            }
+fn build_git_ssh_command(key_path: &str) -> Option<String> {
+    if key_path.trim().is_empty() {
+        return None;
+    }
+    // Reject control characters that could smuggle new shell tokens.
+    if key_path.contains('\0') || key_path.contains('\n') || key_path.contains('\r') {
+        return None;
+    }
+
+    let escaped = shell_escape_posix(key_path);
+    Some(format!(
+        "ssh -i {escaped} -o StrictHostKeyChecking=accept-new",
+    ))
+}
+
+fn shell_escape_posix(s: &str) -> String {
+    // POSIX shell escaping via single quotes.
+    // Example: abc'def -> 'abc'"'"'def'
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\"'\"'");
         } else {
-            // No cloud reporter configured (CLI mode) - this is a no-op
-            Ok(EffectResult::event(PipelineEvent::Lifecycle(
-                LifecycleEvent::CloudProgressReported,
-            )))
+            out.push(ch);
         }
+    }
+    out.push('\'');
+    out
+}
+
+#[cfg(test)]
+mod shell_escape_tests {
+    use super::{build_git_ssh_command, shell_escape_posix};
+
+    #[test]
+    fn shell_escape_wraps_in_single_quotes() {
+        assert_eq!(shell_escape_posix("/a b"), "'/a b'");
+    }
+
+    #[test]
+    fn shell_escape_handles_single_quotes() {
+        assert_eq!(shell_escape_posix("a'b"), "'a'\"'\"'b'");
+    }
+
+    #[test]
+    fn build_git_ssh_command_rejects_newlines() {
+        assert!(build_git_ssh_command("/tmp/key\n-oProxyCommand=evil").is_none());
     }
 }

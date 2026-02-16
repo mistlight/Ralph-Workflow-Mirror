@@ -153,6 +153,13 @@ pub struct PipelineCheckpoint {
     /// Preserved across checkpoint/resume so recovery returns to the correct phase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed_phase_for_recovery: Option<crate::reducer::event::PipelinePhase>,
+
+    /// Cloud-mode state needed for checkpoint/resume semantics.
+    ///
+    /// This is a checkpoint-safe, redacted view of cloud state: it must not contain
+    /// API tokens, git tokens, or any other credential material.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud_state: Option<CloudCheckpointState>,
 }
 
 impl PipelineCheckpoint {
@@ -203,6 +210,7 @@ impl PipelineCheckpoint {
             dev_fix_attempt_count: 0,
             recovery_escalation_level: 0,
             failed_phase_for_recovery: None,
+            cloud_state: None,
         }
     }
 
@@ -270,6 +278,53 @@ impl PipelineCheckpoint {
 
                 parts.join(" ")
             }
+        }
+    }
+}
+
+/// Cloud-mode checkpoint state.
+///
+/// This is intentionally *credential-free* and safe to persist in checkpoints.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CloudCheckpointState {
+    #[serde(default)]
+    pub cloud_config: crate::config::CloudStateConfig,
+    #[serde(default)]
+    pub pending_push_commit: Option<String>,
+    #[serde(default)]
+    pub git_auth_configured: bool,
+    #[serde(default)]
+    pub pr_created: bool,
+    #[serde(default)]
+    pub pr_url: Option<String>,
+    #[serde(default)]
+    pub pr_number: Option<u32>,
+    #[serde(default)]
+    pub push_count: u32,
+    #[serde(default)]
+    pub push_retry_count: u32,
+    #[serde(default)]
+    pub last_push_error: Option<String>,
+    #[serde(default)]
+    pub unpushed_commits: Vec<String>,
+    #[serde(default)]
+    pub last_pushed_commit: Option<String>,
+}
+
+impl CloudCheckpointState {
+    pub fn from_pipeline_state(state: &crate::reducer::state::PipelineState) -> Self {
+        Self {
+            cloud_config: state.cloud_config.clone(),
+            pending_push_commit: state.pending_push_commit.clone(),
+            git_auth_configured: state.git_auth_configured,
+            pr_created: state.pr_created,
+            pr_url: state.pr_url.clone(),
+            pr_number: state.pr_number,
+            push_count: state.push_count,
+            push_retry_count: state.push_retry_count,
+            last_push_error: state.last_push_error.clone(),
+            unpushed_commits: state.unpushed_commits.clone(),
+            last_pushed_commit: state.last_pushed_commit.clone(),
         }
     }
 }

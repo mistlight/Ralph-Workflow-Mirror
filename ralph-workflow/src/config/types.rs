@@ -282,7 +282,6 @@ pub struct Config {
     /// Cloud configuration - INTERNAL USE ONLY (environment variable only).
     ///
     /// This field is NOT exposed in user-facing documentation or CLI help.
-    /// Cloud operators learn about these env vars from cloud platform docs.
     pub(crate) cloud_config: CloudConfig,
 }
 
@@ -297,17 +296,17 @@ pub struct Config {
 /// Cloud operators learn about these env vars from cloud platform docs.
 #[derive(Debug, Clone, Default)]
 pub struct CloudConfig {
-    /// Enable cloud reporting mode (from RALPH_CLOUD_MODE env var)
+    /// Enable cloud reporting mode (internal env-config).
     pub enabled: bool,
-    /// Cloud API base URL (e.g., "https://api.ralph-cloud.example.com")
+    /// Cloud API base URL.
     pub api_url: Option<String>,
-    /// Bearer token for API authentication
+    /// Bearer token for API authentication.
     pub api_token: Option<String>,
-    /// Run ID assigned by cloud orchestrator
+    /// Run ID assigned by cloud orchestrator.
     pub run_id: Option<String>,
-    /// Heartbeat interval in seconds (default: 30)
+    /// Heartbeat interval in seconds.
     pub heartbeat_interval_secs: u32,
-    /// Whether to continue on API failures (default: true)
+    /// Whether to continue on API failures.
     pub graceful_degradation: bool,
     /// Git remote configuration
     pub git_remote: GitRemoteConfig,
@@ -486,7 +485,7 @@ impl Default for GitRemoteConfig {
 
 impl CloudConfig {
     /// Load cloud config from environment variables ONLY.
-    /// Returns disabled config if RALPH_CLOUD_MODE is not set.
+    /// Returns disabled config when cloud mode is not enabled.
     pub fn from_env() -> Self {
         let enabled = std::env::var("RALPH_CLOUD_MODE")
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")

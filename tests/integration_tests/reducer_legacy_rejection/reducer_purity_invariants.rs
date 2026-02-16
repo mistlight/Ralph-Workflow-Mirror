@@ -506,7 +506,6 @@ fn test_effects_are_single_task() {
                 Effect::ConfigureGitAuth { .. } => EffectTask::EnsureGitignoreEntries, // Reuse existing task
                 Effect::PushToRemote { .. } => EffectTask::CreateCommit, // Reuse existing task
                 Effect::CreatePullRequest { .. } => EffectTask::CreateCommit, // Reuse existing task
-                Effect::ReportCloudProgress { .. } => EffectTask::SaveCheckpoint, // Reuse existing task
             }
         }
 
@@ -661,11 +660,11 @@ fn test_effects_are_single_task() {
             let _task = describe_effect_task(effect);
         }
 
-        // Verify we covered all variants (update when Effect changes)
+        // Keep this check in sync with the local `effects` list above.
         assert_eq!(
             effects.len(),
             68,
-            "Expected 68 Effect variants; update this test if variants were added or removed"
+            "Expected 68 sample effects; update this test if the list changes"
         );
     });
 }

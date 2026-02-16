@@ -466,10 +466,6 @@ impl MainEffectHandler {
                 title,
                 body,
             } => self.handle_create_pull_request(ctx, base_branch, head_branch, title, body),
-
-            Effect::ReportCloudProgress { update } => {
-                self.handle_report_cloud_progress(ctx, update)
-            }
         }
     }
 }

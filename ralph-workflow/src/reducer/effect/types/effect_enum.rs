@@ -657,15 +657,4 @@ pub enum Effect {
         /// PR body/description
         body: String,
     },
-
-    /// Report progress to cloud API (cloud mode only).
-    ///
-    /// This effect is emitted after significant phase transitions or events
-    /// to send progress updates to the cloud backend.
-    ///
-    /// Only emitted when cloud_config.enabled is true.
-    ReportCloudProgress {
-        /// Progress update payload containing phase, iteration, and event details
-        update: crate::cloud::types::ProgressUpdate,
-    },
 }

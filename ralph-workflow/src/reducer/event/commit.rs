@@ -119,6 +119,30 @@ pub enum CommitEvent {
         /// The commit message used.
         message: String,
     },
+
+    // === Cloud mode git remote operations (emitted only when cloud mode is enabled) ===
+    /// Git authentication configured successfully for remote operations.
+    GitAuthConfigured,
+
+    /// Push to remote completed successfully.
+    PushCompleted {
+        remote: String,
+        branch: String,
+        commit_sha: String,
+    },
+
+    /// Push to remote failed.
+    PushFailed {
+        remote: String,
+        branch: String,
+        error: String,
+    },
+
+    /// Pull request created successfully.
+    PullRequestCreated { url: String, number: u32 },
+
+    /// Pull request creation failed.
+    PullRequestFailed { error: String },
     /// Commit generation failed completely.
     GenerationFailed {
         /// The reason for failure.

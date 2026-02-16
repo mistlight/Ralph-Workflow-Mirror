@@ -4,7 +4,7 @@
 //! environments with external orchestration. All cloud functionality is:
 //!
 //! - **Environment-variable configured only** (not in config files)
-//! - **Disabled by default** (requires RALPH_CLOUD_MODE=true)
+//! - **Disabled by default**
 //! - **Invisible to CLI users** (no CLI flags, no help text)
 //! - **Purely additive** (zero behavior change when disabled)
 //!
@@ -17,6 +17,7 @@
 //! - `MockCloudReporter` - Testing (captures calls)
 
 pub mod heartbeat;
+pub mod redaction;
 pub mod reporter;
 pub mod types;
 

@@ -68,34 +68,4 @@ pub enum LifecycleEvent {
         /// Whether .gitignore was created.
         created: bool,
     },
-
-    // Cloud mode events (only emitted when cloud mode is enabled)
-    /// Git authentication configured successfully (cloud mode).
-    GitAuthConfigured,
-
-    /// Push to remote completed successfully (cloud mode).
-    PushCompleted {
-        remote: String,
-        branch: String,
-        commit_sha: String,
-    },
-
-    /// Push to remote failed (cloud mode).
-    PushFailed {
-        remote: String,
-        branch: String,
-        error: String,
-    },
-
-    /// Pull request created successfully (cloud mode).
-    PullRequestCreated { url: String, number: u32 },
-
-    /// Pull request creation failed (cloud mode).
-    PullRequestFailed { error: String },
-
-    /// Cloud progress report sent (cloud mode).
-    CloudProgressReported,
-
-    /// Cloud progress report failed (cloud mode).
-    CloudProgressFailed { error: String },
 }

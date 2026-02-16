@@ -429,6 +429,14 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
         if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
+            let mut checkpoint = checkpoint;
+            if loop_result.final_state.cloud_config.enabled {
+                checkpoint.cloud_state = Some(
+                    crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(
+                        &loop_result.final_state,
+                    ),
+                );
+            }
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
@@ -472,11 +480,12 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         };
 
         if let Err(e) = cloud_reporter.report_completion(&result_payload) {
+            let error = crate::cloud::redaction::redact_secrets(&e.to_string());
             if !config.cloud_config.graceful_degradation {
-                return Err(anyhow::anyhow!("Cloud completion report failed: {}", e));
+                return Err(anyhow::anyhow!("Cloud completion report failed: {}", error));
             }
             ctx.logger
-                .warn(&format!("Cloud completion report failed: {}", e));
+                .warn(&format!("Cloud completion report failed: {}", error));
         }
     }
 
@@ -513,9 +522,10 @@ fn resolve_cloud_git_defaults(
             Some(&ctx.repo_root),
         )?;
         if !output.status.success() {
+            let stderr = crate::cloud::redaction::redact_secrets(&output.stderr);
             return Err(anyhow::anyhow!(
                 "Failed to detect current branch for cloud push (git rev-parse). stderr: {}",
-                output.stderr
+                stderr
             ));
         }
 
