@@ -10,6 +10,7 @@ use super::*;
 
 #[test]
 fn test_invoke_development_agent_returns_error_when_prompt_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -43,6 +44,8 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -58,6 +61,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_review_agent_returns_error_when_prompt_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -91,6 +95,8 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -106,6 +112,7 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
@@ -144,6 +151,8 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -168,6 +177,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 
 #[test]
 fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -201,6 +211,8 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -216,6 +228,7 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
@@ -254,6 +267,8 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -278,6 +293,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
 
 #[test]
 fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -311,6 +327,8 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -336,6 +354,7 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
@@ -374,6 +393,8 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -408,6 +429,7 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 
 #[test]
 fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // When the agent chain is empty/uninitialized, invoke_commit_agent must not panic.
     // It must surface a typed ErrorEvent so the reducer can decide interruption policy.
     let workspace = MemoryWorkspace::new_test()
@@ -444,6 +466,8 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

@@ -134,6 +134,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         }
     }
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -164,6 +165,8 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         repo_root: &repo_root,
         workspace: &strict_workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut trace = EventTraceBuffer::new(1);
@@ -253,6 +256,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         }
     }
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -283,6 +287,8 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -311,6 +317,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
 
 #[test]
 fn test_event_loop_config_creation() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = EventLoopConfig {
         max_iterations: 1000,
     };
@@ -324,6 +331,7 @@ fn test_max_event_loop_iterations_is_one_million() {
 
 #[test]
 fn test_create_initial_state_with_config_counts_total_attempts() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -372,6 +380,8 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = create_initial_state_with_config(&ctx);
@@ -437,6 +447,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         }
     }
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -467,6 +478,8 @@ fn test_event_loop_applies_additional_events_in_order() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState {

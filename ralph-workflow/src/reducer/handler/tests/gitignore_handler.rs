@@ -29,7 +29,10 @@ struct TestContextParams<'a> {
     run_log_context: &'a crate::logging::RunLogContext,
 }
 
-fn create_test_context<'a>(params: TestContextParams<'a>) -> crate::phases::PhaseContext<'a> {
+fn create_test_context<'a>(
+    params: TestContextParams<'a>,
+    cloud_config: &'a crate::config::types::CloudConfig,
+) -> crate::phases::PhaseContext<'a> {
     crate::phases::PhaseContext {
         config: params.config,
         registry: params.registry,
@@ -48,11 +51,14 @@ fn create_test_context<'a>(params: TestContextParams<'a>) -> crate::phases::Phas
         repo_root: params.repo_root,
         workspace: params.workspace,
         run_log_context: params.run_log_context,
+        cloud_reporter: None,
+        cloud_config,
     }
 }
 
 #[test]
 fn test_ensure_gitignore_creates_file_when_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -77,7 +83,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         run_log_context: &run_log_context,
-    });
+    }, &cloud_config);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -112,6 +118,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
 
 #[test]
 fn test_ensure_gitignore_appends_when_file_exists() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
 
     let colors = Colors { enabled: false };
@@ -136,7 +143,7 @@ fn test_ensure_gitignore_appends_when_file_exists() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         run_log_context: &run_log_context,
-    });
+    }, &cloud_config);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -169,6 +176,7 @@ fn test_ensure_gitignore_appends_when_file_exists() {
 
 #[test]
 fn test_ensure_gitignore_idempotent_when_entries_exist() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let existing = "# Ralph-workflow artifacts (auto-generated)\n/PROMPT*\n.agent/\n";
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", existing);
 
@@ -194,7 +202,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         run_log_context: &run_log_context,
-    });
+    }, &cloud_config);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -224,6 +232,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
 
 #[test]
 fn test_ensure_gitignore_partial_entries() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "/PROMPT*\n");
 
     let colors = Colors { enabled: false };
@@ -248,7 +257,7 @@ fn test_ensure_gitignore_partial_entries() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         run_log_context: &run_log_context,
-    });
+    }, &cloud_config);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -376,6 +385,7 @@ impl<'a> Workspace for FailingWriteWorkspace<'a> {
 
 #[test]
 fn test_ensure_gitignore_handles_write_failure_gracefully() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // Setup: workspace with existing file that will fail to write
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
     let failing_workspace = FailingWriteWorkspace::new(&workspace);
@@ -402,7 +412,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         run_log_context: &run_log_context,
-    });
+    }, &cloud_config);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
@@ -440,6 +450,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
 
 #[test]
 fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     // Setup: no existing .gitignore, write will fail
     let workspace = MemoryWorkspace::new_test();
     let failing_workspace = FailingWriteWorkspace::new(&workspace);
@@ -466,7 +477,7 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         run_log_context: &run_log_context,
-    });
+    }, &cloud_config);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler

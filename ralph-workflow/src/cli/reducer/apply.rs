@@ -155,6 +155,7 @@ mod tests {
             max_xsd_retries: Some(10),
             max_same_agent_retries: Some(2),
             execution_history_limit: 1000,
+            cloud_config: crate::config::types::CloudConfig::disabled(),
         }
     }
 

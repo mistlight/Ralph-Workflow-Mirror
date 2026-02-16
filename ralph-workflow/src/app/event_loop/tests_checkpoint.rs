@@ -6,6 +6,7 @@ use crate::reducer::PipelineState;
 
 #[test]
 fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -55,6 +56,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         }
     }
 
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -85,6 +87,8 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     // Construct a terminal state that deterministically derives SaveCheckpoint.
@@ -126,6 +130,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
 
 #[test]
 fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -186,6 +191,8 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState {
@@ -219,6 +226,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
 
 #[test]
 fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -279,6 +287,8 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState::initial(0, 0);
@@ -297,6 +307,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
 
 #[test]
 fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::{AgentRegistry, AgentRole};
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -376,6 +387,8 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut state = PipelineState::initial(1, 1);
@@ -407,6 +420,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
 
 #[test]
 fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -506,6 +520,8 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = PipelineState {
@@ -535,6 +551,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
 
 #[test]
 fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -580,6 +597,8 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let state = super::create_initial_state_with_config(&ctx);
@@ -591,6 +610,7 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
 #[cfg(feature = "test-utils")]
 #[test]
 fn test_run_event_loop_with_mock_handler() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -637,6 +657,8 @@ fn test_run_event_loop_with_mock_handler() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     // Create mock handler

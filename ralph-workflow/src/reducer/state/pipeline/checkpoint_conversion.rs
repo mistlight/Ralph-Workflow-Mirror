@@ -133,6 +133,15 @@ impl PipelineState {
                     ..RunMetrics::default()
                 }
             },
+            // Cloud mode fields (all default/disabled when loading from checkpoint)
+            cloud_config: crate::config::CloudConfig::disabled(),
+            pending_push_commit: None,
+            git_auth_configured: false,
+            pr_created: false,
+            pr_url: None,
+            push_count: 0,
+            last_pushed_commit: None,
+            pr_number: None,
         };
 
         let bounded_steps =

@@ -93,6 +93,14 @@ fn create_resume_state(
             max_review_passes: total_reviewer_passes,
             ..Default::default()
         },
+        cloud_config: crate::config::types::CloudConfig::disabled(),
+        pending_push_commit: None,
+        git_auth_configured: false,
+        pr_created: false,
+        pr_url: None,
+        push_count: 0,
+        last_pushed_commit: None,
+        pr_number: None,
     }
 }
 

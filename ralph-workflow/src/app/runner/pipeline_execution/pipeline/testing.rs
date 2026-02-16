@@ -106,6 +106,9 @@ where
     print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
+    // Initialize cloud reporter (for testing, always use Noop)
+    let cloud_reporter = crate::cloud::NoopCloudReporter;
+
     // Create phase context and save starting commit
     let mut timer = Timer::new();
     let mut phase_ctx = create_phase_context_with_config(
@@ -115,6 +118,7 @@ where
         review_guidelines.as_ref(),
         &run_context,
         resume_checkpoint.as_ref(),
+        &cloud_reporter,
     );
     save_start_commit_or_warn(ctx);
 

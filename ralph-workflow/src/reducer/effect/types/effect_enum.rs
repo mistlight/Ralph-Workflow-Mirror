@@ -596,4 +596,76 @@ pub enum Effect {
         /// Total attempts before success.
         total_attempts: u32,
     },
+
+    // ========================================================================
+    // Cloud Mode Effects (INTERNAL USE ONLY)
+    // ========================================================================
+    //
+    // These effects are only emitted when cloud mode is enabled (RALPH_CLOUD_MODE=true).
+    // In CLI mode, these effects are never derived by orchestration.
+    //
+    // Cloud mode is environment-variable only and not exposed to users.
+    // See PROMPT.md for full cloud integration architecture.
+    /// Configure git authentication for remote operations (cloud mode only).
+    ///
+    /// This effect runs once at pipeline start (before first commit) to set up
+    /// credentials for all subsequent push operations. It configures git based on
+    /// the authentication method specified in cloud configuration.
+    ///
+    /// Only emitted when cloud_config.enabled is true.
+    ConfigureGitAuth {
+        /// Serialized authentication method for logging/debugging.
+        /// The actual auth config comes from cloud_config in PhaseContext.
+        auth_method: String,
+    },
+
+    /// Push commits to remote repository (cloud mode only).
+    ///
+    /// This effect is emitted immediately after every successful CreateCommit effect
+    /// when cloud mode is enabled. The orchestrator sequences: CreateCommit -> PushToRemote.
+    ///
+    /// This ensures incremental progress is visible on the remote and survives pipeline failures.
+    ///
+    /// Only emitted when cloud_config.enabled is true and a pending push exists in state.
+    PushToRemote {
+        /// Remote name (e.g., "origin")
+        remote: String,
+        /// Branch to push
+        branch: String,
+        /// Whether to force push
+        force: bool,
+        /// The commit SHA being pushed (for reporting)
+        commit_sha: String,
+    },
+
+    /// Create a pull request on the remote platform (cloud mode only).
+    ///
+    /// This effect is emitted during Finalizing phase when create_pr is enabled in
+    /// cloud configuration. The PR is created after all commits are pushed, summarizing
+    /// the full run.
+    ///
+    /// Uses platform-specific CLI tools (gh for GitHub, glab for GitLab).
+    ///
+    /// Only emitted when cloud_config.enabled and cloud_config.git_remote.create_pr are true.
+    CreatePullRequest {
+        /// Target branch for the PR
+        base_branch: String,
+        /// Source branch (the pushed branch)
+        head_branch: String,
+        /// PR title
+        title: String,
+        /// PR body/description
+        body: String,
+    },
+
+    /// Report progress to cloud API (cloud mode only).
+    ///
+    /// This effect is emitted after significant phase transitions or events
+    /// to send progress updates to the cloud backend.
+    ///
+    /// Only emitted when cloud_config.enabled is true.
+    ReportCloudProgress {
+        /// Progress update payload containing phase, iteration, and event details
+        update: crate::cloud::types::ProgressUpdate,
+    },
 }

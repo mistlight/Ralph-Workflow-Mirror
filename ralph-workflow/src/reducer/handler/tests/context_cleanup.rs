@@ -234,6 +234,7 @@ impl Workspace for ReadDirFailingWorkspace {
 
 #[test]
 fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "# Issues\n")
@@ -274,6 +275,8 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
@@ -298,6 +301,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
 
 #[test]
 fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp")
@@ -337,6 +341,8 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));

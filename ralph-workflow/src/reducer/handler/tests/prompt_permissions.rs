@@ -31,6 +31,7 @@ struct ContextDeps<'a> {
 fn build_context<'a>(
     deps: ContextDeps<'a>,
     timer: &'a mut Timer,
+    cloud_config: &'a crate::config::types::CloudConfig,
 ) -> crate::phases::PhaseContext<'a> {
     crate::phases::PhaseContext {
         config: deps.config,
@@ -50,11 +51,14 @@ fn build_context<'a>(
         repo_root: deps.repo_root,
         workspace: deps.workspace,
         run_log_context: deps.run_log_context,
+        cloud_reporter: None,
+        cloud_config,
     }
 }
 
 #[test]
 fn restore_prompt_permissions_emits_complete_transition_in_finalizing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -79,6 +83,7 @@ fn restore_prompt_permissions_emits_complete_transition_in_finalizing() {
             run_log_context: &run_log_context,
         },
         &mut timer,
+        &cloud_config,
     );
 
     let mut state = PipelineState::initial(1, 0);

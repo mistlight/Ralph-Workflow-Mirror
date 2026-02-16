@@ -18,5 +18,28 @@ pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent
                 ..state
             }
         }
+        LifecycleEvent::GitAuthConfigured => PipelineState {
+            git_auth_configured: true,
+            ..state
+        },
+        LifecycleEvent::PushCompleted { commit_sha, .. } => PipelineState {
+            pending_push_commit: None,
+            push_count: state.push_count + 1,
+            last_pushed_commit: Some(commit_sha),
+            ..state
+        },
+        LifecycleEvent::PushFailed { .. } => PipelineState {
+            // Clear pending push on failure (graceful degradation)
+            pending_push_commit: None,
+            ..state
+        },
+        LifecycleEvent::PullRequestCreated { url, .. } => PipelineState {
+            pr_created: true,
+            pr_url: Some(url),
+            ..state
+        },
+        LifecycleEvent::PullRequestFailed { .. } => state, // Log but don't change state
+        LifecycleEvent::CloudProgressReported => state,    // No state change
+        LifecycleEvent::CloudProgressFailed { .. } => state, // Log but don't change state
     }
 }

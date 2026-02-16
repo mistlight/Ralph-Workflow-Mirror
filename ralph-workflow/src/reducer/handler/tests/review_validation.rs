@@ -118,6 +118,7 @@ impl Workspace for ReadFailingWorkspace {
 
 #[test]
 fn test_validate_review_issues_xml_emits_event_with_xml_output() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let issues_xml =
         "<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::ISSUES_XML, issues_xml);
@@ -154,6 +155,8 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -188,6 +191,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
 
 #[test]
 fn test_validate_fix_result_xml_emits_ui_output() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let fix_xml =
         "<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::FIX_RESULT_XML, fix_xml);
@@ -224,6 +228,8 @@ fn test_validate_fix_result_xml_emits_ui_output() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -254,6 +260,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
 
 #[test]
 fn test_write_issues_markdown_renders_from_validated_issues() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -288,6 +295,8 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -318,6 +327,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
 
 #[test]
 fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let issues_xml = "<ralph-issues><ralph-issue>[high] src/lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
         .with_file(xml_paths::ISSUES_XML, issues_xml)
@@ -355,6 +365,8 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -395,6 +407,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
 
 #[test]
 fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let issues_xml =
         "<ralph-issues><ralph-issue>[high] C:\\repo\\src\\lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
@@ -433,6 +446,8 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -471,6 +486,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
 
 #[test]
 fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_errors() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let inner =
         MemoryWorkspace::new_test().with_file("src/lib.rs", "fn main() {\n    let x = 1;\n}\n");
     let workspace = ReadFailingWorkspace::new(
@@ -511,6 +527,8 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -545,6 +563,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
 
 #[test]
 fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -579,6 +598,8 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

@@ -157,6 +157,24 @@ where
                 .info(&crate::rendering::render_ui_event(ui_event));
         }
 
+        // Cloud progress reporting - ONLY when enabled
+        // When cloud_reporter is None (CLI mode), nothing happens here
+        if let Some(reporter) = ctx.cloud_reporter {
+            for ui_event in &result.ui_events {
+                if let Some(update) =
+                    ui_event_to_progress_update(ui_event, &state, ctx.cloud_config)
+                {
+                    if let Err(e) = reporter.report_progress(&update) {
+                        if !ctx.cloud_config.graceful_degradation {
+                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", e));
+                        }
+                        ctx.logger
+                            .warn(&format!("Cloud progress report failed: {}", e));
+                    }
+                }
+            }
+        }
+
         let event_str = format!("{:?}", result.event);
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -389,4 +407,83 @@ pub(super) fn log_effect_execution(
         ctx.logger
             .warn(&format!("Failed to write to event loop log: {}", e));
     }
+}
+
+/// Convert a UI event to a progress update for cloud reporting.
+///
+/// Returns None for events that don't warrant cloud progress updates.
+fn ui_event_to_progress_update(
+    ui_event: &crate::reducer::ui_event::UIEvent,
+    state: &PipelineState,
+    cloud_config: &crate::config::CloudConfig,
+) -> Option<crate::cloud::types::ProgressUpdate> {
+    use crate::cloud::types::{ProgressEventType, ProgressUpdate};
+    use crate::reducer::ui_event::UIEvent;
+
+    let _run_id = cloud_config.run_id.clone()?;
+
+    let (message, event_type) = match ui_event {
+        UIEvent::PhaseTransition { from, to } => {
+            let from_str = from.as_ref().map(|p| format!("{:?}", p));
+            let to_str = format!("{:?}", to);
+            let message = format!(
+                "Phase transition: {} -> {}",
+                from_str.as_deref().unwrap_or("None"),
+                to_str
+            );
+            (
+                message,
+                ProgressEventType::PhaseTransition {
+                    from: from_str,
+                    to: to_str,
+                },
+            )
+        }
+        UIEvent::IterationProgress { current, total } => {
+            let message = format!("Development iteration {}/{}", current, total);
+            (
+                message,
+                ProgressEventType::IterationStarted {
+                    iteration: *current,
+                },
+            )
+        }
+        UIEvent::ReviewProgress { pass, total } => {
+            let message = format!("Review pass {}/{}", pass, total);
+            (
+                message,
+                ProgressEventType::ReviewPassStarted { pass: *pass },
+            )
+        }
+        UIEvent::AgentActivity {
+            agent,
+            message: activity_msg,
+        } => {
+            // Report agent activity for progress tracking
+            let message = format!("Agent {}: {}", agent, activity_msg);
+            (
+                message,
+                ProgressEventType::AgentInvoked {
+                    role: "Agent".to_string(),
+                    agent: agent.clone(),
+                },
+            )
+        }
+        // Don't report XmlOutput events to cloud
+        UIEvent::XmlOutput { .. } => return None,
+    };
+
+    Some(ProgressUpdate {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        phase: format!("{:?}", state.phase),
+        previous_phase: state.previous_phase.as_ref().map(|p| format!("{:?}", p)),
+        iteration: Some(state.iteration),
+        // Note: total iterations and review passes are not tracked in state,
+        // they would need to be added to metrics if exact totals are required
+        total_iterations: None,
+        review_pass: Some(state.reviewer_pass),
+        total_review_passes: None,
+        message,
+        event_type,
+    })
 }

@@ -2,6 +2,7 @@ use super::*;
 
 #[test]
 fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
 
     let colors = Colors { enabled: false };
@@ -36,6 +37,8 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -53,6 +56,7 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_materialize_development_inputs_returns_error_when_plan_missing() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "Prompt\n");
 
     let colors = Colors { enabled: false };
@@ -87,6 +91,8 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -104,6 +110,7 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
 
 #[test]
 fn test_materialize_development_inputs_stores_workspace_relative_file_references() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputRepresentation;
     use std::path::PathBuf;
@@ -146,6 +153,8 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

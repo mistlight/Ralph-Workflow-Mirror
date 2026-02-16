@@ -197,6 +197,27 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
+    // Initialize cloud reporter if cloud mode is enabled
+    use crate::cloud::{CloudReporter, HeartbeatGuard, HttpCloudReporter, NoopCloudReporter};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let cloud_reporter: Arc<dyn CloudReporter> = if config.cloud_config.enabled {
+        Arc::new(HttpCloudReporter::new(config.cloud_config.clone()))
+    } else {
+        Arc::new(NoopCloudReporter)
+    };
+
+    // Start heartbeat if cloud mode enabled
+    let _heartbeat_guard = if config.cloud_config.enabled {
+        Some(HeartbeatGuard::start(
+            Arc::clone(&cloud_reporter),
+            Duration::from_secs(config.cloud_config.heartbeat_interval_secs as u64),
+        ))
+    } else {
+        None
+    };
+
     // Create phase context and save starting commit
     let mut timer = Timer::new();
     let mut phase_ctx = create_phase_context_with_config(
@@ -206,6 +227,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         review_guidelines.as_ref(),
         &run_context,
         resume_checkpoint.as_ref(),
+        cloud_reporter.as_ref(),
     );
     save_start_commit_or_warn(ctx);
 

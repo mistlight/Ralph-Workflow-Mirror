@@ -279,6 +279,190 @@ pub struct Config {
     /// Maximum execution history entries to keep in memory (default: 1000).
     /// Prevents unbounded memory growth by dropping oldest entries when limit is reached.
     pub execution_history_limit: usize,
+    /// Cloud configuration - INTERNAL USE ONLY (environment variable only).
+    ///
+    /// This field is NOT exposed in user-facing documentation or CLI help.
+    /// Cloud operators learn about these env vars from cloud platform docs.
+    pub(crate) cloud_config: CloudConfig,
+}
+
+/// Cloud configuration - INTERNAL USE ONLY.
+///
+/// This struct is populated exclusively from environment variables.
+/// It is NOT exposed in:
+/// - ralph-workflow.toml config file
+/// - CLI --help output  
+/// - Any user-facing documentation in the repo
+///
+/// Cloud operators learn about these env vars from cloud platform docs.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct CloudConfig {
+    /// Enable cloud reporting mode (from RALPH_CLOUD_MODE env var)
+    pub enabled: bool,
+    /// Cloud API base URL (e.g., "https://api.ralph-cloud.example.com")
+    pub api_url: Option<String>,
+    /// Bearer token for API authentication
+    pub api_token: Option<String>,
+    /// Run ID assigned by cloud orchestrator
+    pub run_id: Option<String>,
+    /// Heartbeat interval in seconds (default: 30)
+    pub heartbeat_interval_secs: u32,
+    /// Whether to continue on API failures (default: true)
+    pub graceful_degradation: bool,
+    /// Git remote configuration
+    pub git_remote: GitRemoteConfig,
+}
+
+/// Git remote configuration - INTERNAL USE ONLY.
+///
+/// Like CloudConfig, this is populated from env vars and not exposed
+/// to normal users.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct GitRemoteConfig {
+    /// Authentication method for git operations
+    pub auth_method: GitAuthMethod,
+    /// Branch to push to (defaults to current branch)
+    pub push_branch: Option<String>,
+    /// Whether to create a PR instead of direct push
+    pub create_pr: bool,
+    /// PR title template (supports {run_id}, {prompt_summary} placeholders)
+    pub pr_title_template: Option<String>,
+    /// PR body template
+    pub pr_body_template: Option<String>,
+    /// Base branch for PR (defaults to main/master)
+    pub pr_base_branch: Option<String>,
+    /// Whether to force push (dangerous, disabled by default)
+    pub force_push: bool,
+    /// Remote name (defaults to "origin")
+    pub remote_name: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum GitAuthMethod {
+    /// Use SSH key (default for containers with mounted keys)
+    SshKey {
+        /// Path to private key (default: /root/.ssh/id_rsa or SSH_AUTH_SOCK)
+        key_path: Option<String>,
+    },
+    /// Use token-based HTTPS authentication
+    Token {
+        /// Git token (from RALPH_GIT_TOKEN env var)
+        token: String,
+        /// Username for token auth (often "oauth2" or "x-access-token")
+        username: String,
+    },
+    /// Use git credential helper (for cloud provider integrations)
+    CredentialHelper {
+        /// Helper command (e.g., "gcloud", "aws codecommit credential-helper")
+        helper: String,
+    },
+}
+
+impl Default for GitAuthMethod {
+    fn default() -> Self {
+        Self::SshKey { key_path: None }
+    }
+}
+
+impl CloudConfig {
+    /// Load cloud config from environment variables ONLY.
+    /// Returns disabled config if RALPH_CLOUD_MODE is not set.
+    pub fn from_env() -> Self {
+        let enabled = std::env::var("RALPH_CLOUD_MODE")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false);
+
+        if !enabled {
+            return Self::disabled();
+        }
+
+        Self {
+            enabled: true,
+            api_url: std::env::var("RALPH_CLOUD_API_URL").ok(),
+            api_token: std::env::var("RALPH_CLOUD_API_TOKEN").ok(),
+            run_id: std::env::var("RALPH_CLOUD_RUN_ID").ok(),
+            heartbeat_interval_secs: std::env::var("RALPH_CLOUD_HEARTBEAT_INTERVAL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(30),
+            graceful_degradation: std::env::var("RALPH_CLOUD_GRACEFUL_DEGRADATION")
+                .map(|v| !v.eq_ignore_ascii_case("false") && v != "0")
+                .unwrap_or(true),
+            git_remote: GitRemoteConfig::from_env(),
+        }
+    }
+
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            api_url: None,
+            api_token: None,
+            run_id: None,
+            heartbeat_interval_secs: 30,
+            graceful_degradation: true,
+            git_remote: GitRemoteConfig::default(),
+        }
+    }
+
+    /// Validate that required fields are present when enabled.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        if self.api_url.is_none() {
+            return Err("RALPH_CLOUD_API_URL must be set when cloud mode is enabled".to_string());
+        }
+        if self.api_token.is_none() {
+            return Err("RALPH_CLOUD_API_TOKEN must be set when cloud mode is enabled".to_string());
+        }
+        if self.run_id.is_none() {
+            return Err("RALPH_CLOUD_RUN_ID must be set when cloud mode is enabled".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+impl GitRemoteConfig {
+    fn from_env() -> Self {
+        let auth_method = match std::env::var("RALPH_GIT_AUTH_METHOD")
+            .unwrap_or_else(|_| "ssh".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "token" => {
+                let token = std::env::var("RALPH_GIT_TOKEN").unwrap_or_default();
+                let username = std::env::var("RALPH_GIT_TOKEN_USERNAME")
+                    .unwrap_or_else(|_| "x-access-token".to_string());
+                GitAuthMethod::Token { token, username }
+            }
+            "credential-helper" => {
+                let helper = std::env::var("RALPH_GIT_CREDENTIAL_HELPER")
+                    .unwrap_or_else(|_| "gcloud".to_string());
+                GitAuthMethod::CredentialHelper { helper }
+            }
+            _ => {
+                let key_path = std::env::var("RALPH_GIT_SSH_KEY_PATH").ok();
+                GitAuthMethod::SshKey { key_path }
+            }
+        };
+
+        Self {
+            auth_method,
+            push_branch: std::env::var("RALPH_GIT_PUSH_BRANCH").ok(),
+            create_pr: std::env::var("RALPH_GIT_CREATE_PR")
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+                .unwrap_or(false),
+            pr_title_template: std::env::var("RALPH_GIT_PR_TITLE").ok(),
+            pr_body_template: std::env::var("RALPH_GIT_PR_BODY").ok(),
+            pr_base_branch: std::env::var("RALPH_GIT_PR_BASE_BRANCH").ok(),
+            force_push: std::env::var("RALPH_GIT_FORCE_PUSH")
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+                .unwrap_or(false),
+            remote_name: std::env::var("RALPH_GIT_REMOTE").unwrap_or_else(|_| "origin".to_string()),
+        }
+    }
 }
 
 impl Config {
@@ -334,6 +518,7 @@ impl Config {
             max_xsd_retries: Some(10),
             max_same_agent_retries: Some(2),
             execution_history_limit: 1000,
+            cloud_config: CloudConfig::disabled(),
         }
     }
 
@@ -397,5 +582,81 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         super::loader::default_config()
+    }
+}
+
+#[cfg(test)]
+mod cloud_config_tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_cloud_config_disabled_by_default() {
+        std::env::remove_var("RALPH_CLOUD_MODE");
+        let config = CloudConfig::from_env();
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    #[serial]
+    fn test_cloud_config_enabled_with_env_var() {
+        std::env::set_var("RALPH_CLOUD_MODE", "true");
+        std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com");
+        std::env::set_var("RALPH_CLOUD_API_TOKEN", "secret");
+        std::env::set_var("RALPH_CLOUD_RUN_ID", "run123");
+
+        let config = CloudConfig::from_env();
+        assert!(config.enabled);
+        assert_eq!(config.api_url, Some("https://api.example.com".to_string()));
+        assert_eq!(config.run_id, Some("run123".to_string()));
+
+        std::env::remove_var("RALPH_CLOUD_MODE");
+        std::env::remove_var("RALPH_CLOUD_API_URL");
+        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
+        std::env::remove_var("RALPH_CLOUD_RUN_ID");
+    }
+
+    #[test]
+    #[serial]
+    fn test_cloud_config_validation_requires_fields() {
+        let config = CloudConfig {
+            enabled: true,
+            api_url: None,
+            api_token: None,
+            run_id: None,
+            heartbeat_interval_secs: 30,
+            graceful_degradation: true,
+            git_remote: GitRemoteConfig::default(),
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_git_auth_method_from_env() {
+        std::env::set_var("RALPH_GIT_AUTH_METHOD", "token");
+        std::env::set_var("RALPH_GIT_TOKEN", "ghp_test");
+
+        let config = GitRemoteConfig::from_env();
+        match config.auth_method {
+            GitAuthMethod::Token { token, .. } => {
+                assert_eq!(token, "ghp_test");
+            }
+            _ => panic!("Expected Token auth method"),
+        }
+
+        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
+        std::env::remove_var("RALPH_GIT_TOKEN");
+    }
+
+    #[test]
+    fn test_cloud_config_disabled_validation_passes() {
+        let config = CloudConfig::disabled();
+        assert!(
+            config.validate().is_ok(),
+            "Disabled cloud config should always validate"
+        );
     }
 }

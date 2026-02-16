@@ -150,6 +150,14 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             } else {
                 state.continuation.clone()
             };
+
+            // Cloud mode: mark commit as pending push
+            let pending_push = if state.cloud_config.enabled {
+                Some(hash.clone())
+            } else {
+                None
+            };
+
             PipelineState {
                 commit: CommitState::Committed { hash },
                 phase: next_phase,
@@ -161,6 +169,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 agent_chain,
                 continuation,
                 metrics: state.metrics.increment_commits_created_total(),
+                // Cloud mode: Set pending push
+                pending_push_commit: pending_push,
                 ..state
             }
         }

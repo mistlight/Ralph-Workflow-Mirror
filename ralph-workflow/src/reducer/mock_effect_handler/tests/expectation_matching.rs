@@ -61,6 +61,7 @@ fn mock_effect_handler_implements_effect_handler_trait() {
 /// for MainEffectHandler in tests.
 #[test]
 fn mock_effect_handler_trait_execute_with_phase_context() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -105,6 +106,8 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
         repo_root: &repo_root,
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     // Create handler and execute effect via trait method

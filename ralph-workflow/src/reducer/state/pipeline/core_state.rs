@@ -349,6 +349,71 @@ pub struct PipelineState {
     /// Unsubstituted placeholders from the last rendered template.
     #[serde(default)]
     pub template_validation_unsubstituted: Vec<String>,
+
+    // ========================================================================
+    // Cloud Mode State Fields (INTERNAL USE ONLY)
+    // ========================================================================
+    //
+    // These fields are only populated when cloud mode is enabled (RALPH_CLOUD_MODE=true).
+    // In CLI mode, they remain in their default (None/false) state and are not used.
+    //
+    // Cloud mode is environment-variable only and not exposed to users.
+    /// Cloud configuration (enabled=false for CLI mode).
+    ///
+    /// This is set from environment variables at pipeline startup.
+    /// When enabled=false, all cloud-specific effects are skipped.
+    #[serde(default)]
+    pub cloud_config: crate::config::CloudConfig,
+
+    /// Commit SHA pending push (cloud mode only, None in CLI mode).
+    ///
+    /// Set when CommitCreated event is reduced in cloud mode.
+    /// Cleared when PushCompleted event is reduced.
+    /// Used by orchestration to emit PushToRemote effects.
+    #[serde(default)]
+    pub pending_push_commit: Option<String>,
+
+    /// Whether git auth has been configured this run (cloud mode only).
+    ///
+    /// Set to true when GitAuthConfigured event is reduced.
+    /// Used to avoid re-configuring authentication on every push.
+    #[serde(default)]
+    pub git_auth_configured: bool,
+
+    /// Whether PR has been created (cloud mode only).
+    ///
+    /// Set to true when PullRequestCreated event is reduced.
+    /// Prevents duplicate PR creation attempts.
+    #[serde(default)]
+    pub pr_created: bool,
+
+    /// URL of created PR (cloud mode only).
+    ///
+    /// Populated when PullRequestCreated event is reduced.
+    /// Used for reporting and observability.
+    #[serde(default)]
+    pub pr_url: Option<String>,
+
+    /// Count of successful push operations (cloud mode only).
+    ///
+    /// Incremented when PushCompleted event is reduced.
+    /// Used for metrics and observability.
+    #[serde(default)]
+    pub push_count: u32,
+
+    /// SHA of the last successfully pushed commit (cloud mode only).
+    ///
+    /// Updated when PushCompleted event is reduced.
+    /// Used for observability and debugging.
+    #[serde(default)]
+    pub last_pushed_commit: Option<String>,
+
+    /// PR number for the created pull request (cloud mode only).
+    ///
+    /// Populated when PullRequestCreated event is reduced.
+    /// Used for reporting and observability.
+    #[serde(default)]
+    pub pr_number: Option<u32>,
 }
 
 impl PipelineState {
@@ -465,6 +530,15 @@ impl PipelineState {
             template_validation_failed: false,
             template_validation_unsubstituted: Vec::new(),
             metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
+            // Cloud mode fields (all default/disabled)
+            cloud_config: crate::config::CloudConfig::disabled(),
+            pending_push_commit: None,
+            git_auth_configured: false,
+            pr_created: false,
+            pr_url: None,
+            push_count: 0,
+            last_pushed_commit: None,
+            pr_number: None,
         }
     }
 

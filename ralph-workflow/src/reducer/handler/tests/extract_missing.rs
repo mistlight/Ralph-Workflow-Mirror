@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_extract_planning_xml_emits_missing_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
@@ -48,6 +49,8 @@ fn test_extract_planning_xml_emits_missing_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -63,6 +66,7 @@ fn test_extract_planning_xml_emits_missing_event() {
 
 #[test]
 fn test_extract_development_xml_emits_missing_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
@@ -95,6 +99,8 @@ fn test_extract_development_xml_emits_missing_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -110,6 +116,7 @@ fn test_extract_development_xml_emits_missing_event() {
 
 #[test]
 fn test_extract_review_issues_xml_emits_missing_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
@@ -142,6 +149,8 @@ fn test_extract_review_issues_xml_emits_missing_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -157,6 +166,7 @@ fn test_extract_review_issues_xml_emits_missing_event() {
 
 #[test]
 fn test_extract_fix_result_xml_emits_missing_event() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let executor = Arc::new(MockProcessExecutor::new());
     let mut timer = Timer::new();
@@ -189,6 +199,8 @@ fn test_extract_fix_result_xml_emits_missing_event() {
         repo_root: repo_root.as_path(),
         workspace: &workspace,
         run_log_context: &run_log_context,
+        cloud_reporter: None,
+        cloud_config: &cloud_config,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

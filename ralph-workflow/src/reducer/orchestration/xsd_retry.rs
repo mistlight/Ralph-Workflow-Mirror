@@ -395,6 +395,82 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         };
     }
 
+    // Cloud mode orchestration: sequence cloud-specific operations
+    // CRITICAL: All cloud-specific logic is guarded by cloud_config.enabled check.
+    // When cloud mode is disabled, this entire block is skipped and behavior is
+    // identical to current CLI behavior.
+    if state.cloud_config.enabled {
+        // After a successful commit, push immediately (cloud mode only)
+        if let Some(commit_sha) = &state.pending_push_commit {
+            // Configure git auth first if not done yet
+            if !state.git_auth_configured {
+                // Format auth method for the effect
+                let auth_method = match &state.cloud_config.git_remote.auth_method {
+                    crate::config::GitAuthMethod::SshKey { key_path } => {
+                        if let Some(path) = key_path {
+                            format!("ssh-key:{}", path)
+                        } else {
+                            "ssh-key:default".to_string()
+                        }
+                    }
+                    crate::config::GitAuthMethod::Token { username, .. } => {
+                        format!("token:{}", username)
+                    }
+                    crate::config::GitAuthMethod::CredentialHelper { helper } => {
+                        format!("credential-helper:{}", helper)
+                    }
+                };
+                return Effect::ConfigureGitAuth { auth_method };
+            }
+
+            // Then push the commit
+            return Effect::PushToRemote {
+                remote: state.cloud_config.git_remote.remote_name.clone(),
+                branch: state
+                    .cloud_config
+                    .git_remote
+                    .push_branch
+                    .clone()
+                    .unwrap_or_else(|| "HEAD".to_string()),
+                force: state.cloud_config.git_remote.force_push,
+                commit_sha: commit_sha.clone(),
+            };
+        }
+
+        // In Finalizing phase, create PR if configured
+        if state.phase == PipelinePhase::Finalizing
+            && state.cloud_config.git_remote.create_pr
+            && !state.pr_created
+        {
+            return Effect::CreatePullRequest {
+                base_branch: state
+                    .cloud_config
+                    .git_remote
+                    .pr_base_branch
+                    .clone()
+                    .unwrap_or_else(|| "main".to_string()),
+                head_branch: state
+                    .cloud_config
+                    .git_remote
+                    .push_branch
+                    .clone()
+                    .unwrap_or_else(|| "HEAD".to_string()),
+                title: state
+                    .cloud_config
+                    .git_remote
+                    .pr_title_template
+                    .clone()
+                    .unwrap_or_else(|| "Ralph workflow changes".to_string()),
+                body: state
+                    .cloud_config
+                    .git_remote
+                    .pr_body_template
+                    .clone()
+                    .unwrap_or_default(),
+            };
+        }
+    }
+
     // Recovery completion: if the pipeline entered recovery due to a commit failure,
     // only clear recovery state AFTER CreateCommit has succeeded.
     //
