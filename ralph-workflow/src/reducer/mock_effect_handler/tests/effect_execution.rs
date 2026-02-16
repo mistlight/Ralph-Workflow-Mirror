@@ -482,3 +482,143 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
         "Mock checkpoint must persist interrupted_by_user=true for parity with real handler"
     );
 }
+
+#[test]
+fn mock_execute_save_checkpoint_captures_effect_once() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::phases::PhaseContext;
+    use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::event::CheckpointTrigger;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let state = PipelineState::initial(1, 0);
+    let mut handler = MockEffectHandler::new(state);
+
+    let _ = handler
+        .execute(
+            Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::Interrupt,
+            },
+            &mut ctx,
+        )
+        .expect("mock save checkpoint should succeed");
+
+    let count = handler
+        .captured_effects()
+        .into_iter()
+        .filter(|e| matches!(e, Effect::SaveCheckpoint { .. }))
+        .count();
+    assert_eq!(
+        count, 1,
+        "SaveCheckpoint executed via EffectHandler::execute must be captured exactly once"
+    );
+}
+
+#[test]
+fn mock_execute_emit_completion_marker_captures_effect_once() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::phases::PhaseContext;
+    use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+        run_log_context: &run_log_context,
+    };
+
+    let state = PipelineState::initial(1, 0);
+    let mut handler = MockEffectHandler::new(state);
+
+    let _ = handler
+        .execute(
+            Effect::EmitCompletionMarkerAndTerminate {
+                is_failure: true,
+                reason: Some("test".to_string()),
+            },
+            &mut ctx,
+        )
+        .expect("mock completion marker should succeed");
+
+    let count = handler
+        .captured_effects()
+        .into_iter()
+        .filter(|e| matches!(e, Effect::EmitCompletionMarkerAndTerminate { .. }))
+        .count();
+    assert_eq!(
+        count, 1,
+        "EmitCompletionMarkerAndTerminate executed via EffectHandler::execute must be captured exactly once"
+    );
+}

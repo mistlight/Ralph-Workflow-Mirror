@@ -204,12 +204,7 @@ If you determine there are NO actual changes to commit, respond with:
                     }
                 }
 
-                // Capture the effect for test verification
-                self.captured_effects
-                    .borrow_mut()
-                    .push(Effect::SaveCheckpoint { trigger });
-
-                // Return the mock result
+                // Delegate to execute_mock for effect capture + mock event emission.
                 Ok(self.execute_mock(Effect::SaveCheckpoint { trigger }))
             }
             Effect::TriggerDevFixFlow {
@@ -268,13 +263,7 @@ If you determine there are NO actual changes to commit, respond with:
                     ));
                 }
 
-                self.captured_effects
-                    .borrow_mut()
-                    .push(Effect::EmitCompletionMarkerAndTerminate {
-                        is_failure,
-                        reason: reason_for_record.clone(),
-                    });
-
+                // Delegate to execute_mock for effect capture + mock event emission.
                 Ok(self.execute_mock(Effect::EmitCompletionMarkerAndTerminate {
                     is_failure,
                     reason: reason_for_record,
