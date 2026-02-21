@@ -40,3 +40,4 @@ mod deduplication;
 mod git;
 mod prompt_permissions;
 mod rebase;
+mod signal_cleanup;
