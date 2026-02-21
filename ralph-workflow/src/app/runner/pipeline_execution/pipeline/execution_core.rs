@@ -195,6 +195,15 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             "Failed to cleanup orphaned marker via git helpers: {err}"
         ));
     }
+
+    // Restore git hooks if left in Ralph-managed state by a prior crashed run.
+    // This handles the SIGKILL case where neither the RAII guard nor the reducer
+    // could run cleanup. Best-effort: only warn on failure.
+    if let Err(err) = crate::git_helpers::uninstall_hooks(&ctx.logger) {
+        ctx.logger
+            .warn(&format!("Startup hook cleanup warning: {err}"));
+    }
+
     if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
         ctx.logger
             .warn(&format!("Failed to start agent phase: {err}"));
