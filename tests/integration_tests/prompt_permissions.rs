@@ -7,6 +7,8 @@ use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::state_reduction::reduce;
 
+use std::path::Path;
+
 use crate::test_timeout::with_default_timeout;
 
 #[test]
@@ -219,5 +221,310 @@ fn test_permission_restoration_on_user_interrupt() {
 
         let effect5 = determine_next_effect(&state4);
         assert!(matches!(effect5, Effect::SaveCheckpoint { .. }));
+    });
+}
+
+// ============================================================================
+// PROMPT.md cleanup function tests
+// ============================================================================
+
+/// Test that make_prompt_writable_with_workspace completes successfully.
+///
+/// This tests the function that AgentPhaseGuard::drop() calls to restore
+/// PROMPT.md permissions. The guard cleanup (including PROMPT.md restoration)
+/// is tested in unit tests within the crate where GitHelpers is accessible.
+///
+/// Note: MemoryWorkspace has no-op implementations for set_readonly/set_writable,
+/// so we verify the function completes without error.
+#[test]
+fn test_make_prompt_writable_with_workspace_succeeds() {
+    with_default_timeout(|| {
+        use ralph_workflow::files::make_prompt_writable_with_workspace;
+        use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+
+        // Call the function that AgentPhaseGuard::drop() uses
+        let warning = make_prompt_writable_with_workspace(&workspace);
+
+        // Should complete without error (MemoryWorkspace no-ops permissions)
+        assert!(
+            warning.is_none(),
+            "make_prompt_writable_with_workspace should succeed on MemoryWorkspace"
+        );
+
+        // PROMPT.md should still exist
+        assert!(
+            workspace.exists(Path::new("PROMPT.md")),
+            "PROMPT.md should still exist after permission restoration"
+        );
+    });
+}
+
+/// Test that make_prompt_read_only_with_workspace followed by writable works.
+///
+/// This tests the lock/unlock cycle that the pipeline uses.
+#[test]
+fn test_prompt_permission_lock_unlock_cycle() {
+    with_default_timeout(|| {
+        use ralph_workflow::files::{
+            make_prompt_read_only_with_workspace, make_prompt_writable_with_workspace,
+        };
+        use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+
+        // Lock (make read-only)
+        let lock_warning = make_prompt_read_only_with_workspace(&workspace);
+        assert!(
+            lock_warning.is_none(),
+            "Lock should succeed: {:?}",
+            lock_warning
+        );
+
+        // Unlock (make writable)
+        let unlock_warning = make_prompt_writable_with_workspace(&workspace);
+        assert!(
+            unlock_warning.is_none(),
+            "Unlock should succeed: {:?}",
+            unlock_warning
+        );
+
+        // PROMPT.md should still exist
+        assert!(
+            workspace.exists(Path::new("PROMPT.md")),
+            "PROMPT.md should still exist after lock/unlock cycle"
+        );
+    });
+}
+
+/// Test that startup cleanup restores PROMPT.md from prior interrupted run.
+///
+/// Simulates SIGKILL scenario: PROMPT.md is read-only and .no_agent_commit exists.
+/// Verifies that the cleanup functions would restore PROMPT.md permissions.
+///
+/// Note: MemoryWorkspace has no-op permission operations, but we verify the
+/// cleanup function sequence completes without error.
+#[test]
+fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
+    with_default_timeout(|| {
+        use ralph_workflow::files::make_prompt_writable_with_workspace;
+        use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+
+        // Simulate prior crashed run: PROMPT.md exists and orphan marker present
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("PROMPT.md", "# Goal\nTest content\n")
+            .with_file(".no_agent_commit", "");
+
+        // Simulate startup cleanup sequence: restore PROMPT.md permissions
+        // (This is what execution_core.rs does at startup)
+        let warning = make_prompt_writable_with_workspace(&workspace);
+
+        // Should complete without error (MemoryWorkspace no-ops permissions)
+        assert!(
+            warning.is_none(),
+            "make_prompt_writable_with_workspace should succeed on MemoryWorkspace"
+        );
+
+        // PROMPT.md should still exist
+        assert!(
+            workspace.exists(Path::new("PROMPT.md")),
+            "PROMPT.md should still exist after startup cleanup"
+        );
+    });
+}
+
+// ============================================================================
+// Ctrl+C cleanup tests (reducer-level simulation)
+// ============================================================================
+
+/// Test that Ctrl+C (simulated via interrupted_by_user flag) restores PROMPT.md.
+///
+/// This test simulates the Ctrl+C scenario by setting interrupted_by_user=true
+/// in the initial state and verifying RestorePromptPermissions effect is derived.
+#[test]
+fn test_ctrl_c_restores_prompt_md_writable() {
+    with_default_timeout(|| {
+        let initial_state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(initial_state.clone());
+
+        // Step 1: Lock at startup
+        let effect1 = determine_next_effect(&initial_state);
+        assert!(matches!(effect1, Effect::LockPromptPermissions));
+        let result1 = handler.execute_mock(effect1);
+        let state2 = reduce(initial_state, result1.event);
+
+        // Step 2: Simulate Ctrl+C interrupt
+        let interrupted_state = PipelineState {
+            phase: PipelinePhase::Interrupted,
+            previous_phase: Some(PipelinePhase::Development),
+            checkpoint_saved_count: 0,
+            interrupted_by_user: true,
+            prompt_permissions: state2.prompt_permissions.clone(),
+            ..state2
+        };
+
+        // Step 3: On user interrupt, should restore permissions
+        let effect3 = determine_next_effect(&interrupted_state);
+        assert!(
+            matches!(effect3, Effect::RestorePromptPermissions),
+            "User interrupt should restore PROMPT.md permissions, got {:?}",
+            effect3
+        );
+
+        // Step 4: Execute restore
+        let result3 = handler.execute_mock(effect3);
+        let state4 = reduce(interrupted_state, result3.event);
+
+        // Step 5: Verify restoration completed
+        assert!(
+            state4.prompt_permissions.restored,
+            "prompt_permissions.restored should be true after Ctrl+C cleanup"
+        );
+
+        // Step 6: Should proceed to SaveCheckpoint
+        let effect5 = determine_next_effect(&state4);
+        assert!(
+            matches!(effect5, Effect::SaveCheckpoint { .. }),
+            "After restoration, should save checkpoint"
+        );
+    });
+}
+
+/// Test that early Ctrl+C (before LockPromptPermissions) still restores PROMPT.md.
+///
+/// This covers Gap 1: interrupt arrives before restore_needed is set to true.
+/// Even though this run didn't lock PROMPT.md, restoration should still be attempted
+/// in case a prior run left it read-only.
+#[test]
+fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
+    with_default_timeout(|| {
+        // State simulates: user pressed Ctrl+C before LockPromptPermissions executed
+        let interrupted_state = PipelineState {
+            phase: PipelinePhase::Interrupted,
+            previous_phase: Some(PipelinePhase::Planning),
+            checkpoint_saved_count: 0,
+            interrupted_by_user: true,
+            // Key: restore_needed=false because lock never executed
+            prompt_permissions: ralph_workflow::reducer::state::PromptPermissionsState {
+                locked: false,
+                restore_needed: false, // NOT set because lock didn't run
+                restored: false,
+                last_warning: None,
+            },
+            ..PipelineState::initial(1, 0)
+        };
+
+        // After fix: RestorePromptPermissions should be derived even when restore_needed=false
+        let effect = determine_next_effect(&interrupted_state);
+        assert!(
+            matches!(effect, Effect::RestorePromptPermissions),
+            "Early Ctrl+C (restore_needed=false) should still derive RestorePromptPermissions, got {:?}",
+            effect
+        );
+    });
+}
+
+/// Test that marker removal workspace functions work correctly.
+///
+/// The .no_agent_commit file blocks git operations during agent phase.
+/// After Ctrl+C (or panic), AgentPhaseGuard::drop() calls end_agent_phase()
+/// which removes this marker.
+///
+/// This test verifies the marker workspace functions that support cleanup.
+/// Full guard behavior testing requires crate-internal access to GitHelpers.
+#[test]
+fn test_marker_workspace_functions() {
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::{
+            create_marker_with_workspace, marker_exists_with_workspace,
+            remove_marker_with_workspace,
+        };
+        use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+
+        // Initially no marker
+        assert!(
+            !marker_exists_with_workspace(&workspace),
+            "Marker should not exist initially"
+        );
+
+        // Create marker
+        create_marker_with_workspace(&workspace).expect("Failed to create marker");
+        assert!(
+            marker_exists_with_workspace(&workspace),
+            "Marker should exist after creation"
+        );
+
+        // Remove marker (simulates cleanup)
+        remove_marker_with_workspace(&workspace).expect("Failed to remove marker");
+        assert!(
+            !marker_exists_with_workspace(&workspace),
+            "Marker should not exist after removal"
+        );
+
+        // PROMPT.md should still exist
+        assert!(
+            workspace.exists(Path::new("PROMPT.md")),
+            "PROMPT.md should still exist"
+        );
+    });
+}
+
+/// Test that hook marker detection works via workspace function.
+///
+/// Ralph installs hooks with RALPH_RUST_MANAGED_HOOK marker. On cleanup,
+/// AgentPhaseGuard::drop() calls uninstall_hooks() which removes or
+/// restores the original hooks.
+///
+/// This test verifies the marker detection function works correctly.
+/// Full hook testing requires real git repo operations in system tests.
+#[test]
+fn test_hook_marker_detection_via_workspace() {
+    with_default_timeout(|| {
+        use ralph_workflow::git_helpers::file_contains_marker_with_workspace;
+        use ralph_workflow::workspace::MemoryWorkspace;
+
+        // The marker string used by Ralph
+        const HOOK_MARKER: &str = "RALPH_RUST_MANAGED_HOOK";
+
+        // Create a workspace with a mock hook file containing the marker
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".git/hooks/pre-commit",
+            &format!("#!/bin/bash\n# {HOOK_MARKER} - generated by ralph\nexit 0"),
+        );
+
+        // Verify marker detection works
+        let has_marker = file_contains_marker_with_workspace(
+            &workspace,
+            Path::new(".git/hooks/pre-commit"),
+            HOOK_MARKER,
+        )
+        .expect("Failed to check marker");
+
+        assert!(
+            has_marker,
+            "Hook file should contain the RALPH_RUST_MANAGED_HOOK marker"
+        );
+
+        // Verify non-marked files are detected correctly
+        let workspace_no_marker =
+            MemoryWorkspace::new_test().with_file(".git/hooks/pre-commit", "#!/bin/bash\nexit 0");
+
+        let no_marker = file_contains_marker_with_workspace(
+            &workspace_no_marker,
+            Path::new(".git/hooks/pre-commit"),
+            HOOK_MARKER,
+        )
+        .expect("Failed to check marker");
+
+        assert!(
+            !no_marker,
+            "Hook file without marker should not be detected as marked"
+        );
     });
 }

@@ -172,3 +172,61 @@ fn test_finalizing_always_derives_restore_permissions() {
         effect
     );
 }
+
+/// Test that RestorePromptPermissions is emitted on user interrupt even when restore_needed=false.
+///
+/// This covers Gap 1: early Ctrl+C before LockPromptPermissions executed.
+/// Even if this run didn't lock PROMPT.md, a prior crashed run may have left it read-only.
+#[test]
+fn test_interrupted_phase_restores_prompt_md_when_restore_not_needed() {
+    let state = PipelineState {
+        phase: PipelinePhase::Interrupted,
+        interrupted_by_user: true,
+        // Key: restore_needed=false simulates early interrupt before lock
+        prompt_permissions: PromptPermissionsState {
+            locked: false,
+            restore_needed: false, // NOT needed by this run
+            restored: false,
+            last_warning: None,
+        },
+        ..PipelineState::initial(1, 0)
+    };
+
+    let effect = determine_next_effect(&state);
+
+    assert!(
+        matches!(effect, Effect::RestorePromptPermissions),
+        "Expected RestorePromptPermissions even when restore_needed=false, got {:?}. \
+         User interrupts should ALWAYS attempt restoration for safety.",
+        effect
+    );
+}
+
+/// Test that non-user interrupt also restores PROMPT.md when restore_needed=false.
+///
+/// For consistency, programmatic interrupts (AwaitingDevFix exhaustion) should also
+/// unconditionally restore PROMPT.md permissions.
+#[test]
+fn test_programmatic_interrupt_restores_prompt_md_when_restore_not_needed() {
+    let mut state = PipelineState {
+        phase: PipelinePhase::Interrupted,
+        interrupted_by_user: false,
+        pre_termination_commit_checked: true, // Safety check passed
+        prompt_permissions: PromptPermissionsState {
+            locked: false,
+            restore_needed: false, // NOT needed by this run
+            restored: false,
+            last_warning: None,
+        },
+        ..PipelineState::initial(1, 0)
+    };
+    state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+
+    let effect = determine_next_effect(&state);
+
+    assert!(
+        matches!(effect, Effect::RestorePromptPermissions),
+        "Expected RestorePromptPermissions even for programmatic interrupt with restore_needed=false, got {:?}",
+        effect
+    );
+}

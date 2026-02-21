@@ -174,6 +174,16 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         ctx.logger
             .warn(&format!("Failed to cleanup orphaned marker: {err}"));
     }
+
+    // Restore PROMPT.md permissions if left read-only by a prior crashed run.
+    // This handles the SIGKILL case where neither the RAII guard nor the reducer
+    // could run cleanup. Best-effort: only warn on failure since this is expected
+    // recovery behavior after a crash (success is silent).
+    if let Some(warning) = crate::files::make_prompt_writable_with_workspace(&*ctx.workspace) {
+        ctx.logger
+            .warn(&format!("PROMPT.md permission restore on startup: {warning}"));
+    }
+
     if let Err(err) = crate::git_helpers::create_marker_with_workspace(&*ctx.workspace) {
         ctx.logger
             .warn(&format!("Failed to create agent phase marker: {err}"));

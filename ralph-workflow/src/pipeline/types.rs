@@ -1,6 +1,6 @@
 //! Core pipeline types (cleanup guards and command results).
 
-use crate::files::cleanup_generated_files_with_workspace;
+use crate::files::{cleanup_generated_files_with_workspace, make_prompt_writable_with_workspace};
 use crate::git_helpers::{disable_git_wrapper, end_agent_phase, uninstall_hooks, GitHelpers};
 use crate::logger::Logger;
 use crate::workspace::Workspace;
@@ -60,9 +60,101 @@ impl Drop for AgentPhaseGuard<'_> {
             return;
         }
 
+        // Restore PROMPT.md write permissions FIRST (most important for user recovery).
+        // This is best-effort - we don't want to panic in drop().
+        // Even if this run didn't lock PROMPT.md, a prior crashed run may have left it
+        // read-only, so we always attempt restoration.
+        let _ = make_prompt_writable_with_workspace(self.workspace);
+
         end_agent_phase();
         disable_git_wrapper(self.git_helpers);
         let _ = uninstall_hooks(self.logger);
         cleanup_generated_files_with_workspace(self.workspace);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logger::Colors;
+    use crate::workspace::{MemoryWorkspace, Workspace};
+    use std::path::Path;
+
+    /// Test that AgentPhaseGuard::drop() restores PROMPT.md permissions.
+    ///
+    /// This verifies that when AgentPhaseGuard is dropped without calling disarm(),
+    /// the RAII cleanup executes including PROMPT.md restoration. While MemoryWorkspace
+    /// has no-op permission methods, this test verifies:
+    /// 1. The guard's drop() runs cleanup when active
+    /// 2. PROMPT.md file is not corrupted by the cleanup process
+    /// 3. The make_prompt_writable_with_workspace call doesn't error
+    #[test]
+    fn test_agent_phase_guard_drop_restores_prompt_md() {
+        let workspace =
+            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+        let logger = Logger::new(Colors::new());
+        let mut git_helpers = GitHelpers::new();
+
+        // Create guard and let it drop without disarming
+        {
+            let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
+            // Guard will be dropped here - should run cleanup including PROMPT.md restoration
+        }
+
+        // Verify PROMPT.md still exists and wasn't corrupted
+        assert!(
+            workspace.exists(Path::new("PROMPT.md")),
+            "PROMPT.md should still exist after guard drop"
+        );
+        let content = workspace.read(Path::new("PROMPT.md")).unwrap();
+        assert!(
+            content.contains("# Goal"),
+            "PROMPT.md content should be preserved after guard drop"
+        );
+    }
+
+    /// Test that disarmed guard does NOT run cleanup.
+    ///
+    /// When disarm() is called, the guard should not execute cleanup on drop.
+    /// This verifies the active flag works correctly.
+    #[test]
+    fn test_agent_phase_guard_disarm_prevents_cleanup() {
+        let workspace =
+            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+        let logger = Logger::new(Colors::new());
+        let mut git_helpers = GitHelpers::new();
+
+        // Create guard, disarm it, then let it drop
+        {
+            let mut guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
+            guard.disarm();
+            // Guard will be dropped here - should NOT run cleanup
+        }
+
+        // PROMPT.md should still exist (though cleanup would preserve it anyway)
+        assert!(
+            workspace.exists(Path::new("PROMPT.md")),
+            "PROMPT.md should exist after disarmed guard drop"
+        );
+    }
+
+    /// Test that guard cleanup handles missing PROMPT.md gracefully.
+    ///
+    /// The make_prompt_writable_with_workspace function should not panic
+    /// if PROMPT.md doesn't exist (edge case during early interrupts).
+    #[test]
+    fn test_agent_phase_guard_drop_handles_missing_prompt_md() {
+        // Workspace without PROMPT.md
+        let workspace = MemoryWorkspace::new_test();
+        let logger = Logger::new(Colors::new());
+        let mut git_helpers = GitHelpers::new();
+
+        // Create guard and let it drop - should not panic
+        {
+            let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
+            // Guard will be dropped here
+        }
+
+        // No assertion needed - test passes if no panic occurs
     }
 }

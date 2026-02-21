@@ -148,11 +148,14 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
             // EXCEPTION: User-initiated Ctrl+C (interrupted_by_user=true) skips safety check
             // User explicitly chose to interrupt, so we respect that decision
             if state.interrupted_by_user {
-                // On Interrupted, check if restoration is pending before checkpoint
-                if state.phase == PipelinePhase::Interrupted
-                    && state.prompt_permissions.restore_needed
-                    && !state.prompt_permissions.restored
-                {
+                // On Interrupted, ALWAYS attempt PROMPT.md restoration before checkpoint.
+                // We do NOT gate on restore_needed because:
+                // 1. A prior crashed run (SIGKILL) may have left PROMPT.md read-only
+                // 2. This run was interrupted early before LockPromptPermissions executed
+                // 3. restore_needed is false, but PROMPT.md may still need restoration
+                // The restoration handler is idempotent - calling it on already-writable
+                // PROMPT.md is a no-op.
+                if state.phase == PipelinePhase::Interrupted && !state.prompt_permissions.restored {
                     return Effect::RestorePromptPermissions;
                 }
 
@@ -171,10 +174,9 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
             }
 
             // Safety check passed - proceed with normal termination
-            if state.phase == PipelinePhase::Interrupted
-                && state.prompt_permissions.restore_needed
-                && !state.prompt_permissions.restored
-            {
+            // On Interrupted phase, always attempt PROMPT.md restoration (same reasoning
+            // as user-initiated path: prior crashed runs may have left it read-only).
+            if state.phase == PipelinePhase::Interrupted && !state.prompt_permissions.restored {
                 return Effect::RestorePromptPermissions;
             }
 
@@ -292,10 +294,12 @@ mod tests {
     #[test]
     fn user_interrupt_skips_pre_termination_safety_check() {
         // Test that when interrupted_by_user=true (Ctrl+C), the safety check is skipped
+        // Note: RestorePromptPermissions is always attempted first, then checkpoint
         let mut state = PipelineState::initial(1, 0);
         state.phase = PipelinePhase::Interrupted;
         state.interrupted_by_user = true; // Key: user-initiated interrupt
         state.pre_termination_commit_checked = false; // Safety check NOT done
+        state.prompt_permissions.restored = true; // Already restored
 
         let effect = determine_next_effect_for_phase(&state);
 
@@ -381,21 +385,23 @@ mod tests {
 
     #[test]
     fn safety_check_allows_proceed_after_checked() {
-        // Test that after safety check completes, pipeline proceeds normally
+        // Test that after safety check completes, pipeline proceeds to restore or checkpoint
+        // Note: RestorePromptPermissions is always attempted first on Interrupted phase
         let mut state = PipelineState::initial(1, 0);
         state.phase = PipelinePhase::Interrupted;
         state.interrupted_by_user = false;
         state.pre_termination_commit_checked = true; // Safety check DONE
+        state.prompt_permissions.restored = true; // Already restored
 
         let effect = determine_next_effect_for_phase(&state);
 
         // Should proceed to checkpoint save
         match effect {
             Effect::SaveCheckpoint { .. } => {
-                // Expected - proceed after safety check
+                // Expected - proceed after safety check and restoration
             }
             other => panic!(
-                "Expected SaveCheckpoint after safety check completes, got {:?}",
+                "Expected SaveCheckpoint after safety check and restoration complete, got {:?}",
                 other
             ),
         }
@@ -428,6 +434,7 @@ mod tests {
         state.phase = PipelinePhase::Interrupted;
         state.pre_termination_commit_checked = true;
         state.interrupted_by_user = false;
+        state.prompt_permissions.restored = true; // Already restored
 
         let effect = determine_next_effect_for_phase(&state);
 
