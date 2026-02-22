@@ -1,6 +1,6 @@
 # Integration Test Rules
 
-**Read before writing ANY test.** Real filesystem/git → [SYSTEM_TESTS.md](system_tests/SYSTEM_TESTS.md).
+**Read before writing ANY test.** Real filesystem/git/signals → [SYSTEM_TESTS.md](system_tests/SYSTEM_TESTS.md).
 
 ## Running Integration Tests
 
@@ -44,6 +44,9 @@ Real filesystem/git → System tests only
 | `std::process::Command` | `MockProcessExecutor` |
 | `cfg!(test)` in prod code | Dependency injection |
 | Test file >1000 lines | Split into modules |
+
+**Exception:** End-to-end tests that require real OS signals (e.g. SIGINT/Ctrl+C) are **system tests**.
+They must live under `tests/system_tests/` because integration tests must not spawn processes.
 
 ## Patterns
 

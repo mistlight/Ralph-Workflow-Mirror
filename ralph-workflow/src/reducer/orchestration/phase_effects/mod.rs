@@ -145,9 +145,12 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
         PipelinePhase::Complete | PipelinePhase::Interrupted => {
             use crate::reducer::event::CheckpointTrigger;
 
-            // EXCEPTION: User-initiated Ctrl+C (interrupted_by_user=true) skips safety check
-            // User explicitly chose to interrupt, so we respect that decision
-            if state.interrupted_by_user {
+            // EXCEPTION: User-initiated Ctrl+C (interrupted_by_user=true) skips safety check.
+            //
+            // IMPORTANT: This exception applies ONLY to `phase == Interrupted`.
+            // If a checkpoint is resumed with `phase == Complete` but `interrupted_by_user == true`
+            // (e.g., a mis-set checkpoint), we must still run the pre-termination safety check.
+            if state.phase == PipelinePhase::Interrupted && state.interrupted_by_user {
                 // On Interrupted, ALWAYS attempt PROMPT.md restoration before checkpoint.
                 // We do NOT gate on restore_needed because:
                 // 1. A prior crashed run (SIGKILL) may have left PROMPT.md read-only
@@ -155,7 +158,7 @@ pub(in crate::reducer::orchestration) fn determine_next_effect_for_phase(
                 // 3. restore_needed is false, but PROMPT.md may still need restoration
                 // The restoration handler is idempotent - calling it on already-writable
                 // PROMPT.md is a no-op.
-                if state.phase == PipelinePhase::Interrupted && !state.prompt_permissions.restored {
+                if !state.prompt_permissions.restored {
                     return Effect::RestorePromptPermissions;
                 }
 

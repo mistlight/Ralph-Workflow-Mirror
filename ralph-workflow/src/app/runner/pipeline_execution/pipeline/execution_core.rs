@@ -195,11 +195,29 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     // and remove it immediately, defeating the safety mechanism.
 
     // Restore git hooks if left in Ralph-managed state by a prior crashed run.
+    //
+    // IMPORTANT: Avoid noisy startup warnings in normal repos that do not have
+    // Ralph-managed hooks installed. We only attempt an uninstall if a Ralph
+    // marker is present in a known hook file.
+    //
     // This handles the SIGKILL case where neither the RAII guard nor the reducer
     // could run cleanup. Best-effort: only warn on failure.
-    if let Err(err) = crate::git_helpers::uninstall_hooks(&ctx.logger) {
-        ctx.logger
-            .warn(&format!("Startup hook cleanup warning: {err}"));
+    let hooks_dir = crate::git_helpers::repo::get_hooks_dir();
+    let ralph_hook_detected = hooks_dir.ok().is_some_and(|dir| {
+        ["pre-commit", "pre-push"].into_iter().any(|name| {
+            crate::files::file_contains_marker(
+                &dir.join(name),
+                crate::git_helpers::HOOK_MARKER,
+            )
+            .unwrap_or(false)
+        })
+    });
+
+    if ralph_hook_detected {
+        if let Err(err) = crate::git_helpers::uninstall_hooks(&ctx.logger) {
+            ctx.logger
+                .warn(&format!("Startup hook cleanup warning: {err}"));
+        }
     }
 
     if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
@@ -410,6 +428,22 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
     }
 
+    // If SIGINT was requested while the reducer event loop was active, we must
+    // exit with code 130 (SIGINT convention) after reducer-driven cleanup.
+    //
+    // We intentionally check this AFTER the event loop completes because:
+    // - The SIGINT handler only sets a flag when the event loop is active
+    // - The event loop translates it into reducer state (interrupted_by_user=true)
+    // - We still want checkpoint/permission/hook cleanup to run normally
+    //
+    // IMPORTANT: A SIGINT may arrive very late (after the event loop has already
+    // passed its per-iteration interrupt check). In that case, the reducer will not
+    // observe the request, so `interrupted_by_user` may remain false. We still
+    // treat this run as user-interrupted for exit-code purposes.
+    let pending_sigint_request = crate::interrupt::take_user_interrupt_request();
+    let exit_after_cleanup_due_to_sigint =
+        loop_result.final_state.interrupted_by_user || pending_sigint_request;
+
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled
         && should_write_complete_checkpoint(loop_result.final_phase)
@@ -481,6 +515,12 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         &loop_result.final_state,
         prompt_monitor,
     );
+
+    if exit_after_cleanup_due_to_sigint {
+        // Exit after cleanup so SIGINT has the conventional exit code.
+        std::process::exit(130);
+    }
+
     Ok(())
 }
 

@@ -61,10 +61,7 @@ pub mod rebase_checkpoint;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod rebase_state_machine;
 
-#[cfg(any(test, feature = "test-utils"))]
 pub mod repo;
-#[cfg(not(any(test, feature = "test-utils")))]
-mod repo;
 mod review_baseline;
 mod start_commit;
 mod wrapper;
@@ -73,6 +70,7 @@ mod wrapper;
 pub use branch::get_default_branch_at;
 pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
+pub use hooks::HOOK_MARKER;
 #[cfg(any(test, feature = "test-utils"))]
 pub use hooks::{file_contains_marker_with_workspace, verify_hook_integrity_with_workspace};
 pub use rebase::{

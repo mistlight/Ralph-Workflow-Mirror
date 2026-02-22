@@ -77,47 +77,65 @@ impl Drop for AgentPhaseGuard<'_> {
 mod tests {
     use super::*;
     use crate::logger::Colors;
-    use crate::workspace::MemoryWorkspace;
+    use crate::workspace::{MemoryWorkspace, WorkspaceFs};
     use std::path::Path;
     use test_helpers::{init_git_repo, with_temp_cwd};
 
     /// Test that AgentPhaseGuard::drop() restores PROMPT.md permissions.
     ///
     /// This verifies that when AgentPhaseGuard is dropped without calling disarm(),
-    /// the RAII cleanup executes including PROMPT.md restoration. While MemoryWorkspace
-    /// has no-op permission methods, this test verifies:
-    /// 1. The guard's drop() runs cleanup when active
-    /// 2. PROMPT.md file is not corrupted by the cleanup process
-    /// 3. The make_prompt_writable_with_workspace call doesn't error
+    /// the RAII cleanup executes including PROMPT.md permission restoration.
+    ///
+    /// We use WorkspaceFs (real filesystem) here to ensure the test actually
+    /// exercises permissions rather than a no-op implementation.
     #[test]
     fn test_agent_phase_guard_drop_restores_prompt_md() {
         with_temp_cwd(|dir| {
             let _repo = init_git_repo(dir);
-            // Ensure Ralph's git helper functions operate within the temp repo (not the real one).
+            // Ensure git helper operations (hooks, wrapper) target the temp repo.
             std::env::set_current_dir(dir.path()).expect("set current dir");
 
-            let workspace =
-                MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+            let workspace = WorkspaceFs::new(dir.path().to_path_buf());
+            let prompt_rel = Path::new("PROMPT.md");
+
+            // Precondition: PROMPT.md exists and is read-only.
+            assert!(workspace.exists(prompt_rel), "PROMPT.md should exist");
+            workspace
+                .set_readonly(prompt_rel)
+                .expect("set PROMPT.md read-only");
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(dir.path().join("PROMPT.md"))
+                    .expect("stat PROMPT.md")
+                    .permissions()
+                    .mode();
+                assert_eq!(
+                    mode & 0o200,
+                    0,
+                    "PROMPT.md should be non-writable before drop"
+                );
+            }
+
             let logger = Logger::new(Colors::new());
             let mut git_helpers = GitHelpers::new();
 
             // Create guard and let it drop without disarming.
-            // This must not mutate the real repository or process-global state outside the temp cwd.
             {
                 let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
-                // Guard will be dropped here - should run cleanup including PROMPT.md restoration
             }
 
-            // Verify PROMPT.md still exists and wasn't corrupted
-            assert!(
-                workspace.exists(Path::new("PROMPT.md")),
-                "PROMPT.md should still exist after guard drop"
-            );
-            let content = workspace.read(Path::new("PROMPT.md")).unwrap();
-            assert!(
-                content.contains("# Goal"),
-                "PROMPT.md content should be preserved after guard drop"
-            );
+            // Assert: PROMPT.md is writable again after drop.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(dir.path().join("PROMPT.md"))
+                    .expect("stat PROMPT.md")
+                    .permissions()
+                    .mode();
+                assert_ne!(mode & 0o200, 0, "PROMPT.md should be writable after drop");
+            }
         });
     }
 

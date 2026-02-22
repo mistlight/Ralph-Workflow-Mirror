@@ -49,7 +49,11 @@ const SIGNAL_TEST_TIMEOUT: Duration = Duration::from_secs(60);
 const MARKER_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Brief delay after process spawn before sending early SIGINT.
-const EARLY_SIGINT_DELAY: Duration = Duration::from_millis(200);
+///
+/// We want SIGINT to be delivered after `main()` has had a chance to install the
+/// Ctrl+C handler (`interrupt::setup_interrupt_handler()`), but before the reducer
+/// event loop begins. A slightly larger delay reduces flakiness.
+const EARLY_SIGINT_DELAY: Duration = Duration::from_millis(600);
 
 /// Polling interval for marker file checks.
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -115,6 +119,7 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
         .args(["--developer-iters", "1", "--reviewer-reviews", "0"])
         .env("NO_COLOR", "1") // Disable colors for cleaner output
         .env("RALPH_LOG", "warn") // Reduce log noise
+        .env("RALPH_NO_RESUME_PROMPT", "1") // Ensure non-interactive in tests
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -137,6 +142,22 @@ fn wait_for_marker(repo_dir: &Path, timeout: Duration) -> bool {
         }
         std::thread::sleep(POLL_INTERVAL);
     }
+    false
+}
+
+fn wait_for_marker_size(repo_dir: &Path, timeout: Duration, expected_size: u64) -> bool {
+    let marker_path = repo_dir.join(".no_agent_commit");
+    let start = Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Ok(metadata) = std::fs::metadata(&marker_path) {
+            if metadata.len() == expected_size {
+                return true;
+            }
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+
     false
 }
 
@@ -230,12 +251,15 @@ fn test_ctrl_c_restores_prompt_md_writable() {
             send_sigint(&child);
 
             // Wait for exit
-            let _status = child.wait().expect("wait for child");
+            let status = child.wait().expect("wait for child");
 
             // On SIGINT, the conventional exit status is 130 (128 + signal number).
-            // However, some early-return/cleanup paths may return 0 after graceful shutdown.
-            // The authoritative signal-handling coverage is in interrupt.rs; this test focuses
-            // on repository cleanup side effects.
+            // This is part of the acceptance criteria.
+            assert_eq!(
+                status.code(),
+                Some(130),
+                "SIGINT should exit with status 130"
+            );
 
             // Key assertion: PROMPT.md must be writable after cleanup
             assert_prompt_writable(&prompt_path);
@@ -287,11 +311,29 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
             std::thread::sleep(EARLY_SIGINT_DELAY);
             send_sigint(&child);
 
-            // Wait for exit (best-effort: early SIGINT may arrive before ctrlc installs handler)
-            let _ = child.wait().expect("wait for child");
+            // Wait for exit.
+            // NOTE: If SIGINT arrives before ctrlc installs the handler, the OS default
+            // signal disposition can terminate the process directly. In that case, cleanup
+            // may not run and PROMPT.md may remain read-only.
+            //
+            // This test aims to validate the *handled* early interrupt path, so we retry
+            // with an increased delay if we didn't observe the conventional 130 exit.
+            let status = child.wait().expect("wait for child");
 
-            // Key assertion: PROMPT.md must be writable after exit
-            // Even with early interrupt, startup cleanup should have restored it
+            if status.code() != Some(130) {
+                let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph retry");
+                std::thread::sleep(Duration::from_millis(1200));
+                send_sigint(&child);
+                let status = child.wait().expect("wait for child (retry)");
+                assert_eq!(
+                    status.code(),
+                    Some(130),
+                    "SIGINT should exit with status 130 after handler-installed retry"
+                );
+            }
+
+            // Key assertion: PROMPT.md must be writable after exit.
+            // Even with early interrupt, startup cleanup should have restored it.
             assert_prompt_writable(&prompt_path);
         },
         SIGNAL_TEST_TIMEOUT,
@@ -489,41 +531,36 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
             // 1. PROMPT.md is read-only
             // 2. .no_agent_commit marker exists
             set_readonly(&prompt_path);
-            std::fs::write(temp_dir.path().join(".no_agent_commit"), "").expect("write marker");
+            // Write a non-empty marker payload so we can detect the new process
+            // rewriting it (workspace marker creation writes an empty file).
+            std::fs::write(temp_dir.path().join(".no_agent_commit"), "stale")
+                .expect("write marker");
 
             // Spawn Ralph pipeline - startup cleanup should restore PROMPT.md
             let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
-            // Wait a short moment for startup cleanup and ctrlc handler installation.
-            // (Startup cleanup runs before the reducer event loop starts.)
-            std::thread::sleep(Duration::from_millis(200));
-
-            // Wait for process to reach agent phase (optional - helps ensure we're past startup).
-            let marker_appeared = wait_for_marker(temp_dir.path(), Duration::from_secs(5));
-
-            // If the marker appeared again, Ralph is running normally.
-            // If it didn't appear (or was cleaned and recreated), that's also fine.
-            // We just need to ensure the interrupt handler runs.
+            // Wait for startup cleanup to restore PROMPT.md before we send SIGINT.
+            //
+            // IMPORTANT: We pre-create `.no_agent_commit` to simulate a prior SIGKILL.
+            // That means `wait_for_marker()` would return immediately, which is not a
+            // readiness handshake. Instead, wait until the marker has been rewritten
+            // by the new process (it will be created with size 0 by the workspace-aware
+            // marker writer), then poll for PROMPT.md to become writable.
+            assert!(
+                wait_for_marker_size(temp_dir.path(), MARKER_WAIT_TIMEOUT, 0),
+                "expected new process to recreate .no_agent_commit with size 0"
+            );
 
             // Send SIGINT to exit cleanly
             send_sigint(&child);
             let _status = child.wait().expect("wait for child");
 
-            // PROMPT.md should be writable (startup cleanup should have restored it,
-            // or the signal cleanup should have)
+            // PROMPT.md should be writable after exit.
+            // Note: PROMPT.md may become read-only during normal execution due to
+            // LockPromptPermissions, so we only assert writability after cleanup.
             assert_prompt_writable(&prompt_path);
 
-            // Marker should be cleaned up
-            // Note: The marker we created simulating prior run should be cleaned up
-            // If Ralph created a new one during agent phase, that should also be cleaned
-            if marker_appeared {
-                // If we reached agent phase, marker should be gone after cleanup
-                assert!(
-                    !temp_dir.path().join(".no_agent_commit").exists(),
-                    ".no_agent_commit should be removed after cleanup"
-                );
-            }
-            // If marker didn't appear, startup cleanup removed the stale one.
+            // Marker should be cleaned up (stale one removed; any newly created marker removed too).
             assert!(
                 !temp_dir.path().join(".no_agent_commit").exists(),
                 ".no_agent_commit should not exist after cleanup"

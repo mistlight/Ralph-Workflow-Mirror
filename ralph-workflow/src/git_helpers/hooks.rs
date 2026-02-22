@@ -164,8 +164,6 @@ pub fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bool> {
         }
         Ok(true)
     } else {
-        let name = hook_path.file_name().unwrap_or_default().to_string_lossy();
-        logger.warn(&format!("Hook not managed by Ralph: {name}"));
         Ok(false)
     }
 }
