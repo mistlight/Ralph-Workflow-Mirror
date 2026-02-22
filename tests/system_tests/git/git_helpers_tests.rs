@@ -3,8 +3,8 @@
 //! These tests use real git2::Repository and filesystem operations.
 //! Tests that can use MemoryWorkspace should remain in the unit tests.
 
+use ralph_workflow::git_helpers::get_hooks_dir;
 use ralph_workflow::git_helpers::hooks::HOOK_MARKER;
-use ralph_workflow::git_helpers::repo::get_hooks_dir;
 use ralph_workflow::git_helpers::{self, cleanup_orphaned_marker, git_snapshot, hooks};
 use ralph_workflow::logger::Logger;
 use std::fs::{self, File};

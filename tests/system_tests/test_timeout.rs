@@ -35,7 +35,7 @@
 //! because real git operations can be slower).
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -68,6 +68,16 @@ impl std::error::Error for TimeoutError {}
 ///
 /// If the closure does not complete within the specified duration,
 /// the test will panic with a timeout error.
+///
+/// # Global interrupt support
+///
+/// System tests may spawn long-running child processes (e.g., a `ralph` CLI)
+/// and block waiting for markers. If a timeout fires while a test is mid-flight,
+/// we want to avoid leaving orphan child processes behind.
+///
+/// To support that, tests can register best-effort cleanup callbacks via
+/// [`register_timeout_cleanup`]. These callbacks are invoked immediately before
+/// timing out.
 pub fn with_timeout<F>(f: F, timeout: Duration)
 where
     F: FnOnce() + Send + 'static,
@@ -94,13 +104,47 @@ where
     let start = std::time::Instant::now();
     while !completed.load(Ordering::Acquire) {
         if start.elapsed() >= timeout {
+            run_timeout_cleanups();
             panic!("{}", TimeoutError { timeout }.to_string());
         }
         // Small sleep to avoid busy-waiting
         thread::sleep(Duration::from_millis(50));
     }
 
+    clear_timeout_cleanups();
     handle.join().unwrap();
+}
+
+type TimeoutCleanup = Box<dyn FnOnce() + Send + 'static>;
+
+static TIMEOUT_CLEANUPS: OnceLock<Mutex<Vec<TimeoutCleanup>>> = OnceLock::new();
+
+/// Register a best-effort cleanup callback to run if the test times out.
+///
+/// Callbacks run in the timing thread (not the test worker thread), and are
+/// intended for emergency cleanup like killing child processes.
+pub fn register_timeout_cleanup(cleanup: TimeoutCleanup) {
+    let cleanups = TIMEOUT_CLEANUPS.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = cleanups.lock().unwrap_or_else(|p| p.into_inner());
+    guard.push(cleanup);
+}
+
+fn run_timeout_cleanups() {
+    let Some(cleanups) = TIMEOUT_CLEANUPS.get() else {
+        return;
+    };
+    let mut guard = cleanups.lock().unwrap_or_else(|p| p.into_inner());
+    for cleanup in guard.drain(..) {
+        cleanup();
+    }
+}
+
+fn clear_timeout_cleanups() {
+    let Some(cleanups) = TIMEOUT_CLEANUPS.get() else {
+        return;
+    };
+    let mut guard = cleanups.lock().unwrap_or_else(|p| p.into_inner());
+    guard.clear();
 }
 
 /// Run a closure with the default 30-second timeout.

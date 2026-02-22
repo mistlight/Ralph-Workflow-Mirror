@@ -202,7 +202,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     //
     // This handles the SIGKILL case where neither the RAII guard nor the reducer
     // could run cleanup. Best-effort: only warn on failure.
-    let hooks_dir = crate::git_helpers::repo::get_hooks_dir();
+    let hooks_dir = crate::git_helpers::get_hooks_dir_in_repo(&ctx.repo_root);
     let ralph_hook_detected = hooks_dir.ok().is_some_and(|dir| {
         ["pre-commit", "pre-push"].into_iter().any(|name| {
             crate::files::file_contains_marker(
@@ -503,18 +503,26 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;
 
     // Commit phase
-    finalize_pipeline(
-        &mut agent_phase_guard,
-        crate::app::finalization::FinalizeContext {
-            logger: &ctx.logger,
-            colors: ctx.colors,
-            config: &config,
-            timer: &timer,
-            workspace: &*ctx.workspace,
-        },
-        &loop_result.final_state,
-        prompt_monitor,
-    );
+    //
+    // IMPORTANT: If SIGINT was requested but the reducer did not observe it
+    // (`pending_sigint_request=true`), treat that as a late Ctrl+C and avoid running
+    // any finalization work that the user likely intended to abort.
+    //
+    // Cleanup is still guaranteed by AgentPhaseGuard::drop() and reducer effects.
+    if !pending_sigint_request {
+        finalize_pipeline(
+            &mut agent_phase_guard,
+            crate::app::finalization::FinalizeContext {
+                logger: &ctx.logger,
+                colors: ctx.colors,
+                config: &config,
+                timer: &timer,
+                workspace: &*ctx.workspace,
+            },
+            &loop_result.final_state,
+            prompt_monitor,
+        );
+    }
 
     if exit_after_cleanup_due_to_sigint {
         // Exit after cleanup so SIGINT has the conventional exit code.

@@ -1,5 +1,5 @@
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::git_helpers::git2_to_io_error;
 
@@ -22,6 +22,10 @@ pub fn get_repo_root() -> io::Result<PathBuf> {
 /// Returns the path to the hooks directory inside .git (or the equivalent
 /// for worktrees and other configurations).
 pub fn get_hooks_dir() -> io::Result<PathBuf> {
-    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    get_hooks_dir_from(Path::new("."))
+}
+
+pub(crate) fn get_hooks_dir_from(discovery_root: &Path) -> io::Result<PathBuf> {
+    let repo = git2::Repository::discover(discovery_root).map_err(|e| git2_to_io_error(&e))?;
     Ok(repo.path().join("hooks"))
 }

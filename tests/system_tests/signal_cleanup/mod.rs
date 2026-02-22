@@ -31,13 +31,13 @@
 
 #![cfg(unix)]
 
-use crate::test_timeout::with_timeout;
+use crate::test_timeout::{register_timeout_cleanup, with_timeout};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use test_helpers::init_git_repo;
+use test_helpers::{create_isolated_config, init_git_repo};
 
 /// Extended timeout for signal cleanup tests.
 ///
@@ -112,6 +112,11 @@ fn find_ralph_binary() -> Option<std::path::PathBuf> {
 fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
     let ralph_bin = find_ralph_binary()?;
 
+    // Isolate config home so user configuration can't affect system test behavior.
+    // NOTE: Config resolution expects XDG_CONFIG_HOME to be the parent of
+    // `ralph-workflow.toml`.
+    let xdg_config_home = create_isolated_config(repo_dir);
+
     // Spawn with minimal config - we just need the process to start
     // and reach the agent phase (create .no_agent_commit)
     let child = Command::new(&ralph_bin)
@@ -120,10 +125,24 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
         .env("NO_COLOR", "1") // Disable colors for cleaner output
         .env("RALPH_LOG", "warn") // Reduce log noise
         .env("RALPH_NO_RESUME_PROMPT", "1") // Ensure non-interactive in tests
+        .env("XDG_CONFIG_HOME", xdg_config_home)
+        .env("RALPH_DEVELOPER_CMD", "true")
+        .env("RALPH_REVIEWER_CMD", "true")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn ralph process");
+
+    register_timeout_cleanup(Box::new({
+        let pid = child.id();
+        move || {
+            // Best-effort emergency cleanup on system test timeout.
+            // Ignore errors: the process may already have exited.
+            unsafe {
+                let _ = libc::kill(pid as i32, libc::SIGKILL);
+            }
+        }
+    }));
 
     Some(child)
 }

@@ -61,7 +61,15 @@ pub mod rebase_checkpoint;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod rebase_state_machine;
 
-pub mod repo;
+mod repo;
+
+pub fn get_hooks_dir() -> io::Result<std::path::PathBuf> {
+    repo::get_hooks_dir_from(std::path::Path::new("."))
+}
+
+pub(crate) fn get_hooks_dir_in_repo(repo_root: &std::path::Path) -> io::Result<std::path::PathBuf> {
+    repo::get_hooks_dir_from(repo_root)
+}
 mod review_baseline;
 mod start_commit;
 mod wrapper;
@@ -103,6 +111,7 @@ pub use repo::{
     git_snapshot_in_repo, require_git_repo, CommitResultFallback, DiffReviewContent,
     DiffTruncationLevel,
 };
+
 #[cfg(any(test, feature = "test-utils"))]
 pub use review_baseline::load_review_baseline_with_workspace;
 pub use review_baseline::update_review_baseline_with_workspace;
