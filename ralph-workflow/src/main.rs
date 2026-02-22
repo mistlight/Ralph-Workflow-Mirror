@@ -27,5 +27,12 @@ fn main() -> anyhow::Result<()> {
 
     // Create real process executor for production use
     let executor = std::sync::Arc::new(RealProcessExecutor::new());
-    app::run(Args::parse(), executor)
+    let result = app::run(Args::parse(), executor);
+
+    // If the pipeline requested a SIGINT exit code, exit after cleanup has completed.
+    if interrupt::take_exit_130_after_run() {
+        std::process::exit(130);
+    }
+
+    result
 }

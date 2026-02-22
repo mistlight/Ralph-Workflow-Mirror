@@ -202,19 +202,19 @@ fn test_interrupted_phase_restores_prompt_md_when_restore_not_needed() {
     );
 }
 
-/// Test that non-user interrupt also restores PROMPT.md when restore_needed=false.
+/// Test that non-user interrupt runs the pre-termination safety check before cleanup.
 ///
-/// For consistency, programmatic interrupts (AwaitingDevFix exhaustion) should also
-/// unconditionally restore PROMPT.md permissions.
+/// Programmatic interrupts must not terminate with uncommitted work; they must run
+/// `CheckUncommittedChangesBeforeTermination` first.
 #[test]
-fn test_programmatic_interrupt_restores_prompt_md_when_restore_not_needed() {
+fn test_programmatic_interrupt_requires_pre_termination_safety_check() {
     let mut state = PipelineState {
         phase: PipelinePhase::Interrupted,
         interrupted_by_user: false,
-        pre_termination_commit_checked: true, // Safety check passed
+        pre_termination_commit_checked: false, // Safety check NOT passed
         prompt_permissions: PromptPermissionsState {
             locked: false,
-            restore_needed: false, // NOT needed by this run
+            restore_needed: false,
             restored: false,
             last_warning: None,
         },
@@ -225,8 +225,8 @@ fn test_programmatic_interrupt_restores_prompt_md_when_restore_not_needed() {
     let effect = determine_next_effect(&state);
 
     assert!(
-        matches!(effect, Effect::RestorePromptPermissions),
-        "Expected RestorePromptPermissions even for programmatic interrupt with restore_needed=false, got {:?}",
+        matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
+        "Expected CheckUncommittedChangesBeforeTermination for programmatic interrupt, got {:?}",
         effect
     );
 }

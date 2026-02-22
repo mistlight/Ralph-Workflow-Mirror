@@ -47,6 +47,24 @@ static USER_INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// - orderly shutdown
 static EVENT_LOOP_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// True when the process should exit with code 130 after the pipeline returns.
+///
+/// We intentionally do not call `process::exit(130)` from inside the pipeline runner,
+/// because that would bypass Rust destructors (RAII cleanup like `AgentPhaseGuard::drop()`).
+/// Instead, the pipeline requests this exit code and `main()` performs the actual
+/// exit after stack unwinding and cleanup completes.
+static EXIT_130_AFTER_RUN: AtomicBool = AtomicBool::new(false);
+
+/// Request that the process exit with code 130 once the pipeline returns.
+pub fn request_exit_130_after_run() {
+    EXIT_130_AFTER_RUN.store(true, Ordering::SeqCst);
+}
+
+/// Consume a pending exit-130 request.
+pub fn take_exit_130_after_run() -> bool {
+    EXIT_130_AFTER_RUN.swap(false, Ordering::SeqCst)
+}
+
 #[cfg(unix)]
 fn restore_prompt_md_writable_via_std_fs() {
     use std::os::unix::fs::PermissionsExt;

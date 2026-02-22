@@ -41,17 +41,30 @@ use std::time::{Duration, Instant};
 fn collect_output(mut child: Child) -> (ExitStatus, String, String) {
     use std::io::Read;
 
+    // Drain stdout/stderr BEFORE wait() to avoid deadlock if the child fills a pipe buffer.
+    // Drain concurrently so one full pipe doesn't block draining the other.
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let stdout_handle = std::thread::spawn(move || {
+        let mut stdout = String::new();
+        if let Some(mut out) = stdout_pipe {
+            let _ = out.read_to_string(&mut stdout);
+        }
+        stdout
+    });
+
+    let stderr_handle = std::thread::spawn(move || {
+        let mut stderr = String::new();
+        if let Some(mut err) = stderr_pipe {
+            let _ = err.read_to_string(&mut stderr);
+        }
+        stderr
+    });
+
     let status = child.wait().expect("wait for child");
-
-    let mut stdout = String::new();
-    if let Some(mut out) = child.stdout.take() {
-        let _ = out.read_to_string(&mut stdout);
-    }
-
-    let mut stderr = String::new();
-    if let Some(mut err) = child.stderr.take() {
-        let _ = err.read_to_string(&mut stderr);
-    }
+    let stdout = stdout_handle.join().unwrap_or_default();
+    let stderr = stderr_handle.join().unwrap_or_default();
 
     (status, stdout, stderr)
 }
@@ -174,8 +187,16 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
         .env("RALPH_LOG", "warn") // Reduce log noise
         .env("RALPH_NO_RESUME_PROMPT", "1") // Ensure non-interactive in tests
         .env("XDG_CONFIG_HOME", xdg_config_home)
-        .env("RALPH_DEVELOPER_CMD", "true")
-        .env("RALPH_REVIEWER_CMD", "true")
+        // Use a command that blocks until SIGINT so the agent phase is long enough
+        // for the test to reliably observe the marker.
+        .env(
+            "RALPH_DEVELOPER_CMD",
+            "bash -lc 'trap \"exit 0\" INT; while true; do sleep 1; done'",
+        )
+        .env(
+            "RALPH_REVIEWER_CMD",
+            "bash -lc 'trap \"exit 0\" INT; while true; do sleep 1; done'",
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

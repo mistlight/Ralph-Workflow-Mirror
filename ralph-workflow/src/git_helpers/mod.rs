@@ -77,10 +77,10 @@ mod wrapper;
 #[cfg(any(test, feature = "test-utils"))]
 pub use branch::get_default_branch_at;
 pub use branch::{get_default_branch, is_main_or_master_branch};
-pub use hooks::uninstall_hooks;
 pub use hooks::HOOK_MARKER;
 #[cfg(any(test, feature = "test-utils"))]
 pub use hooks::{file_contains_marker_with_workspace, verify_hook_integrity_with_workspace};
+pub use hooks::{uninstall_hooks, uninstall_hooks_in_repo};
 pub use rebase::{
     abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
     rebase_in_progress, rebase_onto, RebaseResult,

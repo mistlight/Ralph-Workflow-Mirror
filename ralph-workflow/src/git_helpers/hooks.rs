@@ -36,6 +36,33 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+/// Uninstall all Ralph-managed hooks in an explicit repository.
+///
+/// This is used for startup cleanup where the process current working directory
+/// may differ from the repo root we're operating on.
+pub fn uninstall_hooks_in_repo(repo_root: &Path, logger: &Logger) -> io::Result<()> {
+    let hooks_dir = super::repo::get_hooks_dir_from(repo_root)?;
+    if !hooks_dir.exists() {
+        return Ok(());
+    }
+
+    let mut restored = 0;
+    for hook_name in &["pre-commit", "pre-push"] {
+        let hook_path = hooks_dir.join(hook_name);
+        if hook_path.exists() && uninstall_hook(&hook_path, logger)? {
+            restored += 1;
+        }
+    }
+
+    if restored > 0 {
+        logger.success(&format!("Uninstalled {restored} Ralph hook(s)"));
+    } else {
+        logger.info("No Ralph hooks were restored (hooks may not have been installed)");
+    }
+
+    Ok(())
+}
+
 fn bash_single_quote_literal(s: &str) -> String {
     // Bash-safe single-quoted string literal.
     // In bash, single quotes cannot be escaped within single quotes, so the standard
@@ -73,6 +100,14 @@ pub fn install_hook(hook_name: &str, hook_path: &Path) -> io::Result<()> {
     // This tolerates spaces and most odd characters, including embedded double-quotes.
     let repo_root_bash = bash_single_quote_literal(&repo_root_str);
 
+    // Create hooks directory if needed.
+    //
+    // IMPORTANT: we must do this BEFORE canonicalize(), otherwise canonicalize() fails
+    // when the hooks directory is missing.
+    if let Some(parent) = hook_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
     // Use absolute path for orig backup.
     // Handle the case where hook_path has no parent or file_name gracefully.
     let hook_dir = hook_path.parent().ok_or_else(|| {
@@ -89,11 +124,6 @@ pub fn install_hook(hook_name: &str, hook_path: &Path) -> io::Result<()> {
 
     // Store the orig path as a bash-safe single-quoted literal.
     let orig_path_bash = bash_single_quote_literal(&orig_path_abs.display().to_string());
-
-    // Create hooks directory if needed.
-    if let Some(parent) = hook_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
 
     // Backup existing hook if not already managed by Ralph.
     if hook_path.exists() && !file_contains_marker(hook_path, HOOK_MARKER)? {

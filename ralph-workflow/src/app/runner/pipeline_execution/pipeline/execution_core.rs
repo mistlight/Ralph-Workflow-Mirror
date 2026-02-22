@@ -214,7 +214,8 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     });
 
     if ralph_hook_detected {
-        if let Err(err) = crate::git_helpers::uninstall_hooks(&ctx.logger) {
+        if let Err(err) = crate::git_helpers::uninstall_hooks_in_repo(&ctx.repo_root, &ctx.logger)
+        {
             ctx.logger
                 .warn(&format!("Startup hook cleanup warning: {err}"));
         }
@@ -502,14 +503,14 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
     update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;
 
-    // Commit phase
+    // Finalization
     //
-    // IMPORTANT: If SIGINT was requested but the reducer did not observe it
-    // (`pending_sigint_request=true`), treat that as a late Ctrl+C and avoid running
-    // any finalization work that the user likely intended to abort.
+    // IMPORTANT: If the user hit Ctrl+C (either observed by the reducer or late),
+    // avoid running finalization. Finalization includes user-visible output and may
+    // clear checkpoints; a Ctrl+C should behave like an abort after cleanup.
     //
     // Cleanup is still guaranteed by AgentPhaseGuard::drop() and reducer effects.
-    if !pending_sigint_request {
+    if !exit_after_cleanup_due_to_sigint {
         finalize_pipeline(
             &mut agent_phase_guard,
             crate::app::finalization::FinalizeContext {
@@ -526,7 +527,10 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
 
     if exit_after_cleanup_due_to_sigint {
         // Exit after cleanup so SIGINT has the conventional exit code.
-        std::process::exit(130);
+        // IMPORTANT: do NOT call `process::exit(130)` here; it would bypass RAII
+        // cleanup (AgentPhaseGuard::drop). Instead, request the exit code and let
+        // `main()` perform the exit after stack unwinding.
+        crate::interrupt::request_exit_130_after_run();
     }
 
     Ok(())

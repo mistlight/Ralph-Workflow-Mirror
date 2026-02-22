@@ -31,6 +31,7 @@ const MARKER_FILE: &str = ".no_agent_commit";
 pub struct GitHelpers {
     real_git: Option<PathBuf>,
     wrapper_dir: Option<TempDir>,
+    wrapper_repo_root: Option<PathBuf>,
 }
 
 impl GitHelpers {
@@ -38,6 +39,7 @@ impl GitHelpers {
         Self {
             real_git: None,
             wrapper_dir: None,
+            wrapper_repo_root: None,
         }
     }
 
@@ -187,9 +189,12 @@ exec '{git_path_escaped}' "$@"
         format!("{}:{}", wrapper_dir.path().display(), current_path),
     );
 
-    fs::create_dir_all(".agent")?;
+    let repo_root = get_repo_root()?;
+    helpers.wrapper_repo_root = Some(repo_root.clone());
+
+    fs::create_dir_all(repo_root.join(".agent"))?;
     fs::write(
-        WRAPPER_DIR_TRACK_FILE,
+        repo_root.join(WRAPPER_DIR_TRACK_FILE),
         wrapper_dir.path().display().to_string(),
     )?;
 
@@ -224,7 +229,14 @@ pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
             env::set_var("PATH", new_path);
         }
     }
-    let _ = fs::remove_file(WRAPPER_DIR_TRACK_FILE);
+
+    // IMPORTANT: remove the tracking file using an absolute repo root path.
+    // The process CWD may not be the repo root (e.g., tests or effects that change CWD).
+    if let Some(repo_root) = helpers.wrapper_repo_root.take() {
+        let _ = fs::remove_file(repo_root.join(WRAPPER_DIR_TRACK_FILE));
+    } else {
+        let _ = fs::remove_file(WRAPPER_DIR_TRACK_FILE);
+    }
 }
 
 /// Start agent phase (creates marker file, installs hooks, enables wrapper).
