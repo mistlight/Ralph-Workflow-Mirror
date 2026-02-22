@@ -117,6 +117,7 @@ pub fn take_user_interrupt_request() -> bool {
 ///
 /// This structure holds references to all the state needed to create
 /// a checkpoint when the user interrupts the pipeline with Ctrl+C.
+#[derive(Clone)]
 pub struct InterruptContext {
     /// Current pipeline phase
     pub phase: crate::checkpoint::PipelinePhase,
@@ -181,7 +182,7 @@ pub fn clear_interrupt_context() {
 ///
 /// Call this early in main() after initializing the pipeline context.
 pub fn setup_interrupt_handler() {
-    ctrlc::set_handler(|| {
+    let install = ctrlc::set_handler(|| {
         request_user_interrupt();
 
         // If the reducer event loop is running, do not exit here.
@@ -195,44 +196,46 @@ pub fn setup_interrupt_handler() {
 
         eprintln!("\nInterrupt received; saving checkpoint...");
 
-        // Try to save checkpoint if context is available
-        let ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|poison| {
-            // If mutex is poisoned, recover the guard (context may be inconsistent)
-            poison.into_inner()
-        });
-        if let Some(ref context) = *ctx {
+        // Clone the entire context (small, Arc-backed) and then perform I/O without
+        // holding the mutex.
+        let context = {
+            let ctx = INTERRUPT_CONTEXT
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            ctx.clone()
+        };
+
+        if let Some(ref context) = context {
             if let Err(e) = save_interrupt_checkpoint(context) {
                 eprintln!("Warning: Failed to save checkpoint: {}", e);
             } else {
                 eprintln!("Checkpoint saved. Resume with: ralph --resume");
             }
         }
-        drop(ctx); // Release lock before cleanup
 
         // Best-effort: restore PROMPT.md permissions so we don't leave the repo locked.
         // This is primarily for early-interrupt cases before the reducer event loop starts.
         //
-        // IMPORTANT: Interrupts can arrive before the pipeline has set up interrupt context.
-        // In that case, fall back to std::fs using repo discovery (same approach as the
-        // git wrapper/hook cleanup below).
         // Always attempt a std::fs fallback using repo discovery. This covers:
         // - interrupt context not yet installed (very early SIGINT)
         // - workspace implementations that cannot mutate real filesystem permissions
         //   (e.g., MemoryWorkspace)
         restore_prompt_md_writable_via_std_fs();
 
-        {
-            let ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|p| p.into_inner());
-            if let Some(ref context) = *ctx {
-                let _ = context.workspace.set_writable(Path::new("PROMPT.md"));
-            }
+        if let Some(ref context) = context {
+            let _ = context.workspace.set_writable(Path::new("PROMPT.md"));
         }
 
         eprintln!("Cleaning up...");
         crate::git_helpers::cleanup_agent_phase_silent();
         std::process::exit(130); // Standard exit code for SIGINT
-    })
-    .ok(); // Ignore errors if handler can't be set
+    });
+
+    if let Err(e) = install {
+        // Handler installation failure is a reliability issue: without it, Ctrl+C will not
+        // trigger checkpointing/cleanup and can leave the repo in a broken state.
+        eprintln!("Warning: failed to install Ctrl+C handler: {e}");
+    }
 }
 
 /// Save a checkpoint when the pipeline is interrupted.

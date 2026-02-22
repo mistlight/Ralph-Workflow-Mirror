@@ -34,10 +34,56 @@
 use crate::test_timeout::{register_timeout_cleanup, with_timeout};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+
 use std::time::{Duration, Instant};
+
+fn collect_output(mut child: Child) -> (ExitStatus, String, String) {
+    use std::io::Read;
+
+    let status = child.wait().expect("wait for child");
+
+    let mut stdout = String::new();
+    if let Some(mut out) = child.stdout.take() {
+        let _ = out.read_to_string(&mut stdout);
+    }
+
+    let mut stderr = String::new();
+    if let Some(mut err) = child.stderr.take() {
+        let _ = err.read_to_string(&mut stderr);
+    }
+
+    (status, stdout, stderr)
+}
 use tempfile::TempDir;
 use test_helpers::{create_isolated_config, init_git_repo};
+
+fn assert_status_is_sigint_130(status: ExitStatus, stdout: &str, stderr: &str) {
+    assert_eq!(
+        status.code(),
+        Some(130),
+        "expected exit code 130 (SIGINT convention). stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+fn assert_signal_killed_or_exited_sigint(status: ExitStatus, stdout: &str, stderr: &str) {
+    use std::os::unix::process::ExitStatusExt;
+
+    if status.code() == Some(130) {
+        return;
+    }
+
+    if status.signal() == Some(libc::SIGINT) {
+        return;
+    }
+
+    panic!(
+        "expected exit by SIGINT (code 130 or signal {}). got: code={:?} signal={:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        libc::SIGINT,
+        status.code(),
+        status.signal()
+    );
+}
 
 /// Extended timeout for signal cleanup tests.
 ///
@@ -57,6 +103,8 @@ const EARLY_SIGINT_DELAY: Duration = Duration::from_millis(600);
 
 /// Polling interval for marker file checks.
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+static CHILD_CLEANUP_EPOCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Set file to read-only (no write bits for user/group/other).
 fn set_readonly(path: &Path) {
@@ -117,8 +165,8 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
     // `ralph-workflow.toml`.
     let xdg_config_home = create_isolated_config(repo_dir);
 
-    // Spawn with minimal config - we just need the process to start
-    // and reach the agent phase (create .no_agent_commit)
+    // Capture stdout/stderr so failures are diagnosable.
+    // We keep outputs in-memory (piped) and only read them on failure paths.
     let child = Command::new(&ralph_bin)
         .current_dir(repo_dir)
         .args(["--developer-iters", "1", "--reviewer-reviews", "0"])
@@ -128,18 +176,28 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
         .env("XDG_CONFIG_HOME", xdg_config_home)
         .env("RALPH_DEVELOPER_CMD", "true")
         .env("RALPH_REVIEWER_CMD", "true")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn ralph process");
 
+    // Avoid PID-reuse SIGKILL risk: only attempt kill if this epoch is still current
+    // and the child still appears to be running.
+    let epoch = CHILD_CLEANUP_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     register_timeout_cleanup(Box::new({
-        let pid = child.id();
+        let child_id = child.id();
         move || {
+            if CHILD_CLEANUP_EPOCH.load(std::sync::atomic::Ordering::SeqCst) != epoch {
+                return;
+            }
+
             // Best-effort emergency cleanup on system test timeout.
-            // Ignore errors: the process may already have exited.
+            // Avoid killing a recycled PID: only SIGKILL if we can still signal the process.
             unsafe {
-                let _ = libc::kill(pid as i32, libc::SIGKILL);
+                let check = libc::kill(child_id as i32, 0);
+                if check == 0 {
+                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
+                }
             }
         }
     }));
@@ -182,9 +240,8 @@ fn wait_for_marker_size(repo_dir: &Path, timeout: Duration, expected_size: u64) 
 
 /// Send SIGINT to process.
 fn send_sigint(child: &Child) {
-    unsafe {
-        libc::kill(child.id() as i32, libc::SIGINT);
-    }
+    let rc = unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+    assert_eq!(rc, 0, "expected SIGINT delivery via kill() to succeed");
 }
 
 /// Assert PROMPT.md has write permission for owner.
@@ -257,7 +314,7 @@ fn test_ctrl_c_restores_prompt_md_writable() {
             set_readonly(&prompt_path);
 
             // Spawn ralph pipeline
-            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             // Wait for agent phase to start (marker appears)
             let marker_appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
@@ -269,16 +326,9 @@ fn test_ctrl_c_restores_prompt_md_writable() {
             // Send SIGINT
             send_sigint(&child);
 
-            // Wait for exit
-            let status = child.wait().expect("wait for child");
-
-            // On SIGINT, the conventional exit status is 130 (128 + signal number).
-            // This is part of the acceptance criteria.
-            assert_eq!(
-                status.code(),
-                Some(130),
-                "SIGINT should exit with status 130"
-            );
+            // Wait for exit and capture output for debugging on failure.
+            let (status, stdout, stderr) = collect_output(child);
+            assert_status_is_sigint_130(status, &stdout, &stderr);
 
             // Key assertion: PROMPT.md must be writable after cleanup
             assert_prompt_writable(&prompt_path);
@@ -323,7 +373,7 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
             set_readonly(&prompt_path);
 
             // Spawn ralph pipeline
-            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             // Send SIGINT IMMEDIATELY (before agent phase starts)
             // This tests the early interrupt path in signal handler
@@ -337,18 +387,22 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
             //
             // This test aims to validate the *handled* early interrupt path, so we retry
             // with an increased delay if we didn't observe the conventional 130 exit.
-            let status = child.wait().expect("wait for child");
+            let (status, stdout, stderr) = collect_output(child);
 
             if status.code() != Some(130) {
-                let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph retry");
+                // If SIGINT was delivered before the Ctrl+C handler was installed, the OS may
+                // terminate the process directly (signal exit) and our cleanup won't run. The goal
+                // of this test is to validate the *handled* early-interrupt path, so we retry with
+                // a larger delay and then require the conventional 130 code.
+                let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph retry");
                 std::thread::sleep(Duration::from_millis(1200));
                 send_sigint(&child);
-                let status = child.wait().expect("wait for child (retry)");
-                assert_eq!(
-                    status.code(),
-                    Some(130),
-                    "SIGINT should exit with status 130 after handler-installed retry"
-                );
+                let (status, stdout, stderr) = collect_output(child);
+                assert_status_is_sigint_130(status, &stdout, &stderr);
+            } else {
+                // Even for the first attempt, accept raw signal termination as long as we got SIGINT.
+                // This keeps the assertion aligned with Unix process semantics.
+                assert_signal_killed_or_exited_sigint(status, &stdout, &stderr);
             }
 
             // Key assertion: PROMPT.md must be writable after exit.
@@ -382,7 +436,7 @@ fn test_ctrl_c_removes_no_agent_commit() {
             let temp_dir = TempDir::new().expect("create temp dir");
             let _repo = init_git_repo(&temp_dir);
 
-            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             // Wait for marker to appear
             let marker_path = temp_dir.path().join(".no_agent_commit");
@@ -393,7 +447,8 @@ fn test_ctrl_c_removes_no_agent_commit() {
 
             // Send SIGINT
             send_sigint(&child);
-            let _status = child.wait().expect("wait for child");
+            let (status, stdout, stderr) = collect_output(child);
+            assert_status_is_sigint_130(status, &stdout, &stderr);
 
             // Marker must not exist after cleanup
             assert!(
@@ -437,14 +492,15 @@ fn test_ctrl_c_restores_git_hooks() {
             let original_hook = "#!/bin/bash\necho 'Original hook'\n";
             std::fs::write(&precommit_path, original_hook).expect("write original hook");
 
-            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             let appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
             assert!(appeared, "Marker should appear when agent phase starts");
 
             // Send SIGINT
             send_sigint(&child);
-            let _status = child.wait().expect("wait for child");
+            let (status, stdout, stderr) = collect_output(child);
+            assert_status_is_sigint_130(status, &stdout, &stderr);
 
             let hook_content = std::fs::read_to_string(&precommit_path)
                 .expect("pre-commit hook should exist after cleanup");
@@ -496,13 +552,14 @@ fn test_ctrl_c_removes_hook_when_no_prior_hook_existed() {
                 "Test precondition: no pre-commit hook"
             );
 
-            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             let appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
             assert!(appeared, "Marker should appear when agent phase starts");
 
             send_sigint(&child);
-            let _status = child.wait().expect("wait for child");
+            let (status, stdout, stderr) = collect_output(child);
+            assert_status_is_sigint_130(status, &stdout, &stderr);
 
             // Hooks should not exist after cleanup (they were installed by Ralph, no original).
             assert!(
@@ -556,7 +613,7 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
                 .expect("write marker");
 
             // Spawn Ralph pipeline - startup cleanup should restore PROMPT.md
-            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             // Wait for startup cleanup to restore PROMPT.md before we send SIGINT.
             //
@@ -572,7 +629,8 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
 
             // Send SIGINT to exit cleanly
             send_sigint(&child);
-            let _status = child.wait().expect("wait for child");
+            let (status, stdout, stderr) = collect_output(child);
+            assert_status_is_sigint_130(status, &stdout, &stderr);
 
             // PROMPT.md should be writable after exit.
             // Note: PROMPT.md may become read-only during normal execution due to

@@ -99,7 +99,8 @@ fn test_install_hook_uses_absolute_path() {
         let content = fs::read_to_string(&hook_path).unwrap();
 
         // The orig= line should contain an absolute path (starts with /).
-        assert!(content.contains("orig=\"/"));
+        // The hook script now uses bash-safe single-quoted literals.
+        assert!(content.contains("orig='/"));
     });
 }
 
