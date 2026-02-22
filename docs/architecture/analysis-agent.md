@@ -5,14 +5,24 @@ For the full end-to-end lifecycle (Planning -> Development -> Commit -> Review/F
 
 ## Purpose
 
-After the developer agent edits the repo, Ralph runs a separate analysis agent to produce an objective assessment of progress.
+The analysis agent verifies whether code changes satisfy the plan requirements.
 
-The analysis agent compares:
+The analysis agent:
 
-- `.agent/PLAN.md` (what we intended to do)
-- the current git diff (what actually changed)
+1. **Verifies code changes** against `.agent/PLAN.md`
+2. **Explores the codebase** - the diff is a starting point, not a boundary
+3. **May run verification commands** (build, tests, linters) when appropriate
+4. **Writes** a validated `development_result.xml` with status (`completed` / `partial` / `failed`)
 
-and writes a validated `development_result.xml` describing status (`completed` / `partial` / `failed`) plus a short summary.
+## Beyond the Diff
+
+The diff provided to the analysis agent is a **starting point**, not a boundary. The analysis agent may:
+
+- Read related files that the changes depend on
+- Check imports, dependencies, and integration points
+- Verify the changes work correctly in the broader codebase context
+- Look at test files even if they weren't changed
+- Run verification commands when appropriate for the project
 
 ## Where It Sits in the Development Flow
 

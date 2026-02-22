@@ -80,7 +80,6 @@ impl MainEffectHandler {
         let mut prompt = crate::prompts::analysis::generate_analysis_prompt(
             &plan_content,
             &diff_content,
-            iteration,
             ctx.workspace,
         );
 
