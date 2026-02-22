@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use crate::workspace::Workspace;
+use std::path::Path;
 
 /// Global interrupt context for checkpoint saving on interrupt.
 ///
@@ -45,6 +46,38 @@ static USER_INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// - SaveCheckpoint
 /// - orderly shutdown
 static EVENT_LOOP_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(unix)]
+fn restore_prompt_md_writable_via_std_fs() {
+    use std::os::unix::fs::PermissionsExt;
+
+    fn make_writable(path: &std::path::Path) -> bool {
+        let Ok(metadata) = std::fs::metadata(path) else {
+            return false;
+        };
+
+        let mut perms = metadata.permissions();
+        // Preserve existing mode bits but ensure owner write is enabled.
+        perms.set_mode(perms.mode() | 0o200);
+        std::fs::set_permissions(path, perms).is_ok()
+    }
+
+    // Fast path: current working directory is already the repo root in normal runs.
+    if make_writable(std::path::Path::new("PROMPT.md")) {
+        return;
+    }
+
+    // Fallback: discover repo root.
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
+    };
+
+    let prompt_path = repo_root.join("PROMPT.md");
+    let _ = make_writable(&prompt_path);
+}
+
+#[cfg(not(unix))]
+fn restore_prompt_md_writable_via_std_fs() {}
 
 /// RAII guard that marks the reducer event loop as active.
 pub struct EventLoopActiveGuard;
@@ -178,10 +211,21 @@ pub fn setup_interrupt_handler() {
 
         // Best-effort: restore PROMPT.md permissions so we don't leave the repo locked.
         // This is primarily for early-interrupt cases before the reducer event loop starts.
-        if let Some(ref context) = *INTERRUPT_CONTEXT.lock().unwrap_or_else(|p| p.into_inner()) {
-            let _ = context
-                .workspace
-                .set_writable(std::path::Path::new("PROMPT.md"));
+        //
+        // IMPORTANT: Interrupts can arrive before the pipeline has set up interrupt context.
+        // In that case, fall back to std::fs using repo discovery (same approach as the
+        // git wrapper/hook cleanup below).
+        // Always attempt a std::fs fallback using repo discovery. This covers:
+        // - interrupt context not yet installed (very early SIGINT)
+        // - workspace implementations that cannot mutate real filesystem permissions
+        //   (e.g., MemoryWorkspace)
+        restore_prompt_md_writable_via_std_fs();
+
+        {
+            let ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(ref context) = *ctx {
+                let _ = context.workspace.set_writable(Path::new("PROMPT.md"));
+            }
         }
 
         eprintln!("Cleaning up...");

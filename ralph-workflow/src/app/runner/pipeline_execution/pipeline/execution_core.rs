@@ -190,11 +190,9 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     }
 
     // Hook install / wrapper require a real repo; treat as best-effort.
-    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker(&ctx.logger) {
-        ctx.logger.warn(&format!(
-            "Failed to cleanup orphaned marker via git helpers: {err}"
-        ));
-    }
+    // IMPORTANT: do not call std::fs-based orphan marker cleanup here, because we just
+    // created the marker via workspace. The wrapper cleanup would consider it "orphaned"
+    // and remove it immediately, defeating the safety mechanism.
 
     // Restore git hooks if left in Ralph-managed state by a prior crashed run.
     // This handles the SIGKILL case where neither the RAII guard nor the reducer

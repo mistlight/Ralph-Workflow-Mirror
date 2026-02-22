@@ -76,8 +76,19 @@ where
     let completed_clone = Arc::clone(&completed);
 
     let handle = thread::spawn(move || {
-        f();
-        completed_clone.store(true, Ordering::Release);
+        struct CompletionGuard(Arc<AtomicBool>);
+
+        impl Drop for CompletionGuard {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let _guard = CompletionGuard(completed_clone);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        if let Err(payload) = result {
+            std::panic::resume_unwind(payload);
+        }
     });
 
     let start = std::time::Instant::now();

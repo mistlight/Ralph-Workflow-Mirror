@@ -9,6 +9,11 @@
 //!
 //! If testing CLI/pipeline behavior, use integration tests with proper mocking.
 //!
+//! NOTE: The `signal_cleanup` module is an exception: it validates Ctrl+C/SIGINT cleanup
+//! semantics end-to-end (real signal delivery, file permission bits, hook restoration) which
+//! cannot be exercised via `MockProcessExecutor` or `MemoryWorkspace` because the interrupt
+//! handler and exit code are process-global OS interactions.
+//!
 //! These tests are **NOT** part of CI. Run manually as sanity checks.
 //! See `SYSTEM_TESTS.md` for full guidelines.
 //!

@@ -77,8 +77,9 @@ impl Drop for AgentPhaseGuard<'_> {
 mod tests {
     use super::*;
     use crate::logger::Colors;
-    use crate::workspace::{MemoryWorkspace, Workspace};
+    use crate::workspace::MemoryWorkspace;
     use std::path::Path;
+    use test_helpers::{init_git_repo, with_temp_cwd};
 
     /// Test that AgentPhaseGuard::drop() restores PROMPT.md permissions.
     ///
@@ -90,27 +91,34 @@ mod tests {
     /// 3. The make_prompt_writable_with_workspace call doesn't error
     #[test]
     fn test_agent_phase_guard_drop_restores_prompt_md() {
-        let workspace =
-            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
-        let logger = Logger::new(Colors::new());
-        let mut git_helpers = GitHelpers::new();
+        with_temp_cwd(|dir| {
+            let _repo = init_git_repo(dir);
+            // Ensure Ralph's git helper functions operate within the temp repo (not the real one).
+            std::env::set_current_dir(dir.path()).expect("set current dir");
 
-        // Create guard and let it drop without disarming
-        {
-            let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
-            // Guard will be dropped here - should run cleanup including PROMPT.md restoration
-        }
+            let workspace =
+                MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+            let logger = Logger::new(Colors::new());
+            let mut git_helpers = GitHelpers::new();
 
-        // Verify PROMPT.md still exists and wasn't corrupted
-        assert!(
-            workspace.exists(Path::new("PROMPT.md")),
-            "PROMPT.md should still exist after guard drop"
-        );
-        let content = workspace.read(Path::new("PROMPT.md")).unwrap();
-        assert!(
-            content.contains("# Goal"),
-            "PROMPT.md content should be preserved after guard drop"
-        );
+            // Create guard and let it drop without disarming.
+            // This must not mutate the real repository or process-global state outside the temp cwd.
+            {
+                let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
+                // Guard will be dropped here - should run cleanup including PROMPT.md restoration
+            }
+
+            // Verify PROMPT.md still exists and wasn't corrupted
+            assert!(
+                workspace.exists(Path::new("PROMPT.md")),
+                "PROMPT.md should still exist after guard drop"
+            );
+            let content = workspace.read(Path::new("PROMPT.md")).unwrap();
+            assert!(
+                content.contains("# Goal"),
+                "PROMPT.md content should be preserved after guard drop"
+            );
+        });
     }
 
     /// Test that disarmed guard does NOT run cleanup.
@@ -119,23 +127,28 @@ mod tests {
     /// This verifies the active flag works correctly.
     #[test]
     fn test_agent_phase_guard_disarm_prevents_cleanup() {
-        let workspace =
-            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
-        let logger = Logger::new(Colors::new());
-        let mut git_helpers = GitHelpers::new();
+        with_temp_cwd(|dir| {
+            let _repo = init_git_repo(dir);
+            std::env::set_current_dir(dir.path()).expect("set current dir");
 
-        // Create guard, disarm it, then let it drop
-        {
-            let mut guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
-            guard.disarm();
-            // Guard will be dropped here - should NOT run cleanup
-        }
+            let workspace =
+                MemoryWorkspace::new_test().with_file("PROMPT.md", "# Goal\nTest content\n");
+            let logger = Logger::new(Colors::new());
+            let mut git_helpers = GitHelpers::new();
 
-        // PROMPT.md should still exist (though cleanup would preserve it anyway)
-        assert!(
-            workspace.exists(Path::new("PROMPT.md")),
-            "PROMPT.md should exist after disarmed guard drop"
-        );
+            // Create guard, disarm it, then let it drop
+            {
+                let mut guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
+                guard.disarm();
+                // Guard will be dropped here - should NOT run cleanup
+            }
+
+            // PROMPT.md should still exist (though cleanup would preserve it anyway)
+            assert!(
+                workspace.exists(Path::new("PROMPT.md")),
+                "PROMPT.md should exist after disarmed guard drop"
+            );
+        });
     }
 
     /// Test that guard cleanup handles missing PROMPT.md gracefully.
@@ -144,17 +157,22 @@ mod tests {
     /// if PROMPT.md doesn't exist (edge case during early interrupts).
     #[test]
     fn test_agent_phase_guard_drop_handles_missing_prompt_md() {
-        // Workspace without PROMPT.md
-        let workspace = MemoryWorkspace::new_test();
-        let logger = Logger::new(Colors::new());
-        let mut git_helpers = GitHelpers::new();
+        with_temp_cwd(|dir| {
+            let _repo = init_git_repo(dir);
+            std::env::set_current_dir(dir.path()).expect("set current dir");
 
-        // Create guard and let it drop - should not panic
-        {
-            let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
-            // Guard will be dropped here
-        }
+            // Workspace without PROMPT.md
+            let workspace = MemoryWorkspace::new_test();
+            let logger = Logger::new(Colors::new());
+            let mut git_helpers = GitHelpers::new();
 
-        // No assertion needed - test passes if no panic occurs
+            // Create guard and let it drop - should not panic
+            {
+                let _guard = AgentPhaseGuard::new(&mut git_helpers, &logger, &workspace);
+                // Guard will be dropped here
+            }
+
+            // No assertion needed - test passes if no panic occurs
+        });
     }
 }

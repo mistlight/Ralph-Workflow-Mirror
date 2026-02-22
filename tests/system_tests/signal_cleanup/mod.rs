@@ -159,6 +159,16 @@ fn assert_prompt_writable(prompt_path: &Path) {
     );
 }
 
+/// Assert git wrapper tracking file has been removed.
+fn assert_git_wrapper_track_file_removed(repo_dir: &Path) {
+    let track_file = repo_dir.join(".agent/git-wrapper-dir.txt");
+    assert!(
+        !track_file.exists(),
+        "git wrapper track file should be removed after cleanup: {}",
+        track_file.display()
+    );
+}
+
 /// Check if file contains Ralph hook marker.
 fn contains_ralph_marker(path: &Path) -> bool {
     std::fs::read_to_string(path)
@@ -166,15 +176,16 @@ fn contains_ralph_marker(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Skip test if ralph binary is not available.
+/// Require ralph binary to be available.
+///
+/// System tests must not silently no-op in CI/dev runs. If the binary isn't
+/// available, fail with a clear message so the test invocation can be fixed.
 macro_rules! require_ralph_binary {
     () => {
-        if find_ralph_binary().is_none() {
-            eprintln!(
-                "Skipping test: ralph binary not found. Build with `cargo build -p ralph-workflow`"
-            );
-            return;
-        }
+        assert!(
+            find_ralph_binary().is_some(),
+            "ralph binary not found for system test. Build the binary (e.g., `cargo build -p ralph-workflow`) or run tests with Cargo so CARGO_BIN_EXE_ralph is set."
+        );
     };
 }
 
@@ -202,6 +213,7 @@ fn test_ctrl_c_restores_prompt_md_writable() {
 
             // Set PROMPT.md read-only (simulating prior crashed run)
             let prompt_path = temp_dir.path().join("PROMPT.md");
+            assert!(prompt_path.exists(), "PROMPT.md should exist in test repo");
             set_readonly(&prompt_path);
 
             // Spawn ralph pipeline
@@ -209,33 +221,21 @@ fn test_ctrl_c_restores_prompt_md_writable() {
 
             // Wait for agent phase to start (marker appears)
             let marker_appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
-            if !marker_appeared {
-                // If marker didn't appear, process may have exited early
-                // (e.g., missing agent config). Check if process is still running.
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        eprintln!(
-                            "Ralph exited early with status: {:?}. \
-                             This test requires a configured agent.",
-                            status
-                        );
-                        // Still verify cleanup happened
-                        assert_prompt_writable(&prompt_path);
-                        return;
-                    }
-                    _ => panic!("Agent phase should start (marker should appear)"),
-                }
-            }
+            assert!(
+                marker_appeared,
+                "Agent phase should start (marker should appear)"
+            );
 
             // Send SIGINT
             send_sigint(&child);
 
             // Wait for exit
-            let status = child.wait().expect("wait for child");
+            let _status = child.wait().expect("wait for child");
 
-            // On SIGINT, process typically exits with 130 (128 + signal number)
-            // but may vary based on signal handler implementation
-            eprintln!("Process exited with status: {:?}", status);
+            // On SIGINT, the conventional exit status is 130 (128 + signal number).
+            // However, some early-return/cleanup paths may return 0 after graceful shutdown.
+            // The authoritative signal-handling coverage is in interrupt.rs; this test focuses
+            // on repository cleanup side effects.
 
             // Key assertion: PROMPT.md must be writable after cleanup
             assert_prompt_writable(&prompt_path);
@@ -245,6 +245,9 @@ fn test_ctrl_c_restores_prompt_md_writable() {
                 !temp_dir.path().join(".no_agent_commit").exists(),
                 ".no_agent_commit should be removed after Ctrl+C cleanup"
             );
+
+            // Wrapper tracking file (PATH injection) should be cleaned up
+            assert_git_wrapper_track_file_removed(temp_dir.path());
         },
         SIGNAL_TEST_TIMEOUT,
     );
@@ -273,6 +276,7 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
 
             // Create PROMPT.md read-only (simulating prior crashed run)
             let prompt_path = temp_dir.path().join("PROMPT.md");
+            assert!(prompt_path.exists(), "PROMPT.md should exist in test repo");
             set_readonly(&prompt_path);
 
             // Spawn ralph pipeline
@@ -283,9 +287,8 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
             std::thread::sleep(EARLY_SIGINT_DELAY);
             send_sigint(&child);
 
-            // Wait for exit
-            let status = child.wait().expect("wait for child");
-            eprintln!("Process exited with status: {:?}", status);
+            // Wait for exit (best-effort: early SIGINT may arrive before ctrlc installs handler)
+            let _ = child.wait().expect("wait for child");
 
             // Key assertion: PROMPT.md must be writable after exit
             // Even with early interrupt, startup cleanup should have restored it
@@ -323,37 +326,22 @@ fn test_ctrl_c_removes_no_agent_commit() {
             // Wait for marker to appear
             let marker_path = temp_dir.path().join(".no_agent_commit");
             let appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
-
-            if !appeared {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        eprintln!(
-                            "Ralph exited early with status: {:?}. \
-                             Marker may not have been created.",
-                            status
-                        );
-                        // If process exited cleanly, marker should be gone
-                        assert!(
-                            !marker_path.exists(),
-                            ".no_agent_commit should not exist after clean exit"
-                        );
-                        return;
-                    }
-                    _ => panic!("Marker should appear when agent phase starts"),
-                }
-            }
+            assert!(appeared, "Marker should appear when agent phase starts");
 
             assert!(marker_path.exists(), "Marker file should exist");
 
             // Send SIGINT
             send_sigint(&child);
-            let _ = child.wait().expect("wait for child");
+            let _status = child.wait().expect("wait for child");
 
             // Marker must not exist after cleanup
             assert!(
                 !marker_path.exists(),
                 ".no_agent_commit should be removed after Ctrl+C cleanup"
             );
+
+            // Wrapper tracking file (PATH injection) should be cleaned up
+            assert_git_wrapper_track_file_removed(temp_dir.path());
         },
         SIGNAL_TEST_TIMEOUT,
     );
@@ -361,8 +349,7 @@ fn test_ctrl_c_removes_no_agent_commit() {
 
 /// Test: Ctrl+C restores git hooks to pre-Ralph state.
 ///
-/// Verify git hooks are restored to their pre-Ralph state (original content
-/// or removed if none existed).
+/// Verify git hooks are restored to their pre-Ralph state (original content).
 ///
 /// # Test Steps
 ///
@@ -372,7 +359,7 @@ fn test_ctrl_c_removes_no_agent_commit() {
 /// 4. Wait for `.no_agent_commit` marker
 /// 5. Send SIGINT
 /// 6. Wait for process exit
-/// 7. Assert hook does not contain Ralph marker
+/// 7. Assert hook content matches original
 #[test]
 fn test_ctrl_c_restores_git_hooks() {
     with_timeout(
@@ -392,35 +379,25 @@ fn test_ctrl_c_restores_git_hooks() {
             let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             let appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
-            if !appeared {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        eprintln!("Ralph exited early with status: {:?}", status);
-                        // Verify hook was not modified
-                        if precommit_path.exists() {
-                            assert!(
-                                !contains_ralph_marker(&precommit_path),
-                                "Hook should not contain Ralph marker after clean exit"
-                            );
-                        }
-                        return;
-                    }
-                    _ => panic!("Marker should appear when agent phase starts"),
-                }
-            }
+            assert!(appeared, "Marker should appear when agent phase starts");
 
             // Send SIGINT
             send_sigint(&child);
-            let _ = child.wait().expect("wait for child");
+            let _status = child.wait().expect("wait for child");
 
-            // Hook should be restored to original content (no RALPH_RUST_MANAGED_HOOK marker)
-            if precommit_path.exists() {
-                assert!(
-                    !contains_ralph_marker(&precommit_path),
-                    "Hook should not contain Ralph marker after cleanup"
-                );
-            }
-            // If hook doesn't exist, that's also acceptable (Ralph may not have installed it yet)
+            let hook_content = std::fs::read_to_string(&precommit_path)
+                .expect("pre-commit hook should exist after cleanup");
+            assert_eq!(
+                hook_content, original_hook,
+                "pre-commit hook should be restored to original content"
+            );
+            assert!(
+                !hook_content.contains("RALPH_RUST_MANAGED_HOOK"),
+                "restored hook must not contain Ralph marker"
+            );
+
+            // Wrapper tracking file (PATH injection) should be cleaned up
+            assert_git_wrapper_track_file_removed(temp_dir.path());
         },
         SIGNAL_TEST_TIMEOUT,
     );
@@ -461,29 +438,23 @@ fn test_ctrl_c_removes_hook_when_no_prior_hook_existed() {
             let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             let appeared = wait_for_marker(temp_dir.path(), MARKER_WAIT_TIMEOUT);
-            if !appeared {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        eprintln!("Ralph exited early with status: {:?}", status);
-                        return;
-                    }
-                    _ => panic!("Marker should appear when agent phase starts"),
-                }
-            }
+            assert!(appeared, "Marker should appear when agent phase starts");
 
             send_sigint(&child);
-            let _ = child.wait().expect("wait for child");
+            let _status = child.wait().expect("wait for child");
 
-            // Hooks should not exist after cleanup (they were installed by Ralph, no original)
-            // Or if they do exist, they should not have the Ralph marker
+            // Hooks should not exist after cleanup (they were installed by Ralph, no original).
             assert!(
-                !precommit_path.exists() || !contains_ralph_marker(&precommit_path),
-                "pre-commit should not exist or not have Ralph marker after cleanup"
+                !precommit_path.exists(),
+                "pre-commit should be removed when no prior hook existed"
             );
             assert!(
-                !prepush_path.exists() || !contains_ralph_marker(&prepush_path),
-                "pre-push should not exist or not have Ralph marker after cleanup"
+                !prepush_path.exists(),
+                "pre-push should be removed when no prior hook existed"
             );
+
+            // Wrapper tracking file (PATH injection) should be cleaned up
+            assert_git_wrapper_track_file_removed(temp_dir.path());
         },
         SIGNAL_TEST_TIMEOUT,
     );
@@ -523,17 +494,20 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
             // Spawn Ralph pipeline - startup cleanup should restore PROMPT.md
             let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
-            // Wait for startup cleanup to run (or for process to reach agent phase)
+            // Wait a short moment for startup cleanup and ctrlc handler installation.
+            // (Startup cleanup runs before the reducer event loop starts.)
+            std::thread::sleep(Duration::from_millis(200));
+
+            // Wait for process to reach agent phase (optional - helps ensure we're past startup).
             let marker_appeared = wait_for_marker(temp_dir.path(), Duration::from_secs(5));
 
-            // If the marker appeared again, Ralph is running normally
-            // If it didn't appear (or was cleaned and recreated), that's also fine
-            // We just need to ensure cleanup runs
+            // If the marker appeared again, Ralph is running normally.
+            // If it didn't appear (or was cleaned and recreated), that's also fine.
+            // We just need to ensure the interrupt handler runs.
 
             // Send SIGINT to exit cleanly
             send_sigint(&child);
-            let status = child.wait().expect("wait for child");
-            eprintln!("Process exited with status: {:?}", status);
+            let _status = child.wait().expect("wait for child");
 
             // PROMPT.md should be writable (startup cleanup should have restored it,
             // or the signal cleanup should have)
@@ -549,8 +523,14 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
                     ".no_agent_commit should be removed after cleanup"
                 );
             }
-            // If marker didn't appear, startup cleanup removed the stale one
-            // Either way, no marker should remain
+            // If marker didn't appear, startup cleanup removed the stale one.
+            assert!(
+                !temp_dir.path().join(".no_agent_commit").exists(),
+                ".no_agent_commit should not exist after cleanup"
+            );
+
+            // Wrapper tracking file (PATH injection) should be cleaned up
+            assert_git_wrapper_track_file_removed(temp_dir.path());
         },
         SIGNAL_TEST_TIMEOUT,
     );
