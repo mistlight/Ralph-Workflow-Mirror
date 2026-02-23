@@ -1,62 +1,38 @@
 {# ============================================================================ #}
 {# Template: developer_iteration_continuation_xml.txt                          #}
-{# Version: 1.0                                                                #}
+{# Version: 2.0                                                                #}
 {# ============================================================================ #}
-{#                                                                             #}
-{# PURPOSE:                                                                    #}
-{#   Continuation prompt when previous attempt returned "partial" or "failed". #}
-{#   Provides context about what was previously done and guides agent to       #}
-{#   continue from where work left off.                                        #}
-{#                                                                             #}
-{# WHEN USED:                                                                  #}
-{#   During implementation mode when a previous attempt returned status        #}
-{#   "partial" or "failed" - the agent needs to continue the work.             #}
-{#                                                                             #}
-{# TRIGGER:                                                                    #}
-{#   Pipeline runtime: development phase continuation after partial/failed.    #}
-{#                                                                             #}
+{# PURPOSE: Continuation prompt when previous attempt returned partial/failed. #}
 {# VARIABLES:                                                                  #}
-{#   PROMPT_PATH              - Path to PROMPT.md (for reference, not inline)  #}
-{#   PLAN_PATH                - Path to .agent/PLAN.md (for reference)         #}
-{#   PREVIOUS_STATUS          - Status from previous attempt (partial/failed)  #}
-{#   PREVIOUS_SUMMARY         - Summary of what was done in previous attempt   #}
-{#   PREVIOUS_FILES_CHANGED   - Files changed in previous attempt (optional)   #}
-{#   PREVIOUS_NEXT_STEPS      - Agent's recommended next steps (optional)      #}
-{#   CONTINUATION_ATTEMPT     - Current continuation attempt number (1+)       #}
-{#   DEVELOPMENT_RESULT_XML_PATH - Path to write development result XML        #}
-{#   DEVELOPMENT_RESULT_XSD_PATH - Path to XSD schema                          #}
-{#                                                                             #}
-{# OUTPUT:                                                                      #}
-{#   Development agent produces code changes only. No structured output required. #}
-{#   Progress verification is done independently by the analysis agent.          #}
-{#                                                                             #}
-{# VERIFICATION:                                                               #}
-{#   Analysis agent compares cumulative git diff vs plan after each attempt.    #}
+{#   PROMPT_PATH, PLAN_PATH        - Reference files (do not modify)           #}
+{#   PREVIOUS_STATUS/SUMMARY       - What happened last attempt                #}
+{#   PREVIOUS_FILES_CHANGED        - Files modified (optional)                 #}
+{#   PREVIOUS_NEXT_STEPS           - Recommended next steps (optional)         #}
+{#   CONTINUATION_ATTEMPT          - Current attempt number (1+)               #}
+{#   DEVELOPMENT_RESULT_XML_PATH   - Path to write result XML                  #}
+{#   DEVELOPMENT_RESULT_XSD_PATH   - Path to XSD schema                        #}
 {# ============================================================================ #}
 
-You are in CONTINUATION MODE. Continue the work from where you left off.
+You are in CONTINUATION MODE. Continue from where you left off.
 
 {{> shared/_unattended_mode}}
 
 ═══════════════════════════════════════════════════════════════════════════════
-CRITICAL: THIS IS A CONTINUATION - DO NOT START OVER
+CRITICAL: DO NOT START OVER
 ═══════════════════════════════════════════════════════════════════════════════
 
-This is continuation attempt #{{CONTINUATION_ATTEMPT}}. You previously returned
-status="{{PREVIOUS_STATUS}}" which means work is incomplete.
+Continuation attempt #{{CONTINUATION_ATTEMPT}}. Previous status: "{{PREVIOUS_STATUS}}"
 
-**IMPORTANT RULES:**
-1. DO NOT modify PROMPT.md or the implementation plan - they define the goal
-2. DO NOT repeat work that was already completed
-3. DO continue from where the previous attempt left off
-4. Review what was done and focus on what remains
+Rules:
+- DO NOT modify PROMPT.md or the plan - they define the goal
+- DO NOT repeat completed work
+- DO continue from where you left off
 
-IMPORTANT: A full continuation context file may be available at `.agent/tmp/continuation_context.md`.
-If it exists, read it first. It contains the authoritative continuation context and may include
-content that was too large to inline in this prompt.
+If `.agent/tmp/continuation_context.md` exists, read it first - it contains
+authoritative context that may be too large to inline here.
 
 ═══════════════════════════════════════════════════════════════════════════════
-PREVIOUS ATTEMPT SUMMARY
+PREVIOUS ATTEMPT
 ═══════════════════════════════════════════════════════════════════════════════
 
 Status: {{PREVIOUS_STATUS}}
@@ -65,12 +41,12 @@ What was accomplished:
 {{PREVIOUS_SUMMARY}}
 
 {% if PREVIOUS_FILES_CHANGED %}
-Files changed in previous attempt:
+Files changed:
 {{PREVIOUS_FILES_CHANGED}}
 {% endif %}
 
 {% if PREVIOUS_NEXT_STEPS %}
-Recommended next steps (from your previous attempt):
+Next steps from previous attempt:
 {{PREVIOUS_NEXT_STEPS}}
 {% endif %}
 
@@ -81,133 +57,61 @@ REFERENCE FILES (DO NOT MODIFY)
 - Original request: {{PROMPT_PATH}}
 - Implementation plan: {{PLAN_PATH}}
 
-Read these files to understand the full context, but do NOT modify them.
-
 ═══════════════════════════════════════════════════════════════════════════════
 YOUR TASK
 ═══════════════════════════════════════════════════════════════════════════════
 
-Continue the implementation from where you left off. Follow these steps:
+1. **Review**: Read previous summary, check current file state, explore context
+2. **Continue**: Complete remaining plan work following project conventions
+3. **Verify**: Run tests, linters, and any plan-specified verification
+4. **Status**: Return "completed" ONLY when ALL work done AND verified
 
-1. **Review context**: 
-   - Read the previous attempt's summary and next_steps above
-   - Check the current state of files that were modified
-   - Explore the codebase beyond the diff to understand the full context
-
-2. **Continue implementation**:
-   - Complete the remaining work from the implementation plan
-   - Follow the project's existing patterns and conventions
-   - Don't repeat work that was already completed
-
-3. **Verify your work** (see VERIFICATION section below):
-   - Run builds to ensure code compiles
-   - Run tests to verify behavior
-   - Run linters and formatters
-   - Execute any verification steps mentioned in the plan
-
-4. **Return correct status**:
-   - Return status="completed" ONLY when ALL work is done AND verified
-   - Return status="partial" if you made progress but work remains
-   - Include detailed next_steps if returning partial/failed status
-
-CRITICAL: "Complete" means the code works AND passes verification, not just
-that you finished writing code. If verification fails, the work is not complete.
+CRITICAL: "Complete" = code works AND passes verification, not just written.
 
 ═══════════════════════════════════════════════════════════════════════════════
-VERIFICATION AND VALIDATION (CRITICAL)
+VERIFICATION (MANDATORY)
 ═══════════════════════════════════════════════════════════════════════════════
 
-You MUST verify your work before claiming completion. The analysis agent only performs
-static diff analysis - it cannot run tests, builds, linters, or other verification tools.
+The analysis agent only performs static diff analysis - YOU must run verification.
 
-REQUIRED VERIFICATION STEPS:
+Required steps:
+1. **Syntax/Build**: Run the project's build or syntax check if applicable. Fix ALL errors.
+2. **Test**: Run relevant tests. Fix failures. Add tests if the plan requires them.
+3. **Lint/Format**: Run the project's quality tools if configured. Fix all issues.
+4. **Plan verification**: Execute any verification commands specified in the plan.
+5. **Acceptance criteria**: Verify ALL criteria from the original request are met.
 
-1. **Run the build**: Ensure the code compiles/builds successfully
-   - For Rust: `cargo build` or `cargo check`
-   - For other languages: use the project's build command
-   - Fix ALL compilation errors before continuing
-
-2. **Run tests**: Execute relevant tests to verify behavior
-   - Run unit tests related to changed code
-   - Run integration tests if the changes affect cross-module behavior
-   - If tests fail, investigate and fix the root cause
-   - Add new tests if the plan requires it
-
-3. **Run linters and formatters**: Ensure code quality standards
-   - For Rust: `cargo clippy` and `cargo fmt --check`
-   - For other languages: use the project's linting tools
-   - Fix ALL linter errors and warnings
-   - Apply formatter if the project uses one
-
-4. **Check for verification commands in the plan**: The implementation plan may
-   specify additional verification steps (e.g., "run the metrics tests", "verify
-   logging output"). Execute ALL verification commands mentioned in the plan.
-
-5. **Validate acceptance criteria**: Re-read the original request and verify
-   that ALL acceptance criteria are satisfied, not just the code changes.
-
-IMPORTANT: Do NOT return status="completed" until ALL verification steps pass.
-If verification fails, fix the issues and re-run verification. Static code analysis
-alone is insufficient - runtime verification is mandatory.
+Do NOT claim "completed" until ALL verification passes.
 
 ═══════════════════════════════════════════════════════════════════════════════
-EXPLORATION AND CONTEXT GATHERING
+EXPLORATION
 ═══════════════════════════════════════════════════════════════════════════════
 
-The diff from previous attempts shows WHAT changed, but not the full CONTEXT.
-You MUST explore the codebase to understand the broader picture.
+The diff shows WHAT changed, not CONTEXT. You must explore:
 
-REQUIRED EXPLORATION:
+- Read files beyond the diff (imports, neighboring modules)
+- Search for similar implementations, affected code, related tests
+- Verify dependencies exist before using them
+- Check for AGENTS.md, CODE_STYLE.md, architecture docs
+- Investigate WHY previous attempts failed - trace root causes
 
-1. **Read files beyond the diff**: Don't limit yourself to changed files
-   - Read files imported/used by your changes
-   - Check neighboring modules for patterns and conventions
-   - Understand how your changes integrate with existing code
-
-2. **Search for related code**: Use grep/search tools to find:
-   - Similar implementations you should follow
-   - All places that might be affected by your changes
-   - Existing tests that provide examples or might need updates
-   - Documentation that might need updates
-
-3. **Understand dependencies**: Before using a library or function:
-   - Verify it exists (check package.json, Cargo.toml, imports)
-   - Read its documentation or source to understand correct usage
-   - Find existing usage examples in the codebase
-
-4. **Check for architectural patterns**: 
-   - If this is a Rust project using reducers/effects, read the architecture docs
-   - If there are AGENTS.md or CODE_STYLE.md files, follow their guidance
-   - Understand the project's testing philosophy before writing tests
-
-5. **Investigate failures from previous attempts**: If the previous attempt
-   returned status="partial" or "failed", investigate WHY:
-   - Read error messages carefully
-   - Trace through the code to understand the root cause
-   - Don't apply surface-level patches - fix the underlying issue
-
-The diff is a starting point, not a boundary. Explore freely to build the context
-you need to complete the work correctly.
+The diff is a starting point, not a boundary.
 
 ═══════════════════════════════════════════════════════════════════════════════
 ANALYSIS AGENT ROLE
 ═══════════════════════════════════════════════════════════════════════════════
 
-The analysis agent will review your work AFTER you complete this continuation:
-- It compares the cumulative code changes against the implementation plan
-- It determines if the plan's requirements are satisfied
-- It produces a structured status assessment (completed/partial/failed)
+After you finish, the analysis agent will:
+- Compare cumulative changes against the plan
+- Determine if requirements are satisfied
+- Produce status assessment (completed/partial/failed)
 
-The analysis agent does NOT:
-- Run tests, builds, linters, or any verification commands
-- Execute code or validate runtime behavior
-- Check if the code actually works - only if it matches the plan
+The analysis agent does NOT run tests, builds, or linters - only static analysis.
+YOU must perform runtime verification. It validates plan compliance; you validate
+correctness.
 
-This is why YOU must perform runtime verification. The analysis agent validates
-that you did what the plan said; you must validate that what you did actually works.
-
-Your text output is for your own record-keeping. What matters is:
-1. The code changes you make (files created, modified, deleted)
-2. The verification commands you run and their results
-3. Meeting ALL requirements from the plan and original prompt
+What matters:
+1. Code changes you make
+2. Verification commands you run and their results
+3. Meeting ALL requirements from plan and original prompt
 
