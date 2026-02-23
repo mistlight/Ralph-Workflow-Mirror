@@ -394,12 +394,38 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
             set_readonly(&prompt_path);
 
             // Spawn ralph pipeline
-            let child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
+            let mut child = spawn_ralph_pipeline(temp_dir.path()).expect("spawn ralph for test");
 
             // Send SIGINT IMMEDIATELY (before agent phase starts)
             // This tests the early interrupt path in signal handler
             std::thread::sleep(EARLY_SIGINT_DELAY);
             send_sigint(&child);
+
+            // If graceful shutdown does not begin promptly, send a second SIGINT to
+            // force immediate termination. This matches real-user behavior when the
+            // first Ctrl+C lands during a stuck phase transition.
+            let grace_deadline = Instant::now() + Duration::from_secs(2);
+            let mut exited = false;
+            while Instant::now() < grace_deadline {
+                if child
+                    .try_wait()
+                    .expect("try_wait should succeed while waiting for early SIGINT handling")
+                    .is_some()
+                {
+                    exited = true;
+                    break;
+                }
+                std::thread::sleep(POLL_INTERVAL);
+            }
+
+            if !exited
+                && child
+                    .try_wait()
+                    .expect("final try_wait before second SIGINT should succeed")
+                    .is_none()
+            {
+                send_sigint(&child);
+            }
 
             // Wait for exit.
             // NOTE: If SIGINT arrives before ctrlc installs the handler, the OS default

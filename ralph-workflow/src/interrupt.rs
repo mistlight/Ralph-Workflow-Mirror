@@ -19,7 +19,7 @@
 //! the user explicitly chose to interrupt execution. This respects user intent while
 //! ensuring all other termination paths commit uncommitted work before exiting.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use crate::workspace::Workspace;
@@ -55,6 +55,12 @@ static USER_INTERRUPTED_OCCURRED: AtomicBool = AtomicBool::new(false);
 /// - SaveCheckpoint
 /// - orderly shutdown
 static EVENT_LOOP_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Number of SIGINTs received while the reducer event loop is active.
+///
+/// First Ctrl+C requests graceful reducer-driven shutdown.
+/// Second Ctrl+C forces immediate process exit to avoid indefinite hangs.
+static EVENT_LOOP_ACTIVE_SIGINT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// True when the process should exit with code 130 after the pipeline returns.
 ///
@@ -112,17 +118,25 @@ pub struct EventLoopActiveGuard;
 impl Drop for EventLoopActiveGuard {
     fn drop(&mut self) {
         EVENT_LOOP_ACTIVE.store(false, Ordering::SeqCst);
+        EVENT_LOOP_ACTIVE_SIGINT_COUNT.store(0, Ordering::SeqCst);
     }
 }
 
 /// Mark the reducer event loop as active for the duration of the returned guard.
 pub fn event_loop_active_guard() -> EventLoopActiveGuard {
+    EVENT_LOOP_ACTIVE_SIGINT_COUNT.store(0, Ordering::SeqCst);
     EVENT_LOOP_ACTIVE.store(true, Ordering::SeqCst);
     EventLoopActiveGuard
 }
 
 fn is_event_loop_active() -> bool {
     EVENT_LOOP_ACTIVE.load(Ordering::SeqCst)
+}
+
+fn register_sigint_during_active_event_loop() -> bool {
+    // Returns true on second (or later) SIGINT while event loop is active.
+    let count = EVENT_LOOP_ACTIVE_SIGINT_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+    count >= 2
 }
 
 /// Request that the running pipeline treat the run as user-interrupted.
@@ -256,6 +270,14 @@ pub fn setup_interrupt_handler() {
         // If the reducer event loop is running, do not exit here.
         // The event loop will observe the request, restore permissions, and checkpoint.
         if is_event_loop_active() {
+            if register_sigint_during_active_event_loop() {
+                eprintln!("\nSecond interrupt received; forcing immediate exit.");
+                restore_prompt_md_writable_via_std_fs();
+                eprintln!("Cleaning up...");
+                crate::git_helpers::cleanup_agent_phase_silent();
+                std::process::exit(130);
+            }
+
             eprintln!(
                 "\nInterrupt received; requesting graceful shutdown (waiting for checkpoint)..."
             );
@@ -482,6 +504,24 @@ mod tests {
         clear_interrupt_context();
         let ctx = INTERRUPT_CONTEXT.lock().unwrap();
         assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn second_sigint_during_active_event_loop_requests_forced_exit() {
+        EVENT_LOOP_ACTIVE.store(true, Ordering::SeqCst);
+        EVENT_LOOP_ACTIVE_SIGINT_COUNT.store(0, Ordering::SeqCst);
+
+        assert!(
+            !register_sigint_during_active_event_loop(),
+            "first Ctrl+C should request graceful shutdown"
+        );
+        assert!(
+            register_sigint_during_active_event_loop(),
+            "second Ctrl+C should force immediate exit"
+        );
+
+        EVENT_LOOP_ACTIVE.store(false, Ordering::SeqCst);
+        EVENT_LOOP_ACTIVE_SIGINT_COUNT.store(0, Ordering::SeqCst);
     }
 
     #[test]
