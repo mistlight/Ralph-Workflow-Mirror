@@ -326,7 +326,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
     assert!(
         calls[0]
             .prompt
-            .contains("independent, objective code analysis agent"),
+            .contains("independent, objective code verification agent"),
         "analysis invocation should use analysis prompt, not a stale continuation prompt"
     );
     assert_ne!(

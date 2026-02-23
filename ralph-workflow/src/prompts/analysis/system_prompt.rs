@@ -3,24 +3,18 @@
 // Generates prompts for the analysis agent to produce an objective assessment
 // of development progress by comparing git diff against PLAN.md.
 //
-// TIMING: Analysis agent runs after EVERY development iteration, not just
-// the final one. This provides continuous verification throughout the
-// development phase, catching issues early rather than only at the end.
-//
-// The analysis agent has NO context from development execution, ensuring
-// an unbiased assessment based purely on observable code changes (git diff).
+// The analysis agent verifies code changes against the plan. It may run
+// verification commands and explore the codebase as needed.
 
 /// Generate analysis agent prompt.
 ///
-/// The analysis agent receives only the PLAN.md content and git diff since
-/// pipeline start. It has NO context from development execution, ensuring
-/// an unbiased assessment based purely on observable code changes.
+/// The analysis agent receives the PLAN.md content and git diff. It verifies
+/// whether the changes satisfy the plan requirements.
 ///
 /// # Arguments
 ///
 /// * `plan_content` - The implementation plan (PLAN.md content)
 /// * `diff_content` - The git diff since pipeline start (may be empty)
-/// * `iteration` - The iteration number (for documentation only)
 /// * `workspace` - Workspace for resolving absolute paths
 ///
 /// # Returns
@@ -29,7 +23,6 @@
 pub fn generate_analysis_prompt(
     plan_content: &str,
     diff_content: &str,
-    iteration: u32,
     workspace: &dyn crate::workspace::Workspace,
 ) -> String {
     use crate::prompts::content_reference::{DiffContentReference, PlanContentReference};
@@ -65,7 +58,6 @@ pub fn generate_analysis_prompt(
                 .render_for_template()
                 .replace("git diff", "git\u{00A0}diff"),
         ),
-        ("ITERATION", iteration.to_string()),
         (
             "DEVELOPMENT_RESULT_XML_PATH",
             workspace.absolute_str(".agent/tmp/development_result.xml"),
@@ -84,7 +76,7 @@ pub fn generate_analysis_prompt(
             let out = workspace.absolute_str(".agent/tmp/development_result.xml");
             let xsd = workspace.absolute_str(".agent/tmp/development_result.xsd");
             format!(
-                "You are an independent code analysis agent.\n\nPLAN:\n{plan}\n\nDIFF:\n{diff}\n\nWrite development_result.xml to: {out}\nXSD: {xsd}\nIteration: {iteration}\n"
+                "You are an independent code analysis agent.\n\nPLAN:\n{plan}\n\nDIFF:\n{diff}\n\nWrite development_result.xml to: {out}\nXSD: {xsd}\n"
             )
         })
 }
@@ -101,14 +93,12 @@ mod tests {
         let workspace = MemoryWorkspace::new_test();
         let plan = "Step 1: Add feature X\nStep 2: Add tests";
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn feature_x() {}";
-        let iteration = 0;
 
-        let prompt = generate_analysis_prompt(plan, diff, iteration, &workspace);
+        let prompt = generate_analysis_prompt(plan, diff, &workspace);
 
         assert!(prompt.contains("Step 1: Add feature X"));
         assert!(prompt.contains("Step 2: Add tests"));
         assert!(prompt.contains("diff --git"));
-        assert!(prompt.contains("iteration 0"));
         assert!(prompt.contains("development_result.xml"));
     }
 
@@ -119,9 +109,8 @@ mod tests {
         let workspace = MemoryWorkspace::new_test();
         let plan = "Verify feature exists";
         let diff = "";
-        let iteration = 0;
 
-        let prompt = generate_analysis_prompt(plan, diff, iteration, &workspace);
+        let prompt = generate_analysis_prompt(plan, diff, &workspace);
 
         assert!(prompt.contains("Verify feature exists"));
         assert!(
@@ -141,7 +130,7 @@ mod tests {
         let workspace = MemoryWorkspace::new_test();
         let plan = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
         let diff = "small diff";
-        let prompt = generate_analysis_prompt(&plan, diff, 0, &workspace);
+        let prompt = generate_analysis_prompt(&plan, diff, &workspace);
 
         assert!(
             prompt.contains("[PLAN too large to embed"),
@@ -160,7 +149,7 @@ mod tests {
         let workspace = MemoryWorkspace::new_test();
         let plan = "small plan";
         let diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
-        let prompt = generate_analysis_prompt(plan, &diff, 0, &workspace);
+        let prompt = generate_analysis_prompt(plan, &diff, &workspace);
 
         assert!(
             prompt.contains("[DIFF too large to embed"),
@@ -179,9 +168,8 @@ mod tests {
         let workspace = MemoryWorkspace::new_test();
         let plan = "Plan content";
         let diff = "Diff content";
-        let iteration = 1;
 
-        let prompt = generate_analysis_prompt(plan, diff, iteration, &workspace);
+        let prompt = generate_analysis_prompt(plan, diff, &workspace);
 
         assert!(prompt.contains("<ralph-development-result>"));
         assert!(prompt.contains("<ralph-status>"));
@@ -196,7 +184,7 @@ mod tests {
         let workspace = MemoryWorkspace::new_test();
         // The analysis agent must be context-free: it should assess PLAN vs DIFF only.
         // Working-tree fallback instructions can bias results and expand what the agent reads.
-        let prompt = generate_analysis_prompt("Plan", "Diff", 0, &workspace);
+        let prompt = generate_analysis_prompt("Plan", "Diff", &workspace);
 
         assert!(
             !prompt.to_lowercase().contains("working tree"),
@@ -212,23 +200,30 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_analysis_prompt_mentions_diff_backup_path_but_not_git_fallback_commands() {
+    fn test_generate_analysis_prompt_mentions_diff_backup_path_when_oversized() {
         use crate::workspace::MemoryWorkspace;
 
         let workspace = MemoryWorkspace::new_test();
-        // Analysis is context-free: it must not expand inputs by instructing git commands.
-        // It may reference a materialized diff backup path if provided by DIFF reference rendering.
         // When the diff is oversized, the prompt should reference a file path rather than inline.
-        // When small, the diff will likely be inlined and may not mention a file path.
         let large_diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
-        let prompt = generate_analysis_prompt("Plan", &large_diff, 0, &workspace);
+        let prompt = generate_analysis_prompt("Plan", &large_diff, &workspace);
         assert!(
             prompt.contains(".agent/tmp/diff.txt") || prompt.contains(".agent/DIFF.backup"),
             "expected oversize diff prompt to mention a DIFF file path reference; got: {prompt}"
         );
+    }
+
+    #[test]
+    fn test_generate_analysis_prompt_does_not_leak_iteration_number() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+        let prompt = generate_analysis_prompt("Plan", "Diff", &workspace);
+
+        // The prompt should not contain any iteration-related information
         assert!(
-            !prompt.contains("git diff"),
-            "prompt must not instruct git fallback commands; got: {prompt}"
+            !prompt.to_lowercase().contains("iteration"),
+            "prompt must not leak iteration information; got: {prompt}"
         );
     }
 }

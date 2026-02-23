@@ -77,7 +77,7 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
     assert!(
-        prompt.contains("Your task is to determine whether the ACTUAL CHANGES satisfy the PLAN"),
+        prompt.contains("Your task is to VERIFY whether the code changes satisfy the PLAN"),
         "expected analysis prompt header in prompt, got: {prompt}"
     );
     // Validate that the DIFF section contains either a placeholder or an actual diff.
