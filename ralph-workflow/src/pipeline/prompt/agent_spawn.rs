@@ -1,6 +1,7 @@
 use crate::agents::{is_glm_like_agent, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::logger::argv_requests_json;
+use crate::pipeline::idle_timeout::KillConfig;
 use crate::pipeline::idle_timeout::{
     monitor_idle_timeout, new_activity_timestamp, time_since_activity, MonitorResult,
     StderrActivityTracker, IDLE_TIMEOUT_SECS,
@@ -11,6 +12,19 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::types::{PipelineRuntime, PromptCommand};
+
+/// Kill configuration for user-interrupt-triggered subprocess termination.
+///
+/// Uses a much shorter SIGTERM grace period than the idle-timeout kill config:
+/// well-behaved agents respond to SIGTERM within milliseconds, and we want
+/// the Ctrl+C response to feel immediate.
+const INTERRUPT_KILL_CONFIG: KillConfig = KillConfig::new(
+    std::time::Duration::from_millis(500), // SIGTERM grace period
+    std::time::Duration::from_millis(50),  // Poll interval
+    std::time::Duration::from_millis(200), // SIGKILL confirm timeout
+    std::time::Duration::from_secs(2),     // Post-SIGKILL hard cap
+    std::time::Duration::from_millis(500), // SIGKILL resend interval
+);
 
 pub(super) fn run_with_agent_spawn(
     cmd: &PromptCommand<'_>,
@@ -116,9 +130,10 @@ pub(super) fn run_with_agent_spawn(
     let monitor_should_stop_clone = Arc::clone(&monitor_should_stop);
     let activity_timestamp_clone = activity_timestamp.clone();
 
-    // Cancel stdout parsing as soon as idle-timeout enforcement begins.
-    // This allows the main thread to regain control promptly even if stdout
-    // never reaches EOF (e.g., inherited FDs kept open by descendant processes).
+    // Cancel stdout parsing as soon as idle-timeout enforcement begins, or when the
+    // user presses Ctrl+C. This allows the main thread to regain control promptly
+    // even if stdout never reaches EOF (e.g., inherited FDs kept open by descendant
+    // processes, or the agent is mid-response when interrupted).
     {
         let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
         let should_stop_for_thread = Arc::clone(&monitor_should_stop);
@@ -128,6 +143,13 @@ pub(super) fn run_with_agent_spawn(
             let poll = std::time::Duration::from_millis(50);
             loop {
                 if should_stop_for_thread.load(Ordering::Acquire) {
+                    return;
+                }
+                // Cancel immediately on user interrupt (Ctrl+C) so the streaming
+                // loop returns and the main thread can check the interrupt flag.
+                // Do NOT consume the flag here — the event loop needs it.
+                if crate::interrupt::is_user_interrupt_requested() {
+                    stdout_cancel_for_thread.store(true, Ordering::Release);
                     return;
                 }
                 if crate::pipeline::idle_timeout::is_idle_timeout_exceeded(
@@ -216,7 +238,31 @@ pub(super) fn run_with_agent_spawn(
             }
         };
 
-    if matches!(monitor_result_early, Some(MonitorResult::TimedOut { .. })) {
+    // When the user presses Ctrl+C the wait loop exits early (before the process
+    // finishes). Kill the child now so it doesn't run on in the background.
+    // Use a short grace period: the agent should respond to SIGTERM quickly and
+    // we don't want to add noticeable delay to the interrupt response.
+    if monitor_result_early.is_none() && crate::interrupt::is_user_interrupt_requested() {
+        super::cleanup::terminate_child_best_effort(
+            &child_shared,
+            runtime.executor_arc.as_ref(),
+            INTERRUPT_KILL_CONFIG,
+        );
+        // Always stop the monitor after an interrupt-triggered kill. We have
+        // already sent SIGTERM/SIGKILL to the process group; the event loop will
+        // handle all remaining cleanup (RestorePromptPermissions, SaveCheckpoint).
+        // Leaving the monitor running would cause it to block for up to
+        // IDLE_TIMEOUT_SECS before the pipeline can exit.
+        monitor_should_stop.store(true, Ordering::Release);
+        super::stderr_collector::cancel_and_join_stderr_collector(
+            &stderr_cancel,
+            &mut stderr_join_handle,
+            std::time::Duration::from_millis(250),
+        );
+        if stderr_join_handle.is_some() {
+            let _ = stderr_join_handle.take();
+        }
+    } else if matches!(monitor_result_early, Some(MonitorResult::TimedOut { .. })) {
         let exited = super::cleanup::terminate_child_best_effort(
             &child_shared,
             runtime.executor_arc.as_ref(),
@@ -299,4 +345,83 @@ pub(super) fn run_with_agent_spawn(
         stderr: stderr_output,
         session_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    /// Helper: ensures the interrupt flag is cleared after the test.
+    struct InterruptGuard;
+    impl Drop for InterruptGuard {
+        fn drop(&mut self) {
+            let _ = crate::interrupt::take_user_interrupt_request();
+        }
+    }
+
+    #[test]
+    fn stdout_cancel_watcher_sets_cancel_flag_promptly_on_user_interrupt() {
+        // The stdout_cancel_watcher thread should detect the interrupt flag and
+        // set stdout_cancel = true within its poll interval (~50ms).
+        let stdout_cancel = Arc::new(AtomicBool::new(false));
+        let monitor_should_stop = Arc::new(AtomicBool::new(false));
+        let activity_timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
+
+        // Spawn the watcher thread (same code as in run_with_agent_spawn).
+        {
+            let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
+            let should_stop_for_thread = Arc::clone(&monitor_should_stop);
+            let activity_for_thread = activity_timestamp.clone();
+            std::thread::spawn(move || {
+                let poll = Duration::from_millis(50);
+                loop {
+                    if should_stop_for_thread.load(Ordering::Acquire) {
+                        return;
+                    }
+                    if crate::interrupt::is_user_interrupt_requested() {
+                        stdout_cancel_for_thread.store(true, Ordering::Release);
+                        return;
+                    }
+                    if crate::pipeline::idle_timeout::is_idle_timeout_exceeded(
+                        &activity_for_thread,
+                        crate::pipeline::idle_timeout::IDLE_TIMEOUT_SECS,
+                    ) {
+                        stdout_cancel_for_thread.store(true, Ordering::Release);
+                        return;
+                    }
+                    std::thread::sleep(poll);
+                }
+            });
+        }
+
+        // Verify that without interrupt, the cancel flag is NOT set immediately.
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(
+            !stdout_cancel.load(Ordering::Acquire),
+            "cancel flag should not be set before interrupt"
+        );
+
+        // Now request interrupt.
+        crate::interrupt::request_user_interrupt();
+        let _guard = InterruptGuard;
+
+        // The watcher polls at 50ms intervals; allow up to 300ms for detection.
+        let deadline = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < deadline {
+            if stdout_cancel.load(Ordering::Acquire) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        // Stop the watcher (in case it didn't exit yet).
+        monitor_should_stop.store(true, Ordering::Release);
+
+        assert!(
+            stdout_cancel.load(Ordering::Acquire),
+            "stdout_cancel_watcher did not set cancel flag within 300ms of user interrupt"
+        );
+    }
 }

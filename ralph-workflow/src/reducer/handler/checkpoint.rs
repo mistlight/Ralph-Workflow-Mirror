@@ -53,6 +53,19 @@ fn save_checkpoint_from_state(
     state: &PipelineState,
     ctx: &mut PhaseContext<'_>,
 ) -> anyhow::Result<()> {
+    // When the user pressed Ctrl+C, we must write a checkpoint for resume
+    // support, but we skip large optional fields (execution_history,
+    // prompt_history, last_substitution_log, env_snapshot) to avoid slow JSON
+    // serialization in debug builds under CPU contention.
+    //
+    // These fields are "nice to have" for resume quality but are not required
+    // for correctness: the pipeline can resume from the phase/iteration alone.
+    //
+    // We still write the full file_system_state because that is critical for
+    // resume validation -- but capture_git_state already skips git commands
+    // when user_interrupted_occurred(), so file capture is fast.
+    let skip_large_fields = crate::interrupt::user_interrupted_occurred();
+
     let builder = CheckpointBuilder::new()
         .phase(
             map_to_checkpoint_phase(state.phase),
@@ -69,11 +82,25 @@ fn save_checkpoint_from_state(
             &ctx.run_context,
         )
         .with_executor_from_context(std::sync::Arc::clone(&ctx.executor_arc))
-        .with_execution_history(ctx.execution_history.clone())
-        .with_prompt_history(ctx.clone_prompt_history())
+        .with_execution_history(if skip_large_fields {
+            // Omit execution history to avoid slow serialization on interrupt.
+            crate::checkpoint::ExecutionHistory::new()
+        } else {
+            ctx.execution_history.clone()
+        })
+        .with_prompt_history(if skip_large_fields {
+            // Omit prompt history (can be very large) on interrupt.
+            std::collections::HashMap::new()
+        } else {
+            ctx.clone_prompt_history()
+        })
         .with_prompt_inputs(state.prompt_inputs.clone())
         .with_prompt_permissions(state.prompt_permissions.clone())
-        .with_last_substitution_log(state.last_substitution_log.clone())
+        .with_last_substitution_log(if skip_large_fields {
+            None
+        } else {
+            state.last_substitution_log.clone()
+        })
         .with_log_run_id(ctx.run_log_context.run_id().to_string());
 
     if let Some(checkpoint) = builder.build_with_workspace(ctx.workspace) {

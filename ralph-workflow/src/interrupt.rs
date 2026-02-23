@@ -38,6 +38,15 @@ static INTERRUPT_CONTEXT: Mutex<Option<InterruptContext>> = Mutex::new(None);
 /// (RestorePromptPermissions, SaveCheckpoint) execute deterministically.
 static USER_INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// True once a user interrupt has occurred during this process lifetime.
+///
+/// Unlike `USER_INTERRUPT_REQUESTED`, this flag is NEVER cleared. It remains
+/// set even after the event loop consumes the pending interrupt request via
+/// `take_user_interrupt_request()`. Use this flag in shutdown code paths
+/// (e.g., `capture_git_state`) where you need to know whether the process is
+/// shutting down due to Ctrl+C, even after the pending request has been consumed.
+static USER_INTERRUPTED_OCCURRED: AtomicBool = AtomicBool::new(false);
+
 /// True while the reducer event loop is running.
 ///
 /// When true, the Ctrl+C handler must NOT call `process::exit()`.
@@ -120,8 +129,40 @@ fn is_event_loop_active() -> bool {
 ///
 /// This is called by the Ctrl+C handler. The event loop is responsible for
 /// consuming the request and translating it into a reducer-visible transition.
+///
+/// Also sets the persistent `USER_INTERRUPTED_OCCURRED` flag, which is never
+/// cleared and allows shutdown code paths (e.g., `capture_git_state`) to
+/// detect the interrupt even after the event loop has consumed the pending
+/// request via `take_user_interrupt_request()`.
 pub fn request_user_interrupt() {
     USER_INTERRUPT_REQUESTED.store(true, Ordering::SeqCst);
+    USER_INTERRUPTED_OCCURRED.store(true, Ordering::SeqCst);
+}
+
+/// Check if a user interrupt has occurred at any point during this process lifetime.
+///
+/// Returns true once a Ctrl+C has been received, and remains true for the rest
+/// of the process lifetime even after `take_user_interrupt_request()` has consumed
+/// the pending request.
+///
+/// Use this in shutdown code paths where you need to know whether the process
+/// is shutting down due to user interruption, even if the event loop has already
+/// consumed the interrupt request. For example, `capture_git_state` uses this
+/// to skip git commands that could hang indefinitely during interrupt-triggered
+/// shutdown.
+pub fn user_interrupted_occurred() -> bool {
+    USER_INTERRUPTED_OCCURRED.load(Ordering::SeqCst)
+}
+
+/// Check if a user interrupt request is pending without consuming it.
+///
+/// Returns true if an interrupt is pending. The flag remains set so that
+/// the event loop can still consume it via `take_user_interrupt_request()`.
+///
+/// Use this when you need to react to an interrupt (e.g., kill a subprocess)
+/// without stealing the flag from the event loop's per-iteration check.
+pub fn is_user_interrupt_requested() -> bool {
+    USER_INTERRUPT_REQUESTED.load(Ordering::SeqCst)
 }
 
 /// Consume a pending user interrupt request.
@@ -129,6 +170,15 @@ pub fn request_user_interrupt() {
 /// Returns true if an interrupt was pending.
 pub fn take_user_interrupt_request() -> bool {
     USER_INTERRUPT_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
+/// Reset the persistent user-interrupted flag.
+///
+/// Only intended for use in tests to restore a clean state between test cases
+/// that exercise interrupt behavior. Production code must not call this.
+#[cfg(test)]
+pub fn reset_user_interrupted_occurred() {
+    USER_INTERRUPTED_OCCURRED.store(false, Ordering::SeqCst);
 }
 
 /// Context needed to save a checkpoint when interrupted.

@@ -162,7 +162,17 @@ impl FileSystemState {
     }
 
     /// Capture git HEAD state and working tree status.
+    ///
+    /// Skips all git commands when a user interrupt is pending. Blocking on
+    /// `executor.execute("git", ...)` after an interrupt-triggered agent kill can hang
+    /// indefinitely because orphaned processes may hold pipe write ends open, or because
+    /// git cannot acquire lock files left by the killed agent. Skipping is safe: the
+    /// checkpoint will simply have no git state, which is acceptable on interrupt.
     fn capture_git_state(&mut self, executor: &dyn ProcessExecutor) {
+        if crate::interrupt::user_interrupted_occurred() {
+            return;
+        }
+
         // Try to get HEAD OID
         if let Ok(output) = executor.execute("git", &["rev-parse", "HEAD"], &[], None) {
             if output.status.success() {

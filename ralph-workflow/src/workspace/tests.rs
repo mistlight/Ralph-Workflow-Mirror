@@ -3,6 +3,52 @@
 // This file contains all unit tests for WorkspaceFs and MemoryWorkspace.
 
 // =========================================================================
+// WorkspaceFs write_atomic interrupt-skipping tests
+// =========================================================================
+
+/// Verify that write_atomic succeeds (writes content correctly) even when
+/// user_interrupted_occurred() returns true.
+///
+/// During interrupt-triggered shutdown, write_atomic skips the expensive
+/// sync_all() call to avoid hanging indefinitely in F_FULLFSYNC on macOS.
+/// The file must still be written correctly despite the skipped sync.
+#[test]
+fn write_atomic_succeeds_when_user_interrupted_occurred() {
+    use crate::interrupt::{
+        request_user_interrupt, reset_user_interrupted_occurred, take_user_interrupt_request,
+    };
+    use tempfile::TempDir;
+
+    // Guarantee clean state
+    take_user_interrupt_request();
+    reset_user_interrupted_occurred();
+
+    let tmp = TempDir::new().expect("create temp dir");
+    let ws = WorkspaceFs::new(tmp.path().to_path_buf());
+
+    // Signal interrupt BEFORE calling write_atomic
+    request_user_interrupt();
+
+    let result = ws.write_atomic(Path::new("checkpoint.json"), r#"{"test": true}"#);
+
+    // Clean up interrupt flags
+    take_user_interrupt_request();
+    reset_user_interrupted_occurred();
+
+    // write_atomic must still succeed and produce readable content
+    assert!(
+        result.is_ok(),
+        "write_atomic must succeed even when interrupted: {:?}",
+        result
+    );
+    assert_eq!(
+        ws.read(Path::new("checkpoint.json"))
+            .expect("file must be readable"),
+        r#"{"test": true}"#
+    );
+}
+
+// =========================================================================
 // WorkspaceFs path resolution tests (no filesystem access needed)
 // =========================================================================
 

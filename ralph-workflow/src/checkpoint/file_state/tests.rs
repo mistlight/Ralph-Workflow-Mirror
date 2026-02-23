@@ -109,6 +109,57 @@ mod tests {
     }
 
     // =========================================================================
+    // Interrupt-skipping tests
+    // =========================================================================
+
+    #[cfg(feature = "test-utils")]
+    mod interrupt_tests {
+        use super::*;
+        use crate::executor::MockProcessExecutor;
+        use crate::interrupt::{
+            request_user_interrupt, reset_user_interrupted_occurred, take_user_interrupt_request,
+        };
+        use crate::workspace::MemoryWorkspace;
+
+        /// Ensure capture_git_state is skipped when a user interrupt is pending.
+        ///
+        /// If interrupted, we must NOT block on `executor.execute("git", ...)` calls because
+        /// those calls can hang indefinitely after a SIGTERM-killed agent leaves orphaned
+        /// processes holding pipe write ends, or after git processes cannot acquire locks.
+        #[test]
+        fn capture_with_workspace_skips_git_state_when_interrupted() {
+            // Guarantee clean state: clear any interrupt flag left from other tests
+            take_user_interrupt_request();
+
+            let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "# task");
+            let executor = MockProcessExecutor::new();
+
+            // Signal a user interrupt BEFORE capturing
+            request_user_interrupt();
+
+            let _state = FileSystemState::capture_with_workspace(&workspace, &executor);
+
+            // Clean up the interrupt flags so other tests aren't affected
+            take_user_interrupt_request();
+            reset_user_interrupted_occurred();
+
+            // No git commands should have been executed
+            let git_calls: Vec<_> = executor
+                .execute_calls()
+                .into_iter()
+                .filter(|(cmd, _, _, _)| cmd == "git")
+                .collect();
+            assert!(
+                git_calls.is_empty(),
+                "capture_with_workspace must not call git when a user interrupt is pending; \
+                got {} git call(s): {:?}",
+                git_calls.len(),
+                git_calls
+            );
+        }
+    }
+
+    // =========================================================================
     // Pure unit tests (no filesystem access)
     // =========================================================================
 

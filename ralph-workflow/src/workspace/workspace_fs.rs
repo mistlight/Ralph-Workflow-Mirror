@@ -165,7 +165,23 @@ impl Workspace for WorkspaceFs {
         // Write content to the temp file
         temp_file.write_all(content.as_bytes())?;
         temp_file.flush()?;
-        temp_file.as_file().sync_all()?;
+
+        // Skip sync_all() when a user interrupt is in progress.
+        //
+        // On macOS, sync_all() maps to F_FULLFSYNC which waits for ALL pending I/O to
+        // complete at the hardware level. After a SIGTERM-killed agent subprocess, the
+        // kernel may defer this indefinitely (tens of seconds), causing the checkpoint
+        // write to hang and the process to never exit.
+        //
+        // Skipping sync is safe in this context: we are shutting down due to Ctrl+C and
+        // the user has already accepted the risk of incomplete I/O by pressing interrupt.
+        // The checkpoint content is already in the OS page cache and will be visible to
+        // any subsequent process that reads it (e.g., `ralph --resume`). The only risk
+        // is data loss if the machine loses power between now and the OS flushing the
+        // cache -- an acceptable trade-off for an interrupt scenario.
+        if !crate::interrupt::user_interrupted_occurred() {
+            temp_file.as_file().sync_all()?;
+        }
 
         // Persist the temp file to the target location (atomic rename)
         temp_file.persist(&path).map_err(|e| e.error)?;

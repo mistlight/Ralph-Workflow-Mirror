@@ -15,6 +15,8 @@ pub(super) fn wait_for_completion_and_collect_stderr(
     enum WaitOutcome {
         Completed(std::process::ExitStatus),
         TimedOut(MonitorResult),
+        /// User pressed Ctrl+C (interrupt flag set). Caller must kill the child.
+        UserInterrupted,
     }
 
     fn try_take_monitor_result(
@@ -92,6 +94,12 @@ pub(super) fn wait_for_completion_and_collect_stderr(
             }
         }
 
+        // Check for user interrupt (Ctrl+C). Do not consume the flag here —
+        // the event loop must still see it to drive the Interrupted state transition.
+        if crate::interrupt::is_user_interrupt_requested() {
+            break WaitOutcome::UserInterrupted;
+        }
+
         let mut child = child_arc
             .lock()
             .expect("child process mutex poisoned - indicates panic in another thread");
@@ -113,6 +121,14 @@ pub(super) fn wait_for_completion_and_collect_stderr(
                 stderr_output,
                 Some(monitor_result),
             ));
+        }
+        // User pressed Ctrl+C. Return immediately so the caller can kill the child.
+        // We use SIGTERM_EXIT_CODE to signal abnormal exit; the caller will enforce
+        // termination. The interrupt flag is NOT consumed here — the event loop
+        // must still see it to drive the Interrupted state transition.
+        WaitOutcome::UserInterrupted => {
+            let stderr_output = try_take_stderr_output(stderr_join_handle, runtime);
+            return Ok((super::SIGTERM_EXIT_CODE, stderr_output, None));
         }
     };
 
@@ -174,6 +190,74 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn wait_loop_exits_promptly_when_user_interrupt_is_requested() {
+        // RAII guard: ensures the interrupt flag is cleared after the test
+        // so other tests in the same process are not affected.
+        struct InterruptGuard;
+        impl Drop for InterruptGuard {
+            fn drop(&mut self) {
+                let _ = crate::interrupt::take_user_interrupt_request();
+            }
+        }
+
+        // Set the interrupt flag BEFORE calling wait_for_completion_and_collect_stderr.
+        // A running child process that never exits should NOT block the wait loop.
+        crate::interrupt::request_user_interrupt();
+        let _guard = InterruptGuard;
+
+        let (child, controller) = MockAgentChild::new_running(0);
+        let child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>> =
+            Arc::new(std::sync::Mutex::new(Box::new(child)));
+
+        let mut stderr_join_handle: Option<std::thread::JoinHandle<io::Result<String>>> = None;
+        let mut monitor_handle: Option<std::thread::JoinHandle<MonitorResult>> = None;
+
+        let workspace = MemoryWorkspace::new_test();
+        let logger = Logger::new(Colors::new());
+        let colors = Colors::new();
+        let config = crate::config::Config::test_default();
+        let mut timer = Timer::new();
+        let executor_arc: Arc<dyn crate::executor::ProcessExecutor> =
+            Arc::new(crate::executor::MockProcessExecutor::new());
+
+        let runtime = PipelineRuntime {
+            timer: &mut timer,
+            logger: &logger,
+            colors: &colors,
+            config: &config,
+            executor: executor_arc.as_ref(),
+            executor_arc: Arc::clone(&executor_arc),
+            workspace: &workspace,
+        };
+
+        let start = Instant::now();
+        let result = wait_for_completion_and_collect_stderr(
+            Arc::clone(&child_arc),
+            &mut stderr_join_handle,
+            &mut monitor_handle,
+            &runtime,
+        );
+        let elapsed = start.elapsed();
+
+        // Clean up the child so it doesn't leak.
+        controller.store(false, Ordering::Release);
+
+        // The wait loop must return within 250ms when interrupted,
+        // not wait for the child to exit naturally.
+        assert!(
+            elapsed < Duration::from_millis(250),
+            "wait_for_completion_and_collect_stderr blocked for {elapsed:?} after user interrupt; \
+             expected early exit within 250ms"
+        );
+
+        // The function should return Ok (not an error).
+        assert!(
+            result.is_ok(),
+            "expected Ok result on interrupt, got: {result:?}"
+        );
+    }
 
     #[test]
     fn monitor_thread_panic_is_treated_as_timeout_to_avoid_hanging_wait_loop() {
