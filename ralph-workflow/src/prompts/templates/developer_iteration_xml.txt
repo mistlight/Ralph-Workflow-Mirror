@@ -1,19 +1,12 @@
 {# ============================================================================ #}
 {# Template: developer_iteration_xml.txt                                          #}
-{# Version: 1.0                                                                  #}
+{# Version: 1.1                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Prompt for developer agent during implementation phase.                    #}
 {#   Provides original user request and implementation plan for context.        #}
 {#   Developer agent executes plan and makes code changes.                       #}
-{#   No structured output is required; progress verification is done by analysis. #}
-{#                                                                             #}
-{# WHEN USED:                                                                  #}
-{#   During implementation mode (after planning phase is complete).              #}
-{#                                                                             #}
-{# TRIGGER:                                                                    #}
-{#   Pipeline runtime: implementation phase, each developer iteration.          #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   PROMPT - Original user request from PROMPT.md (required)                   #}
@@ -21,10 +14,6 @@
 {#                                                                             #}
 {# OUTPUT:                                                                      #}
 {#   Development agent produces code changes only. No structured output required. #}
-{#   Progress verification is done independently by the analysis agent.          #}
-{#                                                                             #}
-{# VERIFICATION:                                                               #}
-{#   Analysis agent compares git diff vs PLAN.md to produce development_result.xml #}
 {# ============================================================================ #}
 
 You are in IMPLEMENTATION MODE. Execute the plan and make progress.
@@ -62,7 +51,7 @@ Execute the next steps from the IMPLEMENTATION PLAN above that haven't been
 completed yet.
 
 CRITICAL: You **MUST** complete every task mentioned in the implementation plan.
-There is no time limit. The next agent may or may not know where you left off.
+There is no time limit.
 
 IMPLEMENTATION GUIDELINES:
 
@@ -92,18 +81,62 @@ IMPLEMENTATION GUIDELINES:
    If you're not sure about something, investigate - don't guess.
 
 ═══════════════════════════════════════════════════════════════════════════════
-PROGRESS VERIFICATION
+VERIFICATION AND VALIDATION
 ═══════════════════════════════════════════════════════════════════════════════
 
-Your work will be independently verified by comparing the code changes against the
-implementation plan. You do NOT need to produce structured status output.
+Verify your work as appropriate for the project and plan:
 
-Focus on implementing the plan. Any text output you produce is for your own
-record keeping and will not affect the verification process.
+1. **If code changes**: Consider running build/test commands if the project
+   supports them. Fix any failures before claiming completion.
 
-The analysis agent will objectively assess your changes by examining:
-- The code changes since the pipeline started
-- The implementation plan
-- Whether the code changes match the planned work
+2. **If the plan specifies verification**: Execute those commands
+   (e.g., "run the metrics tests", "verify logging output")
 
-This ensures unbiased progress tracking based on actual code changes.
+3. **Validate acceptance criteria**: Re-read the original request and verify
+   that ALL acceptance criteria are satisfied.
+
+═══════════════════════════════════════════════════════════════════════════════
+EXPLORATION AND CONTEXT GATHERING
+═══════════════════════════════════════════════════════════════════════════════
+
+You MUST explore the codebase to understand the full context beyond just the
+implementation plan.
+
+REQUIRED EXPLORATION:
+
+1. **Read files beyond the plan**: Don't limit yourself to files mentioned in the plan
+   - Read files imported/used by your changes
+   - Check neighboring modules for patterns and conventions
+   - Understand how your changes integrate with existing code
+
+2. **Search for related code**: Use grep/search tools to find:
+   - Similar implementations you should follow
+   - All places that might be affected by your changes
+   - Existing tests that provide examples or might need updates
+   - Documentation that might need updates
+
+3. **Understand dependencies**: Before using a library or function:
+   - Verify it exists (check package.json, Cargo.toml, imports)
+   - Read its documentation or source to understand correct usage
+   - Find existing usage examples in the codebase
+
+4. **Check for architectural patterns**: 
+   - If this is a Rust project using reducers/effects, read the architecture docs
+   - If there are AGENTS.md or CODE_STYLE.md files, follow their guidance
+   - Understand the project's testing philosophy before writing tests
+
+5. **Investigate the broader context**: 
+   - Read error messages carefully if something fails
+   - Trace through the code to understand the full picture
+   - Don't apply surface-level patches - fix the underlying issue
+
+The plan is a guide, not a boundary. Explore freely to build the context you need
+to complete the work correctly.
+
+═══════════════════════════════════════════════════════════════════════════════
+WHAT MATTERS
+═══════════════════════════════════════════════════════════════════════════════
+
+Your text output is for your own record-keeping. What matters is:
+1. The changes you make (files created, modified, deleted)
+2. Meeting ALL requirements from the plan and original request

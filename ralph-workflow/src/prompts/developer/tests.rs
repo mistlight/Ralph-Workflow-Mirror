@@ -586,3 +586,87 @@ fn test_continuation_prompt_contains_expected_elements() {
         prompt
     );
 }
+
+#[test]
+fn test_continuation_prompt_includes_verification_guidance() {
+    use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test();
+    let context = TemplateContext::default();
+    let continuation_state = ContinuationState::new().trigger_continuation(
+        DevelopmentStatus::Partial,
+        "Previous work summary".to_string(),
+        None,
+        None,
+    );
+
+    let prompt =
+        prompt_developer_iteration_continuation_xml(&context, &continuation_state, &workspace);
+
+    // Should include new verification section
+    assert!(
+        prompt.contains("VERIFICATION AND VALIDATION"),
+        "Continuation prompt should include verification guidance"
+    );
+    assert!(
+        prompt.contains("Run the build"),
+        "Should mention running builds"
+    );
+    assert!(prompt.contains("Run tests"), "Should mention running tests");
+    assert!(
+        prompt.contains("Run linters and formatters"),
+        "Should mention linters and formatters"
+    );
+
+    // Should include exploration section
+    assert!(
+        prompt.contains("EXPLORATION AND CONTEXT GATHERING"),
+        "Should include exploration guidance"
+    );
+    assert!(
+        prompt.contains("Read files beyond the diff"),
+        "Should encourage broader exploration"
+    );
+
+    // Should NOT include old progress verification section
+    assert!(
+        !prompt.contains("You do NOT need to produce structured status output"),
+        "Should not contain outdated verification section"
+    );
+}
+
+#[test]
+fn test_initial_iteration_prompt_includes_verification_guidance() {
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "Test prompt")
+        .with_file(".agent/PLAN.md", "Test plan");
+    let context = TemplateContext::default();
+
+    let prompt = prompt_developer_iteration_xml_with_context(
+        &context,
+        "test prompt",
+        "test plan",
+        &workspace,
+    );
+
+    // Should include verification section
+    assert!(
+        prompt.contains("VERIFICATION AND VALIDATION"),
+        "Initial iteration prompt should include verification guidance"
+    );
+
+    // Should include exploration section
+    assert!(
+        prompt.contains("EXPLORATION AND CONTEXT GATHERING"),
+        "Should include exploration guidance"
+    );
+
+    // Should NOT include old progress verification wording
+    assert!(
+        !prompt.contains("You do NOT need to produce structured status output"),
+        "Should not contain outdated verification section"
+    );
+}

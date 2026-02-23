@@ -87,31 +87,127 @@ Read these files to understand the full context, but do NOT modify them.
 YOUR TASK
 ═══════════════════════════════════════════════════════════════════════════════
 
-Continue the implementation from where you left off. Focus on:
+Continue the implementation from where you left off. Follow these steps:
 
-1. Review the previous attempt's summary and next_steps above
-2. Check the current state of files that were modified
-3. Complete the remaining work from the implementation plan
-4. Return status="completed" when ALL work is done
+1. **Review context**: 
+   - Read the previous attempt's summary and next_steps above
+   - Check the current state of files that were modified
+   - Explore the codebase beyond the diff to understand the full context
 
-CRITICAL: Only return status="completed" when the ENTIRE task from PROMPT.md
-is finished. If you can only make partial progress, return status="partial"
-with detailed next_steps for the next continuation.
+2. **Continue implementation**:
+   - Complete the remaining work from the implementation plan
+   - Follow the project's existing patterns and conventions
+   - Don't repeat work that was already completed
+
+3. **Verify your work** (see VERIFICATION section below):
+   - Run builds to ensure code compiles
+   - Run tests to verify behavior
+   - Run linters and formatters
+   - Execute any verification steps mentioned in the plan
+
+4. **Return correct status**:
+   - Return status="completed" ONLY when ALL work is done AND verified
+   - Return status="partial" if you made progress but work remains
+   - Include detailed next_steps if returning partial/failed status
+
+CRITICAL: "Complete" means the code works AND passes verification, not just
+that you finished writing code. If verification fails, the work is not complete.
 
 ═══════════════════════════════════════════════════════════════════════════════
-PROGRESS VERIFICATION
+VERIFICATION AND VALIDATION (CRITICAL)
 ═══════════════════════════════════════════════════════════════════════════════
 
-Your work will be independently verified by comparing the code changes against the
-implementation plan. You do NOT need to produce structured status output.
+You MUST verify your work before claiming completion. The analysis agent only performs
+static diff analysis - it cannot run tests, builds, linters, or other verification tools.
 
-Focus on continuing the implementation. Any text output you produce is for your
-own record keeping and will not affect the verification process.
+REQUIRED VERIFICATION STEPS:
 
-The analysis agent will objectively assess your changes by examining:
-- The cumulative code changes since the pipeline started (including previous attempts)
-- The implementation plan
-- Whether the code changes match the planned work
+1. **Run the build**: Ensure the code compiles/builds successfully
+   - For Rust: `cargo build` or `cargo check`
+   - For other languages: use the project's build command
+   - Fix ALL compilation errors before continuing
 
-NOTE: Previous attempt context above came from the analysis agent's assessment
-of prior work. The analysis agent will similarly assess THIS continuation attempt.
+2. **Run tests**: Execute relevant tests to verify behavior
+   - Run unit tests related to changed code
+   - Run integration tests if the changes affect cross-module behavior
+   - If tests fail, investigate and fix the root cause
+   - Add new tests if the plan requires it
+
+3. **Run linters and formatters**: Ensure code quality standards
+   - For Rust: `cargo clippy` and `cargo fmt --check`
+   - For other languages: use the project's linting tools
+   - Fix ALL linter errors and warnings
+   - Apply formatter if the project uses one
+
+4. **Check for verification commands in the plan**: The implementation plan may
+   specify additional verification steps (e.g., "run the metrics tests", "verify
+   logging output"). Execute ALL verification commands mentioned in the plan.
+
+5. **Validate acceptance criteria**: Re-read the original request and verify
+   that ALL acceptance criteria are satisfied, not just the code changes.
+
+IMPORTANT: Do NOT return status="completed" until ALL verification steps pass.
+If verification fails, fix the issues and re-run verification. Static code analysis
+alone is insufficient - runtime verification is mandatory.
+
+═══════════════════════════════════════════════════════════════════════════════
+EXPLORATION AND CONTEXT GATHERING
+═══════════════════════════════════════════════════════════════════════════════
+
+The diff from previous attempts shows WHAT changed, but not the full CONTEXT.
+You MUST explore the codebase to understand the broader picture.
+
+REQUIRED EXPLORATION:
+
+1. **Read files beyond the diff**: Don't limit yourself to changed files
+   - Read files imported/used by your changes
+   - Check neighboring modules for patterns and conventions
+   - Understand how your changes integrate with existing code
+
+2. **Search for related code**: Use grep/search tools to find:
+   - Similar implementations you should follow
+   - All places that might be affected by your changes
+   - Existing tests that provide examples or might need updates
+   - Documentation that might need updates
+
+3. **Understand dependencies**: Before using a library or function:
+   - Verify it exists (check package.json, Cargo.toml, imports)
+   - Read its documentation or source to understand correct usage
+   - Find existing usage examples in the codebase
+
+4. **Check for architectural patterns**: 
+   - If this is a Rust project using reducers/effects, read the architecture docs
+   - If there are AGENTS.md or CODE_STYLE.md files, follow their guidance
+   - Understand the project's testing philosophy before writing tests
+
+5. **Investigate failures from previous attempts**: If the previous attempt
+   returned status="partial" or "failed", investigate WHY:
+   - Read error messages carefully
+   - Trace through the code to understand the root cause
+   - Don't apply surface-level patches - fix the underlying issue
+
+The diff is a starting point, not a boundary. Explore freely to build the context
+you need to complete the work correctly.
+
+═══════════════════════════════════════════════════════════════════════════════
+ANALYSIS AGENT ROLE
+═══════════════════════════════════════════════════════════════════════════════
+
+The analysis agent will review your work AFTER you complete this continuation:
+- It compares the cumulative code changes against the implementation plan
+- It determines if the plan's requirements are satisfied
+- It produces a structured status assessment (completed/partial/failed)
+
+The analysis agent does NOT:
+- Run tests, builds, linters, or any verification commands
+- Execute code or validate runtime behavior
+- Check if the code actually works - only if it matches the plan
+
+This is why YOU must perform runtime verification. The analysis agent validates
+that you did what the plan said; you must validate that what you did actually works.
+
+Your text output is for your own record-keeping. What matters is:
+1. The code changes you make (files created, modified, deleted)
+2. The verification commands you run and their results
+3. Meeting ALL requirements from the plan and original prompt
+
