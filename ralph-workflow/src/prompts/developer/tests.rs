@@ -12,8 +12,21 @@ fn test_prompt_developer_iteration() {
     // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
     assert!(!result.contains("PROMPT.md"));
     assert!(!result.contains("PLAN.md"));
-    // STATUS.md should NOT be referenced (vague prompts, isolation mode)
-    assert!(!result.contains("STATUS.md"));
+    assert!(
+        result.contains("Do NOT create STATUS.md")
+            && result.contains("CURRENT_STATUS.md")
+            && result.contains("CURRENT_IMPLEMENTATION.md"),
+        "Prompt should explicitly ban status/handoff files"
+    );
+    assert!(
+        result.contains("Do NOT write summaries")
+            || result.contains("Do NOT attempt to communicate"),
+        "Prompt should clearly ban result-summary communication"
+    );
+    assert!(
+        !result.contains("may or may not be shown to the user"),
+        "Prompt should avoid speculative next-step context"
+    );
 }
 
 #[test]
@@ -27,8 +40,12 @@ fn test_developer_iteration_minimal_context() {
     // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
     assert!(!result.contains("PROMPT.md"));
     assert!(!result.contains("PLAN.md"));
-    // STATUS.md should NOT be referenced (vague prompts, isolation mode)
-    assert!(!result.contains("STATUS.md"));
+    assert!(
+        result.contains("Do NOT create STATUS.md")
+            && result.contains("CURRENT_STATUS.md")
+            && result.contains("CURRENT_IMPLEMENTATION.md"),
+        "Prompt should explicitly ban status/handoff files"
+    );
 }
 
 #[test]
@@ -549,8 +566,12 @@ fn test_continuation_prompt_contains_expected_elements() {
 
     // Verify the prompt contains key elements
     assert!(
-        prompt.contains("CONTINUATION MODE"),
-        "Prompt should indicate continuation mode"
+        prompt.contains("IMPLEMENTATION MODE"),
+        "Prompt should match iteration mode framing"
+    );
+    assert!(
+        prompt.contains("CONTINUATION CONTEXT"),
+        "Prompt should include minimal continuation context section"
     );
     assert!(
         prompt.contains("partial"),
@@ -561,29 +582,27 @@ fn test_continuation_prompt_contains_expected_elements() {
         "Prompt should include previous summary"
     );
     assert!(
-        prompt.contains("src/lib.rs"),
-        "Prompt should include changed files"
-    );
-    assert!(
-        prompt.contains("Add tests"),
-        "Prompt should include next steps"
+        !prompt.contains("src/lib.rs") && !prompt.contains("Next steps from previous attempt"),
+        "Prompt should keep continuation context minimal"
     );
     assert!(
         prompt.contains("#1"),
         "Prompt should include continuation attempt number"
     );
     assert!(
-        prompt.contains("PROMPT.md"),
-        "Prompt should reference PROMPT.md"
+        !prompt.contains("ANALYSIS AGENT ROLE"),
+        "Prompt should not describe downstream orchestration"
     );
     assert!(
-        prompt.contains("PLAN.md"),
-        "Prompt should reference PLAN.md"
+        prompt.contains("Do NOT create STATUS.md")
+            && prompt.contains("CURRENT_STATUS.md")
+            && prompt.contains("CURRENT_IMPLEMENTATION.md"),
+        "Prompt should explicitly ban status/handoff files"
     );
     assert!(
-        prompt.contains("do NOT modify") || prompt.contains("DO NOT MODIFY"),
-        "Prompt should warn against modifying original files. Actual prompt: {}",
-        prompt
+        prompt.contains("Do NOT write summaries")
+            || prompt.contains("Do NOT attempt to communicate"),
+        "Prompt should ban summary-style communication"
     );
 }
 
@@ -610,13 +629,12 @@ fn test_continuation_prompt_includes_verification_guidance() {
         "Continuation prompt should include verification guidance"
     );
     assert!(
-        prompt.contains("Run the build"),
-        "Should mention running builds"
+        prompt.contains("build/test commands"),
+        "Should mention build/test verification"
     );
-    assert!(prompt.contains("Run tests"), "Should mention running tests");
     assert!(
-        prompt.contains("Run linters and formatters"),
-        "Should mention linters and formatters"
+        prompt.contains("If the plan specifies verification"),
+        "Should mention plan-specified verification"
     );
 
     // Should include exploration section
@@ -625,7 +643,7 @@ fn test_continuation_prompt_includes_verification_guidance() {
         "Should include exploration guidance"
     );
     assert!(
-        prompt.contains("Read files beyond the diff"),
+        prompt.contains("Read files beyond the plan"),
         "Should encourage broader exploration"
     );
 
@@ -633,6 +651,10 @@ fn test_continuation_prompt_includes_verification_guidance() {
     assert!(
         !prompt.contains("You do NOT need to produce structured status output"),
         "Should not contain outdated verification section"
+    );
+    assert!(
+        !prompt.contains("What was accomplished:"),
+        "Should avoid broad summary/handoff sections"
     );
 }
 
