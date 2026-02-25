@@ -402,7 +402,9 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files_and_log(
     workspace: &dyn Workspace,
     template_name: &str,
 ) -> crate::prompts::RenderedTemplate {
-    use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
+    use crate::prompts::{
+        RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource,
+    };
     use std::path::Path;
 
     let partials = get_shared_partials();
@@ -548,12 +550,20 @@ pub fn prompt_developer_iteration_continuation_xml(
         .map(|files| files.join("\n"));
 
     let previous_next_steps = continuation_state.previous_next_steps.clone();
+    let prompt_content = workspace
+        .read(std::path::Path::new("PROMPT.md"))
+        .unwrap_or_else(|_| "(no prompt available)".to_string());
+    let plan_content = workspace
+        .read(std::path::Path::new(".agent/PLAN.md"))
+        .unwrap_or_else(|_| "(no plan available)".to_string());
 
     let mut variables: HashMap<&str, String> = HashMap::new();
     variables.insert("PROMPT_PATH", "PROMPT.md".to_string());
     variables.insert("PLAN_PATH", ".agent/PLAN.md".to_string());
     variables.insert("PREVIOUS_STATUS", previous_status);
     variables.insert("PREVIOUS_SUMMARY", previous_summary);
+    variables.insert("PROMPT", prompt_content);
+    variables.insert("PLAN", plan_content);
     variables.insert(
         "CONTINUATION_ATTEMPT",
         continuation_state.continuation_attempt.to_string(),
@@ -612,7 +622,9 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
     workspace: &dyn Workspace,
     template_name: &str,
 ) -> crate::prompts::RenderedTemplate {
-    use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
+    use crate::prompts::{
+        RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource,
+    };
 
     let template_content = context
         .registry()
@@ -639,12 +651,20 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
         .map(|files| files.join("\n"));
 
     let previous_next_steps = continuation_state.previous_next_steps.clone();
+    let prompt_content = workspace
+        .read(std::path::Path::new("PROMPT.md"))
+        .unwrap_or_else(|_| "(no prompt available)".to_string());
+    let plan_content = workspace
+        .read(std::path::Path::new(".agent/PLAN.md"))
+        .unwrap_or_else(|_| "(no plan available)".to_string());
 
     let mut variables: HashMap<&str, String> = HashMap::new();
     variables.insert("PROMPT_PATH", "PROMPT.md".to_string());
     variables.insert("PLAN_PATH", ".agent/PLAN.md".to_string());
     variables.insert("PREVIOUS_STATUS", previous_status);
     variables.insert("PREVIOUS_SUMMARY", previous_summary);
+    variables.insert("PROMPT", prompt_content);
+    variables.insert("PLAN", plan_content);
     variables.insert(
         "CONTINUATION_ATTEMPT",
         continuation_state.continuation_attempt.to_string(),
@@ -669,14 +689,15 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
     match template.render_with_log(template_name, &variables, &partials) {
         Ok(rendered) => rendered,
         Err(_) => {
-            let status = continuation_state
-                .previous_status
-                .as_ref()
-                .map_or("unknown", |s| match s {
-                    crate::reducer::state::DevelopmentStatus::Completed => "completed",
-                    crate::reducer::state::DevelopmentStatus::Partial => "partial",
-                    crate::reducer::state::DevelopmentStatus::Failed => "failed",
-                });
+            let status =
+                continuation_state
+                    .previous_status
+                    .as_ref()
+                    .map_or("unknown", |s| match s {
+                        crate::reducer::state::DevelopmentStatus::Completed => "completed",
+                        crate::reducer::state::DevelopmentStatus::Partial => "partial",
+                        crate::reducer::state::DevelopmentStatus::Failed => "failed",
+                    });
             let summary = continuation_state
                 .previous_summary
                 .as_ref()

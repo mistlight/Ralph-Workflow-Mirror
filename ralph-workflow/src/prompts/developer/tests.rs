@@ -659,6 +659,43 @@ fn test_continuation_prompt_includes_verification_guidance() {
 }
 
 #[test]
+fn test_continuation_prompt_includes_original_request_and_plan_sections() {
+    use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "Original request body")
+        .with_file(".agent/PLAN.md", "Implementation plan body");
+    let context = TemplateContext::default();
+    let continuation_state = ContinuationState::new().trigger_continuation(
+        DevelopmentStatus::Partial,
+        "Previous work summary".to_string(),
+        None,
+        None,
+    );
+
+    let prompt =
+        prompt_developer_iteration_continuation_xml(&context, &continuation_state, &workspace);
+
+    assert!(
+        prompt.contains("ORIGINAL REQUEST"),
+        "Continuation prompt should include ORIGINAL REQUEST section"
+    );
+    assert!(
+        prompt.contains("IMPLEMENTATION PLAN"),
+        "Continuation prompt should include IMPLEMENTATION PLAN section"
+    );
+    assert!(
+        prompt.contains("Original request body"),
+        "Continuation prompt should include prompt content"
+    );
+    assert!(
+        prompt.contains("Implementation plan body"),
+        "Continuation prompt should include plan content"
+    );
+}
+
+#[test]
 fn test_initial_iteration_prompt_includes_verification_guidance() {
     use crate::workspace::MemoryWorkspace;
 
