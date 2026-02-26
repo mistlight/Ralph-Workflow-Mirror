@@ -137,13 +137,10 @@ pub fn has_valid_xml_output(workspace: &dyn Workspace, xml_path: &Path) -> bool 
         return false;
     }
 
-    match workspace.read(xml_path) {
-        Ok(content) => {
-            let trimmed = content.trim();
-            !trimmed.is_empty() && trimmed.starts_with('<')
-        }
-        Err(_) => false,
-    }
+    workspace.read(xml_path).map_or(false, |content| {
+        let trimmed = content.trim();
+        !trimmed.is_empty() && trimmed.starts_with('<')
+    })
 }
 
 /// Archive an XML output file after successful processing.

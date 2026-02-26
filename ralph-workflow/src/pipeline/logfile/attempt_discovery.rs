@@ -128,5 +128,5 @@ pub fn next_simplified_logfile_attempt_index(
     // If base file exists but no _aN files exist, return 1 (first retry)
     // If _aN files exist, return max(attempt) + 1
     // If neither exist, return 0 (first attempt)
-    max_attempt.map_or(u32::from(base_file_exists), |max| max.saturating_add(1))
+    max_attempt.map_or_else(|| u32::from(base_file_exists), |max| max.saturating_add(1))
 }
