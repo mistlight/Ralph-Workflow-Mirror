@@ -56,8 +56,9 @@ pub fn handle_show_baseline() -> io::Result<()> {
     // Show baseline info (commits since baseline, stale status)
     match get_review_baseline_info() {
         Ok((baseline_oid, commits_since, is_stale)) => {
+            println!("Baseline Analysis:");
             if let Some(oid) = baseline_oid {
-                println!("Baseline Analysis:");
+
                 println!("  Commits since baseline: {commits_since}");
                 if is_stale {
                     println!(

@@ -65,7 +65,6 @@ pub(crate) fn validate_file_system_state(
 
             if remaining.is_empty() {
                 logger.success("Automatic recovery completed successfully.");
-                ValidationOutcome::Passed
             } else {
                 logger.warn("Some issues could not be automatically recovered:");
                 for error in &remaining {
@@ -73,8 +72,8 @@ pub(crate) fn validate_file_system_state(
                 }
                 logger.warn("Proceeding with resume despite unrecovered issues (strategy: auto).");
                 logger.info("Note: Pipeline behavior may be unpredictable.");
-                ValidationOutcome::Passed
             }
+            ValidationOutcome::Passed
         }
     }
 }

@@ -540,7 +540,6 @@ pub fn generate_commit_message_with_chain<S: std::hash::BuildHasher + Default>(
             CommitExtractionOutcome::InvalidXml(detail)
             | CommitExtractionOutcome::MissingFile(detail) => {
                 last_error = Some(anyhow::anyhow!(detail));
-                continue;
             }
         }
     }

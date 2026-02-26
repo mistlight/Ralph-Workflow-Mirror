@@ -77,7 +77,7 @@ impl CancelAwareReceiverBufRead {
                     return Ok(());
                 }
                 Ok(Err(e)) => return Err(e),
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     self.eof = true;
                     return Ok(());
