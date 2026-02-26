@@ -193,7 +193,7 @@ impl Workspace for MemoryWorkspace {
                     })
                 })
                 .collect();
-                drop(dirs);
+            drop(dirs);
 
             (file_entries, dir_entries)
         };

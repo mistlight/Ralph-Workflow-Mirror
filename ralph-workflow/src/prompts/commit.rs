@@ -442,26 +442,36 @@ pub fn prompt_commit_xsd_retry_with_log(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/commit_message.xsd"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         if !last_output_exists {
             if used_processed {
-                writeln!(diagnostic_prefix, "  - Last output: Neither canonical nor processed file exists:\n\
+                writeln!(
+                    diagnostic_prefix,
+                    "  - Last output: Neither canonical nor processed file exists:\n\
                      \t  Tried: {}\n\
                      \t  Tried: {}\n\
                      \t  (workspace.root() = {})",
                     workspace.absolute_str(".agent/tmp/commit_message.xml"),
                     workspace.absolute_str(".agent/tmp/commit_message.xml.processed"),
-                    workspace.root().display()).unwrap();
+                    workspace.root().display()
+                )
+                .unwrap();
             } else {
                 let processed_note = if processed_output_exists {
                     " (note: .processed file exists but canonical file is missing)"
                 } else {
                     ""
                 };
-                writeln!(diagnostic_prefix, "  - Last output: {}{}\n\
+                writeln!(
+                    diagnostic_prefix,
+                    "  - Last output: {}{}\n\
                      \t  (workspace.root() = {})",
                     workspace.absolute_str(
                         canonical_output_path
@@ -469,7 +479,9 @@ pub fn prompt_commit_xsd_retry_with_log(
                             .unwrap_or(".agent/tmp/commit_message.xml")
                     ),
                     processed_note,
-                    workspace.root().display()).unwrap();
+                    workspace.root().display()
+                )
+                .unwrap();
             }
         }
         diagnostic_prefix
@@ -600,21 +612,29 @@ pub fn prompt_commit_xsd_retry_with_context(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/commit_message.xsd"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         if !last_output_exists {
             // Show both attempted paths for clarity
             if used_processed {
                 // We tried processed as fallback and it's also missing
-                writeln!(diagnostic_prefix, "  - Last output: Neither canonical nor processed file exists:\n\
+                writeln!(
+                    diagnostic_prefix,
+                    "  - Last output: Neither canonical nor processed file exists:\n\
                      \t  Tried: {}\n\
                      \t  Tried: {}\n\
                      \t  (workspace.root() = {})",
                     workspace.absolute_str(".agent/tmp/commit_message.xml"),
                     workspace.absolute_str(".agent/tmp/commit_message.xml.processed"),
-                    workspace.root().display()).unwrap();
+                    workspace.root().display()
+                )
+                .unwrap();
             } else {
                 // Canonical path doesn't exist
                 let processed_note = if processed_output_exists {
@@ -622,7 +642,9 @@ pub fn prompt_commit_xsd_retry_with_context(
                 } else {
                     ""
                 };
-                writeln!(diagnostic_prefix, "  - Last output: {}{}\n\
+                writeln!(
+                    diagnostic_prefix,
+                    "  - Last output: {}{}\n\
                      \t  (workspace.root() = {})",
                     workspace.absolute_str(
                         canonical_output_path
@@ -630,7 +652,9 @@ pub fn prompt_commit_xsd_retry_with_context(
                             .unwrap_or(".agent/tmp/commit_message.xml")
                     ),
                     processed_note,
-                    workspace.root().display()).unwrap();
+                    workspace.root().display()
+                )
+                .unwrap();
             }
         }
         diagnostic_prefix

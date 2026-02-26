@@ -129,7 +129,7 @@ where
 {
     prompt_history.get(prompt_key).map_or_else(
         || (generator(), false),
-        |stored_prompt| (stored_prompt.clone(), true)
+        |stored_prompt| (stored_prompt.clone(), true),
     )
 }
 

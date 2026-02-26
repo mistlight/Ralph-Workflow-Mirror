@@ -253,13 +253,17 @@ pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
 
 /// End agent phase (removes marker file).
 pub fn end_agent_phase() {
-    let Ok(repo_root) = crate::git_helpers::get_repo_root() else { return };
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
+    };
     let marker_path = repo_root.join(".no_agent_commit");
     let _ = fs::remove_file(marker_path);
 }
 
 fn cleanup_git_wrapper_dir_silent() {
-    let Ok(repo_root) = crate::git_helpers::get_repo_root() else { return };
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
+    };
     let track_file = repo_root.join(WRAPPER_DIR_TRACK_FILE);
     let wrapper_dir = match fs::read_to_string(&track_file) {
         Ok(path) => PathBuf::from(path.trim()),
@@ -286,7 +290,9 @@ pub fn cleanup_agent_phase_silent() {
 /// workspace context is not available. Uses `std::fs` directly which is
 /// acceptable for this emergency cleanup scenario.
 fn cleanup_generated_files_silent() {
-    let Ok(repo_root) = crate::git_helpers::get_repo_root() else { return };
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
+    };
     for file in crate::files::io::agent_files::GENERATED_FILES {
         let absolute_path = repo_root.join(file);
         let _ = std::fs::remove_file(absolute_path);

@@ -398,17 +398,14 @@ impl CheckpointBuilder {
             calculate_file_checksum_with_workspace(ws, std::path::Path::new("PROMPT.md"))
         });
 
-        let (config_path, config_checksum) = self.config_path.map_or(
-            (None, None),
-            |path| {
-                let path_string = path.to_string_lossy().to_string();
-                let checksum = workspace.and_then(|ws| {
-                    let relative = path.strip_prefix(ws.root()).ok().unwrap_or(&path);
-                    calculate_file_checksum_with_workspace(ws, relative)
-                });
-                (Some(path_string), checksum)
-            }
-        );
+        let (config_path, config_checksum) = self.config_path.map_or((None, None), |path| {
+            let path_string = path.to_string_lossy().to_string();
+            let checksum = workspace.and_then(|ws| {
+                let relative = path.strip_prefix(ws.root()).ok().unwrap_or(&path);
+                calculate_file_checksum_with_workspace(ws, relative)
+            });
+            (Some(path_string), checksum)
+        });
 
         let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase,
@@ -458,10 +455,12 @@ impl CheckpointBuilder {
         // fall back to CWD-based capture when not (CLI layer code).
         let executor_ref = self.executor.as_ref().map(std::convert::AsRef::as_ref);
         checkpoint.file_system_state = workspace.map_or_else(
-            || Some(FileSystemState::capture_with_optional_executor_impl(
-                executor_ref,
-            )),
-            |ws| executor_ref.map(|executor| FileSystemState::capture_with_workspace(ws, executor))
+            || {
+                Some(FileSystemState::capture_with_optional_executor_impl(
+                    executor_ref,
+                ))
+            },
+            |ws| executor_ref.map(|executor| FileSystemState::capture_with_workspace(ws, executor)),
         );
 
         // Capture and populate environment snapshot

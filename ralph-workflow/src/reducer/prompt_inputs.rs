@@ -6,12 +6,10 @@ pub fn sha256_hex_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
-    digest
-        .iter()
-        .fold(String::with_capacity(64), |mut acc, b| {
-            write!(acc, "{b:02x}").unwrap();
-            acc
-        })
+    digest.iter().fold(String::with_capacity(64), |mut acc, b| {
+        write!(acc, "{b:02x}").unwrap();
+        acc
+    })
 }
 
 #[must_use]

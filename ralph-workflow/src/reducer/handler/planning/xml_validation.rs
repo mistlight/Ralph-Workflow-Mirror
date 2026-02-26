@@ -43,17 +43,19 @@ impl MainEffectHandler {
             return Ok(EffectResult::event(
                 PipelineEvent::planning_output_validation_failed(
                     iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
-            };
-        validate_plan_xml(&plan_xml).map_or_else(
-            |_| Ok(EffectResult::event(
-                PipelineEvent::planning_output_validation_failed(
-                    iteration,
                     self.state.continuation.invalid_output_attempts,
                 ),
-            )),
+            ));
+        };
+        validate_plan_xml(&plan_xml).map_or_else(
+            |_| {
+                Ok(EffectResult::event(
+                    PipelineEvent::planning_output_validation_failed(
+                        iteration,
+                        self.state.continuation.invalid_output_attempts,
+                    ),
+                ))
+            },
             |elements| {
                 let markdown = format_plan_as_markdown(&elements);
                 Ok(EffectResult::with_ui(
@@ -68,7 +70,7 @@ impl MainEffectHandler {
                         }),
                     }],
                 ))
-            }
+            },
         )
     }
 }

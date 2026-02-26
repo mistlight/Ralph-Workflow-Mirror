@@ -334,7 +334,7 @@ impl RunLogContext {
     pub fn agent_log(&self, phase: &str, index: u32, attempt: Option<u32>) -> PathBuf {
         let filename = attempt.map_or_else(
             || format!("{phase}_{index}.log"),
-            |a| format!("{phase}_{index}_a{a}.log")
+            |a| format!("{phase}_{index}_a{a}.log"),
         );
         self.run_dir.join("agents").join(filename)
     }

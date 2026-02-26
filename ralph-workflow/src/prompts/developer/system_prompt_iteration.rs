@@ -690,7 +690,7 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
         variables.insert("PREVIOUS_NEXT_STEPS", next_steps);
     }
 
-    if let Ok(rendered) = template.render_with_log(template_name, &variables, &partials) { rendered } else {
+    template.render_with_log(template_name, &variables, &partials).unwrap_or_else(|_| {
         let status =
             continuation_state
                 .previous_status
@@ -732,5 +732,5 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
                 unsubstituted: vec![],
             },
         }
-    }
+    })
 }

@@ -8,8 +8,8 @@ use crate::prompts::template_engine::Template;
 use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
 use crate::workspace::Workspace;
 use std::collections::HashMap;
-use std::path::Path;
 use std::fmt::Write;
+use std::path::Path;
 
 /// The XSD schema for issues validation - included at compile time
 const ISSUES_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/issues.xsd");
@@ -266,14 +266,22 @@ pub fn prompt_review_xsd_retry_with_context_files(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/issues.xsd"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         if !last_output_exists {
-            writeln!(diagnostic_prefix, "  - Last output: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Last output: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/last_output.xml"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
@@ -356,14 +364,22 @@ pub fn prompt_review_xsd_retry_with_context_files_and_log(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/issues.xsd"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         if !last_output_exists {
-            writeln!(diagnostic_prefix, "  - Last output: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Last output: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/last_output.xml"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
@@ -561,14 +577,22 @@ pub fn prompt_fix_xsd_retry_with_log(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/fix_result.xsd"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         if !last_output_exists {
-            writeln!(diagnostic_prefix, "  - Last output: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Last output: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/last_output.xml"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
@@ -752,14 +776,22 @@ pub fn prompt_fix_xsd_retry_with_context_files(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/fix_result.xsd"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         if !last_output_exists {
-            writeln!(diagnostic_prefix, "  - Last output: {} (workspace.root() = {})",
+            writeln!(
+                diagnostic_prefix,
+                "  - Last output: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/last_output.xml"),
-                workspace.root().display()).unwrap();
+                workspace.root().display()
+            )
+            .unwrap();
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");

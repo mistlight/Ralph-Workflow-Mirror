@@ -27,14 +27,22 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
     // Add phase information with specific context based on phase type
     match context.phase {
         PipelinePhase::Development => {
-            writeln!(note, "Resuming DEVELOPMENT phase (iteration {} of {})",
+            writeln!(
+                note,
+                "Resuming DEVELOPMENT phase (iteration {} of {})",
                 context.iteration + 1,
-                context.total_iterations).unwrap();
+                context.total_iterations
+            )
+            .unwrap();
         }
         PipelinePhase::Review => {
-            writeln!(note, "Resuming REVIEW phase (pass {} of {})",
+            writeln!(
+                note,
+                "Resuming REVIEW phase (pass {} of {})",
                 context.reviewer_pass + 1,
-                context.total_reviewer_passes).unwrap();
+                context.total_reviewer_passes
+            )
+            .unwrap();
         }
         _ => {
             writeln!(note, "Resuming from phase: {}", context.phase_name()).unwrap();
@@ -43,8 +51,12 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
 
     // Add resume count if this has been resumed before
     if context.resume_count > 0 {
-        writeln!(note, "This session has been resumed {} time(s)",
-            context.resume_count).unwrap();
+        writeln!(
+            note,
+            "This session has been resumed {} time(s)",
+            context.resume_count
+        )
+        .unwrap();
     }
 
     // Add rebase state if applicable
@@ -75,11 +87,15 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                 .collect();
 
             for step in &recent_steps {
-                writeln!(note, "- [{}] {} (iteration {}): {}",
+                writeln!(
+                    note,
+                    "- [{}] {} (iteration {}): {}",
                     step.step_type,
                     step.phase,
                     step.iteration,
-                    step.outcome.brief_description()).unwrap();
+                    step.outcome.brief_description()
+                )
+                .unwrap();
 
                 // Add files modified count if available
                 if let Some(ref detail) = step.modified_files_detail {
@@ -105,9 +121,12 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                 // Add issues summary if available
                 if let Some(ref issues) = step.issues_summary {
                     if issues.found > 0 || issues.fixed > 0 {
-                        write!(note, 
+                        write!(
+                            note,
                             "  Issues: {} found, {} fixed",
-                            issues.found, issues.fixed).unwrap();
+                            issues.found, issues.fixed
+                        )
+                        .unwrap();
                         if let Some(ref desc) = issues.description {
                             write!(note, " ({desc})").unwrap();
                         }
@@ -168,27 +187,21 @@ impl BriefDescription for StepOutcome {
                 output,
                 ..
             } => {
-                if let Some(ref out) = output {
+                output.as_ref().and_then(|out| {
                     if !out.is_empty() {
-                        format!("Success - {}", out.lines().next().unwrap_or(""))
-                    } else if let Some(ref files) = files_modified {
-                        if files.is_empty() {
-                            "Success".to_string()
+                        Some(format!("Success - {}", out.lines().next().unwrap_or("")))
+                    } else {
+                        None
+                    }
+                }).or_else(|| {
+                    files_modified.as_ref().and_then(|files| {
+                        if !files.is_empty() {
+                            Some(format!("Success - {} files modified", files.len()))
                         } else {
-                            format!("Success - {} files modified", files.len())
+                            None
                         }
-                    } else {
-                        "Success".to_string()
-                    }
-                } else if let Some(ref files) = files_modified {
-                    if files.is_empty() {
-                        "Success".to_string()
-                    } else {
-                        format!("Success - {} files modified", files.len())
-                    }
-                } else {
-                    "Success".to_string()
-                }
+                    })
+                }).unwrap_or_else(|| "Success".to_string())
             }
             Self::Failure {
                 error, recoverable, ..

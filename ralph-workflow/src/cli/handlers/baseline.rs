@@ -58,7 +58,6 @@ pub fn handle_show_baseline() -> io::Result<()> {
         Ok((baseline_oid, commits_since, is_stale)) => {
             println!("Baseline Analysis:");
             if let Some(oid) = baseline_oid {
-
                 println!("  Commits since baseline: {commits_since}");
                 if is_stale {
                     println!(

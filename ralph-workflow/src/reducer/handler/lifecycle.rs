@@ -172,21 +172,25 @@ impl MainEffectHandler {
         };
 
         let mut result = agent_result.as_ref().map_or_else(
-            |_| EffectResult::event(PipelineEvent::AwaitingDevFix(
-                crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
-                    failed_phase,
-                    failed_role,
-                },
-            )),
-            |result| EffectResult::with_ui(
-                PipelineEvent::AwaitingDevFix(
+            |_| {
+                EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
                         failed_phase,
                         failed_role,
                     },
-                ),
-                result.ui_events.clone(),
-            )
+                ))
+            },
+            |result| {
+                EffectResult::with_ui(
+                    PipelineEvent::AwaitingDevFix(
+                        crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                            failed_phase,
+                            failed_role,
+                        },
+                    ),
+                    result.ui_events.clone(),
+                )
+            },
         );
 
         // Add any additional events from the agent result if it succeeded

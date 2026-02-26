@@ -124,7 +124,8 @@ const fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) ->
         crate::reducer::event::PipelinePhase::Development => CheckpointPhase::Development,
         crate::reducer::event::PipelinePhase::Review => CheckpointPhase::Review,
         crate::reducer::event::PipelinePhase::CommitMessage => CheckpointPhase::CommitMessage,
-        crate::reducer::event::PipelinePhase::FinalValidation | crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
+        crate::reducer::event::PipelinePhase::FinalValidation
+        | crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Complete => CheckpointPhase::Complete,
         crate::reducer::event::PipelinePhase::AwaitingDevFix => CheckpointPhase::AwaitingDevFix,
         crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Interrupted,

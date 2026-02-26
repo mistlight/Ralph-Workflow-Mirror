@@ -101,7 +101,7 @@ impl MainEffectHandler {
         }
         let event = message.map_or_else(
             || PipelineEvent::commit_xml_validation_failed(detail, attempt),
-            |msg| PipelineEvent::commit_xml_validated(msg, attempt)
+            |msg| PipelineEvent::commit_xml_validated(msg, attempt),
         );
 
         Ok(EffectResult::with_ui(

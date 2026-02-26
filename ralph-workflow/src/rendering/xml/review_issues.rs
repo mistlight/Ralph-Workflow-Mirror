@@ -38,8 +38,12 @@ pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> Strin
                 output.push_str("🎉 ✅ No issues found! Code looks good.\n");
             }
         } else {
-            writeln!(output, "🔍 Found {} issue(s) to address:\n",
-                elements.issues.len()).unwrap();
+            writeln!(
+                output,
+                "🔍 Found {} issue(s) to address:\n",
+                elements.issues.len()
+            )
+            .unwrap();
             output.push_str(&render_issues_grouped_by_file(
                 &elements.issues,
                 output_context,
@@ -209,33 +213,26 @@ fn parse_issue(issue: &str) -> ParsedIssue {
         working = SNIPPET_RE.replace(&working, "").to_string();
     }
 
-    let (file, line_start, line_end) = if let Some(cap) = LOCATION_RE.captures(&working) {
-        let file = cap.name("file").map(|m| m.as_str().to_string());
-        let start = cap
-            .name("start")
-            .and_then(|m| m.as_str().parse::<u32>().ok());
-        let end = cap
-            .name("end")
-            .and_then(|m| m.as_str().parse::<u32>().ok())
-            .or(start);
-        (file, start, end)
-    } else if let Some(cap) = GH_LOCATION_RE.captures(&working) {
-        let file = cap.name("file").map(|m| m.as_str().to_string());
-        let start = cap
-            .name("start")
-            .and_then(|m| m.as_str().parse::<u32>().ok());
-        let end = cap
-            .name("end")
-            .and_then(|m| m.as_str().parse::<u32>().ok())
-            .or(start);
-        (file, start, end)
-    } else {
-        (
-            extract_file_from_issue(&working).map(std::string::ToString::to_string),
-            None,
-            None,
-        )
-    };
+    let (file, line_start, line_end) = LOCATION_RE.captures(&working)
+        .or_else(|| GH_LOCATION_RE.captures(&working))
+        .map_or_else(
+            || (
+                extract_file_from_issue(&working).map(std::string::ToString::to_string),
+                None,
+                None,
+            ),
+            |cap| {
+                let file = cap.name("file").map(|m| m.as_str().to_string());
+                let start = cap
+                    .name("start")
+                    .and_then(|m| m.as_str().parse::<u32>().ok());
+                let end = cap
+                    .name("end")
+                    .and_then(|m| m.as_str().parse::<u32>().ok())
+                    .or(start);
+                (file, start, end)
+            }
+        );
 
     let description = working
         .lines()

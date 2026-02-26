@@ -105,22 +105,30 @@ pub fn render_diff_sections(title: &str, sections: &[DiffFileSection]) -> String
 
     let mut output = String::new();
     writeln!(output, "\n{title}:").unwrap();
-    writeln!(output, "   Modified {} file(s): {}",
+    writeln!(
+        output,
+        "   Modified {} file(s): {}",
         sections.len(),
         sections
             .iter()
             .map(|s| s.path.as_str())
             .collect::<Vec<&str>>()
-            .join(", ")).unwrap();
+            .join(", ")
+    )
+    .unwrap();
 
     for section in sections {
         writeln!(output, "\n   📄 {}", section.path).unwrap();
-        writeln!(output, "      Action: {}",
+        writeln!(
+            output,
+            "      Action: {}",
             match section.action {
                 ChangeAction::Create => "created",
                 ChangeAction::Modify => "modified",
                 ChangeAction::Delete => "deleted",
-            }).unwrap();
+            }
+        )
+        .unwrap();
         for line in section.diff.lines() {
             writeln!(output, "      {line}").unwrap();
         }

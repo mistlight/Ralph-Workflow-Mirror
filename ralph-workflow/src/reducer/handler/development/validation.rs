@@ -109,12 +109,12 @@ impl MainEffectHandler {
             .workspace
             .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
         else {
-                return Ok(EffectResult::event(
-                    PipelineEvent::development_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
+            return Ok(EffectResult::event(
+                PipelineEvent::development_output_validation_failed(
+                    iteration,
+                    self.state.continuation.invalid_output_attempts,
+                ),
+            ));
         };
 
         match validate_development_result_xml(&xml) {

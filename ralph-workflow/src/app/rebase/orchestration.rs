@@ -454,10 +454,11 @@ fn create_checkpoint_builder(
 fn read_repo_head_or_unknown(workspace: &dyn Workspace) -> String {
     git2::Repository::open(workspace.root()).map_or_else(
         |_| "unknown".to_string(),
-        |repo| repo
-            .head()
-            .ok()
-            .and_then(|head| head.peel_to_commit().ok())
-            .map_or_else(|| "unknown".to_string(), |commit| commit.id().to_string())
+        |repo| {
+            repo.head()
+                .ok()
+                .and_then(|head| head.peel_to_commit().ok())
+                .map_or_else(|| "unknown".to_string(), |commit| commit.id().to_string())
+        },
     )
 }

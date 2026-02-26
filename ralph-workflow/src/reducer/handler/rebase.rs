@@ -36,14 +36,15 @@ impl MainEffectHandler {
                 if conflicted_files.is_empty() {
                     let new_head = git2::Repository::open(ctx.repo_root).map_or_else(
                         |_| "unknown".to_string(),
-                        |repo| repo
-                            .head()
-                            .ok()
-                            .and_then(|head| head.peel_to_commit().ok())
-                            .map_or_else(
-                                || "unknown".to_string(),
-                                |commit| commit.id().to_string(),
-                            )
+                        |repo| {
+                            repo.head()
+                                .ok()
+                                .and_then(|head| head.peel_to_commit().ok())
+                                .map_or_else(
+                                    || "unknown".to_string(),
+                                    |commit| commit.id().to_string(),
+                                )
+                        },
                     );
 
                     Ok(EffectResult::event(PipelineEvent::rebase_succeeded(
@@ -95,11 +96,15 @@ impl MainEffectHandler {
                 Ok(()) => {
                     let restored_to = git2::Repository::open(ctx.repo_root).map_or_else(
                         |_| "HEAD".to_string(),
-                        |repo| repo
-                            .head()
-                            .ok()
-                            .and_then(|head| head.peel_to_commit().ok())
-                            .map_or_else(|| "HEAD".to_string(), |commit| commit.id().to_string())
+                        |repo| {
+                            repo.head()
+                                .ok()
+                                .and_then(|head| head.peel_to_commit().ok())
+                                .map_or_else(
+                                    || "HEAD".to_string(),
+                                    |commit| commit.id().to_string(),
+                                )
+                        },
                     );
 
                     Ok(EffectResult::event(PipelineEvent::rebase_aborted(

@@ -22,7 +22,9 @@ pub(super) fn wait_for_completion_and_collect_stderr(
     fn try_take_monitor_result(
         monitor_handle: &mut Option<std::thread::JoinHandle<MonitorResult>>,
     ) -> Result<Option<MonitorResult>, String> {
-        let finished = monitor_handle.as_ref().is_some_and(std::thread::JoinHandle::is_finished);
+        let finished = monitor_handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished);
         if !finished {
             return Ok(None);
         }
@@ -52,7 +54,9 @@ pub(super) fn wait_for_completion_and_collect_stderr(
         stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
         runtime: &PipelineRuntime<'_>,
     ) -> String {
-        let finished = stderr_join_handle.as_ref().is_some_and(std::thread::JoinHandle::is_finished);
+        let finished = stderr_join_handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished);
         if !finished {
             return String::new();
         }

@@ -30,13 +30,12 @@
 //! This handles protocol violations where block lifecycle ordering is violated.
 
 use crate::json_parser::delta_display::{
-
     compute_append_only_suffix, sanitize_for_display, DeltaRenderer, TextDeltaRenderer,
 };
 use crate::json_parser::streaming_state::StreamingSession;
 use crate::json_parser::terminal::TerminalMode;
-use std::fmt::Write;
 use crate::json_parser::types::ContentType;
+use std::fmt::Write;
 
 impl crate::json_parser::claude::ClaudeParser {
     /// Handle standalone text delta events (not part of content blocks).
@@ -283,8 +282,11 @@ impl crate::json_parser::claude::ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                writeln!(thinking_output, 
-                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}").unwrap();
+                                writeln!(
+                                    thinking_output,
+                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}"
+                                )
+                                .unwrap();
                             }
                         }
 
@@ -330,8 +332,11 @@ impl crate::json_parser::claude::ClaudeParser {
                                         TerminalMode::Full => unreachable!(),
                                     };
 
-                                    writeln!(tool_output, 
-                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}").unwrap();
+                                    writeln!(
+                                        tool_output,
+                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}"
+                                    )
+                                    .unwrap();
                                 }
                             }
                         }
@@ -366,7 +371,8 @@ impl crate::json_parser::claude::ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                writeln!(text_output, "{prefix_fmt}{sanitized}{suffix_fmt}").unwrap();
+                                writeln!(text_output, "{prefix_fmt}{sanitized}{suffix_fmt}")
+                                    .unwrap();
                             }
                         }
 

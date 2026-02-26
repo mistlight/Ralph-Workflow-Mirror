@@ -425,7 +425,9 @@ impl FileSnapshot {
     #[must_use]
     pub fn get_content(&self) -> Option<String> {
         self.content.clone().or_else(|| {
-            self.compressed_content.as_ref().and_then(|compressed| decompress_data(compressed).ok())
+            self.compressed_content
+                .as_ref()
+                .and_then(|compressed| decompress_data(compressed).ok())
         })
     }
 

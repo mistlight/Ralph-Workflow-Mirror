@@ -55,8 +55,12 @@ pub fn render(content: &str) -> String {
                     }
                 )
             });
-            writeln!(output, "   {}. {}{}",
-                step.number, step.title, priority_badge).unwrap();
+            writeln!(
+                output,
+                "   {}. {}{}",
+                step.number, step.title, priority_badge
+            )
+            .unwrap();
 
             for file in &step.target_files {
                 let action_icon = match file.action {

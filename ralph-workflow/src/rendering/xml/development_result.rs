@@ -80,18 +80,26 @@ fn render_files_changed_as_diff_like_view(files_changed: &str) -> String {
     let file_list: Vec<&str> = items.iter().map(|(p, _)| p.as_str()).collect();
     let mut output = String::new();
     output.push_str("\n📁 Files Changed:\n");
-    writeln!(output, "   Modified {} file(s): {}",
+    writeln!(
+        output,
+        "   Modified {} file(s): {}",
         file_list.len(),
-        file_list.join(", ")).unwrap();
+        file_list.join(", ")
+    )
+    .unwrap();
 
     for (path, action) in items {
         writeln!(output, "\n   📄 {path}").unwrap();
-        writeln!(output, "      Action: {}",
+        writeln!(
+            output,
+            "      Action: {}",
             match action {
                 ChangeAction::Create => "created",
                 ChangeAction::Modify => "modified",
                 ChangeAction::Delete => "deleted",
-            }).unwrap();
+            }
+        )
+        .unwrap();
         output.push_str("      (no diff provided)\n");
     }
 

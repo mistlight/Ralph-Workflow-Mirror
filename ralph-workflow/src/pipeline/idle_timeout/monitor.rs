@@ -193,9 +193,9 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             // Be robust to future changes: if we ever enter the enforcement state
             // without having escalated yet, force escalation now.
             if state.escalated {
-                let should_resend = state.last_sigkill_sent_at.is_none_or(
-                    |t| now.duration_since(t) >= kill_config.sigkill_resend_interval()
-                );
+                let should_resend = state
+                    .last_sigkill_sent_at
+                    .is_none_or(|t| now.duration_since(t) >= kill_config.sigkill_resend_interval());
                 if should_resend {
                     let _ = force_kill_best_effort(state.pid, executor.as_ref());
                     state.last_sigkill_sent_at = Some(now);
@@ -241,9 +241,9 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                             return;
                         }
                         let now = std::time::Instant::now();
-                        let should_resend = last_kill_sent_at.is_none_or(
-                            |t| now.duration_since(t) >= config_for_reaper.sigkill_resend_interval()
-                        );
+                        let should_resend = last_kill_sent_at.is_none_or(|t| {
+                            now.duration_since(t) >= config_for_reaper.sigkill_resend_interval()
+                        });
                         if should_resend {
                             let _ = force_kill_best_effort(pid, executor_for_reaper.as_ref());
                             last_kill_sent_at = Some(now);
