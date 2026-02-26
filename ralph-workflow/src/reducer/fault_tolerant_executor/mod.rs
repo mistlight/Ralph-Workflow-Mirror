@@ -122,9 +122,7 @@ pub fn execute_agent_fault_tolerantly(
         try_agent_execution(config, runtime)
     }));
 
-    if let Ok(event_result) = result {
-        event_result
-    } else {
+    result.unwrap_or_else(|_| {
         let error_kind = AgentErrorKind::InternalError;
         let retriable = is_retriable_agent_error(&error_kind);
 
@@ -138,7 +136,7 @@ pub fn execute_agent_fault_tolerantly(
             ),
             session_id: None,
         })
-    }
+    })
 }
 
 /// Try to execute agent without panic catching.
