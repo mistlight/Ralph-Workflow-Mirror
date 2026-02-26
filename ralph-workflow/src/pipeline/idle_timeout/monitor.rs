@@ -276,6 +276,13 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             continue;
         }
 
+        // Log diagnostic information about timeout trigger
+        let time_since_output = super::time_since_activity(&activity_timestamp);
+        eprintln!(
+            "Idle timeout exceeded: no output activity for {} seconds",
+            time_since_output.as_secs()
+        );
+
         // Check file activity if config provided
         if let Some(ref config) = file_activity_config {
             let mut locked_tracker = config
@@ -286,14 +293,16 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             match locked_tracker.check_for_recent_activity(config.workspace.as_ref(), timeout_secs)
             {
                 Ok(true) => {
-                    // Files were recently modified, not timed out
+                    eprintln!("AI-generated files were updated recently, continuing monitoring");
                     continue;
                 }
                 Ok(false) => {
-                    // No recent file activity, proceed with timeout
+                    eprintln!(
+                        "No AI-generated file updates in the last {} seconds, proceeding with timeout",
+                        timeout_secs
+                    );
                 }
                 Err(e) => {
-                    // Log warning but don't fail timeout detection
                     eprintln!("Warning: file activity check failed: {}", e);
                 }
             }

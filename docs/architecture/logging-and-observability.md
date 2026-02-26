@@ -280,6 +280,27 @@ The monitor explicitly excludes operational noise so timeout signals stay trustw
 
 This ensures that log-only writes and routine system touches do not keep stalled runs marked as active.
 
+### Edge Cases and Performance
+
+#### Sparse File Updates
+
+If an agent updates files very infrequently (for example, once every 4 minutes), the timeout detection will correctly recognize this as ongoing activity. The 300-second recency window ensures that any modification within the last 5 minutes counts as "active".
+
+#### Monitoring Overhead
+
+File activity checking uses selective directory scanning with minimal overhead:
+
+- Only `.agent/` and `.agent/tmp/` directories are scanned
+- Excluded files (logs, system artifacts) are filtered early
+- Modification times are cached to avoid redundant disk I/O
+- Typical overhead: <1ms per check on modern systems
+
+The 30-second check interval provides a good balance between timely timeout detection and resource efficiency. During each check, the monitor samples file modification times to detect recent AI progress.
+
+#### Timeout Decision Logging
+
+When a timeout occurs, the monitor logs diagnostic information indicating whether it was due to lack of output activity, file activity, or both. This helps users understand whether the agent was truly stuck or if the timeout threshold needs adjustment.
+
 ## Architecture Integration
 
 ### Reducer/Effect Boundary

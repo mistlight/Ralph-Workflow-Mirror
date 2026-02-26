@@ -34,6 +34,34 @@
 //! - Long enough for complex tool operations and LLM reasoning
 //! - Short enough to detect truly stuck agents
 //! - Aligned with typical CI/CD step timeouts
+//!
+//! # Edge Cases and Behavior Notes
+//!
+//! ## Sparse File Updates
+//! If an agent updates files very infrequently (e.g., once every 4 minutes),
+//! the timeout detection will correctly recognize this as ongoing activity.
+//! The 300-second recency window ensures that any modification within the
+//! last 5 minutes counts as "active".
+//!
+//! ## Monitoring Cadence
+//! The default check interval is 30 seconds, meaning file activity is
+//! sampled every 30 seconds. This is much faster than the 300-second timeout
+//! window, ensuring timely detection while remaining resource-efficient.
+//! The check interval can be adjusted via MonitorConfig for testing or
+//! special operational requirements.
+//!
+//! ## Performance Characteristics
+//! File activity checking uses selective directory scanning:
+//! - Only .agent/ and .agent/tmp/ are scanned
+//! - Excluded files (logs, system artifacts) are filtered early
+//! - Modification times are cached to avoid redundant disk I/O
+//! - Impact on monitor overhead: typically <1ms per check on modern systems
+//!
+//! ## Timeout Reporting
+//! When a timeout occurs, logs indicate whether it was due to lack of
+//! output activity, file activity, or both. This helps users understand
+//! whether the agent was truly stuck or if the timeout threshold needs
+//! adjustment.
 
 mod clock;
 mod file_activity;

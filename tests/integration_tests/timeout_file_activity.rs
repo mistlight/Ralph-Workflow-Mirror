@@ -15,6 +15,7 @@ use ralph_workflow::pipeline::idle_timeout::{
 };
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use ralph_workflow::{AgentChild, MockAgentChild, MockProcessExecutor, ProcessExecutor};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -201,6 +202,150 @@ fn no_output_and_no_ai_files_times_out() {
         assert!(
             matches!(result, MonitorResult::TimedOut { .. }),
             "no output and no AI files should time out"
+        );
+    });
+}
+
+fn touch_activity(timestamp: &ralph_workflow::pipeline::idle_timeout::SharedActivityTimestamp) {
+    use std::sync::atomic::Ordering;
+    let now = std::time::Instant::now()
+        .duration_since(std::time::Instant::now() - std::time::Duration::from_secs(1000000))
+        .as_secs();
+    timestamp.store(now, Ordering::Release);
+}
+
+#[test]
+fn continuous_file_updates_prevent_timeout_over_extended_period() {
+    with_default_timeout(|| {
+        let timestamp = new_activity_timestamp();
+        timestamp.store(0, Ordering::Release);
+
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let should_stop_for_monitor = Arc::clone(&should_stop);
+
+        let workspace: Arc<dyn Workspace> =
+            Arc::new(MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Initial plan"));
+
+        let file_activity_config = Some(FileActivityConfig {
+            tracker: new_file_activity_tracker(),
+            workspace: Arc::clone(&workspace),
+        });
+
+        let (mock_child, _controller) = MockAgentChild::new_running(0);
+        let child = Arc::new(Mutex::new(Box::new(mock_child) as Box<dyn AgentChild>));
+
+        let executor: Arc<dyn ProcessExecutor> = Arc::new(MockProcessExecutor::new());
+
+        // Simulate periodic file updates in background thread
+        let workspace_for_updates = Arc::clone(&workspace);
+        let update_handle = thread::spawn(move || {
+            for i in 0..5 {
+                thread::sleep(Duration::from_millis(200));
+                workspace_for_updates
+                    .write(
+                        Path::new(".agent/PLAN.md"),
+                        &format!("# Updated plan iteration {}", i),
+                    )
+                    .ok();
+            }
+        });
+
+        let handle = thread::spawn(move || {
+            monitor_idle_timeout_with_interval_and_kill_config(
+                timestamp,
+                file_activity_config,
+                child,
+                should_stop_for_monitor,
+                executor,
+                MonitorConfig {
+                    timeout_secs: 1,
+                    check_interval: Duration::from_millis(100),
+                    kill_config: fast_kill_config(),
+                },
+            )
+        });
+
+        // Wait for updates to complete, then signal stop
+        update_handle.join().expect("update thread panicked");
+        thread::sleep(Duration::from_millis(100));
+        should_stop.store(true, Ordering::Release);
+
+        let result = handle.join().expect("monitor thread panicked");
+        assert_eq!(
+            result,
+            MonitorResult::ProcessCompleted,
+            "continuous file updates should prevent timeout"
+        );
+    });
+}
+
+#[test]
+fn mixed_output_and_file_activity_prevents_timeout() {
+    with_default_timeout(|| {
+        let timestamp = new_activity_timestamp();
+        timestamp.store(0, Ordering::Release);
+
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let should_stop_for_monitor = Arc::clone(&should_stop);
+
+        let workspace: Arc<dyn Workspace> =
+            Arc::new(MemoryWorkspace::new_test().with_file(".agent/NOTES.md", "# Notes"));
+
+        let file_activity_config = Some(FileActivityConfig {
+            tracker: new_file_activity_tracker(),
+            workspace: Arc::clone(&workspace),
+        });
+
+        let (mock_child, _controller) = MockAgentChild::new_running(0);
+        let child = Arc::new(Mutex::new(Box::new(mock_child) as Box<dyn AgentChild>));
+
+        let executor: Arc<dyn ProcessExecutor> = Arc::new(MockProcessExecutor::new());
+
+        // Simulate alternating output and file activity
+        let timestamp_for_updates = timestamp.clone();
+        let workspace_for_updates = Arc::clone(&workspace);
+        let activity_handle = thread::spawn(move || {
+            for i in 0..4 {
+                thread::sleep(Duration::from_millis(200));
+                if i % 2 == 0 {
+                    // Even iterations: touch output timestamp
+                    touch_activity(&timestamp_for_updates);
+                } else {
+                    // Odd iterations: update file
+                    workspace_for_updates
+                        .write(
+                            Path::new(".agent/NOTES.md"),
+                            &format!("# Notes update {}", i),
+                        )
+                        .ok();
+                }
+            }
+        });
+
+        let handle = thread::spawn(move || {
+            monitor_idle_timeout_with_interval_and_kill_config(
+                timestamp,
+                file_activity_config,
+                child,
+                should_stop_for_monitor,
+                executor,
+                MonitorConfig {
+                    timeout_secs: 1,
+                    check_interval: Duration::from_millis(100),
+                    kill_config: fast_kill_config(),
+                },
+            )
+        });
+
+        activity_handle.join().expect("activity thread panicked");
+        thread::sleep(Duration::from_millis(100));
+        should_stop.store(true, Ordering::Release);
+
+        let result = handle.join().expect("monitor thread panicked");
+        assert_eq!(
+            result,
+            MonitorResult::ProcessCompleted,
+            "mixed activity should prevent timeout"
         );
     });
 }
