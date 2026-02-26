@@ -153,7 +153,6 @@ pub(super) fn reduce_iteration_event(
             };
 
             let continuation_state = &state.continuation;
-            let max_continuations = continuation_state.max_continue_count.saturating_sub(1);
 
             let next_event = if matches!(outcome.status, DevelopmentStatus::Completed) {
                 if continuation_state.is_continuation() {
@@ -167,8 +166,8 @@ pub(super) fn reduce_iteration_event(
                         output_valid: true,
                     }
                 }
-            } else if continuation_state.continuation_attempt > max_continuations
-                || continuation_state.continuation_attempt + 1 > max_continuations
+            } else if continuation_state.continuation_attempt
+                >= continuation_state.max_continue_count
             {
                 DevelopmentEvent::ContinuationBudgetExhausted {
                     iteration,

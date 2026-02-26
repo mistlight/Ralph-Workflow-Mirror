@@ -614,3 +614,169 @@ fn test_continuation_stops_with_unwrap_or_default() {
         assert_eq!(state.metrics.dev_continuation_attempt, 3);
     });
 }
+
+/// NEW REGRESSION TEST: Infinite loop bug - OutcomeApplied exhausts too early.
+///
+/// CRITICAL BUG REPRODUCTION: With max_continue_count = 3, attempts 0, 1, 2 should
+/// be allowed (3 total attempts), and attempt 3 should be exhausted (3 >= 3).
+///
+/// The bug is in iteration_reducer.rs lines 156 and 170-172:
+/// ```rust
+/// let max_continuations = continuation_state.max_continue_count.saturating_sub(1); // Line 156 - BUG!
+/// ...
+/// } else if continuation_state.continuation_attempt > max_continuations
+///     || continuation_state.continuation_attempt + 1 > max_continuations
+/// {
+/// ```
+///
+/// This causes exhaustion to trigger at attempt 2 instead of attempt 3:
+/// - max_continue_count = 3
+/// - max_continuations = 3 - 1 = 2
+/// - At attempt 2: `2 > 2` false, `2 + 1 > 2` true → exhausts (WRONG!)
+///
+/// Expected: Attempts 0, 1, 2 allowed; attempt 3 exhausts (when >= 3)
+/// Actual: Attempts 0, 1 allowed; attempt 2 exhausts (wrong boundary)
+///
+/// This test simulates the OutcomeApplied event handler flow directly to verify
+/// the bug exists. After fixing, the reducer should allow attempt 2 to continue
+/// and only exhaust at attempt 3.
+#[test]
+fn test_outcome_applied_exhausts_too_early() {
+    with_default_timeout(|| {
+        // max_continue_count = 3 means attempts 0, 1, 2 should be allowed (3 total)
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Simulate attempt 0 completing with Partial outcome
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "partial work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+
+        // Apply outcome at attempt 0 - should trigger continuation
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        // After ContinuationTriggered, we're at attempt 1
+        assert_eq!(state.continuation.continuation_attempt, 1);
+
+        // Simulate attempt 1 completing with Partial outcome
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "more partial work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+
+        // Apply outcome at attempt 1 - should trigger continuation
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        // After ContinuationTriggered, we're at attempt 2
+        assert_eq!(state.continuation.continuation_attempt, 2);
+
+        // Simulate attempt 2 completing with Partial outcome
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "still more partial work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+
+        // Apply outcome at attempt 2 - BUG: current code exhausts here
+        // Expected: should trigger continuation to attempt 3
+        // Actual: triggers ContinuationBudgetExhausted (wrong!)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+
+        // CRITICAL ASSERTION: After OutcomeApplied at attempt 2, we should be at attempt 3,
+        // NOT have exhausted the budget yet.
+        // Current buggy behavior: continuation_attempt reset to 0 (budget exhausted too early)
+        // Expected behavior: continuation_attempt = 3 (one more attempt allowed)
+        assert_eq!(
+            state.continuation.continuation_attempt, 3,
+            "BUG: OutcomeApplied at attempt 2 should continue to attempt 3, not exhaust budget"
+        );
+    });
+}
+
+/// Test that continuation attempts are numbered correctly and exhaustion happens at the right boundary.
+///
+/// With max_continue_count = 3:
+/// - Attempt 0 (initial): NOT exhausted (0 < 3)
+/// - Attempt 1 (first continuation): NOT exhausted (1 < 3)
+/// - Attempt 2 (second continuation): NOT exhausted (2 < 3)
+/// - Attempt 3 (would be third continuation): EXHAUSTED (3 >= 3)
+#[test]
+fn test_continuation_attempt_numbering_and_boundary() {
+    with_default_timeout(|| {
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Initial attempt (attempt 0)
+        assert_eq!(state.continuation.continuation_attempt, 0);
+        assert!(!state.continuation.continuations_exhausted());
+
+        // First continuation (attempt 1)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "continuation 1".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 1);
+        assert!(!state.continuation.continuations_exhausted());
+
+        // Second continuation (attempt 2)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "continuation 2".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 2);
+        assert!(!state.continuation.continuations_exhausted());
+
+        // Third continuation trigger (attempt 3) - should be EXHAUSTED
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "continuation 3".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 3);
+        assert!(
+            state.continuation.continuations_exhausted(),
+            "Attempt 3 should be exhausted (3 >= 3)"
+        );
+    });
+}
