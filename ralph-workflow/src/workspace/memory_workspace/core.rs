@@ -71,6 +71,7 @@ impl Workspace for MemoryWorkspace {
                 .or_insert_with(|| MemoryFile::new(Vec::new()));
             entry.content.extend_from_slice(content);
             entry.modified = std::time::SystemTime::now();
+            drop(files);
         }
         Ok(())
     }
@@ -192,6 +193,7 @@ impl Workspace for MemoryWorkspace {
                     })
                 })
                 .collect();
+                drop(dirs);
 
             (file_entries, dir_entries)
         };
@@ -223,6 +225,7 @@ impl Workspace for MemoryWorkspace {
                 .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock");
             if let Some(file) = files.remove(from) {
                 files.insert(to.to_path_buf(), file);
+                drop(files);
                 return Ok(());
             }
         }
