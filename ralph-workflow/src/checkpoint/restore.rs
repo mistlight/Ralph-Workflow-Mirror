@@ -230,16 +230,18 @@ const fn phase_rank(phase: PipelinePhase) -> u32 {
     match phase {
         PipelinePhase::Planning => 0,
         PipelinePhase::Development => 1,
-        PipelinePhase::Review => 2,
         PipelinePhase::CommitMessage => 3,
         PipelinePhase::FinalValidation => 4,
         PipelinePhase::Complete => 5,
         PipelinePhase::AwaitingDevFix => 6,
         PipelinePhase::Interrupted => 7,
-        // Pre-rebase phases map to Review rank
-        PipelinePhase::PreRebase | PipelinePhase::PreRebaseConflict => 2,
-        // Rebase phases map between Development and Review
-        PipelinePhase::Rebase | PipelinePhase::PostRebase | PipelinePhase::PostRebaseConflict => 2,
+        // Review and rebase phases all map to rank 2
+        PipelinePhase::Review
+        | PipelinePhase::PreRebase
+        | PipelinePhase::PreRebaseConflict
+        | PipelinePhase::Rebase
+        | PipelinePhase::PostRebase
+        | PipelinePhase::PostRebaseConflict => 2,
     }
 }
 #[cfg(test)]

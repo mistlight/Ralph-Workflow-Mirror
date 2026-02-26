@@ -267,8 +267,8 @@ impl ClaudeParser {
             if !trimmed.is_empty() && !trimmed.starts_with('{') {
                 // In full TTY mode, thinking deltas keep the cursor on the thinking line for
                 // in-place updates. Any other output must first finalize that cursor state.
-                let mut session = self.streaming_session.borrow_mut();
-                let finalize = self.finalize_in_place_full_mode(&mut session);
+                let session = self.streaming_session.borrow_mut();
+                let finalize = self.finalize_in_place_full_mode(&session);
                 let out = format!("{finalize}{trimmed}\n");
                 if *self.terminal_mode.borrow() == TerminalMode::Full {
                     // Only mutate cursor state based on explicit cursor controls.
@@ -295,8 +295,8 @@ impl ClaudeParser {
         let finalize = if matches!(&event, ClaudeEvent::StreamEvent { .. }) {
             String::new()
         } else {
-            let mut session = self.streaming_session.borrow_mut();
-            self.finalize_in_place_full_mode(&mut session)
+            let session = self.streaming_session.borrow_mut();
+            self.finalize_in_place_full_mode(&session)
         };
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -393,7 +393,7 @@ impl ClaudeParser {
                 // while a previous streamed line is still "active" (we haven't yet emitted the
                 // completion newline). Finalize any active streaming line before resetting state
                 // so subsequent output doesn't glue onto the in-progress line.
-                let in_place_finalize = self.finalize_in_place_full_mode(&mut session);
+                let in_place_finalize = self.finalize_in_place_full_mode(&session);
 
                 // Reset any pending thinking line from a previous message.
                 *self.thinking_active_index.borrow_mut() = None;

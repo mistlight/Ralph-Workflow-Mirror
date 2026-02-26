@@ -48,8 +48,13 @@ pub fn try_extract_xml_commit_with_trace(
     // If extraction fails, use the raw content directly - XSD validation will
     // provide a clear error message explaining what's wrong (e.g., missing
     // <ralph-commit> root element) that can be sent back to the AI for retry.
-    let (xml_block, extraction_pattern) = match extract_xml_commit(content) {
-        Some(xml) => {
+    let (xml_block, extraction_pattern) = extract_xml_commit(content).map_or_else(
+        || {
+            // No XML tags found - use raw content and let XSD validation
+            // produce an informative error for the AI to retry
+            (content.to_string(), "raw content (no XML tags found)")
+        },
+        |xml| {
             // Detect which extraction pattern was used for logging
             let pattern = if content.trim().starts_with("<ralph-commit>") {
                 "direct XML"
@@ -61,13 +66,8 @@ pub fn try_extract_xml_commit_with_trace(
                 "embedded search"
             };
             (xml, pattern)
-        }
-        None => {
-            // No XML tags found - use raw content and let XSD validation
-            // produce an informative error for the AI to retry
-            (content.to_string(), "raw content (no XML tags found)")
-        }
-    };
+        },
+    );
 
     // Run XSD validation - this will catch both malformed XML and missing elements
     let xsd_result = validate_xml_against_xsd(&xml_block);

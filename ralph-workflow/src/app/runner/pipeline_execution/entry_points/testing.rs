@@ -281,6 +281,11 @@ where
     A: effect::AppEffectHandler,
     E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
 {
+    use crate::cli::{
+        handle_extended_help, handle_init_global_with, handle_init_local_config_with,
+        handle_list_work_guides, handle_smart_init_with,
+    };
+
     let RunWithHandlersParams {
         args,
         executor,
@@ -292,10 +297,6 @@ where
         workspace,
         ..
     } = params;
-    use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_init_local_config_with,
-        handle_list_work_guides, handle_smart_init_with,
-    };
 
     let colors = Colors::new();
     let logger = Logger::new(colors);

@@ -104,12 +104,12 @@ impl CommitLogSession {
         final_outcome: &str,
         workspace: &dyn Workspace,
     ) -> std::io::Result<()> {
+        use std::fmt::Write;
+
         // Skip writing for noop sessions
         if self.is_noop() {
             return Ok(());
         }
-
-        use std::fmt::Write;
 
         let summary_path = self.run_dir.join("SUMMARY.txt");
         let mut content = String::new();

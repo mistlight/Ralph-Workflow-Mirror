@@ -30,12 +30,11 @@ impl HeartbeatGuard {
         let handle = thread::spawn(move || {
             loop {
                 match stop_rx.recv_timeout(interval) {
-                    Ok(()) => break,
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Ignore heartbeat errors - graceful degradation
                         let _ = reporter.heartbeat();
                     }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
 

@@ -29,8 +29,16 @@ pub struct BaselineSummary {
 impl BaselineSummary {
     /// Format a compact version for inline display.
     pub fn format_compact(&self) -> String {
-        match &self.baseline_oid {
-            Some(oid) => {
+        self.baseline_oid.as_ref().map_or_else(
+            || {
+                format!(
+                    "Baseline: start_commit ({} files: +{}/-{} lines)",
+                    self.diff_stats.files_changed,
+                    self.diff_stats.lines_added,
+                    self.diff_stats.lines_deleted
+                )
+            },
+            |oid| {
                 let short_oid = &oid[..8.min(oid.len())];
                 if self.is_stale {
                     format!(
@@ -51,16 +59,8 @@ impl BaselineSummary {
                         self.diff_stats.lines_deleted
                     )
                 }
-            }
-            None => {
-                format!(
-                    "Baseline: start_commit ({} files: +{}/-{} lines)",
-                    self.diff_stats.files_changed,
-                    self.diff_stats.lines_added,
-                    self.diff_stats.lines_deleted
-                )
-            }
-        }
+            },
+        )
     }
 
     /// Format a detailed version for verbose display.

@@ -1,5 +1,10 @@
 use crate::agents::JsonParserType;
 
+fn line(value: serde_json::Value) -> String {
+    let json = serde_json::to_string(&value).expect("mock JSON must serialize");
+    format!("{json}\n")
+}
+
 /// Generate minimal valid agent output for mock testing.
 ///
 /// This creates a minimal valid NDJSON output that the streaming parser can
@@ -17,11 +22,6 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, command: &
  <ralph-body>Test commit message for integration tests.</ralph-body>
  </ralph-commit>"
     };
-
-    fn line(value: serde_json::Value) -> String {
-        let json = serde_json::to_string(&value).expect("mock JSON must serialize");
-        format!("{json}\n")
-    }
 
     match parser_type {
         JsonParserType::Claude => {

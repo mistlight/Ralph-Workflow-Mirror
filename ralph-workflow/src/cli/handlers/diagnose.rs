@@ -357,22 +357,27 @@ fn print_project_stack(colors: Colors, workspace: &dyn Workspace) {
 fn print_recent_logs(colors: Colors, workspace: &dyn Workspace) {
     // Try to find logs from current run (per-run logging)
     // First try to get log_run_id from checkpoint, then try lexicographic sort
-    let log_path = if let Ok(Some(checkpoint)) =
-        crate::checkpoint::load_checkpoint_with_workspace(workspace)
-    {
-        // Use log_run_id from checkpoint to find per-run logs
-        if let Some(log_run_id) = checkpoint.log_run_id {
-            PathBuf::from(format!(".agent/logs-{log_run_id}/pipeline.log"))
-        } else {
-            // Older checkpoint without log_run_id, try to find latest run directory
-            find_latest_run_log_directory(workspace)
-                .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
-        }
-    } else {
-        // No checkpoint exists, try to find latest run directory
-        find_latest_run_log_directory(workspace)
-            .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
-    };
+    let log_path = crate::checkpoint::load_checkpoint_with_workspace(workspace)
+        .ok()
+        .flatten()
+        .map_or_else(
+            || {
+                // No checkpoint exists, try to find latest run directory
+                find_latest_run_log_directory(workspace)
+                    .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
+            },
+            |checkpoint| {
+                // Use log_run_id from checkpoint to find per-run logs
+                checkpoint.log_run_id.map_or_else(
+                    || {
+                        // Older checkpoint without log_run_id, try to find latest run directory
+                        find_latest_run_log_directory(workspace)
+                            .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
+                    },
+                    |log_run_id| PathBuf::from(format!(".agent/logs-{log_run_id}/pipeline.log")),
+                )
+            },
+        );
 
     if workspace.exists(&log_path) {
         println!(

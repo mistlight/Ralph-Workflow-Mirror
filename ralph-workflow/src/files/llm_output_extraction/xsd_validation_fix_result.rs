@@ -72,10 +72,6 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                     example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
             }
-            Ok(Event::Text(_)) => {
-                // Text before root element - continue to find root or reach EOF
-                // EOF will give a more informative "missing root element" error
-            }
             Ok(Event::Eof) => {
                 return Err(XsdValidationError {
                     error_type: XsdErrorType::MissingRequiredElement,
@@ -88,7 +84,10 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                     example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
             }
-            Ok(_) => {} // Skip XML declaration, comments, etc.
+            Ok(Event::Text(_)) | Ok(_) => {
+                // Text before root element or other events - continue to find root or reach EOF
+                // EOF will give a more informative "missing root element" error
+            }
             Err(e) => return Err(malformed_xml_error(e)),
         }
         buf.clear();

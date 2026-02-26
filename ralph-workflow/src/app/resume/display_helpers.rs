@@ -45,11 +45,10 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
     // Add verbosity flags
     match cli.verbosity {
         0 => parts.push("--quiet".to_string()),
-        1 => {} // Normal is default
         2 => parts.push("--verbose".to_string()),
         3 => parts.push("--full".to_string()),
         4 => parts.push("--debug".to_string()),
-        _ => {}
+        1 | _ => {} // Normal is default or unknown
     }
 
     // Add --show-streaming-metrics if true
@@ -200,9 +199,8 @@ const fn get_phase_indicator(phase: PipelinePhase) -> &'static str {
         PipelinePhase::FinalValidation => "[validate]",
         PipelinePhase::Complete => "[complete]",
         PipelinePhase::PreRebase => "[pre-rebase]",
-        PipelinePhase::PreRebaseConflict => "[rebase-conflict]",
+        PipelinePhase::PreRebaseConflict | PipelinePhase::PostRebaseConflict => "[rebase-conflict]",
         PipelinePhase::PostRebase => "[post-rebase]",
-        PipelinePhase::PostRebaseConflict => "[rebase-conflict]",
         PipelinePhase::AwaitingDevFix => "[dev-fix]",
         PipelinePhase::Interrupted => "[interrupted]",
     }

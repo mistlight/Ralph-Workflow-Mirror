@@ -387,8 +387,9 @@ pub struct StartCommitSummary {
 impl StartCommitSummary {
     /// Format a compact version for inline display.
     pub fn format_compact(&self) -> String {
-        match &self.start_oid {
-            Some(oid) => {
+        self.start_oid.as_ref().map_or_else(
+            || "Start: not set".to_string(),
+            |oid| {
                 let short_oid = &oid[..8.min(oid.len())];
                 if self.is_stale {
                     format!(
@@ -400,9 +401,8 @@ impl StartCommitSummary {
                 } else {
                     format!("Start: {short_oid}")
                 }
-            }
-            None => "Start: not set".to_string(),
-        }
+            },
+        )
     }
 }
 

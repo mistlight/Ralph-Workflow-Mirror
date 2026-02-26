@@ -96,15 +96,12 @@ pub fn apply_cli_state_to_config(cli_state: &CliState, config: &mut Config) {
     // Handle named presets (default, opencode)
     if let Some(ref preset) = cli_state.agent_preset {
         match preset.as_str() {
-            "default" => {
-                // No override - use agent_chain defaults from config
-            }
             "opencode" => {
                 config.developer_agent = Some("opencode".to_string());
                 config.reviewer_agent = Some("opencode".to_string());
             }
-            _ => {
-                // Unknown preset - ignore
+            "default" | _ => {
+                // No override - use agent_chain defaults from config, or ignore unknown preset
             }
         }
     }

@@ -69,9 +69,8 @@ fn prompt_overwrite_confirmation(prompt_path: &Path, colors: Colors) -> anyhow::
 
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
-        Ok(0) => return Ok(false),
+        Ok(0) | Err(_) => return Ok(false),
         Ok(_) => {}
-        Err(_) => return Ok(false),
     }
 
     let response = input.trim().to_lowercase();

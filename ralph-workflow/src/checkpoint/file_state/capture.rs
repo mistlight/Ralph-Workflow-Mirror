@@ -13,10 +13,13 @@ impl FileSystemState {
     pub(crate) fn capture_with_optional_executor_impl(
         executor: Option<&dyn ProcessExecutor>,
     ) -> Self {
-        if let Some(exec) = executor { Self::capture_current_with_executor_impl(exec) } else {
-            let real_executor = RealProcessExecutor::new();
-            Self::capture_current_with_executor_impl(&real_executor)
-        }
+        executor.map_or_else(
+            || {
+                let real_executor = RealProcessExecutor::new();
+                Self::capture_current_with_executor_impl(&real_executor)
+            },
+            Self::capture_current_with_executor_impl,
+        )
     }
 
     /// Internal implementation for CWD-relative file state capture with executor.
@@ -125,13 +128,14 @@ impl FileSystemState {
     pub fn capture_file_with_workspace(&mut self, workspace: &dyn Workspace, path: &str) {
         let path_ref = Path::new(path);
         let snapshot = if workspace.exists(path_ref) {
-            if let Ok(content) = workspace.read_bytes(path_ref) {
-                let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
-                let size = content.len() as u64;
-                FileSnapshot::new(path, checksum, size, true)
-            } else {
-                FileSnapshot::not_found(path)
-            }
+            workspace.read_bytes(path_ref).map_or_else(
+                |_| FileSnapshot::not_found(path),
+                |content| {
+                    let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+                    let size = content.len() as u64;
+                    FileSnapshot::new(path, checksum, size, true)
+                },
+            )
         } else {
             FileSnapshot::not_found(path)
         };
@@ -145,13 +149,14 @@ impl FileSystemState {
     fn capture_file_impl(&mut self, path: &str) {
         let path_obj = Path::new(path);
         let snapshot = if path_obj.exists() {
-            if let Ok(content) = std::fs::read(path_obj) {
-                let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
-                let size = content.len() as u64;
-                FileSnapshot::new(path, checksum, size, true)
-            } else {
-                FileSnapshot::not_found(path)
-            }
+            std::fs::read(path_obj).map_or_else(
+                |_| FileSnapshot::not_found(path),
+                |content| {
+                    let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+                    let size = content.len() as u64;
+                    FileSnapshot::new(path, checksum, size, true)
+                },
+            )
         } else {
             FileSnapshot::not_found(path)
         };

@@ -76,8 +76,11 @@
 /// - Finalization operations fail
 pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
     use crate::app::event_loop::EventLoopConfig;
+    use crate::cloud::{CloudReporter, HeartbeatGuard, HttpCloudReporter, NoopCloudReporter};
     use crate::reducer::MainEffectHandler;
     use crate::reducer::PipelineState;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
@@ -244,10 +247,6 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     println!();
 
     // Initialize cloud reporter if cloud mode is enabled
-    use crate::cloud::{CloudReporter, HeartbeatGuard, HttpCloudReporter, NoopCloudReporter};
-    use std::sync::Arc;
-    use std::time::Duration;
-
     let cloud_reporter: Arc<dyn CloudReporter> = if config.cloud_config.enabled {
         Arc::new(HttpCloudReporter::new(config.cloud_config.clone()))
     } else {

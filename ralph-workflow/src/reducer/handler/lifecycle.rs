@@ -55,12 +55,21 @@ impl MainEffectHandler {
     /// * `failed_role` - Agent role that failed
     /// * `retry_cycle` - Retry cycle count at failure
     pub(super) fn trigger_dev_fix_flow(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         failed_phase: PipelinePhase,
         failed_role: crate::agents::AgentRole,
         retry_cycle: u32,
     ) -> Result<EffectResult> {
+        /// Helper function to detect agent unavailability from error messages.
+        /// Checks for quota/usage/rate limit indicators in error text.
+        fn is_agent_unavailable_error(err_msg: &str) -> bool {
+            let err_msg_lower = err_msg.to_lowercase();
+            err_msg_lower.contains("usage limit")
+                || err_msg_lower.contains("quota exceeded")
+                || err_msg_lower.contains("rate limit")
+        }
+
         ctx.logger.error("WARNING: PIPELINE FAILURE DETECTED");
         ctx.logger.warn(&format!(
             "Pipeline failure detected (phase: {failed_phase}, role: {failed_role:?}, cycle: {retry_cycle})"
@@ -108,15 +117,6 @@ impl MainEffectHandler {
         // Do not reuse the current agent chain selection here: the failure may have
         // occurred under a different role (Commit/Reviewer/Analysis).
         let agent = ctx.developer_agent.to_string();
-
-        /// Helper function to detect agent unavailability from error messages.
-        /// Checks for quota/usage/rate limit indicators in error text.
-        fn is_agent_unavailable_error(err_msg: &str) -> bool {
-            let err_msg_lower = err_msg.to_lowercase();
-            err_msg_lower.contains("usage limit")
-                || err_msg_lower.contains("quota exceeded")
-                || err_msg_lower.contains("rate limit")
-        }
 
         let agent_result = match self.invoke_agent(
             ctx,

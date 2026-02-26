@@ -81,9 +81,8 @@ fn parse_inline_elements(content: &str) -> Vec<InlineElement> {
             Ok(Event::Text(e)) => {
                 current_text.push_str(&e.unescape().unwrap_or_default());
             }
-            Ok(Event::End(_) | Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -226,15 +225,13 @@ fn parse_list(reader: &mut Reader<&[u8]>, list_type: ListType) -> Result<List, X
                                 let nested_type =
                                     match attrs.get("type").map_or("", std::string::String::as_str) {
                                         "ordered" => ListType::Ordered,
-                                        "unordered" => ListType::Unordered,
-                                        _ => ListType::Unordered,
+                                        "unordered" | _ => ListType::Unordered,
                                     };
                                 nested =
                                     Some(Box::new(parse_list(&mut inner_reader, nested_type)?));
                             }
-                            Ok(Event::Eof) => break,
+                            Ok(Event::Eof) | Err(_) => break,
                             Ok(_) => {}
-                            Err(_) => break,
                         }
                         inner_buf.clear();
                     }
@@ -352,9 +349,8 @@ fn parse_columns(reader: &mut Reader<&[u8]>) -> Result<Vec<String>, XsdValidatio
                 columns.push(read_text_until_end(reader, b"column")?);
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"columns" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -376,9 +372,8 @@ fn parse_row(reader: &mut Reader<&[u8]>) -> Result<Row, XsdValidationError> {
                 });
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"row" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -489,9 +484,8 @@ fn parse_scope_items(reader: &mut Reader<&[u8]>) -> Result<Vec<ScopeItem>, XsdVa
                 });
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"scope-items" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }

@@ -284,10 +284,9 @@ impl ProcessExecutor for MockProcessExecutor {
             workdir_str,
         ));
 
-        if let Some(result) = self.results.lock().unwrap().get(command) {
-            result.to_io_result()
-        } else {
-            self.default_result.lock().unwrap().to_io_result()
-        }
+        self.results.lock().unwrap().get(command).map_or_else(
+            || self.default_result.lock().unwrap().to_io_result(),
+            MockResult::to_io_result,
+        )
     }
 }

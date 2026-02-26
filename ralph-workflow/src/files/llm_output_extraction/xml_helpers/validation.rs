@@ -40,15 +40,15 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 /// See the unit tests in this module for working examples.
 pub fn check_for_illegal_xml_characters(content: &str) -> Result<(), XsdValidationError> {
     for (byte_index, ch) in content.char_indices() {
-        let is_illegal = match ch as u32 {
-            0x00 => true,            // NUL byte
-            0x01..=0x08 => true,     // Control characters
-            0x0B | 0x0C => true,     // Vertical tab, form feed
-            0x0E..=0x1F => true,     // Other control characters
-            0xD800..=0xDFFF => true, // UTF-16 surrogates
-            0xFFFE | 0xFFFF => true, // Non-characters
-            _ => false,
-        };
+        let is_illegal = matches!(
+            ch as u32,
+            0x00                // NUL byte
+            | 0x01..=0x08      // Control characters
+            | 0x0B | 0x0C      // Vertical tab, form feed
+            | 0x0E..=0x1F      // Other control characters
+            | 0xD800..=0xDFFF  // UTF-16 surrogates
+            | 0xFFFE | 0xFFFF  // Non-characters
+        );
         if is_illegal {
             return Err(illegal_character_error(ch, byte_index, content));
         }

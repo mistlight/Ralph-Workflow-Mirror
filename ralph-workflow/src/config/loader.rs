@@ -110,11 +110,10 @@ fn format_single_error(error: &ConfigValidationError) -> String {
         ConfigValidationError::UnknownKey {
             key, suggestion, ..
         } => {
-            if let Some(s) = suggestion {
-                format!("Unknown key '{key}'. Did you mean '{s}'?")
-            } else {
-                format!("Unknown key '{key}'")
-            }
+            suggestion.as_ref().map_or_else(
+                || format!("Unknown key '{key}'"),
+                |s| format!("Unknown key '{key}'. Did you mean '{s}'?"),
+            )
         }
         ConfigValidationError::InvalidValue { key, message, .. } => {
             format!("Invalid value for '{key}': {message}")
@@ -127,9 +126,9 @@ impl ConfigValidationError {
     #[must_use]
     pub fn file(&self) -> &std::path::Path {
         match self {
-            Self::TomlSyntax { file, .. } => file,
-            Self::InvalidValue { file, .. } => file,
-            Self::UnknownKey { file, .. } => file,
+            Self::TomlSyntax { file, .. }
+            | Self::InvalidValue { file, .. }
+            | Self::UnknownKey { file, .. } => file,
         }
     }
 }
@@ -338,11 +337,10 @@ pub fn load_config_from_path_with_env(
     };
 
     // Step 4: Convert to Config
-    let config = if let Some(ref unified_cfg) = merged_unified {
-        config_from_unified(unified_cfg, &mut warnings)
-    } else {
-        default_config()
-    };
+    let config = merged_unified.as_ref().map_or_else(
+        default_config,
+        |unified_cfg| config_from_unified(unified_cfg, &mut warnings),
+    );
 
     // Step 5: Apply environment variable overrides
     let config = apply_env_overrides(config, &mut warnings);
