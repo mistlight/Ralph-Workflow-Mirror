@@ -201,7 +201,7 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
 
     let completion_text = full_reasoning
         .as_deref()
-        .or(text.map(std::string::String::as_str));
+        .or_else(|| text.map(std::string::String::as_str));
 
     match ctx.terminal_mode {
         TerminalMode::Full => {

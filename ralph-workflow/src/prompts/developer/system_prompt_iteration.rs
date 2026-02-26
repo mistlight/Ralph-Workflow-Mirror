@@ -525,7 +525,7 @@ pub fn prompt_developer_iteration_continuation_xml(
     let previous_status = continuation_state
         .previous_status
         .as_ref()
-        .map_or("unknown".to_string(), |s| format!("{s}"));
+        .map_or_else(|| "unknown".to_string(), |s| format!("{s}"));
 
     let previous_summary = continuation_state
         .previous_summary
@@ -634,7 +634,7 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
     let previous_status = continuation_state
         .previous_status
         .as_ref()
-        .map_or("unknown".to_string(), |s| format!("{s}"));
+        .map_or_else(|| "unknown".to_string(), |s| format!("{s}"));
 
     let previous_summary = continuation_state
         .previous_summary

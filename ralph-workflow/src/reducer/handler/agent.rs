@@ -227,7 +227,7 @@ impl MainEffectHandler {
         let started_event = PipelineEvent::agent_invocation_started(
             role,
             effective_agent.clone(),
-            model_name.cloned().or(model.clone()),
+            model_name.cloned().or_else(|| model.clone()),
         );
 
         let model_index = if in_dev_fix {
