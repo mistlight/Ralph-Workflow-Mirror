@@ -50,7 +50,8 @@ use crate::checkpoint::execution_history::ExecutionStep;
 /// - `agent`: Option<Arc<str>> - counted as the length of the string (shared allocation)
 ///
 /// Arc<str> fields are counted by length rather than capacity because the
-/// allocation is shared across multiple ExecutionStep instances via string interning.
+/// allocation is shared across multiple `ExecutionStep` instances via string interning.
+#[must_use]
 pub fn estimate_execution_step_heap_bytes_core_fields(step: &ExecutionStep) -> usize {
     // For Arc<str>, count the string length (shared allocation)
     step.phase.len()
@@ -110,6 +111,10 @@ impl ExecutionHistoryBaseline {
     };
 
     /// Check if measured value exceeds baseline.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn check_heap_size(&self, measured: usize) -> Result<(), String> {
         let max_allowed = (self.heap_size_bytes as f64 * self.tolerance) as usize;
         if measured > max_allowed {
@@ -123,6 +128,10 @@ impl ExecutionHistoryBaseline {
     }
 
     /// Check if serialized size exceeds baseline.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn check_serialized_size(&self, measured: usize) -> Result<(), String> {
         let max_allowed = (self.serialized_size_bytes as f64 * self.tolerance) as usize;
         if measured > max_allowed {

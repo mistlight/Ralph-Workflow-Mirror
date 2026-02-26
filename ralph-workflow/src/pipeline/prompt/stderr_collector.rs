@@ -64,8 +64,7 @@ pub(super) fn cancel_and_join_stderr_collector(
     while Instant::now() < deadline {
         let finished = stderr_join_handle
             .as_ref()
-            .map(|h| h.is_finished())
-            .unwrap_or(true);
+            .is_none_or(std::thread::JoinHandle::is_finished);
         if finished {
             break;
         }
@@ -74,8 +73,7 @@ pub(super) fn cancel_and_join_stderr_collector(
 
     let finished = stderr_join_handle
         .as_ref()
-        .map(|h| h.is_finished())
-        .unwrap_or(false);
+        .is_some_and(std::thread::JoinHandle::is_finished);
     if finished {
         let _ = stderr_join_handle.take().and_then(|h| h.join().ok());
     }

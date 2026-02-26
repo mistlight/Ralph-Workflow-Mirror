@@ -8,7 +8,7 @@
 //! The `MockAppEffectHandler` uses `RefCell` for interior mutability to allow
 //! inspection of state even when borrowed mutably during effect execution.
 //!
-//! # AppEffectHandler Implementation
+//! # `AppEffectHandler` Implementation
 //!
 //! The `execute` method handles all `AppEffect` variants by:
 //! 1. Capturing the effect in the `captured_effects` vec
@@ -17,13 +17,13 @@
 //!
 //! ## Effect Categories
 //!
-//! - **Working Directory**: SetCurrentDir
-//! - **Filesystem**: WriteFile, ReadFile, DeleteFile, CreateDir, PathExists, SetReadOnly
-//! - **Git**: GitRequireRepo, GitGetRepoRoot, GitGetHeadOid, GitDiff*, GitSnapshot,
-//!   GitAddAll, GitCommit, GitSave/ResetStartCommit, GitRebase*, GitGetConflictedFiles,
-//!   GitContinueRebase, GitAbortRebase, GitGetDefaultBranch, GitIsMainBranch
-//! - **Environment**: GetEnvVar, SetEnvVar
-//! - **Logging**: LogInfo, LogSuccess, LogWarn, LogError
+//! - **Working Directory**: `SetCurrentDir`
+//! - **Filesystem**: `WriteFile`, `ReadFile`, `DeleteFile`, `CreateDir`, `PathExists`, `SetReadOnly`
+//! - **Git**: `GitRequireRepo`, `GitGetRepoRoot`, `GitGetHeadOid`, `GitDiff`*, `GitSnapshot`,
+//!   `GitAddAll`, `GitCommit`, GitSave/ResetStartCommit, `GitRebase`*, `GitGetConflictedFiles`,
+//!   `GitContinueRebase`, `GitAbortRebase`, `GitGetDefaultBranch`, `GitIsMainBranch`
+//! - **Environment**: `GetEnvVar`, `SetEnvVar`
+//! - **Logging**: `LogInfo`, `LogSuccess`, `LogWarn`, `LogError`
 
 use super::super::effect::{
     AppEffect, AppEffectHandler, AppEffectResult, CommitResult, RebaseResult,
@@ -107,6 +107,7 @@ impl MockAppEffectHandler {
     /// - HEAD OID is "0000000"
     /// - Default branch is "main"
     /// - Not on main branch
+    #[must_use]
     pub fn new() -> Self {
         Self {
             captured_effects: RefCell::new(Vec::new()),
@@ -150,10 +151,10 @@ impl AppEffectHandler for MockAppEffectHandler {
                 AppEffectResult::Ok
             }
 
-            AppEffect::ReadFile { path } => match self.files.borrow().get(&path) {
-                Some(content) => AppEffectResult::String(content.clone()),
-                None => AppEffectResult::Error(format!("File not found: {}", path.display())),
-            },
+            AppEffect::ReadFile { path } => self.files.borrow().get(&path).map_or_else(
+                || AppEffectResult::Error(format!("File not found: {}", path.display())),
+                |content| AppEffectResult::String(content.clone()),
+            ),
 
             AppEffect::DeleteFile { path } => {
                 if self.files.borrow_mut().remove(&path).is_some() {
@@ -201,13 +202,9 @@ impl AppEffectHandler for MockAppEffectHandler {
 
             AppEffect::GitGetHeadOid => AppEffectResult::String(self.head_oid.borrow().clone()),
 
-            AppEffect::GitDiff => AppEffectResult::String(self.diff_output.borrow().clone()),
-
-            AppEffect::GitDiffFrom { start_oid: _ } => {
-                AppEffectResult::String(self.diff_output.borrow().clone())
-            }
-
-            AppEffect::GitDiffFromStart => {
+            AppEffect::GitDiff
+            | AppEffect::GitDiffFrom { start_oid: _ }
+            | AppEffect::GitDiffFromStart => {
                 AppEffectResult::String(self.diff_output.borrow().clone())
             }
 
@@ -248,20 +245,19 @@ impl AppEffectHandler for MockAppEffectHandler {
                 AppEffectResult::String(oid)
             }
 
-            AppEffect::GitRebaseOnto { upstream_branch: _ } => {
-                match self.rebase_result.borrow().clone() {
-                    Some(result) => AppEffectResult::Rebase(result),
-                    None => AppEffectResult::Rebase(RebaseResult::Success),
-                }
-            }
+            AppEffect::GitRebaseOnto { upstream_branch: _ } => self
+                .rebase_result
+                .borrow()
+                .clone()
+                .map_or(AppEffectResult::Rebase(RebaseResult::Success), |result| {
+                    AppEffectResult::Rebase(result)
+                }),
 
             AppEffect::GitGetConflictedFiles => {
                 AppEffectResult::StringList(self.conflicted_files.borrow().clone())
             }
 
-            AppEffect::GitContinueRebase => AppEffectResult::Ok,
-
-            AppEffect::GitAbortRebase => AppEffectResult::Ok,
+            AppEffect::GitContinueRebase | AppEffect::GitAbortRebase => AppEffectResult::Ok,
 
             AppEffect::GitGetDefaultBranch => {
                 AppEffectResult::String(self.default_branch.borrow().clone())
@@ -272,10 +268,10 @@ impl AppEffectHandler for MockAppEffectHandler {
             // =========================================================================
             // Environment Effects
             // =========================================================================
-            AppEffect::GetEnvVar { name } => match self.env_vars.borrow().get(&name) {
-                Some(value) => AppEffectResult::String(value.clone()),
-                None => AppEffectResult::Error(format!("Environment variable '{}' not set", name)),
-            },
+            AppEffect::GetEnvVar { name } => self.env_vars.borrow().get(&name).map_or_else(
+                || AppEffectResult::Error(format!("Environment variable '{name}' not set")),
+                |value| AppEffectResult::String(value.clone()),
+            ),
 
             AppEffect::SetEnvVar { name, value } => {
                 self.env_vars.borrow_mut().insert(name, value);

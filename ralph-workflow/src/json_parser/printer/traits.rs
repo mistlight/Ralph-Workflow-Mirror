@@ -24,6 +24,7 @@ pub struct StdoutPrinter {
 
 impl StdoutPrinter {
     /// Create a new stdout printer.
+    #[must_use] 
     pub fn new() -> Self {
         let is_terminal = std::io::stdout().is_terminal();
         Self {
@@ -66,6 +67,7 @@ pub struct StderrPrinter {
 #[cfg(any(test, feature = "test-utils"))]
 impl StderrPrinter {
     /// Create a new stderr printer.
+    #[must_use]
     pub fn new() -> Self {
         let is_terminal = std::io::stderr().is_terminal();
         Self {
@@ -107,6 +109,7 @@ impl Printable for StderrPrinter {
 pub type SharedPrinter = Rc<RefCell<dyn Printable>>;
 
 /// Create a shared stdout printer.
+#[must_use] 
 pub fn shared_stdout() -> SharedPrinter {
     Rc::new(RefCell::new(StdoutPrinter::new()))
 }

@@ -12,6 +12,7 @@ pub struct DeltaDisplayFormatter {
 
 impl DeltaDisplayFormatter {
     /// Create a new formatter with default settings
+    #[must_use] 
     pub const fn new() -> Self {
         Self { mark_partial: true }
     }
@@ -24,6 +25,7 @@ impl DeltaDisplayFormatter {
     ///
     /// - `TerminalMode::Full` / `TerminalMode::Basic`: May include ANSI colors.
     /// - `TerminalMode::None`: MUST be plain text (no ANSI sequences).
+    #[must_use] 
     pub fn format_thinking(
         &self,
         content: &str,
@@ -101,6 +103,7 @@ impl DeltaDisplayFormatter {
     ///
     /// This would require tracking whether the prefix has been displayed
     /// for the current tool block, likely via the streaming session state.
+    #[must_use] 
     pub fn format_tool_input(
         &self,
         content: &str,

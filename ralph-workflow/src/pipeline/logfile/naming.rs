@@ -6,6 +6,7 @@
 /// Sanitize an agent name for use in file paths.
 ///
 /// Replaces slashes with hyphens to avoid creating subdirectories.
+#[must_use]
 pub fn sanitize_agent_name(agent_name: &str) -> String {
     agent_name.replace('/', "-")
 }
@@ -24,16 +25,17 @@ pub fn sanitize_agent_name(agent_name: &str) -> String {
 ///
 /// # Arguments
 ///
-/// * `prefix` - Log prefix path (e.g., ".agent/logs/commit_generation/commit_generation")
+/// * `prefix` - Log prefix path (e.g., ".`agent/logs/commit_generation/commit_generation`")
 /// * `agent_name` - Agent identifier (will be sanitized to replace `/` with `-`)
 /// * `model_index` - Model index for multi-model agents
 ///
 /// # Returns
 ///
 /// A log file path string with the legacy naming format.
+#[must_use]
 pub fn build_logfile_path(prefix: &str, agent_name: &str, model_index: usize) -> String {
     let safe_agent_name = sanitize_agent_name(agent_name);
-    format!("{}_{safe_agent_name}_{model_index}.log", prefix)
+    format!("{prefix}_{safe_agent_name}_{model_index}.log")
 }
 
 /// Build a legacy-style log file path with retry attempt index.
@@ -53,7 +55,7 @@ pub fn build_logfile_path(prefix: &str, agent_name: &str, model_index: usize) ->
 ///
 /// # Arguments
 ///
-/// * `prefix` - Log prefix path (e.g., ".agent/logs/commit_generation/commit_generation")
+/// * `prefix` - Log prefix path (e.g., ".`agent/logs/commit_generation/commit_generation`")
 /// * `agent_name` - Agent identifier (will be sanitized to replace `/` with `-`)
 /// * `model_index` - Model index for multi-model agents
 /// * `attempt` - Retry attempt counter (0 for first retry, 1 for second retry, etc.)
@@ -61,6 +63,7 @@ pub fn build_logfile_path(prefix: &str, agent_name: &str, model_index: usize) ->
 /// # Returns
 ///
 /// A log file path string with the legacy naming format including attempt suffix.
+#[must_use]
 pub fn build_logfile_path_with_attempt(
     prefix: &str,
     agent_name: &str,
@@ -68,5 +71,5 @@ pub fn build_logfile_path_with_attempt(
     attempt: u32,
 ) -> String {
     let safe_agent_name = sanitize_agent_name(agent_name);
-    format!("{}_{safe_agent_name}_{model_index}_a{attempt}.log", prefix)
+    format!("{prefix}_{safe_agent_name}_{model_index}_a{attempt}.log")
 }

@@ -30,9 +30,9 @@
 // When `completed=false`, we write a defensive completion marker to ensure
 // external orchestrators can detect termination.
 
-/// Runs the pipeline with the default MainEffectHandler.
+/// Runs the pipeline with the default `MainEffectHandler`.
 ///
-/// This is the production entry point - it creates a MainEffectHandler internally.
+/// This is the production entry point - it creates a `MainEffectHandler` internally.
 ///
 /// # Architecture
 ///
@@ -144,8 +144,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         let restored_count = restore_environment_from_checkpoint(checkpoint);
         if restored_count > 0 {
             ctx.logger.info(&format!(
-                "  Restored {} environment variable(s) from checkpoint",
-                restored_count
+                "  Restored {restored_count} environment variable(s) from checkpoint"
             ));
         }
     }
@@ -259,7 +258,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     let _heartbeat_guard = if config.cloud_config.enabled {
         Some(HeartbeatGuard::start(
             Arc::clone(&cloud_reporter),
-            Duration::from_secs(config.cloud_config.heartbeat_interval_secs as u64),
+            Duration::from_secs(u64::from(config.cloud_config.heartbeat_interval_secs)),
         ))
     } else {
         None
@@ -492,10 +491,10 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         if let Err(e) = cloud_reporter.report_completion(&result_payload) {
             let error = crate::cloud::redaction::redact_secrets(&e.to_string());
             if !config.cloud_config.graceful_degradation {
-                return Err(anyhow::anyhow!("Cloud completion report failed: {}", error));
+                return Err(anyhow::anyhow!("Cloud completion report failed: {error}"));
             }
             ctx.logger
-                .warn(&format!("Cloud completion report failed: {}", error));
+                .warn(&format!("Cloud completion report failed: {error}"));
         }
     }
 
@@ -622,8 +621,7 @@ fn resolve_cloud_git_defaults(
         if !output.status.success() {
             let stderr = crate::cloud::redaction::redact_secrets(&output.stderr);
             return Err(anyhow::anyhow!(
-                "Failed to detect current branch for cloud push (git rev-parse). stderr: {}",
-                stderr
+                "Failed to detect current branch for cloud push (git rev-parse). stderr: {stderr}"
             ));
         }
 

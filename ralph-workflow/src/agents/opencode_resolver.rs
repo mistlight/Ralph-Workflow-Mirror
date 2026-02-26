@@ -1,9 +1,9 @@
-//! OpenCode agent resolver for dynamic provider/model configuration.
+//! `OpenCode` agent resolver for dynamic provider/model configuration.
 //!
-//! This module provides dynamic agent resolution for OpenCode using the syntax
+//! This module provides dynamic agent resolution for `OpenCode` using the syntax
 //! `opencode/provider/model` (e.g., `opencode/anthropic/claude-sonnet-4-5`).
 //!
-//! The resolver validates provider/model combinations against the OpenCode API
+//! The resolver validates provider/model combinations against the `OpenCode` API
 //! catalog and generates `AgentConfig` instances on-the-fly with the appropriate
 //! command-line flags.
 //!
@@ -18,7 +18,7 @@
 //! # Supported Patterns
 //!
 //! - `opencode/provider/model` - Dynamic provider/model from API catalog
-//! - `opencode` - Base OpenCode agent (uses default or user-specified provider/model)
+//! - `opencode` - Base `OpenCode` agent (uses default or user-specified provider/model)
 
 use crate::agents::config::AgentConfig;
 use crate::agents::opencode_api::ApiCatalog;
@@ -30,33 +30,33 @@ use strsim::levenshtein;
 /// Strings with edit distance <= this value are considered potential typos.
 const MAX_TYPO_DISTANCE: usize = 3;
 
-/// OpenCode agent resolver for dynamic provider/model configuration.
+/// `OpenCode` agent resolver for dynamic provider/model configuration.
 ///
-/// Validates provider/model combinations against the OpenCode API catalog
+/// Validates provider/model combinations against the `OpenCode` API catalog
 /// and generates `AgentConfig` instances with the appropriate command-line flags.
 pub struct OpenCodeResolver {
-    /// OpenCode API catalog with available providers and models.
+    /// `OpenCode` API catalog with available providers and models.
     catalog: ApiCatalog,
 }
 
 impl OpenCodeResolver {
-    /// Create a new OpenCode resolver with the given API catalog.
-    pub fn new(catalog: ApiCatalog) -> Self {
+    /// Create a new `OpenCode` resolver with the given API catalog.
+    pub const fn new(catalog: ApiCatalog) -> Self {
         Self { catalog }
     }
 
     /// Try to resolve an agent name to an `AgentConfig`.
     ///
     /// Supports the following patterns:
-    /// - `opencode` - Plain OpenCode agent (uses OpenCode's default model)
+    /// - `opencode` - Plain `OpenCode` agent (uses `OpenCode`'s default model)
     /// - `opencode/provider/model` - Dynamic provider/model from API catalog
     ///
-    /// Returns `None` if the name doesn't match the OpenCode pattern or if
+    /// Returns `None` if the name doesn't match the `OpenCode` pattern or if
     /// the provider/model combination is not found in the catalog.
     pub fn try_resolve(&self, name: &str) -> Option<AgentConfig> {
         // Handle plain "opencode" - use default (no model flag)
         if name == "opencode" {
-            return Some(self.build_default_config());
+            return Some(Self::build_default_config());
         }
 
         // Check if it starts with "opencode/"
@@ -70,7 +70,6 @@ impl OpenCodeResolver {
             return None;
         }
 
-        let _opencode = parts[0];
         let provider = parts[1];
         let model = parts[2];
 
@@ -83,14 +82,14 @@ impl OpenCodeResolver {
         }
 
         // Build the agent config
-        Some(self.build_config(provider, model))
+        Some(Self::build_config(provider, model))
     }
 
     /// Build an `AgentConfig` for the given provider/model.
-    fn build_config(&self, provider: &str, model: &str) -> AgentConfig {
+    fn build_config(provider: &str, model: &str) -> AgentConfig {
         // OpenCode command syntax: opencode run -m provider/model
         // The model_flag is the "-m provider/model" part
-        let model_flag = format!("-m {}/{}", provider, model);
+        let model_flag = format!("-m {provider}/{model}");
 
         // Set OPENCODE_PERMISSION to allow all tool actions without prompting
         // This is required for non-interactive/headless execution
@@ -118,13 +117,13 @@ impl OpenCodeResolver {
             // Allows XSD retries to continue the same conversation so AI retains memory
             session_flag: "-s {}".to_string(),
             env_vars,
-            display_name: Some(format!("OpenCode ({})", provider)),
+            display_name: Some(format!("OpenCode ({provider})")),
         }
     }
 
     /// Build an `AgentConfig` for plain "opencode" (no provider/model specified).
-    /// OpenCode will use its default model configuration.
-    fn build_default_config(&self) -> AgentConfig {
+    /// `OpenCode` will use its default model configuration.
+    fn build_default_config() -> AgentConfig {
         let mut env_vars = std::collections::HashMap::new();
         env_vars.insert(
             "OPENCODE_PERMISSION".to_string(),
@@ -222,14 +221,13 @@ impl OpenCodeResolver {
                 provider,
                 suggestions,
             } => {
-                let mut msg = format!(
-                    "Error: OpenCode provider '{}' not found in API catalog.\n",
-                    provider
-                );
+                use std::fmt::Write;
+                let mut msg =
+                    format!("Error: OpenCode provider '{provider}' not found in API catalog.\n");
                 if let Some(closest) = suggestions.first() {
-                    msg.push_str(&format!("Did you mean: {}?\n", closest));
+                    writeln!(msg, "Did you mean: {closest}?").unwrap();
                 }
-                msg.push_str(&format!("Agent reference: {}\n", agent_name));
+                writeln!(msg, "Agent reference: {agent_name}").unwrap();
                 msg.push_str("Available providers: ");
                 msg.push_str(&self.catalog.provider_names().join(", "));
                 msg.push_str("\n\nPlease update your agent configuration.");
@@ -240,15 +238,15 @@ impl OpenCodeResolver {
                 model,
                 suggestions,
             } => {
+                use std::fmt::Write;
                 let mut msg = format!(
-                    "Error: OpenCode model '{}/{}' not found in API catalog.\n",
-                    provider, model
+                    "Error: OpenCode model '{provider}/{model}' not found in API catalog.\n"
                 );
                 if let Some(closest) = suggestions.first() {
-                    msg.push_str(&format!("Did you mean: {}/{}?\n", provider, closest));
+                    writeln!(msg, "Did you mean: {provider}/{closest}?").unwrap();
                 }
-                msg.push_str(&format!("Agent reference: {}\n", agent_name));
-                msg.push_str(&format!("Available models for '{}': ", provider));
+                writeln!(msg, "Agent reference: {agent_name}").unwrap();
+                write!(msg, "Available models for '{provider}': ").unwrap();
                 msg.push_str(&self.catalog.get_model_ids(provider).join(", "));
                 msg.push_str("\n\nPlease update your agent configuration.");
                 msg
@@ -257,8 +255,8 @@ impl OpenCodeResolver {
     }
 }
 
-/// Errors that can occur during OpenCode agent validation.
-#[derive(Debug, Clone, PartialEq)]
+/// Errors that can occur during `OpenCode` agent validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
     /// Provider not found in the API catalog.
     ProviderNotFound {
@@ -433,9 +431,9 @@ mod tests {
     #[test]
     fn test_build_config() {
         let catalog = mock_api_catalog();
-        let resolver = OpenCodeResolver::new(catalog);
+        let _resolver = OpenCodeResolver::new(catalog);
 
-        let config = resolver.build_config("anthropic", "claude-sonnet-4-5");
+        let config = OpenCodeResolver::build_config("anthropic", "claude-sonnet-4-5");
 
         assert_eq!(config.cmd, "opencode run");
         assert_eq!(

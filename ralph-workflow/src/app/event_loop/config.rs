@@ -13,7 +13,7 @@ use crate::reducer::PipelineState;
 /// This function creates a `PipelineState` with XSD retry and continuation limits
 /// loaded from the config, ensuring these values are available for the reducer
 /// to make deterministic retry decisions.
-pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
+pub fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
     // Config semantics: max_dev_continuations counts continuation attempts *beyond*
     // the initial attempt. ContinuationState::max_continue_count semantics are
     // "maximum total attempts including initial".
@@ -74,7 +74,7 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
 ///
 /// NOTE: `base_state.cloud_config` is intentionally preserved (it is derived from
 /// runtime env and is already redacted/credential-free).
-pub(crate) fn overlay_checkpoint_progress_onto_base_state(
+pub fn overlay_checkpoint_progress_onto_base_state(
     base_state: &mut PipelineState,
     migrated: PipelineState,
     execution_history_limit: usize,
@@ -113,7 +113,7 @@ pub(crate) fn overlay_checkpoint_progress_onto_base_state(
 /// under normal circumstances. If reached, it indicates either a bug in the
 /// reducer logic or an extremely complex project.
 ///
-/// NOTE: Even 1_000_000 can still be too low for extremely slow-progress runs.
+/// NOTE: Even `1_000_000` can still be too low for extremely slow-progress runs.
 /// If this cap is hit in practice, prefer making it configurable and/or
 /// investigating why the reducer is not converging.
 pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1_000_000;

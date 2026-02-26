@@ -97,7 +97,7 @@ impl PipelineState {
             )
         };
 
-        let mut state = PipelineState {
+        let mut state = Self {
             phase: map_checkpoint_phase(checkpoint.phase),
             previous_phase: None,
             // Restore iteration/pass counters from checkpoint.
@@ -221,11 +221,11 @@ impl From<PipelineCheckpoint> for PipelineState {
         // `From` cannot accept configuration. Apply a conservative hard cap so
         // legacy checkpoints cannot load arbitrarily large execution history into memory.
         let limit = crate::config::Config::default().execution_history_limit;
-        PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, limit)
+        Self::from_checkpoint_with_execution_history_limit(checkpoint, limit)
     }
 }
 
-fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
+const fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
     match phase {
         CheckpointPhase::Rebase => PipelinePhase::Planning,
         CheckpointPhase::Planning => PipelinePhase::Planning,

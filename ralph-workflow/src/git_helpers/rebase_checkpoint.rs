@@ -26,6 +26,7 @@ const REBASE_CHECKPOINT_FILE: &str = "rebase_checkpoint.json";
 ///
 /// The checkpoint is stored in `.agent/rebase_checkpoint.json`
 /// relative to the current working directory.
+#[must_use]
 pub fn rebase_checkpoint_path() -> String {
     format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}")
 }
@@ -34,6 +35,7 @@ pub fn rebase_checkpoint_path() -> String {
 ///
 /// The backup is stored in `.agent/rebase_checkpoint.json.bak`
 /// and is used for corruption recovery.
+#[must_use]
 pub fn rebase_checkpoint_backup_path() -> String {
     format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}.bak")
 }

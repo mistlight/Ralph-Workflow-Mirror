@@ -260,7 +260,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {

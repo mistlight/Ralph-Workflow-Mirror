@@ -60,6 +60,7 @@ fn print_template_category(category_name: &str, templates: &[(&str, &str)], colo
 /// # Returns
 ///
 /// Returns `true` if the flag was handled (program should exit after).
+#[must_use] 
 pub fn handle_list_work_guides(colors: Colors) -> bool {
     println!("PROMPT.md Work Guides (use: ralph --init <work-guide>)");
     println!();

@@ -19,9 +19,9 @@ pub enum Preset {
 /// Apply CLI arguments to the configuration.
 ///
 /// This function uses the reducer architecture to process CLI arguments:
-/// 1. Parse Args into a sequence of CliEvents
-/// 2. Run events through the reducer to build CliState
-/// 3. Apply CliState to Config
+/// 1. Parse Args into a sequence of `CliEvents`
+/// 2. Run events through the reducer to build `CliState`
+/// 3. Apply `CliState` to Config
 ///
 /// This approach ensures:
 /// - All CLI arguments are handled (fixes missing -L, -S, -T flags)

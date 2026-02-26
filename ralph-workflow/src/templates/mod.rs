@@ -57,6 +57,7 @@ pub enum PromptTemplate {
 
 impl PromptTemplate {
     /// Returns the name/key for this template (used for CLI arguments).
+    #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::FeatureSpec => "feature-spec",
@@ -83,6 +84,7 @@ impl PromptTemplate {
     }
 
     /// Returns a short description of this template.
+    #[must_use]
     pub const fn description(self) -> &'static str {
         match self {
             Self::FeatureSpec => "Comprehensive product specification with questions to consider and code quality standards",
@@ -109,6 +111,7 @@ impl PromptTemplate {
     }
 
     /// Returns the embedded template content.
+    #[must_use]
     pub const fn content(self) -> &'static str {
         match self {
             Self::FeatureSpec => {
@@ -215,6 +218,7 @@ pub const ALL_TEMPLATES: [PromptTemplate; 20] = [
 ///
 /// * `Some(PromptTemplate)` - The template if found
 /// * `None` - If no template matches the name
+#[must_use]
 pub fn get_template(name: &str) -> Option<PromptTemplate> {
     ALL_TEMPLATES.iter().find(|t| t.name() == name).copied()
 }
@@ -222,6 +226,7 @@ pub fn get_template(name: &str) -> Option<PromptTemplate> {
 /// List all available templates with their descriptions.
 ///
 /// Returns a vector of (name, description) tuples.
+#[must_use]
 pub fn list_templates() -> Vec<(&'static str, &'static str)> {
     ALL_TEMPLATES
         .iter()

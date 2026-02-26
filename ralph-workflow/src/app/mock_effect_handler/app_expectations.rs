@@ -58,6 +58,7 @@ impl MockAppEffectHandler {
     ///     .with_file("config.toml", "[section]\nkey = value")
     ///     .with_file(".agent/start_commit", "abc1234");
     /// ```
+    #[must_use]
     pub fn with_file(self, path: impl Into<PathBuf>, content: impl Into<String>) -> Self {
         self.files.borrow_mut().insert(path.into(), content.into());
         self
@@ -76,6 +77,7 @@ impl MockAppEffectHandler {
     /// let result = handler.execute(AppEffect::GitIsMainBranch);
     /// assert!(matches!(result, AppEffectResult::Bool(true)));
     /// ```
+    #[must_use]
     pub fn on_main_branch(self) -> Self {
         *self.is_main_branch.borrow_mut() = true;
         self
@@ -94,6 +96,7 @@ impl MockAppEffectHandler {
     /// let result = handler.execute(AppEffect::GitGetHeadOid);
     /// assert!(matches!(result, AppEffectResult::String(ref s) if s == "deadbeef"));
     /// ```
+    #[must_use]
     pub fn with_head_oid(self, oid: impl Into<String>) -> Self {
         *self.head_oid.borrow_mut() = oid.into();
         self
@@ -112,6 +115,7 @@ impl MockAppEffectHandler {
     /// let result = handler.execute(AppEffect::GitRequireRepo);
     /// assert!(matches!(result, AppEffectResult::Error(_)));
     /// ```
+    #[must_use]
     pub fn without_repo(self) -> Self {
         *self.repo_exists.borrow_mut() = false;
         self
@@ -130,6 +134,7 @@ impl MockAppEffectHandler {
     /// let result = handler.execute(AppEffect::GitGetDefaultBranch);
     /// assert!(matches!(result, AppEffectResult::String(ref s) if s == "develop"));
     /// ```
+    #[must_use]
     pub fn with_default_branch(self, branch: impl Into<String>) -> Self {
         *self.default_branch.borrow_mut() = branch.into();
         self
@@ -150,6 +155,7 @@ impl MockAppEffectHandler {
     /// });
     /// assert!(matches!(result, AppEffectResult::String(ref s) if s == "secret123"));
     /// ```
+    #[must_use]
     pub fn with_env_var(self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.env_vars.borrow_mut().insert(name.into(), value.into());
         self
@@ -168,6 +174,7 @@ impl MockAppEffectHandler {
     /// let result = handler.execute(AppEffect::GitDiff);
     /// assert!(matches!(result, AppEffectResult::String(ref s) if s.contains("diff --git")));
     /// ```
+    #[must_use]
     pub fn with_diff(self, diff: impl Into<String>) -> Self {
         *self.diff_output.borrow_mut() = diff.into();
         self
@@ -191,6 +198,7 @@ impl MockAppEffectHandler {
     /// });
     /// assert!(matches!(result, AppEffectResult::Commit(CommitResult::NoChanges)));
     /// ```
+    #[must_use]
     pub fn with_staged_changes(self, staged: bool) -> Self {
         *self.staged_changes.borrow_mut() = staged;
         self
@@ -212,6 +220,7 @@ impl MockAppEffectHandler {
     /// });
     /// assert!(matches!(result, AppEffectResult::Rebase(RebaseResult::Conflict)));
     /// ```
+    #[must_use]
     pub fn with_rebase_result(self, result: RebaseResult) -> Self {
         *self.rebase_result.borrow_mut() = Some(result);
         self
@@ -230,6 +239,7 @@ impl MockAppEffectHandler {
     /// let result = handler.execute(AppEffect::GitGetConflictedFiles);
     /// assert!(matches!(result, AppEffectResult::StringList(ref files) if files.len() == 2));
     /// ```
+    #[must_use]
     pub fn with_conflicted_files(self, files: Vec<String>) -> Self {
         *self.conflicted_files.borrow_mut() = files;
         self
@@ -247,6 +257,7 @@ impl MockAppEffectHandler {
     ///
     /// assert_eq!(handler.get_cwd(), PathBuf::from("/home/user/project"));
     /// ```
+    #[must_use]
     pub fn with_cwd(self, cwd: impl Into<PathBuf>) -> Self {
         *self.cwd.borrow_mut() = cwd.into();
         self

@@ -4,7 +4,7 @@
 // no side effects and operate solely on the immutable state struct.
 
 impl PipelineState {
-    fn initial_phase_for_run_configuration(&self) -> PipelinePhase {
+    const fn initial_phase_for_run_configuration(&self) -> PipelinePhase {
         // Keep consistent with PipelineState::initial_with_continuation.
         if self.total_iterations == 0 {
             if self.total_reviewer_passes == 0 {
@@ -24,30 +24,30 @@ impl PipelineState {
     /// - **Complete phase**: Always terminal (successful completion)
     /// - **Interrupted phase**: Terminal under these conditions:
     ///   1. A checkpoint has been saved (normal Ctrl+C interruption path)
-    ///   2. Transitioning from AwaitingDevFix phase (failure handling completed)
+    ///   2. Transitioning from `AwaitingDevFix` phase (failure handling completed)
     ///
-    /// # AwaitingDevFix → Interrupted Path
+    /// # `AwaitingDevFix` → Interrupted Path
     ///
     /// When the pipeline terminates via completion marker emission, it transitions
-    /// through AwaitingDevFix where:
+    /// through `AwaitingDevFix` where:
     /// 1. Orchestration derives `EmitCompletionMarkerAndTerminate`
     /// 2. The handler writes the completion marker to filesystem
-    /// 3. CompletionMarkerEmitted transitions the reducer state to Interrupted
+    /// 3. `CompletionMarkerEmitted` transitions the reducer state to Interrupted
     ///
     /// At this point, the completion marker has been written, signaling external
-    /// orchestration that the pipeline has terminated. The SaveCheckpoint effect
+    /// orchestration that the pipeline has terminated. The `SaveCheckpoint` effect
     /// will execute next, but the phase is already considered terminal because
     /// the failure has been properly signaled.
     ///
     /// # Edge Cases
     ///
-    /// An Interrupted phase without a checkpoint and without previous_phase context
+    /// An Interrupted phase without a checkpoint and without `previous_phase` context
     /// is NOT considered terminal. This can occur when resuming from a checkpoint
     /// that was interrupted mid-execution.
     ///
     /// # Non-Terminating Pipeline Architecture
     ///
-    /// Internal failures are handled via the AwaitingDevFix recovery loop.
+    /// Internal failures are handled via the `AwaitingDevFix` recovery loop.
     /// Completion markers are emitted only when the pipeline is actually terminating
     /// due to explicit external/catastrophic conditions.
     ///
@@ -55,7 +55,8 @@ impl PipelineState {
     /// - `Complete`: Normal successful completion
     /// - `Interrupted` with checkpoint saved: Resumable state
     /// - `Interrupted` from `AwaitingDevFix`: Completion marker written, failure signaled
-    pub fn is_complete(&self) -> bool {
+    #[must_use] 
+    pub const fn is_complete(&self) -> bool {
         matches!(self.phase, PipelinePhase::Complete)
             || (matches!(self.phase, PipelinePhase::Interrupted)
                 && (self.checkpoint_saved_count > 0
@@ -66,6 +67,7 @@ impl PipelineState {
                     || matches!(self.previous_phase, Some(PipelinePhase::AwaitingDevFix))))
     }
 
+    #[must_use] 
     pub fn current_head(&self) -> String {
         self.rebase
             .current_head()
@@ -74,7 +76,7 @@ impl PipelineState {
 
     /// Clear phase-specific progress flags for the given phase.
     ///
-    /// Used by Level 2 recovery (PhaseStart) to restart a phase from scratch
+    /// Used by Level 2 recovery (`PhaseStart`) to restart a phase from scratch
     /// while preserving iteration counters and other global state.
     pub(crate) fn clear_phase_flags(&self, phase: PipelinePhase) -> Self {
         match phase {
@@ -138,7 +140,7 @@ impl PipelineState {
         }
     }
 
-    /// Clear all CommitMessage phase progress flags.
+    /// Clear all `CommitMessage` phase progress flags.
     fn clear_commit_flags(&self) -> Self {
         Self {
             commit_prompt_prepared: false,

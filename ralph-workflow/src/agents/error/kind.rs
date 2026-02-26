@@ -45,6 +45,7 @@ impl AgentErrorKind {
     ///
     /// Note: `RateLimited` is intentionally excluded - it triggers immediate agent fallback
     /// via `should_immediate_agent_fallback()` instead of retrying with the same agent.
+    #[must_use]
     pub const fn should_retry(self) -> bool {
         matches!(
             self,
@@ -62,11 +63,13 @@ impl AgentErrorKind {
     /// Rate limit (429) errors indicate the current provider is temporarily exhausted.
     /// Rather than waiting and retrying the same agent (which wastes time), we should
     /// immediately switch to the next agent in the fallback chain to continue work.
+    #[must_use]
     pub const fn should_immediate_agent_fallback(self) -> bool {
         matches!(self, Self::RateLimited)
     }
 
     /// Determine if this error should trigger a fallback to another agent.
+    #[must_use]
     pub const fn should_fallback(self) -> bool {
         matches!(
             self,
@@ -80,39 +83,52 @@ impl AgentErrorKind {
     }
 
     /// Determine if this error is unrecoverable (should abort).
+    #[must_use]
     pub const fn is_unrecoverable(self) -> bool {
         matches!(self, Self::DiskFull | Self::Permanent)
     }
 
     /// Check if this is a command not found error.
+    #[must_use]
     pub const fn is_command_not_found(self) -> bool {
         matches!(self, Self::CommandNotFound)
     }
 
     /// Check if this is a network-related error.
+    #[must_use]
     pub const fn is_network_error(self) -> bool {
         matches!(self, Self::NetworkError | Self::Timeout)
     }
 
     /// Check if this error might be resolved by reducing context size.
+    #[must_use]
     pub const fn suggests_smaller_context(self) -> bool {
         matches!(self, Self::TokenExhausted | Self::ProcessKilled)
     }
 
     /// Get suggested wait time in milliseconds before retry.
+    #[must_use]
     pub const fn suggested_wait_ms(self) -> u64 {
         match self {
-            // RateLimited: no wait - we immediately fallback to next agent
-            Self::RateLimited => 0,
             Self::ApiUnavailable => 3000, // Server issue: wait 3 seconds
             Self::NetworkError => 2000,   // Network: wait 2 seconds
             Self::Timeout | Self::Transient | Self::RetryableAgentQuirk => 1000, // Timeout/Transient: short wait
             Self::InvalidResponse => 500, // Bad response: quick retry
-            _ => 0,                       // No wait for non-retryable errors
+            // No wait for non-retryable errors
+            Self::RateLimited
+            | Self::TokenExhausted
+            | Self::AuthFailure
+            | Self::CommandNotFound
+            | Self::DiskFull
+            | Self::ProcessKilled
+            | Self::ToolExecutionFailed
+            | Self::AgentSpecificQuirk
+            | Self::Permanent => 0,
         }
     }
 
     /// Get a user-friendly description of this error type.
+    #[must_use]
     pub const fn description(self) -> &'static str {
         match self {
             Self::RateLimited => "API rate limit exceeded",
@@ -134,6 +150,7 @@ impl AgentErrorKind {
     }
 
     /// Get recovery advice for this error type.
+    #[must_use]
     pub const fn recovery_advice(self) -> &'static str {
         match self {
             Self::RateLimited => {

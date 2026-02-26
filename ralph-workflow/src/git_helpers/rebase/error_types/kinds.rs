@@ -75,56 +75,57 @@ pub enum RebaseErrorKind {
 
 impl RebaseErrorKind {
     /// Returns a human-readable description of the error.
+    #[must_use] 
     pub fn description(&self) -> String {
         match self {
-            RebaseErrorKind::InvalidRevision { revision } => {
+            Self::InvalidRevision { revision } => {
                 format!("Invalid or unresolvable revision: '{revision}'")
             }
-            RebaseErrorKind::DirtyWorkingTree => "Working tree has uncommitted changes".to_string(),
-            RebaseErrorKind::ConcurrentOperation { operation } => {
+            Self::DirtyWorkingTree => "Working tree has uncommitted changes".to_string(),
+            Self::ConcurrentOperation { operation } => {
                 format!("Concurrent Git operation in progress: {operation}")
             }
-            RebaseErrorKind::RepositoryCorrupt { details } => {
+            Self::RepositoryCorrupt { details } => {
                 format!("Repository integrity issue: {details}")
             }
-            RebaseErrorKind::EnvironmentFailure { reason } => {
+            Self::EnvironmentFailure { reason } => {
                 format!("Environment or configuration failure: {reason}")
             }
-            RebaseErrorKind::HookRejection { hook_name } => {
+            Self::HookRejection { hook_name } => {
                 format!("Hook '{hook_name}' rejected the operation")
             }
-            RebaseErrorKind::ContentConflict { files } => {
+            Self::ContentConflict { files } => {
                 format!("Merge conflicts in {} file(s)", files.len())
             }
-            RebaseErrorKind::PatchApplicationFailed { reason } => {
+            Self::PatchApplicationFailed { reason } => {
                 format!("Patch application failed: {reason}")
             }
-            RebaseErrorKind::InteractiveStop { command } => {
+            Self::InteractiveStop { command } => {
                 format!("Interactive rebase stopped at command: {command}")
             }
-            RebaseErrorKind::EmptyCommit => "Empty or redundant commit".to_string(),
-            RebaseErrorKind::AutostashFailed { reason } => {
+            Self::EmptyCommit => "Empty or redundant commit".to_string(),
+            Self::AutostashFailed { reason } => {
                 format!("Autostash failed: {reason}")
             }
-            RebaseErrorKind::CommitCreationFailed { reason } => {
+            Self::CommitCreationFailed { reason } => {
                 format!("Commit creation failed: {reason}")
             }
-            RebaseErrorKind::ReferenceUpdateFailed { reason } => {
+            Self::ReferenceUpdateFailed { reason } => {
                 format!("Reference update failed: {reason}")
             }
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ValidationFailed { reason } => {
+            Self::ValidationFailed { reason } => {
                 format!("Post-rebase validation failed: {reason}")
             }
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ProcessTerminated { reason } => {
+            Self::ProcessTerminated { reason } => {
                 format!("Rebase process terminated: {reason}")
             }
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::InconsistentState { details } => {
+            Self::InconsistentState { details } => {
                 format!("Inconsistent rebase state: {details}")
             }
-            RebaseErrorKind::Unknown { details } => {
+            Self::Unknown { details } => {
                 format!("Unknown rebase error: {details}")
             }
         }
@@ -132,62 +133,64 @@ impl RebaseErrorKind {
 
     /// Returns whether this error can potentially be recovered automatically.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_recoverable(&self) -> bool {
+    #[must_use]
+    pub const fn is_recoverable(&self) -> bool {
         match self {
             // These are generally recoverable with automatic retry or cleanup
-            RebaseErrorKind::ConcurrentOperation { .. } => true,
+            Self::ConcurrentOperation { .. } => true,
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ProcessTerminated { .. }
-            | RebaseErrorKind::InconsistentState { .. } => true,
+            Self::ProcessTerminated { .. }
+            | Self::InconsistentState { .. } => true,
 
             // These require manual conflict resolution
-            RebaseErrorKind::ContentConflict { .. } => true,
+            Self::ContentConflict { .. } => true,
 
             // These are generally not recoverable without manual intervention
-            RebaseErrorKind::InvalidRevision { .. }
-            | RebaseErrorKind::DirtyWorkingTree
-            | RebaseErrorKind::RepositoryCorrupt { .. }
-            | RebaseErrorKind::EnvironmentFailure { .. }
-            | RebaseErrorKind::HookRejection { .. }
-            | RebaseErrorKind::PatchApplicationFailed { .. }
-            | RebaseErrorKind::InteractiveStop { .. }
-            | RebaseErrorKind::EmptyCommit
-            | RebaseErrorKind::AutostashFailed { .. }
-            | RebaseErrorKind::CommitCreationFailed { .. }
-            | RebaseErrorKind::ReferenceUpdateFailed { .. } => false,
+            Self::InvalidRevision { .. }
+            | Self::DirtyWorkingTree
+            | Self::RepositoryCorrupt { .. }
+            | Self::EnvironmentFailure { .. }
+            | Self::HookRejection { .. }
+            | Self::PatchApplicationFailed { .. }
+            | Self::InteractiveStop { .. }
+            | Self::EmptyCommit
+            | Self::AutostashFailed { .. }
+            | Self::CommitCreationFailed { .. }
+            | Self::ReferenceUpdateFailed { .. } => false,
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ValidationFailed { .. } => false,
-            RebaseErrorKind::Unknown { .. } => false,
+            Self::ValidationFailed { .. } => false,
+            Self::Unknown { .. } => false,
         }
     }
 
     /// Returns the category number (1-5) for this error.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn category(&self) -> u8 {
+    #[must_use]
+    pub const fn category(&self) -> u8 {
         match self {
-            RebaseErrorKind::InvalidRevision { .. }
-            | RebaseErrorKind::DirtyWorkingTree
-            | RebaseErrorKind::ConcurrentOperation { .. }
-            | RebaseErrorKind::RepositoryCorrupt { .. }
-            | RebaseErrorKind::EnvironmentFailure { .. }
-            | RebaseErrorKind::HookRejection { .. } => 1,
+            Self::InvalidRevision { .. }
+            | Self::DirtyWorkingTree
+            | Self::ConcurrentOperation { .. }
+            | Self::RepositoryCorrupt { .. }
+            | Self::EnvironmentFailure { .. }
+            | Self::HookRejection { .. } => 1,
 
-            RebaseErrorKind::ContentConflict { .. }
-            | RebaseErrorKind::PatchApplicationFailed { .. }
-            | RebaseErrorKind::InteractiveStop { .. }
-            | RebaseErrorKind::EmptyCommit
-            | RebaseErrorKind::AutostashFailed { .. }
-            | RebaseErrorKind::CommitCreationFailed { .. }
-            | RebaseErrorKind::ReferenceUpdateFailed { .. } => 2,
-
-            #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ValidationFailed { .. } => 3,
+            Self::ContentConflict { .. }
+            | Self::PatchApplicationFailed { .. }
+            | Self::InteractiveStop { .. }
+            | Self::EmptyCommit
+            | Self::AutostashFailed { .. }
+            | Self::CommitCreationFailed { .. }
+            | Self::ReferenceUpdateFailed { .. } => 2,
 
             #[cfg(any(test, feature = "test-utils"))]
-            RebaseErrorKind::ProcessTerminated { .. }
-            | RebaseErrorKind::InconsistentState { .. } => 4,
+            Self::ValidationFailed { .. } => 3,
 
-            RebaseErrorKind::Unknown { .. } => 5,
+            #[cfg(any(test, feature = "test-utils"))]
+            Self::ProcessTerminated { .. }
+            | Self::InconsistentState { .. } => 4,
+
+            Self::Unknown { .. } => 5,
         }
     }
 }
@@ -223,52 +226,59 @@ pub enum RebaseResult {
 impl RebaseResult {
     /// Returns whether the rebase was successful.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_success(&self) -> bool {
-        matches!(self, RebaseResult::Success)
+    #[must_use]
+    pub const fn is_success(&self) -> bool {
+        matches!(self, Self::Success)
     }
 
     /// Returns whether the rebase had conflicts (needs resolution).
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn has_conflicts(&self) -> bool {
-        matches!(self, RebaseResult::Conflicts(_))
+    #[must_use]
+    pub const fn has_conflicts(&self) -> bool {
+        matches!(self, Self::Conflicts(_))
     }
 
     /// Returns whether the rebase was a no-op (not applicable).
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_noop(&self) -> bool {
-        matches!(self, RebaseResult::NoOp { .. })
+    #[must_use]
+    pub const fn is_noop(&self) -> bool {
+        matches!(self, Self::NoOp { .. })
     }
 
     /// Returns whether the rebase failed.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_failed(&self) -> bool {
-        matches!(self, RebaseResult::Failed(_))
+    #[must_use]
+    pub const fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed(_))
     }
 
     /// Returns the conflict files if this result contains conflicts.
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn conflict_files(&self) -> Option<&[String]> {
         match self {
-            RebaseResult::Conflicts(files) => Some(files),
-            RebaseResult::Failed(RebaseErrorKind::ContentConflict { files }) => Some(files),
+            Self::Conflicts(files) => Some(files),
+            Self::Failed(RebaseErrorKind::ContentConflict { files }) => Some(files),
             _ => None,
         }
     }
 
     /// Returns the error kind if this result is a failure.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn error_kind(&self) -> Option<&RebaseErrorKind> {
+    #[must_use]
+    pub const fn error_kind(&self) -> Option<&RebaseErrorKind> {
         match self {
-            RebaseResult::Failed(kind) => Some(kind),
+            Self::Failed(kind) => Some(kind),
             _ => None,
         }
     }
 
     /// Returns the no-op reason if this result is a no-op.
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn noop_reason(&self) -> Option<&str> {
         match self {
-            RebaseResult::NoOp { reason } => Some(reason),
+            Self::NoOp { reason } => Some(reason),
             _ => None,
         }
     }

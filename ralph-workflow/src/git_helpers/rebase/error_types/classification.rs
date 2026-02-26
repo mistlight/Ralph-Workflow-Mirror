@@ -301,9 +301,7 @@ fn extract_error_line(output: &str) -> String {
                 && !line.starts_with("Hint:")
                 && !line.starts_with("note:")
                 && !line.starts_with("Note:")
-        })
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| output.trim().to_string())
+        }).map_or_else(|| output.trim().to_string(), |s| s.trim().to_string())
 }
 
 /// Extract conflict file paths from error output.

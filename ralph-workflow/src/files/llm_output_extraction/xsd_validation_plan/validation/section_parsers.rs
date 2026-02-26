@@ -81,7 +81,7 @@ fn parse_inline_elements(content: &str) -> Vec<InlineElement> {
             Ok(Event::Text(e)) => {
                 current_text.push_str(&e.unescape().unwrap_or_default());
             }
-            Ok(Event::End(_)) | Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Ok(_) => {}
             Err(_) => break,
         }
@@ -142,7 +142,7 @@ fn parse_rich_content(content: &str) -> Result<RichContent, XsdValidationError> 
                     }
                     b"list" => {
                         let attrs = get_attributes(&e);
-                        let list_type_str = attrs.get("type").map(|s| s.as_str()).unwrap_or("");
+                        let list_type_str = attrs.get("type").map_or("", std::string::String::as_str);
                         let list_type = match list_type_str {
                             "ordered" => ListType::Ordered,
                             "unordered" => ListType::Unordered,
@@ -178,7 +178,7 @@ fn parse_rich_content(content: &str) -> Result<RichContent, XsdValidationError> 
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "content".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -224,7 +224,7 @@ fn parse_list(reader: &mut Reader<&[u8]>, list_type: ListType) -> Result<List, X
                             Ok(Event::Start(e2)) if e2.name().as_ref() == b"list" => {
                                 let attrs = get_attributes(&e2);
                                 let nested_type =
-                                    match attrs.get("type").map(|s| s.as_str()).unwrap_or("") {
+                                    match attrs.get("type").map_or("", std::string::String::as_str) {
                                         "ordered" => ListType::Ordered,
                                         "unordered" => ListType::Unordered,
                                         _ => ListType::Unordered,
@@ -260,7 +260,7 @@ fn parse_list(reader: &mut Reader<&[u8]>, list_type: ListType) -> Result<List, X
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "list".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -314,7 +314,7 @@ fn parse_table(reader: &mut Reader<&[u8]>) -> Result<Table, XsdValidationError> 
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "table".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -424,7 +424,7 @@ fn parse_summary(reader: &mut Reader<&[u8]>) -> Result<PlanSummary, XsdValidatio
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-summary".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });

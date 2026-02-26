@@ -6,33 +6,33 @@
 //! ## Review Phase Flow
 //!
 //! ### Review Pass
-//! 1. **PrepareReviewContext** - Set up context for review pass
-//! 2. **MaterializeReviewInputs** - Prepare plan and diff inputs
-//! 3. **PrepareReviewPrompt** - Generate review prompt
-//! 4. **CleanupReviewIssuesXml** - Clean any existing XML
-//! 5. **InvokeReviewAgent** - Execute review agent
-//! 6. **ExtractReviewIssuesXml** - Extract XML from agent output
-//! 7. **ValidateReviewIssuesXml** - Validate and parse issues
-//! 8. **WriteIssuesMarkdown** - Convert issues to markdown
-//! 9. **ExtractReviewIssueSnippets** - Extract code snippets from issues
-//! 10. **ArchiveReviewIssuesXml** - Archive XML
-//! 11. **ApplyReviewOutcome** - Apply outcome (found issues or clean)
+//! 1. **`PrepareReviewContext`** - Set up context for review pass
+//! 2. **`MaterializeReviewInputs`** - Prepare plan and diff inputs
+//! 3. **`PrepareReviewPrompt`** - Generate review prompt
+//! 4. **`CleanupReviewIssuesXml`** - Clean any existing XML
+//! 5. **`InvokeReviewAgent`** - Execute review agent
+//! 6. **`ExtractReviewIssuesXml`** - Extract XML from agent output
+//! 7. **`ValidateReviewIssuesXml`** - Validate and parse issues
+//! 8. **`WriteIssuesMarkdown`** - Convert issues to markdown
+//! 9. **`ExtractReviewIssueSnippets`** - Extract code snippets from issues
+//! 10. **`ArchiveReviewIssuesXml`** - Archive XML
+//! 11. **`ApplyReviewOutcome`** - Apply outcome (found issues or clean)
 //!
 //! ### Fix Pass (if issues found)
-//! 1. **PrepareFixPrompt** - Generate fix prompt with issues
-//! 2. **CleanupFixResultXml** - Clean any existing XML
-//! 3. **InvokeFixAgent** - Execute fix agent
-//! 4. **ExtractFixResultXml** - Extract XML from agent output
-//! 5. **ValidateFixResultXml** - Validate and parse fix status
-//! 6. **ApplyFixOutcome** - Apply fix outcome
-//! 7. **ArchiveFixResultXml** - Archive XML
+//! 1. **`PrepareFixPrompt`** - Generate fix prompt with issues
+//! 2. **`CleanupFixResultXml`** - Clean any existing XML
+//! 3. **`InvokeFixAgent`** - Execute fix agent
+//! 4. **`ExtractFixResultXml`** - Extract XML from agent output
+//! 5. **`ValidateFixResultXml`** - Validate and parse fix status
+//! 6. **`ApplyFixOutcome`** - Apply fix outcome
+//! 7. **`ArchiveFixResultXml`** - Archive XML
 //!
 //! ## Fix Status
 //!
 //! The fix agent can return:
-//! - **AllIssuesAddressed**: All issues fixed, ready to proceed
-//! - **PartialProgress**: Some issues fixed, more passes needed
-//! - **CannotFix**: Issues cannot be automatically fixed
+//! - **`AllIssuesAddressed`**: All issues fixed, ready to proceed
+//! - **`PartialProgress`**: Some issues fixed, more passes needed
+//! - **`CannotFix`**: Issues cannot be automatically fixed
 //!
 //! ## Mock Behavior
 //!
@@ -55,7 +55,7 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for each review effect without
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_review_effect(
-        &mut self,
+        &self,
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
         match effect {
@@ -127,7 +127,7 @@ impl MockEffectHandler {
                     ),
                     vec![UIEvent::XmlOutput {
                         xml_type: XmlOutputType::ReviewIssues,
-                        content: r#"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"#
+                        content: r"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"
                             .to_string(),
                         context: Some(XmlOutputContext {
                             iteration: None,
@@ -146,7 +146,7 @@ impl MockEffectHandler {
                 PipelineEvent::review_issue_snippets_extracted(pass),
                 vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::ReviewIssues,
-                    content: r#"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"#
+                    content: r"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"
                         .to_string(),
                     context: Some(XmlOutputContext {
                         iteration: None,
@@ -181,7 +181,7 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for each fix effect without
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_fix_effect(
-        &mut self,
+        &self,
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
         match effect {
@@ -206,7 +206,7 @@ impl MockEffectHandler {
                 PipelineEvent::fix_result_xml_validated(pass, FixStatus::AllIssuesAddressed, None),
                 vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::FixResult,
-                    content: r#"<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>"#
+                    content: r"<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>"
                         .to_string(),
                     context: Some(XmlOutputContext {
                         iteration: None,

@@ -54,7 +54,7 @@ pub struct CommitGenerationConfig<'a> {
     /// Name of the developer agent to use for commit generation.
     pub developer_agent: &'a str,
     /// Name of the reviewer agent (not used, kept for API compatibility).
-    pub _reviewer_agent: &'a str,
+    pub reviewer_agent: &'a str,
     /// Process executor for external command execution.
     pub executor: Arc<dyn ProcessExecutor>,
 }
@@ -71,6 +71,10 @@ pub struct CommitGenerationConfig<'a> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if the file cannot be read.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_show_commit_msg_with_workspace(workspace: &dyn Workspace) -> anyhow::Result<()> {
     match read_commit_message_file_with_workspace(workspace) {
         Ok(msg) => {
@@ -98,6 +102,10 @@ pub fn handle_show_commit_msg_with_workspace(workspace: &dyn Workspace) -> anyho
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if commit fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
     workspace: &dyn Workspace,
     handler: &mut H,
@@ -111,9 +119,8 @@ pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
     // Stage all changes via effect
     // Mock returns Bool(true) to indicate staged changes exist, production returns Ok
     match handler.execute(AppEffect::GitAddAll) {
-        AppEffectResult::Ok | AppEffectResult::Bool(true) => {}
-        AppEffectResult::Bool(false) => {
-            // No changes to stage
+        AppEffectResult::Ok | AppEffectResult::Bool(true | false) => {
+            // No changes to stage if Bool(false)
         }
         AppEffectResult::Error(e) => anyhow::bail!("Failed to stage changes: {e}"),
         other => anyhow::bail!("Unexpected result from GitAddAll: {other:?}"),
@@ -136,15 +143,8 @@ pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
         user_name: None,
         user_email: None,
     }) {
-        AppEffectResult::String(oid) => {
-            logger.success(&format!("Commit created successfully: {oid}"));
-            // Clean up the commit message file
-            if let Err(err) = delete_commit_message_file_with_workspace(workspace) {
-                logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
-            }
-            Ok(())
-        }
-        AppEffectResult::Commit(crate::app::effect::CommitResult::Success(oid)) => {
+        AppEffectResult::String(oid)
+        | AppEffectResult::Commit(crate::app::effect::CommitResult::Success(oid)) => {
             logger.success(&format!("Commit created successfully: {oid}"));
             // Clean up the commit message file
             if let Err(err) = delete_commit_message_file_with_workspace(workspace) {
@@ -181,6 +181,10 @@ pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if generation fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow::Result<()> {
     config.logger.info("Generating commit message...");
 

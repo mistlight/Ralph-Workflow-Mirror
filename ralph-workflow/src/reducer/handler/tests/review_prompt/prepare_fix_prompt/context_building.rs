@@ -57,7 +57,7 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");
@@ -118,7 +118,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let _ = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");
@@ -174,7 +174,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let _ = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");

@@ -101,7 +101,7 @@ pub fn run_with_config_and_resolver<
         handle_extended_help();
         if args.work_guide_list.list_work_guides {
             println!();
-            handle_list_work_guides(colors);
+            let _ = handle_list_work_guides(colors);
         }
         return Ok(());
     }
@@ -157,7 +157,7 @@ pub fn run_with_config_and_resolver<
     if args.recovery.diagnose {
         let diagnose_workspace = workspace
             .as_ref()
-            .map(|w| w.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
         handle_diagnose(
             colors,
@@ -178,7 +178,7 @@ pub fn run_with_config_and_resolver<
         &logger,
         colors,
         handler,
-        workspace.as_ref().map(|w| w.as_ref()),
+        workspace.as_ref().map(std::convert::AsRef::as_ref),
     )? {
         return Ok(());
     }
@@ -245,7 +245,7 @@ where
     pub _marker: std::marker::PhantomData<&'ctx ()>,
 }
 
-/// Run with both AppEffectHandler AND EffectHandler for full isolation.
+/// Run with both `AppEffectHandler` AND `EffectHandler` for full isolation.
 ///
 /// This function is the ultimate test entry point that allows injecting BOTH:
 /// - `AppEffectHandler` for CLI-layer operations (git require repo, set cwd, etc.)
@@ -321,7 +321,7 @@ where
         handle_extended_help();
         if args.work_guide_list.list_work_guides {
             println!();
-            handle_list_work_guides(colors);
+            let _ = handle_list_work_guides(colors);
         }
         return Ok(());
     }
@@ -377,7 +377,7 @@ where
     if args.recovery.diagnose {
         let diagnose_workspace = workspace
             .as_ref()
-            .map(|w| w.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
         handle_diagnose(
             colors,
@@ -398,7 +398,7 @@ where
         &logger,
         colors,
         app_handler,
-        workspace.as_ref().map(|w| w.as_ref()),
+        workspace.as_ref().map(std::convert::AsRef::as_ref),
     )? {
         return Ok(());
     }

@@ -10,16 +10,17 @@ use crate::files::llm_output_extraction::validate_issues_xml;
 use crate::reducer::ui_event::{XmlCodeSnippet, XmlOutputContext};
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::sync::LazyLock;
 
 /// Render review issues XML with semantic formatting.
-pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with pass context
-    if let Some(ctx) = context {
+    if let Some(ctx) = output_context {
         if let Some(pass) = ctx.pass {
-            output.push_str(&format!("\n╔═══ Review Pass {} ═══╗\n\n", pass));
+            write!(output, "\n╔═══ Review Pass {pass} ═══╗\n\n").unwrap();
         } else {
             output.push_str("\n╔═══ Review Results ═══╗\n\n");
         }
@@ -27,28 +28,28 @@ pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
         output.push_str("\n╔═══ Review Results ═══╗\n\n");
     }
 
-    match validate_issues_xml(content) {
-        Ok(elements) => {
-            if elements.issues.is_empty() {
-                // Celebration for no issues
-                if let Some(ref msg) = elements.no_issues_found {
-                    output.push_str("🎉 ✅ Code Approved!\n\n");
-                    output.push_str(&format!("   {}\n", msg));
-                } else {
-                    output.push_str("🎉 ✅ No issues found! Code looks good.\n");
-                }
+    if let Ok(elements) = validate_issues_xml(content) {
+        if elements.issues.is_empty() {
+            // Celebration for no issues
+            if let Some(ref msg) = elements.no_issues_found {
+                output.push_str("🎉 ✅ Code Approved!\n\n");
+                writeln!(output, "   {msg}").unwrap();
             } else {
-                output.push_str(&format!(
-                    "🔍 Found {} issue(s) to address:\n\n",
-                    elements.issues.len()
-                ));
-                output.push_str(&render_issues_grouped_by_file(&elements.issues, context));
+                output.push_str("🎉 ✅ No issues found! Code looks good.\n");
             }
+        } else {
+            output.push_str(&format!(
+                "🔍 Found {} issue(s) to address:\n\n",
+                elements.issues.len()
+            ));
+            output.push_str(&render_issues_grouped_by_file(
+                &elements.issues,
+                output_context,
+            ));
         }
-        Err(_) => {
-            output.push_str("⚠️  Unable to parse issues XML\n\n");
-            output.push_str(content);
-        }
+    } else {
+        output.push_str("⚠️  Unable to parse issues XML\n\n");
+        output.push_str(content);
     }
 
     output
@@ -78,17 +79,17 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
 
     let mut output = String::new();
     for (file, issues) in grouped {
-        output.push_str(&format!("📄 {}\n", file));
+        writeln!(output, "📄 {file}").unwrap();
         for issue in issues {
             let mut header = String::new();
             if let Some(sev) = &issue.severity {
-                header.push_str(&format!("[{}] ", sev));
+                write!(header, "[{sev}] ").unwrap();
             }
             if let Some(start) = issue.line_start {
-                header.push_str(&format!("L{}", start));
+                write!(header, "L{start}").unwrap();
                 if let Some(end) = issue.line_end {
                     if end != start {
-                        header.push_str(&format!("-L{}", end));
+                        write!(header, "-L{end}").unwrap();
                     }
                 }
                 header.push_str(": ");
@@ -96,9 +97,9 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
 
             let desc = issue.description.trim();
             if header.is_empty() {
-                output.push_str(&format!("   - {}\n", desc));
+                writeln!(output, "   - {desc}").unwrap();
             } else {
-                output.push_str(&format!("   - {}{}\n", header, desc));
+                writeln!(output, "   - {header}{desc}").unwrap();
             }
 
             let snippet = issue
@@ -107,7 +108,7 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
                 .or_else(|| snippet_from_context(&issue, context));
             if let Some(snippet) = snippet {
                 for line in snippet.lines() {
-                    output.push_str(&format!("      {}\n", line));
+                    writeln!(output, "      {line}").unwrap();
                 }
             }
         }
@@ -143,12 +144,12 @@ fn file_matches(snippet_file: &str, issue_file: &str) -> bool {
 
     // Be tolerant of differing prefixes (e.g. `./src/lib.rs` vs `src/lib.rs`),
     // and of callers emitting paths rooted at a sub-crate (`ralph-workflow/src/...`).
-    let snippet_suffix = format!("/{}", issue_norm);
+    let snippet_suffix = format!("/{issue_norm}");
     if snippet_norm.ends_with(&snippet_suffix) {
         return true;
     }
 
-    let issue_suffix = format!("/{}", snippet_norm);
+    let issue_suffix = format!("/{snippet_norm}");
     issue_norm.ends_with(&issue_suffix)
 }
 
@@ -156,7 +157,7 @@ fn normalize_path_for_match(path: &str) -> String {
     path.replace('\\', "/").trim_start_matches("./").to_string()
 }
 
-fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
+const fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
     a_start <= b_end && b_start <= a_end
 }
 
@@ -232,7 +233,7 @@ fn parse_issue(issue: &str) -> ParsedIssue {
         (file, start, end)
     } else {
         (
-            extract_file_from_issue(&working).map(|s| s.to_string()),
+            extract_file_from_issue(&working).map(std::string::ToString::to_string),
             None,
             None,
         )

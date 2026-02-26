@@ -2,7 +2,7 @@
 //!
 //! This module handles edge cases where the event loop needs defensive recovery:
 //! - Forced checkpoint execution when max iterations is reached after completion marker
-//! - Max iterations handling in AwaitingDevFix phase (defensive completion marker)
+//! - Max iterations handling in `AwaitingDevFix` phase (defensive completion marker)
 //!
 //! ## Non-Terminating Pipeline Principle
 //!
@@ -21,9 +21,9 @@ use std::path::Path;
 
 /// Result of recovery operations.
 pub(super) enum RecoveryResult {
-    /// Recovery succeeded, state updated (state, events_processed, trace_dumped)
+    /// Recovery succeeded, state updated (state, `events_processed`, `trace_dumped`)
     Success(PipelineState, usize, bool),
-    /// Recovery failed unrecoverably - return as incomplete (state, events_processed, trace_dumped)
+    /// Recovery failed unrecoverably - return as incomplete (state, `events_processed`, `trace_dumped`)
     FailedUnrecoverable(PipelineState, usize, bool),
     /// Recovery not needed
     NotNeeded,
@@ -31,8 +31,8 @@ pub(super) enum RecoveryResult {
 
 /// Handle forced checkpoint execution after completion marker.
 ///
-/// When max iterations is reached after transitioning to Interrupted from AwaitingDevFix,
-/// we need to execute SaveCheckpoint even though is_complete() returns true.
+/// When max iterations is reached after transitioning to Interrupted from `AwaitingDevFix`,
+/// we need to execute `SaveCheckpoint` even though `is_complete()` returns true.
 /// This ensures the checkpoint is persisted for proper state tracking.
 ///
 /// Returns the recovery result indicating success or failure.
@@ -77,7 +77,7 @@ where
             events_processed += 1;
 
             for event in result.additional_events {
-                let event_str = format!("{:?}", event);
+                let event_str = format!("{event:?}");
                 new_state = reduce(new_state, event);
                 trace.push(build_trace_entry(
                     events_processed,
@@ -147,14 +147,14 @@ where
     }
 }
 
-/// Handle max iterations defensive recovery in AwaitingDevFix phase.
+/// Handle max iterations defensive recovery in `AwaitingDevFix` phase.
 ///
-/// When max iterations is reached while in AwaitingDevFix phase before TriggerDevFixFlow
+/// When max iterations is reached while in `AwaitingDevFix` phase before `TriggerDevFixFlow`
 /// executes, this is a bug. However, to maintain the non-terminating pipeline principle,
 /// we force completion:
 /// 1. Write completion marker (signals orchestration)
-/// 2. Emit CompletionMarkerEmitted event (transitions to Interrupted)
-/// 3. Execute SaveCheckpoint (makes is_complete() return true)
+/// 2. Emit `CompletionMarkerEmitted` event (transitions to Interrupted)
+/// 3. Execute `SaveCheckpoint` (makes `is_complete()` return true)
 ///
 /// Returns the recovery result indicating success or failure.
 pub(super) fn handle_max_iterations_in_awaiting_dev_fix<'ctx, H>(
@@ -187,8 +187,7 @@ where
     }
     let marker_path = Path::new(".agent/tmp/completion_marker");
     let content = format!(
-        "failure\nMax iterations reached in AwaitingDevFix phase (events_processed={})",
-        events_processed
+        "failure\nMax iterations reached in AwaitingDevFix phase (events_processed={events_processed})"
     );
     let marker_written = match ctx.workspace.write(marker_path, &content) {
         Ok(()) => {
@@ -215,7 +214,7 @@ where
         PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
             is_failure: true,
         });
-    let completion_event_str = format!("{:?}", completion_event);
+    let completion_event_str = format!("{completion_event:?}");
     let mut new_state = reduce(state, completion_event);
     trace.push(build_trace_entry(
         events_processed,
@@ -247,7 +246,7 @@ where
             events_processed += 1;
 
             for event in result.additional_events {
-                let event_str = format!("{:?}", event);
+                let event_str = format!("{event:?}");
                 new_state = reduce(new_state, event);
                 trace.push(build_trace_entry(
                     events_processed,

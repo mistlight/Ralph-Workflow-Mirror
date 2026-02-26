@@ -1,8 +1,8 @@
-//! Startup validation for OpenCode agent references.
+//! Startup validation for `OpenCode` agent references.
 //!
 //! This module provides validation logic for checking that all `opencode/*`
 //! agent references in configured agent chains are valid (i.e., the provider
-//! and model exist in the OpenCode API catalog).
+//! and model exist in the `OpenCode` API catalog).
 //!
 //! Validation errors include helpful suggestions for typos using Levenshtein
 //! distance matching.
@@ -11,13 +11,17 @@ use crate::agents::fallback::FallbackConfig;
 use crate::agents::opencode_api::ApiCatalog;
 use crate::agents::opencode_resolver::OpenCodeResolver;
 
-/// Validate all OpenCode agent references in the fallback configuration.
+/// Validate all `OpenCode` agent references in the fallback configuration.
 ///
 /// This function checks that all `opencode/provider/model` references in the
 /// configured agent chains have valid providers and models in the API catalog.
 ///
 /// Returns `Ok(())` if all references are valid, or `Err(String)` with a
 /// user-friendly error message if any validation fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_opencode_agents(
     fallback: &FallbackConfig,
     catalog: &ApiCatalog,
@@ -34,7 +38,7 @@ pub fn validate_opencode_agents(
                 .get_fallbacks(crate::agents::AgentRole::Reviewer)
                 .iter(),
         )
-        .map(|s| s.as_str())
+        .map(std::string::String::as_str)
         .collect();
 
     // Validate each opencode/* agent
@@ -67,14 +71,14 @@ fn parse_opencode_ref(agent_name: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let _opencode = parts[0];
     let provider = parts[1].to_string();
     let model = parts[2].to_string();
 
     Some((provider, model))
 }
 
-/// Get all OpenCode agent references from the fallback configuration.
+/// Get all `OpenCode` agent references from the fallback configuration.
+#[must_use]
 pub fn get_opencode_refs(fallback: &FallbackConfig) -> Vec<String> {
     fallback
         .get_fallbacks(crate::agents::AgentRole::Developer)

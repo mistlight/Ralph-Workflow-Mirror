@@ -725,7 +725,7 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     let result = handler.prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal);
     assert!(
         result.is_err(),

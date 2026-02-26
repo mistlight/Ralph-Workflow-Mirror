@@ -11,6 +11,7 @@ use super::types::OpenCodeProviderType;
 /// - `--model provider/model`
 /// - `-m=provider/model`
 /// - `--model=provider/model`
+#[must_use]
 pub fn strip_model_flag_prefix(model_flag: &str) -> &str {
     let s = model_flag.trim();
 
@@ -47,6 +48,7 @@ pub fn strip_model_flag_prefix(model_flag: &str) -> &str {
 
 impl OpenCodeProviderType {
     /// Detect provider type from a model flag string.
+    #[must_use]
     pub fn from_model_flag(model_flag: &str) -> Self {
         let model = strip_model_flag_prefix(model_flag);
         let prefix = model.split('/').next().unwrap_or("").to_lowercase();

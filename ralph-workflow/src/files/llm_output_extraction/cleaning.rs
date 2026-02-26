@@ -19,6 +19,7 @@
 /// let result = unescape_json_strings(input);
 /// assert_eq!(result, "feat: add feature\n\nThis adds new functionality.");
 /// ```
+#[must_use]
 pub fn unescape_json_strings(content: &str) -> String {
     let mut result = content.to_string();
 
@@ -57,6 +58,7 @@ pub fn unescape_json_strings(content: &str) -> String {
 /// let result = unescape_json_strings_aggressive(input);
 /// assert_eq!(result, "feat: add feature\n\nDouble escaped");
 /// ```
+#[must_use]
 pub fn unescape_json_strings_aggressive(content: &str) -> String {
     let mut result = content.to_string();
     let mut previous_len: usize;
@@ -88,6 +90,7 @@ pub fn unescape_json_strings_aggressive(content: &str) -> String {
 /// JSON escape sequences were not properly converted to actual characters.
 ///
 /// This is used to detect cases where unescaping failed and we need to apply it again.
+#[must_use]
 pub fn contains_literal_escape_sequences(content: &str) -> bool {
     // We look for literal escape sequences that are likely from improper JSON unescaping
     // To avoid false positives on legitimate content (like code examples), we check
@@ -120,6 +123,7 @@ pub fn contains_literal_escape_sequences(content: &str) -> bool {
 /// any escape sequences that leaked through the pipeline are caught and fixed.
 ///
 /// Returns the cleaned commit message.
+#[must_use]
 pub fn final_escape_sequence_cleanup(message: &str) -> String {
     let mut result = message.to_string();
 
@@ -143,6 +147,7 @@ pub fn final_escape_sequence_cleanup(message: &str) -> String {
 /// - Triple-escaped: \\\n -> backslash + newline
 ///
 /// The function is idempotent - calling it multiple times produces the same result.
+#[must_use]
 pub fn preprocess_raw_content(content: &str) -> String {
     let mut result = content.to_string();
     let mut previous_len: usize;

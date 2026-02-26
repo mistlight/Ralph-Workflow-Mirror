@@ -160,7 +160,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .validate_review_issues_xml(&mut ctx, 0)
         .expect("validate_review_issues_xml should succeed");
@@ -234,7 +234,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .validate_fix_result_xml(&mut ctx, 0)
         .expect("validate_fix_result_xml should succeed");
@@ -609,7 +609,7 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .write_issues_markdown(&mut ctx, 0)
         .expect_err("write_issues_markdown should return error when validated outcome is missing");

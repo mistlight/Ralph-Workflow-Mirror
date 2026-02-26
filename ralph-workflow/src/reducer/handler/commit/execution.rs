@@ -39,8 +39,8 @@ impl MainEffectHandler {
     ///
     /// - `GitAddAllFailed` - Failed to stage changes
     pub(in crate::reducer::handler) fn create_commit(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         message: String,
     ) -> Result<EffectResult> {
         use crate::git_helpers::{git_add_all_in_repo, git_commit_in_repo};
@@ -71,8 +71,8 @@ impl MainEffectHandler {
     /// # Events Emitted
     ///
     /// - `commit_skipped` - Commit skipped with reason
-    pub(in crate::reducer::handler) fn skip_commit(
-        &mut self,
+    pub(in crate::reducer::handler) const fn skip_commit(
+        &self,
         _ctx: &mut PhaseContext<'_>,
         reason: String,
     ) -> Result<EffectResult> {
@@ -93,8 +93,8 @@ impl MainEffectHandler {
     ///
     /// - `GitStatusFailed` - Unable to determine working directory status
     pub(in crate::reducer::handler) fn check_uncommitted_changes_before_termination(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
     ) -> Result<EffectResult> {
         use crate::git_helpers::git_snapshot_in_repo;
 
@@ -108,9 +108,8 @@ impl MainEffectHandler {
         if has_changes {
             let file_count = status.lines().count();
             ctx.logger.warn(&format!(
-                "Pre-termination safety check: Uncommitted changes detected ({} files). \
-                 This should never happen - work should be committed before termination.",
-                file_count
+                "Pre-termination safety check: Uncommitted changes detected ({file_count} files). \
+                 This should never happen - work should be committed before termination."
             ));
 
             // Route back through the commit phase so unattended runs cannot lose work.

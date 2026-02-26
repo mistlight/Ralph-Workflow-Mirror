@@ -144,7 +144,7 @@ impl OpenCodeParser {
                             ));
                         }
                         TerminalMode::None => {
-                            out.push_str(&format!("[{}] {}\n", prefix, sanitized));
+                            writeln!(out, "[{prefix}] {sanitized}").unwrap();
                         }
                         TerminalMode::Full => unreachable!(),
                     }

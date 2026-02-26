@@ -29,9 +29,9 @@
 //! ## Inline vs File Reference
 //!
 //! Small diffs are embedded inline in prompts; large diffs are passed by reference:
-//! - Inline budget: 32KB (MAX_INLINE_CONTENT_SIZE)
-//! - Below inline budget → PromptInputRepresentation::Inline
-//! - Above inline budget → PromptInputRepresentation::FileReference
+//! - Inline budget: 32KB (`MAX_INLINE_CONTENT_SIZE`)
+//! - Below inline budget → `PromptInputRepresentation::Inline`
+//! - Above inline budget → `PromptInputRepresentation::FileReference`
 //!
 //! ## Diff Checking
 //!
@@ -69,20 +69,19 @@ impl MainEffectHandler {
     /// - `commit_diff_invalidated` - Diff file missing; needs recomputation
     /// - `prompt_input_oversize_detected` - Diff exceeds budget (UI observability)
     pub(in crate::reducer::handler) fn materialize_commit_inputs(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         attempt: u32,
     ) -> Result<EffectResult> {
-        let diff = match ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
-            Ok(diff) => diff,
-            Err(_) => {
-                ctx.logger.warn(
-                        "Missing commit diff at .agent/tmp/commit_diff.txt; invalidating diff-prepared state to recompute",
-                    );
-                return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
-                    "Missing commit diff at .agent/tmp/commit_diff.txt".to_string(),
-                )));
-            }
+        let diff = if let Ok(diff) = ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
+            diff
+        } else {
+            ctx.logger.warn(
+                    "Missing commit diff at .agent/tmp/commit_diff.txt; invalidating diff-prepared state to recompute",
+                );
+            return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
+                "Missing commit diff at .agent/tmp/commit_diff.txt".to_string(),
+            )));
         };
 
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
@@ -153,7 +152,7 @@ impl MainEffectHandler {
         let input = MaterializedPromptInput {
             kind: PromptInputKind::Diff,
             content_id_sha256: content_id_sha256.clone(),
-            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            consumer_signature_sha256,
             original_bytes,
             final_bytes,
             model_budget_bytes: Some(model_budget_bytes),
@@ -209,8 +208,8 @@ impl MainEffectHandler {
     /// This is the main entry point for diff checking. It runs `git diff` and
     /// delegates to `check_commit_diff_with_result`.
     pub(in crate::reducer::handler) fn check_commit_diff(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
     ) -> Result<EffectResult> {
         let diff = crate::git_helpers::git_diff_in_repo(ctx.repo_root).map_err(anyhow::Error::from);
         self.check_commit_diff_with_result(ctx, diff)
@@ -220,8 +219,8 @@ impl MainEffectHandler {
     ///
     /// This variant allows testing with mocked diff results.
     pub(in crate::reducer::handler) fn check_commit_diff_with_result(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         diff: Result<String, anyhow::Error>,
     ) -> Result<EffectResult> {
         match diff {
@@ -229,14 +228,13 @@ impl MainEffectHandler {
             Err(err) => {
                 // Don't fail - substitute DIFF variable with investigation instructions
                 ctx.logger.warn(&format!(
-                    "git diff failed: {}, using fallback instructions for AI investigation",
-                    err
+                    "git diff failed: {err}, using fallback instructions for AI investigation"
                 ));
 
                 let fallback_diff = format!(
                     r#"## DIFF UNAVAILABLE - INVESTIGATION REQUIRED
 
-The `git diff` command failed with error: {}
+The `git diff` command failed with error: {err}
 
 You must investigate what changed by:
 
@@ -252,8 +250,7 @@ Example skip reasons:
 - "No staged changes found via git status"
 - "All changes were already committed"
 - "Only whitespace or formatting changes that should not be committed"
-"#,
-                    err
+"#
                 );
 
                 // Use the fallback content as the diff - it will be substituted into {{DIFF}}
@@ -266,8 +263,8 @@ Example skip reasons:
     ///
     /// Writes diff to `.agent/tmp/commit_diff.txt` and emits `commit_diff_prepared`.
     pub(in crate::reducer::handler) fn check_commit_diff_with_content(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         diff: &str,
     ) -> Result<EffectResult> {
         let tmp_dir = Path::new(".agent/tmp");

@@ -24,7 +24,7 @@ impl MainEffectHandler {
     /// Sentinel content for missing PLAN during review phase.
     ///
     /// This is used when `.agent/PLAN.md` is missing, which can happen in isolation mode
-    /// (developer_iters=0, reviewer_reviews>0) where no planning occurred.
+    /// (`developer_iters=0`, `reviewer_reviews>0`) where no planning occurred.
     pub(in crate::reducer::handler) fn sentinel_plan_content(isolation_mode: bool) -> String {
         if isolation_mode {
             "No PLAN provided (normal in isolation mode)".to_string()
@@ -37,7 +37,15 @@ impl MainEffectHandler {
     ///
     /// These instructions tell the reviewer how to obtain the diff via git commands.
     pub(in crate::reducer::handler) fn fallback_diff_instructions(baseline_oid: &str) -> String {
-        if !baseline_oid.is_empty() {
+        if baseline_oid.is_empty() {
+            "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
+             Run: git diff HEAD~1..HEAD  # Changes in last commit\n\
+             Or:  git diff --staged      # Staged changes\n\
+             Or:  git diff               # Unstaged changes\n\
+             And: git ls-files --others --exclude-standard  # Untracked files\n\n\
+             Review the diff and identify any issues."
+                .to_string()
+        } else {
             format!(
                 "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
                  1) Committed changes since baseline:\n\
@@ -48,23 +56,14 @@ impl MainEffectHandler {
                     git diff --cached {baseline_oid}\n\n\
                  4) Untracked files (not shown by git diff):\n\
                     git ls-files --others --exclude-standard\n\n\
-                 Review the full change set (committed + working tree + untracked).",
-                baseline_oid = baseline_oid
+                 Review the full change set (committed + working tree + untracked)."
             )
-        } else {
-            "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
-             Run: git diff HEAD~1..HEAD  # Changes in last commit\n\
-             Or:  git diff --staged      # Staged changes\n\
-             Or:  git diff               # Unstaged changes\n\
-             And: git ls-files --others --exclude-standard  # Untracked files\n\n\
-             Review the diff and identify any issues."
-                .to_string()
         }
     }
 
     pub(in crate::reducer::handler) fn materialize_review_inputs(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         // PLAN is optional for review phase (e.g., isolation mode without planning).
@@ -207,7 +206,7 @@ impl MainEffectHandler {
         let diff_input = MaterializedPromptInput {
             kind: PromptInputKind::Diff,
             content_id_sha256: sha256_hex_str(&diff_content),
-            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            consumer_signature_sha256,
             original_bytes: diff_content.len() as u64,
             final_bytes: diff_content.len() as u64,
             model_budget_bytes: None,
@@ -261,8 +260,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn prepare_review_context(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::{create_prompt_backup_with_workspace, write_diff_backup_with_workspace};

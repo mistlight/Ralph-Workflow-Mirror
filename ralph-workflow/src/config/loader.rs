@@ -27,6 +27,7 @@ use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::UnifiedConfig;
 use super::validation::{validate_config_file, ConfigValidationError};
 use std::env;
+use std::fmt::Write;
 use std::path::PathBuf;
 
 /// Error type for config loading with validation.
@@ -40,9 +41,10 @@ pub enum ConfigLoadWithValidationError {
 
 impl ConfigLoadWithValidationError {
     /// Format all validation errors for user display.
+    #[must_use]
     pub fn format_errors(&self) -> String {
         match self {
-            ConfigLoadWithValidationError::ValidationErrors(errors) => {
+            Self::ValidationErrors(errors) => {
                 let mut output =
                     String::from("Error: Configuration invalid - cannot start Ralph\n\n");
 
@@ -65,7 +67,7 @@ impl ConfigLoadWithValidationError {
                 if !global_errors.is_empty() {
                     output.push_str("~/.config/ralph-workflow.toml:\n");
                     for error in global_errors {
-                        output.push_str(&format!("  {}\n", format_single_error(error)));
+                        writeln!(output, "  {}", format_single_error(error)).unwrap();
                     }
                     output.push('\n');
                 }
@@ -73,7 +75,7 @@ impl ConfigLoadWithValidationError {
                 if !local_errors.is_empty() {
                     output.push_str(".agent/ralph-workflow.toml:\n");
                     for error in local_errors {
-                        output.push_str(&format!("  {}\n", format_single_error(error)));
+                        writeln!(output, "  {}", format_single_error(error)).unwrap();
                     }
                     output.push('\n');
                 }
@@ -94,7 +96,7 @@ impl ConfigLoadWithValidationError {
                 );
                 output
             }
-            ConfigLoadWithValidationError::Io(e) => e.to_string(),
+            Self::Io(e) => e.to_string(),
         }
     }
 }
@@ -103,30 +105,31 @@ impl ConfigLoadWithValidationError {
 fn format_single_error(error: &ConfigValidationError) -> String {
     match error {
         ConfigValidationError::TomlSyntax { error, .. } => {
-            format!("TOML syntax error: {}", error)
+            format!("TOML syntax error: {error}")
         }
         ConfigValidationError::UnknownKey {
             key, suggestion, ..
         } => {
             if let Some(s) = suggestion {
-                format!("Unknown key '{}'. Did you mean '{}'?", key, s)
+                format!("Unknown key '{key}'. Did you mean '{s}'?")
             } else {
-                format!("Unknown key '{}'", key)
+                format!("Unknown key '{key}'")
             }
         }
         ConfigValidationError::InvalidValue { key, message, .. } => {
-            format!("Invalid value for '{}': {}", key, message)
+            format!("Invalid value for '{key}': {message}")
         }
     }
 }
 
 impl ConfigValidationError {
     /// Get the file path from the error.
+    #[must_use]
     pub fn file(&self) -> &std::path::Path {
         match self {
-            ConfigValidationError::TomlSyntax { file, .. } => file,
-            ConfigValidationError::InvalidValue { file, .. } => file,
-            ConfigValidationError::UnknownKey { file, .. } => file,
+            Self::TomlSyntax { file, .. } => file,
+            Self::InvalidValue { file, .. } => file,
+            Self::UnknownKey { file, .. } => file,
         }
     }
 }
@@ -140,6 +143,10 @@ impl ConfigValidationError {
 ///
 /// Returns a tuple of `(Config, Vec<String>)` where the second element
 /// contains any deprecation warnings to be displayed to the user.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_config(
 ) -> Result<(Config, Option<UnifiedConfig>, Vec<String>), ConfigLoadWithValidationError> {
     load_config_from_path(None)
@@ -162,6 +169,10 @@ pub fn load_config(
 /// # Panics
 ///
 /// This function does not panic. Validation errors are returned to the caller.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_config_from_path(
     config_path: Option<&std::path::Path>,
 ) -> Result<(Config, Option<UnifiedConfig>, Vec<String>), ConfigLoadWithValidationError> {
@@ -215,7 +226,7 @@ pub fn load_config_from_path_with_env(
                     validation_errors.push(ConfigValidationError::InvalidValue {
                         file: path.to_path_buf(),
                         key: "config".to_string(),
-                        message: format!("Failed to parse config: {}", e),
+                        message: format!("Failed to parse config: {e}"),
                     });
                     None
                 }
@@ -242,9 +253,9 @@ pub fn load_config_from_path_with_env(
                     Ok(cfg) => Some(cfg),
                     Err(e) => {
                         validation_errors.push(ConfigValidationError::InvalidValue {
-                            file: global_path.to_path_buf(),
+                            file: global_path,
                             key: "config".to_string(),
-                            message: format!("Failed to parse config: {}", e),
+                            message: format!("Failed to parse config: {e}"),
                         });
                         None
                     }
@@ -275,9 +286,9 @@ pub fn load_config_from_path_with_env(
                 Ok(cfg) => (Some(cfg), Some(content)),
                 Err(e) => {
                     validation_errors.push(ConfigValidationError::InvalidValue {
-                        file: local_path.to_path_buf(),
+                        file: local_path,
                         key: "config".to_string(),
-                        message: format!("Failed to parse config: {}", e),
+                        message: format!("Failed to parse config: {e}"),
                     });
                     (None, None)
                 }

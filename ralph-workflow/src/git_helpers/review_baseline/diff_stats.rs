@@ -73,7 +73,7 @@ impl BaselineSummary {
         match &self.baseline_oid {
             Some(oid) => {
                 let short_oid = &oid[..8.min(oid.len())];
-                lines.push(format!("  Commit: {}", short_oid));
+                lines.push(format!("  Commit: {short_oid}"));
                 if self.commits_since > 0 {
                     lines.push(format!("  Commits since baseline: {}", self.commits_since));
                 }
@@ -97,11 +97,11 @@ impl BaselineSummary {
             lines.push(String::new());
             lines.push("  Changed files:".to_string());
             for file in &self.diff_stats.changed_files {
-                lines.push(format!("    - {}", file));
+                lines.push(format!("    - {file}"));
             }
             if self.diff_stats.changed_files.len() < self.diff_stats.files_changed {
                 let remaining = self.diff_stats.files_changed - self.diff_stats.changed_files.len();
-                lines.push(format!("    ... and {} more", remaining));
+                lines.push(format!("    ... and {remaining} more"));
             }
         }
 
@@ -122,12 +122,16 @@ impl BaselineSummary {
 /// Returns a `BaselineSummary` containing information about the current
 /// baseline, commits since baseline, staleness, and diff statistics.
 ///
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_baseline_summary() -> io::Result<BaselineSummary> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     get_baseline_summary_impl(&repo, load_review_baseline()?)
 }
 
-/// Implementation of get_baseline_summary.
+/// Implementation of `get_baseline_summary`.
 fn get_baseline_summary_impl(
     repo: &git2::Repository,
     baseline: ReviewBaseline,
@@ -178,7 +182,7 @@ fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io:
             let oid = git2::Oid::from_str(oid).map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("Invalid baseline OID: {}", oid),
+                    format!("Invalid baseline OID: {oid}"),
                 )
             })?;
             let commit = repo.find_commit(oid).map_err(|e| to_io_error(&e))?;

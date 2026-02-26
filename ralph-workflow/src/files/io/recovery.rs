@@ -112,6 +112,10 @@ fn remove_zero_length_files_with_workspace(
 /// Best-effort repair of common `.agent/` state issues using workspace.
 ///
 /// This is the workspace-based version for pipeline layer usage.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn auto_repair_with_workspace(
     workspace: &dyn Workspace,
     agent_dir: &Path,

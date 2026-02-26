@@ -69,7 +69,7 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             same_agent_retry_count: 1,
             same_agent_retry_reason: Some(SameAgentRetryReason::Other),
@@ -140,7 +140,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_fix_prompt should surface non-NotFound PROMPT backup read failures");
@@ -208,7 +208,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_fix_prompt should surface non-NotFound PLAN read failures");
@@ -276,7 +276,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_fix_prompt should surface non-NotFound ISSUES read failures");

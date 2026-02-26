@@ -11,7 +11,7 @@
 /// # Examples
 ///
 /// See the unit tests in this module for working examples of Levenshtein distance calculation.
-pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_len = a.len();
     let b_len = b.len();
 
@@ -29,7 +29,7 @@ pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
         curr_row[0] = i + 1;
 
         for (j, b_char) in b.chars().enumerate() {
-            let cost = if a_char == b_char { 0 } else { 1 };
+            let cost = usize::from(a_char != b_char);
             curr_row[j + 1] = std::cmp::min(
                 std::cmp::min(
                     curr_row[j] + 1,     // insertion
@@ -58,6 +58,7 @@ pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
 ///
 /// `Some(String)` with the suggested key if a match is found within threshold,
 /// `None` otherwise.
+#[must_use]
 pub fn suggest_key(unknown_key: &str, valid_keys: &[&str]) -> Option<String> {
     let threshold = 3; // Maximum edit distance for suggestions
 

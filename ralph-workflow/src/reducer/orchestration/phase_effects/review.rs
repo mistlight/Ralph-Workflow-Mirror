@@ -4,7 +4,7 @@
 //!
 //! Review phase has two modes:
 //!
-//! 1. Fix mode (when review_issues_found = true):
+//! 1. Fix mode (when `review_issues_found` = true):
 //!    a. Initialize agent chain (Reviewer role)
 //!    b. Prepare fix prompt
 //!    c. Cleanup fix result XML
@@ -15,7 +15,7 @@
 //!    h. Apply fix outcome
 //!
 //! 2. Review mode (normal flow):
-//!    For each review pass (up to total_reviewer_passes):
+//!    For each review pass (up to `total_reviewer_passes)`:
 //!    a. Initialize agent chain (Reviewer role)
 //!    b. Prepare review context
 //!    c. Materialize review inputs (plan + diff)
@@ -30,11 +30,11 @@
 //!    l. Apply review outcome
 //!
 //! Review pass boundary handling:
-//! - At reviewer_pass == total_reviewer_passes, still process the current pass
+//! - At `reviewer_pass` == `total_reviewer_passes`, still process the current pass
 //! - On resume, progress flags are reset (pipeline.rs:453-532)
-//! - Only skip to SaveCheckpoint when:
-//!   - reviewer_pass > total_reviewer_passes (should not happen in normal flow)
-//!   - total_reviewer_passes == 0 (no review passes configured)
+//! - Only skip to `SaveCheckpoint` when:
+//!   - `reviewer_pass` > `total_reviewer_passes` (should not happen in normal flow)
+//!   - `total_reviewer_passes` == 0 (no review passes configured)
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::Effect;

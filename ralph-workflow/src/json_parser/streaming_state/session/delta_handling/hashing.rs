@@ -48,6 +48,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - The content hash matches the previously streamed content
     /// * `false` - The content is different or no content was streamed
+    #[must_use] 
     pub fn is_duplicate_by_hash(
         &self,
         content: &str,
@@ -96,18 +97,18 @@ impl StreamingSession {
         combined_content == content
     }
 
-    /// Check if mixed content (text + tool_use) from an assistant event matches accumulated content.
+    /// Check if mixed content (text + `tool_use`) from an assistant event matches accumulated content.
     ///
-    /// This handles the case where assistant events contain both text and tool_use blocks.
-    /// We reconstruct the full normalized content from both text and tool_use accumulated content
+    /// This handles the case where assistant events contain both text and `tool_use` blocks.
+    /// We reconstruct the full normalized content from both text and `tool_use` accumulated content
     /// and compare it against the assistant event content.
     ///
     /// # Arguments
-    /// * `normalized_content` - Content potentially containing both text and "TOOL_USE:{name}:{input}" markers
+    /// * `normalized_content` - Content potentially containing both text and "`TOOL_USE:{name}:{input`}" markers
     /// * `tool_name_hints` - Optional tool names from assistant event (by content block index)
     ///
     /// # Returns
-    /// * `true` - All content (text + tool_use) matches accumulated content
+    /// * `true` - All content (text + `tool_use`) matches accumulated content
     /// * `false` - Content differs or not accumulated yet
     fn is_duplicate_mixed_content(
         &self,
@@ -142,13 +143,13 @@ impl StreamingSession {
                         // Tool_use content needs normalization with tool name
                         let index_num = index_str.parse::<u64>().unwrap_or(0);
                         let tool_name = tool_name_hints
-                            .and_then(|hints| hints.get(&(index_num as usize)).map(|s| s.as_str()))
+                            .and_then(|hints| hints.get(&(index_num as usize)).map(std::string::String::as_str))
                             .or_else(|| self.tool_names.get(&index_num).and_then(|n| n.as_deref()))
                             .unwrap_or("");
 
                         // Normalize: "TOOL_USE:{name}:{input}"
                         reconstructed
-                            .push_str(&format!("TOOL_USE:{}:{}", tool_name, accumulated_content));
+                            .push_str(&format!("TOOL_USE:{tool_name}:{accumulated_content}"));
                     }
                     ContentType::Thinking => {
                         // Thinking content - not currently used in assistant events
@@ -162,19 +163,19 @@ impl StreamingSession {
         normalized_content == reconstructed
     }
 
-    /// Check if tool_use content from an assistant event matches accumulated ToolInput.
+    /// Check if `tool_use` content from an assistant event matches accumulated `ToolInput`.
     ///
-    /// Assistant events may contain normalized tool_use blocks (with "TOOL_USE:" prefix).
+    /// Assistant events may contain normalized `tool_use` blocks (with "`TOOL_USE`:" prefix).
     /// This method reconstructs the normalized representation from accumulated content
     /// and checks if it matches the assistant event content.
     ///
     /// # Arguments
-    /// * `normalized_content` - Content potentially containing "TOOL_USE:{name}:{input}" markers
+    /// * `normalized_content` - Content potentially containing "`TOOL_USE:{name}:{input`}" markers
     /// * `tool_name_hints` - Optional tool names from assistant event (by content block index)
     ///
     /// # Returns
-    /// * `true` - All tool_use blocks match accumulated content
-    /// * `false` - Tool_use content differs or not accumulated yet
+    /// * `true` - All `tool_use` blocks match accumulated content
+    /// * `false` - `Tool_use` content differs or not accumulated yet
     fn is_duplicate_tool_use(
         &self,
         normalized_content: &str,
@@ -197,12 +198,12 @@ impl StreamingSession {
                 // Get the tool name from hints first (from assistant event), then from tracking
                 let index_num = index_str.parse::<u64>().unwrap_or(0);
                 let tool_name = tool_name_hints
-                    .and_then(|hints| hints.get(&(index_num as usize)).map(|s| s.as_str()))
+                    .and_then(|hints| hints.get(&(index_num as usize)).map(std::string::String::as_str))
                     .or_else(|| self.tool_names.get(&index_num).and_then(|n| n.as_deref()))
                     .unwrap_or("");
 
                 // Normalize: "TOOL_USE:{name}:{input}"
-                reconstructed.push_str(&format!("TOOL_USE:{}:{}", tool_name, accumulated_input));
+                write!(reconstructed, "TOOL_USE:{tool_name}:{accumulated_input}").unwrap();
             }
         }
 

@@ -24,7 +24,8 @@ pub struct ValidationResult {
 
 impl ValidationResult {
     /// Create a successful validation result with no issues.
-    pub fn ok() -> Self {
+    #[must_use]
+    pub const fn ok() -> Self {
         Self {
             is_valid: true,
             warnings: Vec::new(),
@@ -42,13 +43,15 @@ impl ValidationResult {
     }
 
     /// Add a warning to the result.
+    #[must_use]
     pub fn with_warning(mut self, msg: impl Into<String>) -> Self {
         self.warnings.push(msg.into());
         self
     }
 
     /// Merge another validation result into this one.
-    pub fn merge(mut self, other: ValidationResult) -> Self {
+    #[must_use]
+    pub fn merge(mut self, other: Self) -> Self {
         if !other.is_valid {
             self.is_valid = false;
         }
@@ -66,7 +69,7 @@ impl ValidationResult {
 /// - Agent configurations are compatible
 ///
 /// Note: File system state validation is handled separately with recovery strategy
-/// in the resume flow (see validate_file_system_state_with_strategy).
+/// in the resume flow (see `validate_file_system_state_with_strategy`).
 ///
 /// # Arguments
 ///
@@ -174,6 +177,7 @@ pub fn validate_prompt_md(
 /// Validate that an agent configuration matches the current registry.
 ///
 /// Rejects legacy checkpoints that have empty agent commands.
+#[must_use]
 pub fn validate_agent_config(
     saved_config: &AgentConfigSnapshot,
     agent_name: &str,
@@ -182,16 +186,14 @@ pub fn validate_agent_config(
     // Reject legacy checkpoints with empty commands
     if saved_config.cmd.is_empty() {
         return ValidationResult::error(format!(
-            "Checkpoint has empty agent command for '{}'. Legacy checkpoints are not supported. \
-             Delete the checkpoint and restart the pipeline.",
-            agent_name
+            "Checkpoint has empty agent command for '{agent_name}'. Legacy checkpoints are not supported. \
+             Delete the checkpoint and restart the pipeline."
         ));
     }
 
     let Some(current_config) = registry.resolve_config(agent_name) else {
         return ValidationResult::ok().with_warning(format!(
-            "Agent '{}' not found in current registry (may have been removed)",
-            agent_name
+            "Agent '{agent_name}' not found in current registry (may have been removed)"
         ));
     };
 
@@ -228,6 +230,7 @@ pub fn validate_agent_config(
 ///
 /// This is a soft validation - mismatches generate warnings but don't block resume.
 /// The checkpoint values take precedence during resume.
+#[must_use]
 pub fn validate_iteration_counts(
     checkpoint: &PipelineCheckpoint,
     current_config: &Config,

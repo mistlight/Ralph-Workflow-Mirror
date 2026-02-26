@@ -122,12 +122,17 @@ impl ProjectStack {
 ///
 /// This is a convenience wrapper that creates a [`WorkspaceFs`] and calls
 /// [`detect_stack_with_workspace`].
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
     let workspace = WorkspaceFs::new(root.to_path_buf());
     detect_stack_with_workspace(&workspace, Path::new(""))
 }
 
 /// Detect stack and return a summary string (for display in banner)
+#[must_use]
 pub fn detect_stack_summary(root: &Path) -> String {
     detect_stack(root).map_or_else(|_| "Unknown".to_string(), |stack| stack.summary())
 }
@@ -143,6 +148,10 @@ mod tests;
 ///
 /// This is the testable version of [`detect_stack`] that uses workspace
 /// for all filesystem operations.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn detect_stack_with_workspace(
     workspace: &dyn Workspace,
     root: &Path,

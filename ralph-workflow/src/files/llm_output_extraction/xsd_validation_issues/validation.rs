@@ -29,15 +29,15 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 use quick_xml::events::Event;
 
 /// Example of valid issues XML with issues.
-pub const EXAMPLE_ISSUES_XML: &str = r#"<ralph-issues>
+pub const EXAMPLE_ISSUES_XML: &str = r"<ralph-issues>
 <ralph-issue>Missing error handling in API endpoint</ralph-issue>
 <ralph-issue>Variable shadowing in loop construct</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
 /// Example of valid issues XML with no issues.
-pub const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
+pub const EXAMPLE_NO_ISSUES_XML: &str = r"<ralph-issues>
 <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
 /// Validate issues XML content against the issues XSD.
 ///
@@ -110,7 +110,7 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-issues".to_string(),
                     expected: "<ralph-issues> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-issues> as the root element.".to_string(),
                     example: Some(EXAMPLE_ISSUES_XML.into()),
                 });

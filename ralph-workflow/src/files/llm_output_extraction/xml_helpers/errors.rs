@@ -44,12 +44,11 @@ pub fn unexpected_element_error(
 
     XsdValidationError {
         error_type: XsdErrorType::UnexpectedElement,
-        element_path: format!("{}/{}", parent_element, found_name),
-        expected: format!("one of: {}", valid_list),
-        found: format!("<{}>", found_name),
+        element_path: format!("{parent_element}/{found_name}"),
+        expected: format!("one of: {valid_list}"),
+        found: format!("<{found_name}>"),
         suggestion: format!(
-            "Remove <{}> or replace with a valid element. Valid elements inside <{}>: {}",
-            found_name, parent_element, valid_list
+            "Remove <{found_name}> or replace with a valid element. Valid elements inside <{parent_element}>: {valid_list}"
         ),
         example: None,
     }
@@ -73,14 +72,13 @@ pub fn missing_required_error(
 ) -> XsdValidationError {
     XsdValidationError {
         error_type: XsdErrorType::MissingRequiredElement,
-        element_path: format!("{}/{}", parent_element, element_name),
-        expected: format!("<{}> element (required)", element_name),
-        found: format!("no <{}> found", element_name),
+        element_path: format!("{parent_element}/{element_name}"),
+        expected: format!("<{element_name}> element (required)"),
+        found: format!("no <{element_name}> found"),
         suggestion: format!(
-            "Add <{0}>value</{0}> inside <{1}>.",
-            element_name, parent_element
+            "Add <{element_name}>value</{element_name}> inside <{parent_element}>."
         ),
-        example: example.map(|s| s.into()),
+        example: example.map(std::convert::Into::into),
     }
 }
 
@@ -97,13 +95,10 @@ pub fn missing_required_error(
 pub fn duplicate_element_error(element_name: &str, parent_element: &str) -> XsdValidationError {
     XsdValidationError {
         error_type: XsdErrorType::UnexpectedElement,
-        element_path: format!("{}/{}", parent_element, element_name),
-        expected: format!("only one <{}> element", element_name),
-        found: format!("duplicate <{}> element", element_name),
-        suggestion: format!(
-            "Remove the duplicate <{}>. Only one is allowed.",
-            element_name
-        ),
+        element_path: format!("{parent_element}/{element_name}"),
+        expected: format!("only one <{element_name}> element"),
+        found: format!("duplicate <{element_name}> element"),
+        suggestion: format!("Remove the duplicate <{element_name}>. Only one is allowed."),
         example: None,
     }
 }
@@ -126,7 +121,7 @@ pub fn text_outside_tags_error(text: &str, parent_element: &str) -> XsdValidatio
         error_type: XsdErrorType::InvalidContent,
         element_path: parent_element.to_string(),
         expected: "only XML elements (no loose text)".to_string(),
-        found: format!("text content: {:?}", display_text),
+        found: format!("text content: {display_text:?}"),
         suggestion: "Remove any text that is not inside a child element tag.".to_string(),
         example: None,
     }
@@ -153,11 +148,11 @@ pub fn format_content_preview(content: &str) -> String {
 ///
 /// # Arguments
 ///
-/// * `error` - The quick_xml parse error
+/// * `error` - The `quick_xml` parse error
 ///
 /// # Returns
 ///
-/// An XsdValidationError with actionable suggestions based on the parse error type.
+/// An `XsdValidationError` with actionable suggestions based on the parse error type.
 ///
 /// # Examples
 ///
@@ -190,7 +185,7 @@ pub fn malformed_xml_error(error: quick_xml::Error) -> XsdValidationError {
         error_type: XsdErrorType::MalformedXml,
         element_path: "xml".to_string(),
         expected: "well-formed XML".to_string(),
-        found: format!("parse error: {}", error),
+        found: format!("parse error: {error}"),
         suggestion,
         example: None,
     }

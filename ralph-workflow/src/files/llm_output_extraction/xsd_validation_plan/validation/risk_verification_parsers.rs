@@ -23,7 +23,7 @@ fn parse_risks_mitigations(
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-risks-mitigations".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -123,7 +123,7 @@ fn parse_verification_strategy(
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-verification-strategy".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });

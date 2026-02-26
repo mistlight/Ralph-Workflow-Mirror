@@ -103,13 +103,11 @@ pub(super) fn wait_for_completion_and_collect_stderr(
         let mut child = child_arc
             .lock()
             .expect("child process mutex poisoned - indicates panic in another thread");
-        match child.try_wait()? {
-            Some(status) => break WaitOutcome::Completed(status),
-            None => {
-                drop(child);
-                std::thread::sleep(check_interval);
-            }
+        if let Some(status) = child.try_wait()? {
+            break WaitOutcome::Completed(status);
         }
+        drop(child);
+        std::thread::sleep(check_interval);
     };
 
     let status = match outcome {

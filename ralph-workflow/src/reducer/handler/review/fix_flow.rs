@@ -1,6 +1,6 @@
 impl MainEffectHandler {
     pub(super) fn prepare_fix_prompt(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         pass: u32,
         prompt_mode: PromptMode,
@@ -240,8 +240,7 @@ impl MainEffectHandler {
             .write(Path::new(".agent/tmp/fix_prompt.txt"), &fix_prompt)
         {
             ctx.logger.warn(&format!(
-                "Failed to write fix prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
+                "Failed to write fix prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
             ));
         }
 
@@ -303,8 +302,8 @@ impl MainEffectHandler {
     }
 
     pub(super) fn cleanup_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
@@ -315,8 +314,8 @@ impl MainEffectHandler {
     }
 
     pub(super) fn extract_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
@@ -347,8 +346,8 @@ impl MainEffectHandler {
     }
 
     pub(super) fn validate_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
@@ -405,7 +404,7 @@ impl MainEffectHandler {
     }
 
     pub(super) fn apply_fix_outcome(
-        &mut self,
+        &self,
         _ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
@@ -421,8 +420,8 @@ impl MainEffectHandler {
     }
 
     pub(super) fn archive_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;

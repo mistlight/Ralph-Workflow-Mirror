@@ -18,6 +18,7 @@ pub struct MockCloudReporter {
 }
 
 impl MockCloudReporter {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -29,10 +30,12 @@ impl MockCloudReporter {
         *self.should_fail.lock().unwrap() = fail;
     }
 
+    #[must_use]
     pub fn calls(&self) -> Vec<MockCloudCall> {
         self.calls.lock().unwrap().clone()
     }
 
+    #[must_use]
     pub fn progress_count(&self) -> usize {
         self.calls
             .lock()
@@ -42,6 +45,7 @@ impl MockCloudReporter {
             .count()
     }
 
+    #[must_use]
     pub fn heartbeat_count(&self) -> usize {
         self.calls
             .lock()

@@ -107,7 +107,7 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         cloud_reporter: None,
         cloud_config: &cloud_config,
     };
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     handler
         .cleanup_planning_xml(&mut ctx, 0)
@@ -211,7 +211,7 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         cloud_reporter: None,
         cloud_config: &cloud_config,
     };
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     handler
         .cleanup_development_xml(&mut ctx, 0)
@@ -310,7 +310,7 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         cloud_reporter: None,
         cloud_config: &cloud_config,
     };
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     handler
         .cleanup_review_issues_xml(&mut ctx, 0)
@@ -414,7 +414,7 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         cloud_reporter: None,
         cloud_config: &cloud_config,
     };
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     handler
         .cleanup_fix_result_xml(&mut ctx, 0)
@@ -525,7 +525,7 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
         cloud_reporter: None,
         cloud_config: &cloud_config,
     };
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     handler
         .cleanup_commit_xml(&mut ctx)

@@ -26,8 +26,8 @@
 //! # Module Structure
 //!
 //! - [`config_init`]: Configuration loading and agent registry initialization
-//! - [`effect`]: AppEffect definitions for pre-repo-root operations
-//! - [`effect_handler`]: Production handler for AppEffect execution
+//! - [`effect`]: `AppEffect` definitions for pre-repo-root operations
+//! - [`effect_handler`]: Production handler for `AppEffect` execution
 //! - [`plumbing`]: Low-level git operations (show/apply commit messages)
 //! - [`validation`]: Agent validation and chain validation
 //! - [`resume`]: Checkpoint resume functionality

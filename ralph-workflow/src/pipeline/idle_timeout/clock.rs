@@ -32,6 +32,7 @@ pub struct MonotonicClock {
 
 impl MonotonicClock {
     /// Create a new monotonic clock with the current instant as epoch.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             epoch: Instant::now(),
@@ -47,7 +48,7 @@ impl Default for MonotonicClock {
 
 impl Clock for MonotonicClock {
     fn now_millis(&self) -> u64 {
-        self.epoch.elapsed().as_millis() as u64
+        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 }
 
@@ -86,6 +87,7 @@ pub type SharedFileActivityTracker = Arc<Mutex<FileActivityTracker>>;
 ///
 /// Uses monotonic time (via `Instant`) to prevent issues with clock jumps
 /// from NTP synchronization or system sleep/wake cycles.
+#[must_use]
 pub fn new_activity_timestamp() -> SharedActivityTimestamp {
     Arc::new(AtomicU64::new(global_clock().now_millis()))
 }
@@ -101,6 +103,7 @@ pub fn new_activity_timestamp_with_clock(clock: &dyn Clock) -> SharedActivityTim
 ///
 /// The tracker monitors AI-generated files in the `.agent/` directory to detect
 /// ongoing work that may not produce stdout/stderr output.
+#[must_use]
 pub fn new_file_activity_tracker() -> SharedFileActivityTracker {
     Arc::new(Mutex::new(FileActivityTracker::new()))
 }

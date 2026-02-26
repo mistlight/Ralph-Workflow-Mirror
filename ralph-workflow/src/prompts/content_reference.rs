@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 /// Content larger than this should be referenced by file path.
 ///
 /// Set to 100KB which is well below:
-/// - macOS ARG_MAX limit (~1MB)
+/// - macOS `ARG_MAX` limit (~1MB)
 /// - Linux per-argument limit (~128KB)
 ///
 /// This conservative limit ensures safety across platforms.
@@ -46,6 +46,7 @@ impl PromptContentReference {
     /// * `content` - The content to reference
     /// * `backup_path` - Path where the content can be read if too large
     /// * `description` - Description of the content for agent instructions
+    #[must_use]
     pub fn from_content(content: String, backup_path: &Path, description: &str) -> Self {
         if content.len() <= MAX_INLINE_CONTENT_SIZE {
             Self::Inline(content)
@@ -58,11 +59,13 @@ impl PromptContentReference {
     }
 
     /// Create an inline reference (for small content).
-    pub fn inline(content: String) -> Self {
+    #[must_use]
+    pub const fn inline(content: String) -> Self {
         Self::Inline(content)
     }
 
     /// Create a file path reference (for large content).
+    #[must_use]
     pub fn file_path(path: PathBuf, description: &str) -> Self {
         Self::FilePath {
             path,
@@ -71,7 +74,8 @@ impl PromptContentReference {
     }
 
     /// Returns true if this is an inline reference.
-    pub fn is_inline(&self) -> bool {
+    #[must_use]
+    pub const fn is_inline(&self) -> bool {
         matches!(self, Self::Inline(_))
     }
 
@@ -79,6 +83,7 @@ impl PromptContentReference {
     ///
     /// For inline: returns the content directly.
     /// For file path: returns instructions to read from the file.
+    #[must_use]
     pub fn render_for_template(&self) -> String {
         match self {
             Self::Inline(content) => content.clone(),
@@ -125,6 +130,7 @@ impl DiffContentReference {
     ///
     /// * `diff_content` - The diff content
     /// * `start_commit` - The commit hash to diff from
+    #[must_use]
     pub fn from_diff(diff_content: String, start_commit: &str, diff_path: &Path) -> Self {
         if diff_content.len() <= MAX_INLINE_CONTENT_SIZE {
             Self::Inline(diff_content)
@@ -146,6 +152,7 @@ impl DiffContentReference {
     /// For inline: returns the diff content directly.
     /// For file reference: returns instructions to read from the provided path,
     /// plus optional git fallback commands.
+    #[must_use]
     pub fn render_for_template(&self) -> String {
         match self {
             Self::Inline(content) => content.clone(),
@@ -186,7 +193,8 @@ impl DiffContentReference {
     }
 
     /// Returns true if this is an inline reference.
-    pub fn is_inline(&self) -> bool {
+    #[must_use]
+    pub const fn is_inline(&self) -> bool {
         matches!(self, Self::Inline(_))
     }
 }
@@ -221,6 +229,7 @@ impl PlanContentReference {
     /// * `plan_content` - The plan content
     /// * `plan_path` - Path to the primary plan file
     /// * `xml_fallback_path` - Optional path to XML fallback
+    #[must_use]
     pub fn from_plan(
         plan_content: String,
         plan_path: &Path,
@@ -231,7 +240,7 @@ impl PlanContentReference {
         } else {
             Self::ReadFromFile {
                 primary_path: plan_path.to_path_buf(),
-                fallback_path: xml_fallback_path.map(|p| p.to_path_buf()),
+                fallback_path: xml_fallback_path.map(std::path::Path::to_path_buf),
                 description: format!(
                     "Plan is {} bytes (exceeds {} limit)",
                     plan_content.len(),
@@ -245,6 +254,7 @@ impl PlanContentReference {
     ///
     /// For inline: returns the plan content directly.
     /// For file path: returns instructions to read from the file.
+    #[must_use]
     pub fn render_for_template(&self) -> String {
         match self {
             Self::Inline(content) => content.clone(),
@@ -274,7 +284,8 @@ impl PlanContentReference {
     }
 
     /// Returns true if this is an inline reference.
-    pub fn is_inline(&self) -> bool {
+    #[must_use]
+    pub const fn is_inline(&self) -> bool {
         matches!(self, Self::Inline(_))
     }
 }

@@ -113,7 +113,7 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
 
     let mut fixture = Fixture::new(cloud_config);
     let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
     let _ = handler
         .handle_push_to_remote(
@@ -171,7 +171,7 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
 
     let mut fixture = Fixture::new(cloud_config);
     let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
     let _ = handler
         .handle_push_to_remote(
@@ -215,7 +215,7 @@ fn test_push_to_remote_emits_ui_event_on_success() {
 
     let mut fixture = Fixture::new(cloud_config);
     let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
     let result = handler
         .handle_push_to_remote(
@@ -267,7 +267,7 @@ fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
     ));
     let mut fixture = Fixture::new_with_executor(cloud_config, executor);
     let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
     let result = handler
         .handle_push_to_remote(

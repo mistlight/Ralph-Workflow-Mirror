@@ -1,12 +1,12 @@
 //! Continuation and retry logic reducer
 //!
 //! Handles events related to:
-//! - Continuation flow (ContinuationTriggered, ContinuationSucceeded, ContinuationBudgetExhausted)
-//! - XSD retry logic (OutputValidationFailed, XmlMissing)
-//! - Context management (ContinuationContextWritten, ContinuationContextCleaned)
+//! - Continuation flow (`ContinuationTriggered`, `ContinuationSucceeded`, `ContinuationBudgetExhausted`)
+//! - XSD retry logic (`OutputValidationFailed`, `XmlMissing`)
+//! - Context management (`ContinuationContextWritten`, `ContinuationContextCleaned`)
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::DevelopmentEvent;
+use crate::reducer::state::{ContinuationState, DevelopmentStatus, PipelineState};
 
 pub(super) fn reduce_continuation_event(
     state: PipelineState,

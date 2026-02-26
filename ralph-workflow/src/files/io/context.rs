@@ -22,6 +22,10 @@ pub const VAGUE_ISSUES_LINE: &str = "No issues recorded.";
 ///
 /// * `workspace` - The workspace for file operations
 /// * `logger` - Logger for output
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn delete_issues_file_for_isolation_with_workspace(
     workspace: &dyn Workspace,
     logger: &Logger,
@@ -71,6 +75,10 @@ fn overwrite_one_liner_with_workspace(
 /// * `workspace` - The workspace for file operations
 /// * `logger` - Logger for output
 /// * `isolation_mode` - If true, skip cleanup since files don't exist
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn clean_context_for_reviewer_with_workspace(
     workspace: &dyn Workspace,
     logger: &Logger,
@@ -120,6 +128,10 @@ pub fn clean_context_for_reviewer_with_workspace(
 /// * `workspace` - The workspace for file operations
 /// * `_status` - Status string (unused, always writes vague status)
 /// * `isolation_mode` - If true, do nothing since STATUS.md should not exist
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn update_status_with_workspace(
     workspace: &dyn Workspace,
     _status: &str,

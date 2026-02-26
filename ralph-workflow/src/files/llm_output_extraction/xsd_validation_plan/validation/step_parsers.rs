@@ -20,7 +20,7 @@ fn parse_steps(reader: &mut Reader<&[u8]>) -> Result<Vec<Step>, XsdValidationErr
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-implementation-steps".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -125,9 +125,9 @@ fn parse_single_step(
             Err(e) => {
                 return Err(XsdValidationError {
                     error_type: XsdErrorType::MalformedXml,
-                    element_path: format!("step[{}]", number),
+                    element_path: format!("step[{number}]"),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -138,7 +138,7 @@ fn parse_single_step(
 
     let title = title.ok_or_else(|| XsdValidationError {
         error_type: XsdErrorType::MissingRequiredElement,
-        element_path: format!("step[{}]/title", number),
+        element_path: format!("step[{number}]/title"),
         expected: "<title> element".to_string(),
         found: "no <title> found".to_string(),
         suggestion: "Add <title>Step title</title>".to_string(),
@@ -149,7 +149,7 @@ fn parse_single_step(
     if step_type == StepType::FileChange && target_files.is_empty() {
         return Err(XsdValidationError {
             error_type: XsdErrorType::MissingRequiredElement,
-            element_path: format!("step[{}]/target-files", number),
+            element_path: format!("step[{number}]/target-files"),
             expected: "<target-files> with at least one <file> for file-change steps".to_string(),
             found: "no target-files".to_string(),
             suggestion: "Add <target-files><file path=\"...\" action=\"modify\"/></target-files>"
@@ -160,7 +160,7 @@ fn parse_single_step(
 
     let content = content.ok_or_else(|| XsdValidationError {
         error_type: XsdErrorType::MissingRequiredElement,
-        element_path: format!("step[{}]/content", number),
+        element_path: format!("step[{number}]/content"),
         expected: "<content> element".to_string(),
         found: "no <content> found".to_string(),
         suggestion: "Add <content><paragraph>...</paragraph></content>".to_string(),
@@ -180,7 +180,7 @@ fn parse_single_step(
     })
 }
 
-/// Helper to parse a single <file> element's attributes into a TargetFile
+/// Helper to parse a single <file> element's attributes into a `TargetFile`
 fn parse_file_element(attrs: &HashMap<String, String>) -> Result<TargetFile, XsdValidationError> {
     let path = attrs
         .get("path")
@@ -278,7 +278,7 @@ fn parse_critical_files(reader: &mut Reader<&[u8]>) -> Result<CriticalFiles, Xsd
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-critical-files".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -311,7 +311,7 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"file" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == b"file" => {
                 let attrs = get_attributes(&e);
                 let path = attrs
                     .get("path")
@@ -377,7 +377,7 @@ fn parse_reference_files(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"file" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == b"file" => {
                 let attrs = get_attributes(&e);
                 let path = attrs
                     .get("path")

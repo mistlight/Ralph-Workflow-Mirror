@@ -73,6 +73,7 @@ impl RollingHashWindow {
     /// ```ignore
     /// let hash = RollingHashWindow::compute_hash("Hello");
     /// ```
+    #[must_use] 
     pub fn compute_hash(text: &str) -> u64 {
         let mut hash: u64 = 0;
         for byte in text.bytes() {

@@ -89,7 +89,7 @@ impl RetryTimerProvider for TestRetryTimer {
     fn sleep(&self, duration: Duration) {
         if let Some(tracked) = &self.tracked {
             tracked.fetch_add(
-                duration.as_millis() as u64,
+                u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
                 std::sync::atomic::Ordering::Relaxed,
             );
         }

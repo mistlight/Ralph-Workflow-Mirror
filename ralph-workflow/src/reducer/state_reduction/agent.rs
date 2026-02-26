@@ -1,7 +1,7 @@
 // NOTE: split from reducer/state_reduction.rs.
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::{AgentErrorKind, AgentEvent, PipelinePhase};
+use crate::reducer::state::{ContinuationState, PipelineState, SameAgentRetryReason};
 
 pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState {
     match event {

@@ -2,15 +2,15 @@
 impl ValidationError {
     /// Get a structured recovery guide with "What's wrong" and "How to fix" sections.
     ///
-    /// Returns a tuple of (problem_description, recovery_commands) where:
-    /// - problem_description explains what the issue is
-    /// - recovery_commands is a vector of suggested commands to fix it
+    /// Returns a tuple of (`problem_description`, `recovery_commands`) where:
+    /// - `problem_description` explains what the issue is
+    /// - `recovery_commands` is a vector of suggested commands to fix it
+    #[must_use] 
     pub fn recovery_commands(&self) -> (String, Vec<String>) {
         match self {
             Self::FileMissing { path } => {
                 let problem = format!(
-                    "The file '{}' is missing but was present when the checkpoint was created.",
-                    path
+                    "The file '{path}' is missing but was present when the checkpoint was created."
                 );
                 let commands = if path.contains("PROMPT.md") {
                     vec![
@@ -56,8 +56,7 @@ impl ValidationError {
             }
             Self::FileUnexpectedlyExists { path } => {
                 let problem = format!(
-                    "The file '{}' exists but was not present when the checkpoint was created.",
-                    path
+                    "The file '{path}' exists but was not present when the checkpoint was created."
                 );
                 let commands = vec![
                     format!("# Review the unexpected file"),
@@ -74,8 +73,7 @@ impl ValidationError {
             }
             Self::FileContentChanged { path } => {
                 let problem = format!(
-                    "The file '{}' content has changed since the checkpoint was created.",
-                    path
+                    "The file '{path}' content has changed since the checkpoint was created."
                 );
                 let commands = if path.contains("PROMPT.md") || path.contains(".agent/PLAN.md") {
                     vec![
@@ -104,8 +102,7 @@ impl ValidationError {
             }
             Self::GitHeadChanged { expected, actual } => {
                 let problem = format!(
-                    "Git HEAD has changed from {} to {}. New commits may have been made or HEAD was reset.",
-                    expected, actual
+                    "Git HEAD has changed from {expected} to {actual}. New commits may have been made or HEAD was reset."
                 );
                 let commands = vec![
                     format!("# View the commits that were made after checkpoint"),
@@ -122,7 +119,7 @@ impl ValidationError {
                 (problem, commands)
             }
             Self::GitStateInvalid { reason } => {
-                let problem = format!("Git state is invalid: {}", reason);
+                let problem = format!("Git state is invalid: {reason}");
                 let commands = if reason.contains("detached") {
                     vec![
                         format!("# View current branch situation"),
@@ -160,7 +157,7 @@ impl ValidationError {
                 (problem, commands)
             }
             Self::GitWorkingTreeChanged { changes } => {
-                let problem = format!("Git working tree has uncommitted changes: {}", changes);
+                let problem = format!("Git working tree has uncommitted changes: {changes}");
                 let commands = vec![
                     format!("# View what changed"),
                     format!("git status"),

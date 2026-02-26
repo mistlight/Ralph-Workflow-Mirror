@@ -202,6 +202,7 @@ pub struct RunMetrics {
 
 impl RunMetrics {
     /// Create metrics with config-derived display fields.
+    #[must_use] 
     pub fn new(
         max_dev_iterations: u32,
         max_review_passes: u32,
@@ -225,148 +226,175 @@ impl RunMetrics {
     // This eliminates the need to clone all 40+ fields when updating a single metric.
 
     // Development metrics
-    pub fn increment_dev_iterations_started(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_dev_iterations_started(mut self) -> Self {
         self.dev_iterations_started += 1;
         self
     }
 
-    pub fn increment_dev_iterations_completed(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_dev_iterations_completed(mut self) -> Self {
         self.dev_iterations_completed += 1;
         self
     }
 
-    pub fn increment_dev_attempts_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_dev_attempts_total(mut self) -> Self {
         self.dev_attempts_total += 1;
         self
     }
 
-    pub fn increment_dev_continuation_attempt(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_dev_continuation_attempt(mut self) -> Self {
         self.dev_continuation_attempt += 1;
         self
     }
 
-    pub fn reset_dev_continuation_attempt(mut self) -> Self {
+    #[must_use] 
+    pub const fn reset_dev_continuation_attempt(mut self) -> Self {
         self.dev_continuation_attempt = 0;
         self
     }
 
     // Analysis metrics
-    pub fn increment_analysis_attempts_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_analysis_attempts_total(mut self) -> Self {
         self.analysis_attempts_total += 1;
         self
     }
 
-    pub fn increment_analysis_attempts_in_current_iteration(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_analysis_attempts_in_current_iteration(mut self) -> Self {
         self.analysis_attempts_in_current_iteration += 1;
         self
     }
 
-    pub fn reset_analysis_attempts_in_current_iteration(mut self) -> Self {
+    #[must_use] 
+    pub const fn reset_analysis_attempts_in_current_iteration(mut self) -> Self {
         self.analysis_attempts_in_current_iteration = 0;
         self
     }
 
     // Review metrics
-    pub fn increment_review_passes_started(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_review_passes_started(mut self) -> Self {
         self.review_passes_started += 1;
         self
     }
 
-    pub fn increment_review_passes_completed(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_review_passes_completed(mut self) -> Self {
         self.review_passes_completed += 1;
         self
     }
 
-    pub fn increment_review_runs_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_review_runs_total(mut self) -> Self {
         self.review_runs_total += 1;
         self
     }
 
-    pub fn increment_fix_runs_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_fix_runs_total(mut self) -> Self {
         self.fix_runs_total += 1;
         self
     }
 
-    pub fn increment_fix_continuations_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_fix_continuations_total(mut self) -> Self {
         self.fix_continuations_total += 1;
         self
     }
 
-    pub fn increment_fix_continuation_attempt(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_fix_continuation_attempt(mut self) -> Self {
         self.fix_continuation_attempt += 1;
         self
     }
 
-    pub fn reset_fix_continuation_attempt(mut self) -> Self {
+    #[must_use] 
+    pub const fn reset_fix_continuation_attempt(mut self) -> Self {
         self.fix_continuation_attempt = 0;
         self
     }
 
-    pub fn set_current_review_pass(mut self, pass: u32) -> Self {
+    #[must_use] 
+    pub const fn set_current_review_pass(mut self, pass: u32) -> Self {
         self.current_review_pass = pass;
         self
     }
 
     // XSD retry metrics
-    pub fn increment_xsd_retry_attempts_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_xsd_retry_attempts_total(mut self) -> Self {
         self.xsd_retry_attempts_total += 1;
         self
     }
 
-    pub fn increment_xsd_retry_planning(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_xsd_retry_planning(mut self) -> Self {
         self.xsd_retry_planning += 1;
         self.xsd_retry_attempts_total += 1;
         self
     }
 
-    pub fn increment_xsd_retry_development(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_xsd_retry_development(mut self) -> Self {
         self.xsd_retry_development += 1;
         self.xsd_retry_attempts_total += 1;
         self
     }
 
-    pub fn increment_xsd_retry_review(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_xsd_retry_review(mut self) -> Self {
         self.xsd_retry_review += 1;
         self.xsd_retry_attempts_total += 1;
         self
     }
 
-    pub fn increment_xsd_retry_fix(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_xsd_retry_fix(mut self) -> Self {
         self.xsd_retry_fix += 1;
         self.xsd_retry_attempts_total += 1;
         self
     }
 
-    pub fn increment_xsd_retry_commit(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_xsd_retry_commit(mut self) -> Self {
         self.xsd_retry_commit += 1;
         self.xsd_retry_attempts_total += 1;
         self
     }
 
     // Same-agent retry metrics
-    pub fn increment_same_agent_retry_attempts_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_same_agent_retry_attempts_total(mut self) -> Self {
         self.same_agent_retry_attempts_total += 1;
         self
     }
 
     // Agent/model fallback metrics
-    pub fn increment_agent_fallbacks_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_agent_fallbacks_total(mut self) -> Self {
         self.agent_fallbacks_total += 1;
         self
     }
 
-    pub fn increment_model_fallbacks_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_model_fallbacks_total(mut self) -> Self {
         self.model_fallbacks_total += 1;
         self
     }
 
-    pub fn increment_retry_cycles_started_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_retry_cycles_started_total(mut self) -> Self {
         self.retry_cycles_started_total += 1;
         self
     }
 
     // Commit metrics
-    pub fn increment_commits_created_total(mut self) -> Self {
+    #[must_use] 
+    pub const fn increment_commits_created_total(mut self) -> Self {
         self.commits_created_total += 1;
         self
     }

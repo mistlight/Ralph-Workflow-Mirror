@@ -81,8 +81,7 @@ where
             Err(e) => {
                 // If reading existing log fails, log a warning and start fresh
                 ctx.logger.warn(&format!(
-                    "Failed to read existing event loop log, starting fresh: {}",
-                    e
+                    "Failed to read existing event loop log, starting fresh: {e}"
                 ));
                 EventLoopLogger::new()
             }
@@ -125,10 +124,10 @@ where
                 phase: state.phase,
                 error: ErrorEvent::UserInterruptRequested,
             });
-            let event_str = format!("{:?}", interrupt_event);
+            let event_str = format!("{interrupt_event:?}");
             let start_time = Instant::now();
             let new_state = reduce(state.clone(), interrupt_event);
-            let duration_ms = start_time.elapsed().as_millis() as u64;
+            let duration_ms = u64::try_from(start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
 
             log_effect_execution(
                 ctx,
@@ -211,8 +210,8 @@ where
                 .info(&crate::rendering::render_ui_event(ui_event));
         }
 
-        let event_str = format!("{:?}", event);
-        let duration_ms = start_time.elapsed().as_millis() as u64;
+        let event_str = format!("{event:?}");
+        let duration_ms = u64::try_from(start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
 
         // Apply pipeline event to state (reducer remains pure)
         let new_state = reduce(state, event.clone());
@@ -240,7 +239,7 @@ where
 
         // Apply additional pipeline events in order.
         for additional_event in additional_events {
-            let event_str = format!("{:?}", additional_event);
+            let event_str = format!("{additional_event:?}");
             let additional_state = reduce(state, additional_event);
             trace.push(build_trace_entry(
                 events_processed,
@@ -275,10 +274,10 @@ where
                     if let Err(e) = reporter.report_progress(&update) {
                         let error = safe_cloud_error_string(&e);
                         if !ctx.cloud_config.graceful_degradation {
-                            return Err(anyhow::anyhow!("Cloud progress report failed: {}", error));
+                            return Err(anyhow::anyhow!("Cloud progress report failed: {error}"));
                         }
                         ctx.logger
-                            .warn(&format!("Cloud progress report failed: {}", error));
+                            .warn(&format!("Cloud progress report failed: {error}"));
                     }
                 }
             }
@@ -427,7 +426,7 @@ where
 /// This is a best-effort operation - failures are logged but do not affect
 /// pipeline execution since event loop logging is for observability only.
 pub(super) fn log_effect_execution(
-    ctx: &mut PhaseContext<'_>,
+    ctx: &PhaseContext<'_>,
     event_loop_logger: &mut EventLoopLogger,
     state: &PipelineState,
     effect_str: &str,
@@ -435,10 +434,7 @@ pub(super) fn log_effect_execution(
     additional_events: &[PipelineEvent],
     duration_ms: u64,
 ) {
-    let extra_events: Vec<String> = additional_events
-        .iter()
-        .map(|e| format!("{:?}", e))
-        .collect();
+    let extra_events: Vec<String> = additional_events.iter().map(|e| format!("{e:?}")).collect();
 
     let context_pairs: Vec<(&str, String)> = vec![
         ("iteration", state.iteration.to_string()),
@@ -460,7 +456,7 @@ pub(super) fn log_effect_execution(
         context: &context_refs,
     }) {
         ctx.logger
-            .warn(&format!("Failed to write to event loop log: {}", e));
+            .warn(&format!("Failed to write to event loop log: {e}"));
     }
 }
 
@@ -475,9 +471,7 @@ fn ui_event_to_progress_update(
     use crate::cloud::types::{ProgressEventType, ProgressUpdate};
     use crate::reducer::ui_event::UIEvent;
 
-    let _run_id = cloud_config.run_id.clone()?;
-
-    fn nonzero(v: u32) -> Option<u32> {
+    const fn nonzero(v: u32) -> Option<u32> {
         if v == 0 {
             None
         } else {
@@ -489,17 +483,19 @@ fn ui_event_to_progress_update(
         nonzero(total).map(|t| (current_zero_based.saturating_add(1)).min(t))
     }
 
+    let _run_id = cloud_config.run_id.clone()?;
+
     let mut iteration = one_based(state.iteration, state.total_iterations);
     let mut total_iterations = nonzero(state.total_iterations);
     let mut review_pass = one_based(state.reviewer_pass, state.total_reviewer_passes);
     let mut total_review_passes = nonzero(state.total_reviewer_passes);
-    let mut previous_phase = state.previous_phase.as_ref().map(|p| format!("{:?}", p));
+    let mut previous_phase = state.previous_phase.as_ref().map(|p| format!("{p:?}"));
 
     let (message, event_type) = match ui_event {
         UIEvent::PhaseTransition { from, to } => {
-            let from_str = from.as_ref().map(|p| format!("{:?}", p));
-            let to_str = format!("{:?}", to);
-            previous_phase = from_str.clone();
+            let from_str = from.as_ref().map(|p| format!("{p:?}"));
+            let to_str = format!("{to:?}");
+            previous_phase.clone_from(&from_str);
             let message = format!(
                 "Phase transition: {} -> {}",
                 from_str.as_deref().unwrap_or("None"),
@@ -514,7 +510,7 @@ fn ui_event_to_progress_update(
             )
         }
         UIEvent::IterationProgress { current, total } => {
-            let message = format!("Development iteration {}/{}", current, total);
+            let message = format!("Development iteration {current}/{total}");
             iteration = Some(*current);
             total_iterations = Some(*total);
             (
@@ -526,7 +522,7 @@ fn ui_event_to_progress_update(
             )
         }
         UIEvent::ReviewProgress { pass, total } => {
-            let message = format!("Review pass {}/{}", pass, total);
+            let message = format!("Review pass {pass}/{total}");
             review_pass = Some(*pass);
             total_review_passes = Some(*total);
             (

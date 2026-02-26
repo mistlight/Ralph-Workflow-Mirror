@@ -92,7 +92,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
         &cloud_config,
     );
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
         .ensure_gitignore_entries(&mut ctx)
         .expect("handler should succeed");
@@ -157,7 +157,7 @@ fn test_ensure_gitignore_appends_when_file_exists() {
         &cloud_config,
     );
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
         .ensure_gitignore_entries(&mut ctx)
         .expect("handler should succeed");
@@ -221,7 +221,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
         &cloud_config,
     );
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
         .ensure_gitignore_entries(&mut ctx)
         .expect("handler should succeed");
@@ -281,7 +281,7 @@ fn test_ensure_gitignore_partial_entries() {
         &cloud_config,
     );
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
         .ensure_gitignore_entries(&mut ctx)
         .expect("handler should succeed");
@@ -441,7 +441,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
         &cloud_config,
     );
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
         .ensure_gitignore_entries(&mut ctx)
         .expect("handler should succeed even on write failure");
@@ -511,7 +511,7 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
         &cloud_config,
     );
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let result = handler
         .ensure_gitignore_entries(&mut ctx)
         .expect("handler should succeed even on write failure");

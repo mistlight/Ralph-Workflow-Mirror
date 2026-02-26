@@ -7,6 +7,8 @@
 //! 3. Deletes PLAN.md
 //! 4. Optionally runs fast checks
 
+use std::fmt::Write;
+
 use crate::files::llm_output_extraction::PlanElements;
 
 /// Format plan elements as markdown for PLAN.md.
@@ -22,12 +24,12 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
     result.push_str("### Scope\n\n");
     for item in &elements.summary.scope_items {
         if let Some(ref count) = item.count {
-            result.push_str(&format!("- **{}** {}", count, item.description));
+            write!(result, "- **{}** {}", count, item.description).unwrap();
         } else {
-            result.push_str(&format!("- {}", item.description));
+            write!(result, "- {}", item.description).unwrap();
         }
         if let Some(ref category) = item.category {
-            result.push_str(&format!(" ({})", category));
+            write!(result, " ({category})").unwrap();
         }
         result.push('\n');
     }
@@ -82,19 +84,19 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
                         "delete"
                     }
                 };
-                result.push_str(&format!("- `{}` ({})\n", tf.path, action_str));
+                writeln!(result, "- `{}` ({})", tf.path, action_str).unwrap();
             }
             result.push('\n');
         }
 
         // Location
         if let Some(ref location) = step.location {
-            result.push_str(&format!("**Location:** {}\n\n", location));
+            write!(result, "**Location:** {location}\n\n").unwrap();
         }
 
         // Rationale
         if let Some(ref rationale) = step.rationale {
-            result.push_str(&format!("**Rationale:** {}\n\n", rationale));
+            write!(result, "**Rationale:** {rationale}\n\n").unwrap();
         }
 
         // Content
@@ -107,7 +109,7 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
             let deps: Vec<String> = step
                 .depends_on
                 .iter()
-                .map(|d| format!("Step {}", d))
+                .map(|d| format!("Step {d}"))
                 .collect();
             result.push_str(&deps.join(", "));
             result.push_str("\n\n");
@@ -130,9 +132,9 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
             }
         };
         if let Some(ref est) = pf.estimated_changes {
-            result.push_str(&format!("- `{}` ({}) - {}\n", pf.path, action_str, est));
+            writeln!(result, "- `{}` ({}) - {}", pf.path, action_str, est).unwrap();
         } else {
-            result.push_str(&format!("- `{}` ({})\n", pf.path, action_str));
+            writeln!(result, "- `{}` ({})", pf.path, action_str).unwrap();
         }
     }
     result.push('\n');
@@ -140,7 +142,7 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
     if !elements.critical_files.reference_files.is_empty() {
         result.push_str("### Reference Files\n\n");
         for rf in &elements.critical_files.reference_files {
-            result.push_str(&format!("- `{}` - {}\n", rf.path, rf.purpose));
+            writeln!(result, "- `{}` - {}", rf.path, rf.purpose).unwrap();
         }
         result.push('\n');
     }
@@ -163,15 +165,15 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
                 }
             )
         });
-        result.push_str(&format!("**Risk{}:** {}\n", severity_str, rp.risk));
-        result.push_str(&format!("**Mitigation:** {}\n\n", rp.mitigation));
+        writeln!(result, "**Risk{}:** {}", severity_str, rp.risk).unwrap();
+        write!(result, "**Mitigation:** {}\n\n", rp.mitigation).unwrap();
     }
 
     // Verification strategy
     result.push_str("## Verification Strategy\n\n");
     for (i, v) in elements.verification_strategy.iter().enumerate() {
-        result.push_str(&format!("{}. **{}**\n", i + 1, v.method));
-        result.push_str(&format!("   Expected: {}\n\n", v.expected_outcome));
+        writeln!(result, "{}. **{}**", i + 1, v.method).unwrap();
+        write!(result, "   Expected: {}\n\n", v.expected_outcome).unwrap();
     }
 
     result
@@ -193,7 +195,7 @@ fn format_rich_content(
             }
             ContentElement::CodeBlock(cb) => {
                 let lang = cb.language.as_deref().unwrap_or("");
-                result.push_str(&format!("```{}\n", lang));
+                writeln!(result, "```{lang}").unwrap();
                 result.push_str(&cb.content);
                 if !cb.content.ends_with('\n') {
                     result.push('\n');
@@ -202,7 +204,7 @@ fn format_rich_content(
             }
             ContentElement::Table(t) => {
                 if let Some(ref caption) = t.caption {
-                    result.push_str(&format!("**{}**\n\n", caption));
+                    write!(result, "**{caption}**\n\n").unwrap();
                 }
                 // Header row
                 if !t.columns.is_empty() {
@@ -241,7 +243,7 @@ fn format_rich_content(
             }
             ContentElement::Heading(h) => {
                 let prefix = "#".repeat(h.level as usize);
-                result.push_str(&format!("{} {}\n\n", prefix, h.text));
+                write!(result, "{} {}\n\n", prefix, h.text).unwrap();
             }
         }
     }
@@ -259,12 +261,11 @@ fn format_inline_content(
         .iter()
         .map(|e| match e {
             InlineElement::Text(s) => s.clone(),
-            InlineElement::Emphasis(s) => format!("**{}**", s),
-            InlineElement::Code(s) => format!("`{}`", s),
-            InlineElement::Link { href, text } => format!("[{}]({})", text, href),
+            InlineElement::Emphasis(s) => format!("**{s}**"),
+            InlineElement::Code(s) => format!("`{s}`"),
+            InlineElement::Link { href, text } => format!("[{text}]({href})"),
         })
-        .collect::<Vec<_>>()
-        .join("")
+        .collect::<String>()
 }
 
 /// Format a list element with proper indentation.

@@ -3,6 +3,8 @@
 //! Generates rich context notes for resumed sessions to help agents understand
 //! where they are in the pipeline when resuming from a checkpoint.
 
+use std::fmt::Write;
+
 use crate::checkpoint::execution_history::StepOutcome;
 use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::state::PipelinePhase;
@@ -17,6 +19,7 @@ use crate::checkpoint::state::PipelinePhase;
 /// - Recent execution history (files modified, issues found/fixed)
 /// - Git commits made during the session
 /// - Guidance on what to focus on
+#[must_use]
 pub fn generate_resume_note(context: &ResumeContext) -> String {
     let mut note = String::from("SESSION RESUME CONTEXT\n");
     note.push_str("====================\n\n");
@@ -38,7 +41,7 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
             ));
         }
         _ => {
-            note.push_str(&format!("Resuming from phase: {}\n", context.phase_name()));
+            writeln!(note, "Resuming from phase: {}", context.phase_name()).unwrap();
         }
     }
 
@@ -55,7 +58,7 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
         context.rebase_state,
         crate::checkpoint::state::RebaseState::NotStarted
     ) {
-        note.push_str(&format!("Rebase state: {:?}\n", context.rebase_state));
+        writeln!(note, "Rebase state: {:?}", context.rebase_state).unwrap();
     }
 
     note.push('\n');
@@ -93,15 +96,15 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                     let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
                     let total_files = added_count + modified_count + deleted_count;
                     if total_files > 0 {
-                        note.push_str(&format!("  Files: {} changed", total_files));
+                        write!(note, "  Files: {total_files} changed").unwrap();
                         if added_count > 0 {
-                            note.push_str(&format!(" ({} added)", added_count));
+                            write!(note, " ({added_count} added)").unwrap();
                         }
                         if modified_count > 0 {
-                            note.push_str(&format!(" ({} modified)", modified_count));
+                            write!(note, " ({modified_count} modified)").unwrap();
                         }
                         if deleted_count > 0 {
-                            note.push_str(&format!(" ({} deleted)", deleted_count));
+                            write!(note, " ({deleted_count} deleted)").unwrap();
                         }
                         note.push('\n');
                     }
@@ -115,7 +118,7 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                             issues.found, issues.fixed
                         ));
                         if let Some(ref desc) = issues.description {
-                            note.push_str(&format!(" ({})", desc));
+                            write!(note, " ({desc})").unwrap();
                         }
                         note.push('\n');
                     }
@@ -123,7 +126,7 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
 
                 // Add git commit if available
                 if let Some(ref oid) = step.git_commit_oid {
-                    note.push_str(&format!("  Commit: {}\n", oid));
+                    writeln!(note, "  Commit: {oid}").unwrap();
                 }
             }
 
@@ -178,19 +181,19 @@ impl BriefDescription for StepOutcome {
                     if !out.is_empty() {
                         format!("Success - {}", out.lines().next().unwrap_or(""))
                     } else if let Some(ref files) = files_modified {
-                        if !files.is_empty() {
-                            format!("Success - {} files modified", files.len())
-                        } else {
+                        if files.is_empty() {
                             "Success".to_string()
+                        } else {
+                            format!("Success - {} files modified", files.len())
                         }
                     } else {
                         "Success".to_string()
                     }
                 } else if let Some(ref files) = files_modified {
-                    if !files.is_empty() {
-                        format!("Success - {} files modified", files.len())
-                    } else {
+                    if files.is_empty() {
                         "Success".to_string()
+                    } else {
+                        format!("Success - {} files modified", files.len())
                     }
                 } else {
                     "Success".to_string()
@@ -212,10 +215,10 @@ impl BriefDescription for StepOutcome {
             } => {
                 let completed = one_line_truncated(completed, PARTIAL_FIELD_MAX_CHARS);
                 let remaining = one_line_truncated(remaining, PARTIAL_FIELD_MAX_CHARS);
-                format!("Partial - {} done, {}", completed, remaining)
+                format!("Partial - {completed} done, {remaining}")
             }
             Self::Skipped { reason } => {
-                format!("Skipped - {}", reason)
+                format!("Skipped - {reason}")
             }
         }
     }

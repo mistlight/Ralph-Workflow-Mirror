@@ -47,7 +47,7 @@ pub struct StderrActivityTracker<R: Read> {
 }
 
 impl<R: Read> StderrActivityTracker<R> {
-    pub fn new(inner: R, activity_timestamp: SharedActivityTimestamp) -> Self {
+    pub const fn new(inner: R, activity_timestamp: SharedActivityTimestamp) -> Self {
         Self {
             inner,
             activity_timestamp,

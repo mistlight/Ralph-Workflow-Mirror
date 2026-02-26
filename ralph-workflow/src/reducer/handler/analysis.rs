@@ -14,14 +14,14 @@ impl MainEffectHandler {
     /// Invoke analysis agent to verify development results.
     ///
     /// TIMING: This handler runs after EVERY development iteration where
-    /// InvokeDevelopmentAgent completed, regardless of iteration count.
+    /// `InvokeDevelopmentAgent` completed, regardless of iteration count.
     ///
     /// This handler:
     /// 1. Reads PLAN.md content
     /// 2. Generates git diff since pipeline start
     /// 3. Builds analysis prompt with both inputs
-    /// 4. Invokes agent to produce development_result.xml
-    /// 5. Emits AnalysisAgentInvoked event
+    /// 4. Invokes agent to produce `development_result.xml`
+    /// 5. Emits `AnalysisAgentInvoked` event
     ///
     /// The analysis agent has NO context from development execution,
     /// ensuring an objective assessment based purely on observable changes.

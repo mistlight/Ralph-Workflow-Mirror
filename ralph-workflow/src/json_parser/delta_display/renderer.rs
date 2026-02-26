@@ -216,6 +216,7 @@ pub trait DeltaRenderer {
     ///
     /// # Returns
     /// A string with appropriate completion sequence for the terminal mode.
+    #[must_use] 
     fn render_completion(terminal_mode: TerminalMode) -> String {
         match terminal_mode {
             TerminalMode::Full => "\n".to_string(), // Single newline at end for append-only pattern
@@ -333,6 +334,7 @@ pub trait DeltaRenderer {
 /// When a discontinuity is detected, this function returns an empty string. Callers should
 /// detect this condition (when both `last_rendered` and `current` are non-empty but the
 /// result is empty) and emit appropriate warnings or metrics to track provider behavior.
+#[must_use] 
 pub fn compute_append_only_suffix<'a>(last_rendered: &str, current: &'a str) -> &'a str {
     if last_rendered.is_empty() {
         return current;

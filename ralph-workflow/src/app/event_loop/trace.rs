@@ -53,7 +53,7 @@ impl EventTraceBuffer {
         }
     }
 
-    pub(super) fn entries(&self) -> &VecDeque<EventTraceEntry> {
+    pub(super) const fn entries(&self) -> &VecDeque<EventTraceEntry> {
         &self.entries
     }
 }
@@ -95,7 +95,7 @@ pub(super) fn build_trace_entry(
 ///
 /// Returns `true` if the trace was successfully written, `false` otherwise.
 pub(super) fn dump_event_loop_trace(
-    ctx: &mut PhaseContext<'_>,
+    ctx: &PhaseContext<'_>,
     trace: &EventTraceBuffer,
     final_state: &PipelineState,
     reason: &str,

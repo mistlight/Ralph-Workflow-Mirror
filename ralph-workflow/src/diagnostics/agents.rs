@@ -23,6 +23,7 @@ pub struct AgentStatus {
 
 impl AgentDiagnostics {
     /// Test agent availability.
+    #[must_use]
     pub fn test(registry: &AgentRegistry) -> Self {
         let all_agents = registry.list();
         let mut agent_status = Vec::new();

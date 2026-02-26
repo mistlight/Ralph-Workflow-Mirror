@@ -44,6 +44,10 @@ pub const GENERATED_FILES: &[&str] = &[
 /// # Returns
 ///
 /// `Ok(true)` if the marker is found, `Ok(false)` if not found or file doesn't exist.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> {
     if !file_path.exists() {
         return Ok(false);
@@ -68,6 +72,10 @@ pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> 
 ///
 /// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
 /// are NOT created. This prevents context contamination from previous runs.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn ensure_files_with_workspace(
     workspace: &dyn Workspace,
     isolation_mode: bool,
@@ -132,6 +140,10 @@ pub fn ensure_files_with_workspace(
 /// * `marker` - String to search for
 ///
 /// Returns `Ok(true)` if the marker is found, `Ok(false)` if not found or file doesn't exist.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn file_contains_marker_with_workspace(
     workspace: &dyn Workspace,
     path: &Path,
@@ -154,6 +166,10 @@ pub fn file_contains_marker_with_workspace(
 /// Delete the PLAN.md file using the workspace.
 ///
 /// This is the workspace-based version of `delete_plan_file_at`.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn delete_plan_file_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let plan_path = Path::new(".agent/PLAN.md");
     if workspace.exists(plan_path) {
@@ -165,6 +181,10 @@ pub fn delete_plan_file_with_workspace(workspace: &dyn Workspace) -> io::Result<
 /// Delete the commit-message.txt file using the workspace.
 ///
 /// This is the workspace-based version of `delete_commit_message_file_at`.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn delete_commit_message_file_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let msg_path = Path::new(".agent/commit-message.txt");
     if workspace.exists(msg_path) {
@@ -216,6 +236,10 @@ pub fn read_commit_message_file_with_workspace(workspace: &dyn Workspace) -> io:
 /// at all, preventing partial writes on crash/interruption.
 ///
 /// This is the workspace-based version of `write_commit_message_file_at`.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn write_commit_message_file_with_workspace(
     workspace: &dyn Workspace,
     message: &str,
@@ -236,6 +260,10 @@ pub fn cleanup_generated_files_with_workspace(workspace: &dyn Workspace) {
 /// Write XSD schemas to .agent/tmp/ using the workspace.
 ///
 /// This is the workspace-based version of `setup_xsd_schemas_at`.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn setup_xsd_schemas_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let tmp_dir = Path::new(".agent/tmp");
     workspace.create_dir_all(tmp_dir)?;

@@ -5,23 +5,24 @@
 
 use crate::reducer::ui_event::UIEvent;
 
-/// Render a UIEvent to a displayable string.
+/// Render a `UIEvent` to a displayable string.
 ///
 /// This is the single entrypoint for all UI event rendering.
 /// The event loop calls this function and displays the result.
+#[must_use]
 pub fn render_ui_event(event: &UIEvent) -> String {
     match event {
         UIEvent::PhaseTransition { to, .. } => {
             format!("{} {}", UIEvent::phase_emoji(to), to)
         }
         UIEvent::IterationProgress { current, total } => {
-            format!("🔄 Development iteration {}/{}", current, total)
+            format!("🔄 Development iteration {current}/{total}")
         }
         UIEvent::ReviewProgress { pass, total } => {
-            format!("👁 Review pass {}/{}", pass, total)
+            format!("👁 Review pass {pass}/{total}")
         }
         UIEvent::AgentActivity { agent, message } => {
-            format!("🤖 [{}] {}", agent, message)
+            format!("🤖 [{agent}] {message}")
         }
         UIEvent::PushCompleted {
             remote,

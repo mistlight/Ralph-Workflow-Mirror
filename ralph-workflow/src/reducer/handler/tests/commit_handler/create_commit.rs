@@ -61,7 +61,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
 
     let err = handler
         .create_commit(&mut ctx, "test message".to_string())

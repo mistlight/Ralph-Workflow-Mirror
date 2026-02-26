@@ -14,7 +14,7 @@ use anyhow::Result;
 
 impl MainEffectHandler {
     pub(super) fn invoke_agent(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         role: AgentRole,
         agent: String,
@@ -27,7 +27,7 @@ impl MainEffectHandler {
         // During AwaitingDevFix, remediation must always run under the configured
         // developer agent (not whatever agent happened to fail).
         let effective_agent = if in_dev_fix {
-            agent.clone()
+            agent
         } else {
             self.state
                 .agent_chain
@@ -75,8 +75,7 @@ impl MainEffectHandler {
         };
 
         ctx.logger.info(&format!(
-            "Executing with agent: {}, model: {:?}",
-            effective_agent, model_name
+            "Executing with agent: {effective_agent}, model: {model_name:?}"
         ));
 
         // Get agent configuration from registry
@@ -189,8 +188,7 @@ impl MainEffectHandler {
             .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
             .map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to write agent log header - log would be incomplete without metadata: {}",
-                    e
+                    "Failed to write agent log header - log would be incomplete without metadata: {e}"
                 )
             })?;
 
@@ -247,7 +245,7 @@ impl MainEffectHandler {
             env_vars: &agent_config.env_vars,
             prompt: &effective_prompt,
             display_name: &effective_agent,
-            log_prefix: &format!("{}_{}", phase_name, phase_index), // For attribution only
+            log_prefix: &format!("{phase_name}_{phase_index}"), // For attribution only
             model_index,
             attempt,
             logfile: &logfile,
@@ -259,7 +257,7 @@ impl MainEffectHandler {
         // Emit UI event for agent activity
         let ui_event = UIEvent::AgentActivity {
             agent: effective_agent.clone(),
-            message: format!("Completed {} task", role),
+            message: format!("Completed {role} task"),
         };
 
         // Build result with started event first, then the execution result(s).

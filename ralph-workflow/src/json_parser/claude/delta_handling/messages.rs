@@ -102,7 +102,7 @@ impl crate::json_parser::claude::ClaudeParser {
 
         let output = if terminal_mode == TerminalMode::Full {
             // Append-only pattern in Full mode: track last rendered and emit only new content
-            let key = format!("text:{}", default_index);
+            let key = format!("text:{default_index}");
             let last_rendered = self
                 .last_rendered_content
                 .borrow()
@@ -227,16 +227,16 @@ impl crate::json_parser::claude::ClaudeParser {
                         let mut thinking_output = String::new();
                         {
                             let indices: Vec<u64> =
-                                if !self.thinking_non_tty_indices.borrow().is_empty() {
-                                    self.thinking_non_tty_indices
+                                if self.thinking_non_tty_indices.borrow().is_empty() {
+                                    // Backward-compatible fallback: if we never recorded indices (older
+                                    // behavior), flush the single active index.
+                                    self.thinking_active_index
                                         .borrow()
                                         .iter()
                                         .copied()
                                         .collect()
                                 } else {
-                                    // Backward-compatible fallback: if we never recorded indices (older
-                                    // behavior), flush the single active index.
-                                    self.thinking_active_index
+                                    self.thinking_non_tty_indices
                                         .borrow()
                                         .iter()
                                         .copied()

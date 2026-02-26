@@ -26,6 +26,10 @@
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow::Result<()> {
     let colors = Colors::new();
     let logger = Logger::new(colors);

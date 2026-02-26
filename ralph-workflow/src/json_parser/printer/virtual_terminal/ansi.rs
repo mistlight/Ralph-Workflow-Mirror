@@ -1,4 +1,4 @@
-//! ANSI escape sequence processing for VirtualTerminal.
+//! ANSI escape sequence processing for `VirtualTerminal`.
 //!
 //! This module handles parsing and interpretation of ANSI escape sequences
 //! for cursor movement, line clearing, and text styling.

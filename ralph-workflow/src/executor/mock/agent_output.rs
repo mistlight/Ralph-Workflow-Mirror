@@ -122,6 +122,6 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, command: &
             })));
             out
         }
-        JsonParserType::Generic => format!("{}\n", primary_text),
+        JsonParserType::Generic => format!("{primary_text}\n"),
     }
 }

@@ -146,7 +146,8 @@ pub struct MainEffectHandler {
 
 impl MainEffectHandler {
     /// Create a new effect handler.
-    pub fn new(state: PipelineState) -> Self {
+    #[must_use]
+    pub const fn new(state: PipelineState) -> Self {
         Self {
             state,
             event_log: Vec::new(),
@@ -154,7 +155,7 @@ impl MainEffectHandler {
     }
 }
 
-impl<'ctx> EffectHandler<'ctx> for MainEffectHandler {
+impl EffectHandler<'_> for MainEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         let result = self.execute_effect(effect, ctx)?;
         self.event_log.push(result.event.clone());
@@ -172,7 +173,7 @@ impl crate::app::event_loop::StatefulHandler for MainEffectHandler {
 
 impl MainEffectHandler {
     /// Helper to create phase transition UI event.
-    fn phase_transition_ui(&self, to: PipelinePhase) -> UIEvent {
+    const fn phase_transition_ui(&self, to: PipelinePhase) -> UIEvent {
         UIEvent::PhaseTransition {
             from: Some(self.state.phase),
             to,
@@ -187,8 +188,7 @@ impl MainEffectHandler {
         let marker_dir = std::path::Path::new(".agent/tmp");
         if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
             ctx.logger.warn(&format!(
-                "Failed to create completion marker directory: {}",
-                err
+                "Failed to create completion marker directory: {err}"
             ));
         }
 
@@ -203,7 +203,7 @@ impl MainEffectHandler {
             }
             Err(err) => {
                 ctx.logger
-                    .warn(&format!("Failed to write completion marker: {}", err));
+                    .warn(&format!("Failed to write completion marker: {err}"));
                 Err(err.to_string())
             }
         }

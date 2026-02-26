@@ -10,6 +10,7 @@ impl StreamingSession {
     /// This is used by non-TTY flush logic to render the final accumulated content
     /// once at a completion boundary (e.g., `message_stop`) without relying on
     /// arbitrary index bounds.
+    #[must_use] 
     pub fn accumulated_keys(&self, content_type: ContentType) -> Vec<String> {
         let mut keys: Vec<String> = self
             .accumulated
@@ -62,6 +63,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This exact content has been rendered before
     /// * `false` - This exact content has not been rendered
+    #[must_use] 
     pub fn is_content_rendered(&self, content_type: ContentType, index: &str) -> bool {
         let content_key = (content_type, index.to_string());
 
@@ -96,6 +98,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - Output has started for this key (do in-place update)
     /// * `false` - Output has not started for this key (show new content)
+    #[must_use] 
     pub fn has_rendered_prefix(&self, content_type: ContentType, index: &str) -> bool {
         let content_key = (content_type, index.to_string());
         self.output_started_for_key.contains(&content_key)
@@ -167,6 +170,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This exact content has been rendered before
     /// * `false` - This exact content has not been rendered
+    #[must_use] 
     pub fn is_content_hash_rendered(
         &self,
         content_type: ContentType,

@@ -3,7 +3,7 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format.
 //!
-//! Uses quick_xml for robust XML parsing with proper whitespace handling.
+//! Uses `quick_xml` for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::commit::is_conventional_commit_subject;
 use crate::files::llm_output_extraction::xml_helpers::{

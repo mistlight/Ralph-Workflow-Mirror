@@ -1,8 +1,8 @@
 // Core rebase operations: continue + verification + status.
 
-/// Verify that a rebase has completed successfully using LibGit2.
+/// Verify that a rebase has completed successfully using `LibGit2`.
 ///
-/// This function uses LibGit2 exclusively to verify that a rebase operation
+/// This function uses `LibGit2` exclusively to verify that a rebase operation
 /// has completed successfully. It checks:
 /// - Repository state is clean (no rebase in progress)
 /// - HEAD is valid and not detached (unless expected)
@@ -71,12 +71,16 @@ pub fn verify_rebase_completed(upstream_branch: &str) -> io::Result<bool> {
 /// Continue a rebase after conflict resolution.
 ///
 /// **Note:** This function uses the current working directory to discover the repo.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn continue_rebase(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     continue_rebase_impl(&repo, executor)
 }
 
-/// Implementation of continue_rebase.
+/// Implementation of `continue_rebase`.
 fn continue_rebase_impl(
     repo: &git2::Repository,
     executor: &dyn crate::executor::ProcessExecutor,
@@ -119,12 +123,16 @@ fn continue_rebase_impl(
 }
 
 /// Check if a rebase is currently in progress.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn rebase_in_progress() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     rebase_in_progress_impl(&repo)
 }
 
-/// Implementation of rebase_in_progress.
+/// Implementation of `rebase_in_progress`.
 fn rebase_in_progress_impl(repo: &git2::Repository) -> io::Result<bool> {
     let state = repo.state();
     Ok(state == git2::RepositoryState::Rebase

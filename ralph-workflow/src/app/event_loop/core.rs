@@ -58,6 +58,10 @@ pub trait StatefulHandler {
 /// # Returns
 ///
 /// Returns the event loop result containing the completion status and final state.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn run_event_loop(
     ctx: &mut PhaseContext<'_>,
     initial_state: Option<PipelineState>,
@@ -78,11 +82,15 @@ pub fn run_event_loop(
 /// * `ctx` - Phase context for effect handlers
 /// * `initial_state` - Optional initial state (if None, creates a new state)
 /// * `config` - Event loop configuration
-/// * `handler` - Custom effect handler (e.g., MockEffectHandler for testing)
+/// * `handler` - Custom effect handler (e.g., `MockEffectHandler` for testing)
 ///
 /// # Returns
 ///
 /// Returns the event loop result containing the completion status and final state.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn run_event_loop_with_handler<'ctx, H>(
     ctx: &mut PhaseContext<'_>,
     initial_state: Option<PipelineState>,

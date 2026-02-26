@@ -17,6 +17,10 @@
 ///
 /// * `Ok(PlanElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidationError> {
     let content = xml_content.trim();
 
@@ -69,7 +73,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-plan".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });

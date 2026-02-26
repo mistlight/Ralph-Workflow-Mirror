@@ -28,7 +28,7 @@ impl XsdValidationError {
         let example_section = self
             .example
             .as_ref()
-            .map(|ex| format!("\n  Example:\n{}", ex))
+            .map(|ex| format!("\n  Example:\n{ex}"))
             .unwrap_or_default();
 
         format!(
@@ -51,7 +51,7 @@ impl XsdValidationError {
         let example_section = self
             .example
             .as_ref()
-            .map(|ex| format!("\n\nExample of correct format:\n{}", ex))
+            .map(|ex| format!("\n\nExample of correct format:\n{ex}"))
             .unwrap_or_default();
 
         match self.error_type {
@@ -134,7 +134,7 @@ impl std::error::Error for XsdValidationError {}
 /// Each variant represents a different category of validation failure,
 /// allowing for targeted error messages and retry strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum XsdErrorType {
+pub enum XsdErrorType {
     /// A required element is missing from the XML
     MissingRequiredElement,
     /// An unexpected element was found

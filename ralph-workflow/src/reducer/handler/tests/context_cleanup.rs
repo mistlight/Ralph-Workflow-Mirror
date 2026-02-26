@@ -280,7 +280,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let err = handler
         .cleanup_context(&mut ctx)
         .expect_err("cleanup_context should surface remove failures as typed error event");
@@ -347,7 +347,7 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
     let err = handler
         .cleanup_context(&mut ctx)
         .expect_err("cleanup_context should surface read_dir failures as typed error event");

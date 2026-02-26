@@ -47,7 +47,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let result = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_development_prompt should succeed");
@@ -295,7 +295,7 @@ fn test_prepare_development_prompt_continuation_emits_template_rendered() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             continuation_attempt: 1,
             previous_status: Some(crate::reducer::state::DevelopmentStatus::Partial),
@@ -366,7 +366,7 @@ fn test_prepare_development_prompt_continuation_replay_skips_template_rendered()
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             continuation_attempt: 1,
             previous_status: Some(crate::reducer::state::DevelopmentStatus::Partial),
@@ -437,7 +437,7 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
 
     let result = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::XsdRetry)

@@ -25,6 +25,7 @@ impl RebaseStateMachine {
     /// # Arguments
     ///
     /// * `upstream_branch` - The branch to rebase onto
+    #[must_use]
     pub fn new(upstream_branch: String) -> Self {
         Self {
             checkpoint: RebaseCheckpoint::new(upstream_branch),
@@ -48,6 +49,10 @@ impl RebaseStateMachine {
     /// # Returns
     ///
     /// Returns `Ok(state_machine)` if successful, or an error if loading fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn load_or_create(upstream_branch: String) -> io::Result<Self> {
         if rebase_checkpoint_exists() {
             // Try to load the primary checkpoint
@@ -68,7 +73,7 @@ impl RebaseStateMachine {
                     // Log the error but attempt recovery
                     eprintln!("Warning: Failed to load checkpoint: {e}. Attempting recovery...");
 
-                    match Self::try_load_backup_or_create(upstream_branch.clone()) {
+                    match Self::try_load_backup_or_create(upstream_branch) {
                         Ok(sm) => {
                             // Backup loaded or fresh state created - clear corrupted checkpoint
                             let _ = clear_rebase_checkpoint();
@@ -148,7 +153,8 @@ impl RebaseStateMachine {
     }
 
     /// Set the maximum number of recovery attempts.
-    pub fn with_max_recovery_attempts(mut self, max: u32) -> Self {
+    #[must_use]
+    pub const fn with_max_recovery_attempts(mut self, max: u32) -> Self {
         self.max_recovery_attempts = max;
         self
     }
@@ -162,6 +168,10 @@ impl RebaseStateMachine {
     /// # Returns
     ///
     /// Returns `Ok(())` if the transition succeeded, or an error if saving failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn transition_to(&mut self, phase: RebasePhase) -> io::Result<()> {
         self.checkpoint = self.checkpoint.clone().with_phase(phase);
         save_rebase_checkpoint(&self.checkpoint)
@@ -199,7 +209,8 @@ impl RebaseStateMachine {
     /// Returns `true` if the phase-specific error count is below the maximum
     /// recovery attempts for the current phase.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn can_recover(&self) -> bool {
+    #[must_use]
+    pub const fn can_recover(&self) -> bool {
         let max_for_phase = self.checkpoint.phase.max_recovery_attempts();
         self.checkpoint.phase_error_count < max_for_phase
     }
@@ -209,7 +220,8 @@ impl RebaseStateMachine {
     /// Returns `true` if the phase-specific error count has exceeded the maximum
     /// recovery attempts for the current phase.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn should_abort(&self) -> bool {
+    #[must_use]
+    pub const fn should_abort(&self) -> bool {
         let max_for_phase = self.checkpoint.phase.max_recovery_attempts();
         self.checkpoint.phase_error_count >= max_for_phase
     }
@@ -217,31 +229,40 @@ impl RebaseStateMachine {
     /// Check if all conflicts have been resolved.
     ///
     /// Returns `true` if all conflicted files have been marked as resolved.
+    #[must_use]
     pub fn all_conflicts_resolved(&self) -> bool {
         self.checkpoint.all_conflicts_resolved()
     }
 
     /// Get the current checkpoint.
-    pub fn checkpoint(&self) -> &RebaseCheckpoint {
+    #[must_use]
+    pub const fn checkpoint(&self) -> &RebaseCheckpoint {
         &self.checkpoint
     }
 
     /// Get the current phase.
-    pub fn phase(&self) -> &RebasePhase {
+    #[must_use]
+    pub const fn phase(&self) -> &RebasePhase {
         &self.checkpoint.phase
     }
 
     /// Get the upstream branch.
+    #[must_use]
     pub fn upstream_branch(&self) -> &str {
         &self.checkpoint.upstream_branch
     }
 
     /// Get the number of unresolved conflicts.
+    #[must_use]
     pub fn unresolved_conflict_count(&self) -> usize {
         self.checkpoint.unresolved_conflict_count()
     }
 
     /// Clear the checkpoint (typically on successful completion).
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn clear_checkpoint(self) -> io::Result<()> {
         clear_rebase_checkpoint()
     }
@@ -283,7 +304,7 @@ pub enum RecoveryAction {
     /// Skip the current step and proceed.
     ///
     /// Used when the current step can be safely bypassed,
-    /// such as for empty commits or NoOp scenarios.
+    /// such as for empty commits or `NoOp` scenarios.
     Skip,
 }
 
@@ -300,74 +321,75 @@ impl RecoveryAction {
     /// # Returns
     ///
     /// Returns the appropriate `RecoveryAction` for the given error and state.
-    pub fn decide(
+    #[must_use]
+    pub const fn decide(
         error_kind: &crate::git_helpers::rebase::RebaseErrorKind,
         error_count: u32,
         max_attempts: u32,
     ) -> Self {
         // Check if we've exceeded maximum attempts
         if error_count >= max_attempts {
-            return RecoveryAction::Abort;
+            return Self::Abort;
         }
 
         match error_kind {
             // Category 1: Rebase Cannot Start - Generally not recoverable
             crate::git_helpers::rebase::RebaseErrorKind::InvalidRevision { .. } => {
-                RecoveryAction::Abort
+                Self::Abort
             }
-            crate::git_helpers::rebase::RebaseErrorKind::DirtyWorkingTree => RecoveryAction::Abort,
+            crate::git_helpers::rebase::RebaseErrorKind::DirtyWorkingTree => Self::Abort,
             crate::git_helpers::rebase::RebaseErrorKind::ConcurrentOperation { .. } => {
-                RecoveryAction::Retry
+                Self::Retry
             }
             crate::git_helpers::rebase::RebaseErrorKind::RepositoryCorrupt { .. } => {
-                RecoveryAction::Abort
+                Self::Abort
             }
             crate::git_helpers::rebase::RebaseErrorKind::EnvironmentFailure { .. } => {
-                RecoveryAction::Abort
+                Self::Abort
             }
             crate::git_helpers::rebase::RebaseErrorKind::HookRejection { .. } => {
-                RecoveryAction::Abort
+                Self::Abort
             }
 
             // Category 2: Rebase Stops (Interrupted)
             crate::git_helpers::rebase::RebaseErrorKind::ContentConflict { .. } => {
-                RecoveryAction::Continue
+                Self::Continue
             }
             crate::git_helpers::rebase::RebaseErrorKind::PatchApplicationFailed { .. } => {
-                RecoveryAction::Retry
+                Self::Retry
             }
             crate::git_helpers::rebase::RebaseErrorKind::InteractiveStop { .. } => {
-                RecoveryAction::Abort
+                Self::Abort
             }
-            crate::git_helpers::rebase::RebaseErrorKind::EmptyCommit => RecoveryAction::Skip,
+            crate::git_helpers::rebase::RebaseErrorKind::EmptyCommit => Self::Skip,
             crate::git_helpers::rebase::RebaseErrorKind::AutostashFailed { .. } => {
-                RecoveryAction::Retry
+                Self::Retry
             }
             crate::git_helpers::rebase::RebaseErrorKind::CommitCreationFailed { .. } => {
-                RecoveryAction::Retry
+                Self::Retry
             }
             crate::git_helpers::rebase::RebaseErrorKind::ReferenceUpdateFailed { .. } => {
-                RecoveryAction::Retry
+                Self::Retry
             }
 
             // Category 3: Post-Rebase Failures
             #[cfg(any(test, feature = "test-utils"))]
             crate::git_helpers::rebase::RebaseErrorKind::ValidationFailed { .. } => {
-                RecoveryAction::Abort
+                Self::Abort
             }
 
             // Category 4: Interrupted/Corrupted State
             #[cfg(any(test, feature = "test-utils"))]
             crate::git_helpers::rebase::RebaseErrorKind::ProcessTerminated { .. } => {
-                RecoveryAction::Continue
+                Self::Continue
             }
             #[cfg(any(test, feature = "test-utils"))]
             crate::git_helpers::rebase::RebaseErrorKind::InconsistentState { .. } => {
-                RecoveryAction::Retry
+                Self::Retry
             }
 
             // Category 5: Unknown
-            crate::git_helpers::rebase::RebaseErrorKind::Unknown { .. } => RecoveryAction::Abort,
+            crate::git_helpers::rebase::RebaseErrorKind::Unknown { .. } => Self::Abort,
         }
     }
 }

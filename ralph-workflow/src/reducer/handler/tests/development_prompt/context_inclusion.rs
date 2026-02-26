@@ -42,7 +42,7 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
         .materialize_development_inputs(&mut ctx, 0)
         .expect_err(
@@ -97,7 +97,7 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
         .materialize_development_inputs(&mut ctx, 0)
         .expect_err(
@@ -160,7 +160,7 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let result = handler
         .materialize_development_inputs(&mut ctx, 0)
         .expect("materialize_development_inputs should succeed");

@@ -1,4 +1,5 @@
 impl StreamingSession {
+    #[must_use] 
     pub fn is_likely_snapshot(&self, text: &str, key: &str) -> bool {
         let content_key = (ContentType::Text, key.to_string());
 
@@ -29,6 +30,10 @@ impl StreamingSession {
     /// Returns the length of the delta portion as `usize` since we can't return
     /// a reference to `text` with the correct lifetime. Callers can slice `text`
     /// themselves using `&text[delta_len..]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn extract_delta_from_snapshot(&self, text: &str, key: &str) -> Result<usize, String> {
         let content_key = (ContentType::Text, key.to_string());
 
@@ -60,6 +65,10 @@ impl StreamingSession {
     /// # Returns
     /// * `Ok(&str)` - The delta portion (new content only)
     /// * `Err` - If the text is not actually a snapshot
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn get_delta_from_snapshot<'a>(&self, text: &'a str, key: &str) -> Result<&'a str, String> {
         let delta_len = self.extract_delta_from_snapshot(text, key)?;
         Ok(&text[delta_len..])
@@ -73,6 +82,7 @@ impl StreamingSession {
     ///
     /// # Returns
     /// Aggregated metrics across all content types and keys.
+    #[must_use] 
     pub fn get_streaming_quality_metrics(&self) -> StreamingQualityMetrics {
         // Flatten all delta sizes across all content types and keys
         let all_sizes = self.delta_sizes.values().flat_map(|v| v.iter().copied());

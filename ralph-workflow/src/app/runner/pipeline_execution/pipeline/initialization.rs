@@ -67,7 +67,7 @@ pub(super) struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
 /// Returns error if:
 /// - Required files/directories cannot be created
 /// - Run log context creation fails
-/// - Checkpoint save fails (when updating log_run_id)
+/// - Checkpoint save fails (when updating `log_run_id`)
 pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     params: PipelinePreparationParams<'_, H>,
 ) -> anyhow::Result<Option<PipelineContext>> {
@@ -87,12 +87,12 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
 
     // Ensure required files and directories exist via effects
     effectful::ensure_files_effectful(handler, config.isolation_mode)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Reset context for isolation mode via effects
     if config.isolation_mode {
         effectful::reset_context_for_isolation_effectful(handler)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
 
     // Create run log context for per-run log directory
@@ -163,7 +163,7 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         config_summary: None, // TODO: add public getters to Config if we want to include this
     };
     if let Err(e) = run_log_context.write_run_metadata(&*workspace, &run_metadata) {
-        logger.warn(&format!("Failed to write run.json: {}", e));
+        logger.warn(&format!("Failed to write run.json: {e}"));
     }
 
     // Handle --dry-run
@@ -211,7 +211,7 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
             logger: &logger,
             colors,
             developer_agent: &developer_agent,
-            _reviewer_agent: &reviewer_agent,
+            reviewer_agent: &reviewer_agent,
             executor: std::sync::Arc::clone(&executor),
         })?;
         return Ok(None);

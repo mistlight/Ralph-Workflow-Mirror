@@ -63,28 +63,28 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
             path: override_dir.to_path_buf(),
         });
         if let effect::AppEffectResult::Error(e) = result {
-            anyhow::bail!("Failed to set working directory: {}", e);
+            anyhow::bail!("Failed to set working directory: {e}");
         }
         override_dir.to_path_buf()
     } else {
         // Production mode: discover repo root and change CWD via handler
         let require_result = handler.execute(effect::AppEffect::GitRequireRepo);
         if let effect::AppEffectResult::Error(e) = require_result {
-            anyhow::bail!("Not in a git repository: {}", e);
+            anyhow::bail!("Not in a git repository: {e}");
         }
 
         let root_result = handler.execute(effect::AppEffect::GitGetRepoRoot);
         let root = match root_result {
             effect::AppEffectResult::Path(p) => p,
             effect::AppEffectResult::Error(e) => {
-                anyhow::bail!("Failed to get repo root: {}", e);
+                anyhow::bail!("Failed to get repo root: {e}");
             }
             _ => anyhow::bail!("Unexpected result from GitGetRepoRoot"),
         };
 
         let set_result = handler.execute(effect::AppEffect::SetCurrentDir { path: root.clone() });
         if let effect::AppEffectResult::Error(e) = set_result {
-            anyhow::bail!("Failed to set working directory: {}", e);
+            anyhow::bail!("Failed to set working directory: {e}");
         }
         root
     };
@@ -109,7 +109,7 @@ fn setup_git_and_prompt_file<H: effect::AppEffectHandler>(
     handler: &mut H,
 ) -> anyhow::Result<Option<()>> {
     let prompt_exists =
-        effectful::check_prompt_exists_effectful(handler).map_err(|e| anyhow::anyhow!("{}", e))?;
+        effectful::check_prompt_exists_effectful(handler).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.
@@ -241,7 +241,7 @@ fn update_interrupt_context_from_phase(
 /// Uses a scope guard pattern to ensure the interrupt context is cleared
 /// when the pipeline completes successfully, preventing an "interrupted"
 /// checkpoint from being saved after normal completion.
-fn defer_clear_interrupt_context() -> InterruptContextGuard {
+const fn defer_clear_interrupt_context() -> InterruptContextGuard {
     InterruptContextGuard
 }
 

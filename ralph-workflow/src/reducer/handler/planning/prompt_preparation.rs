@@ -2,8 +2,8 @@
 //!
 //! Handles the preparation of planning prompts in different modes:
 //! - Normal: Initial planning prompt with PROMPT.md references
-//! - XsdRetry: Retry prompt with validation errors and last output
-//! - SameAgentRetry: Retry with same agent, prepending retry guidance
+//! - `XsdRetry`: Retry prompt with validation errors and last output
+//! - `SameAgentRetry`: Retry with same agent, prepending retry guidance
 //!
 //! Each mode handles input materialization, template rendering, and placeholder validation.
 
@@ -28,7 +28,7 @@ const PLANNING_PROMPT_PATH: &str = ".agent/tmp/planning_prompt.txt";
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn prepare_planning_prompt(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
         prompt_mode: PromptMode,
@@ -193,7 +193,7 @@ impl MainEffectHandler {
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PromptContentReference::file_path(
-                                path.to_path_buf(),
+                                path.clone(),
                                 "Original user requirements from PROMPT.md",
                             )
                         }
@@ -284,7 +284,7 @@ impl MainEffectHandler {
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PromptContentReference::file_path(
-                                path.to_path_buf(),
+                                path.clone(),
                                 "Original user requirements from PROMPT.md",
                             )
                         }
@@ -306,7 +306,9 @@ impl MainEffectHandler {
                         });
 
                     // Validate freshly generated prompts (not replayed ones)
-                    let rendered_log = if !was_replayed {
+                    let rendered_log = if was_replayed {
+                        None
+                    } else {
                         let rendered = crate::prompts::prompt_planning_xml_with_references_and_log(
                             ctx.template_context,
                             &prompt_ref,
@@ -332,8 +334,6 @@ impl MainEffectHandler {
                             return Ok(result);
                         }
                         Some(rendered.log)
-                    } else {
-                        None
                     };
 
                     (
@@ -365,8 +365,7 @@ impl MainEffectHandler {
             .write(Path::new(PLANNING_PROMPT_PATH), &prompt)
         {
             ctx.logger.warn(&format!(
-                "Failed to write planning prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
+                "Failed to write planning prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
             ));
         }
 

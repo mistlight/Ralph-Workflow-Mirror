@@ -107,6 +107,7 @@ impl StreamingSession {
     /// # Returns
     /// * `Some(id)` - The current message ID
     /// * `None` - No message ID is set
+    #[must_use] 
     pub fn get_current_message_id(&self) -> Option<&str> {
         self.current_message_id.as_deref()
     }
@@ -122,6 +123,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This message has already been displayed (is a duplicate)
     /// * `false` - This is a new message
+    #[must_use] 
     pub fn is_duplicate_final_message(&self, message_id: &str) -> bool {
         self.displayed_final_messages.contains(message_id)
     }
@@ -140,8 +142,8 @@ impl StreamingSession {
     ///
     /// This is used to handle the case where an assistant event arrives with full content
     /// BEFORE any streaming deltas. When this happens, we render the assistant event content
-    /// and mark the message_id as pre-rendered. ALL subsequent streaming deltas for the
-    /// same message_id should be suppressed to prevent duplication.
+    /// and mark the `message_id` as pre-rendered. ALL subsequent streaming deltas for the
+    /// same `message_id` should be suppressed to prevent duplication.
     ///
     /// # Arguments
     /// * `message_id` - The message ID that was pre-rendered
@@ -151,7 +153,7 @@ impl StreamingSession {
 
     /// Check if a message was pre-rendered from an assistant event.
     ///
-    /// This checks if the given message_id was previously rendered from an assistant
+    /// This checks if the given `message_id` was previously rendered from an assistant
     /// event (before streaming started). If so, ALL subsequent streaming deltas for
     /// this message should be suppressed.
     ///
@@ -161,6 +163,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This message was pre-rendered, suppress all streaming output
     /// * `false` - This message was not pre-rendered, allow streaming output
+    #[must_use] 
     pub fn is_message_pre_rendered(&self, message_id: &str) -> bool {
         self.pre_rendered_message_ids.contains(message_id)
     }
@@ -169,7 +172,7 @@ impl StreamingSession {
     ///
     /// This prevents duplicate assistant events with the same content from being rendered
     /// multiple times. GLM/CCS may send multiple assistant events during streaming with
-    /// the same content but different message_ids.
+    /// the same content but different `message_ids`.
     ///
     /// # Arguments
     /// * `content_hash` - The hash of the assistant event content
@@ -177,6 +180,7 @@ impl StreamingSession {
     /// # Returns
     /// * `true` - This content was already rendered, suppress rendering
     /// * `false` - This content was not rendered, allow rendering
+    #[must_use] 
     pub fn is_assistant_content_rendered(&self, content_hash: u64) -> bool {
         self.rendered_assistant_content_hashes
             .contains(&content_hash)
@@ -318,7 +322,7 @@ impl StreamingSession {
         was_in_block
     }
 
-    /// Clear all state for a specific (content_type, key) pair.
+    /// Clear all state for a specific (`content_type`, key) pair.
     ///
     /// This is used when a logical sub-stream completes (e.g., Codex `reasoning`
     /// item completion) but the overall turn/message continues.
@@ -343,6 +347,7 @@ impl StreamingSession {
     /// This is a broader check that returns true if ANY content type
     /// has been streamed. Used to skip entire message display when
     /// all content was already streamed.
+    #[must_use] 
     pub fn has_any_streamed_content(&self) -> bool {
         !self.streamed_types.is_empty()
     }

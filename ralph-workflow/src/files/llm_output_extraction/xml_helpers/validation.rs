@@ -75,26 +75,24 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
     let context_end = (byte_index + 50).min(content.len());
     let safe_start = floor_char_boundary(content, context_start);
     let safe_end = ceil_char_boundary(content, context_end.max(safe_start));
-    let context = content.get(safe_start..safe_end).unwrap_or(content);
-    let preview = truncate_text(context, 100);
+    let error_context = content.get(safe_start..safe_end).unwrap_or(content);
+    let preview = truncate_text(error_context, 100);
 
     // Provide specific suggestions based on character type
     let suggestion = if ch == '\0' {
         format!(
-            "NUL byte found at position {}. Common causes:\n\
+            "NUL byte found at position {byte_index}. Common causes:\n\
              - Intended to use non-breaking space (\\u00A0) but wrote \\u0000 instead\n\
              - Binary data mixed into text content\n\
              - Incorrect escape sequence\n\n\
-             Near: {}",
-            byte_index, preview
+             Near: {preview}"
         )
     } else {
         format!(
-            "Illegal character {} found at position {}. Options to fix:\n\
+            "Illegal character {char_display} found at position {byte_index}. Options to fix:\n\
              - Remove the illegal character\n\
              - Replace with a valid character (e.g., space or \u{00A0})\n\n\
-             Near: {}",
-            char_display, byte_index, preview
+             Near: {preview}"
         )
     };
 
@@ -102,17 +100,14 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
         error_type: XsdErrorType::MalformedXml,
         element_path: "xml".to_string(),
         expected: "valid XML 1.0 content (no illegal control characters)".to_string(),
-        found: format!(
-            "illegal character {} at byte position {}",
-            char_display, byte_index
-        ),
+        found: format!("illegal character {char_display} at byte position {byte_index}"),
         suggestion,
         example: None,
     }
 }
 
 /// Find the nearest character boundary at or before the given index.
-fn floor_char_boundary(content: &str, mut index: usize) -> usize {
+const fn floor_char_boundary(content: &str, mut index: usize) -> usize {
     while index > 0 && !content.is_char_boundary(index) {
         index -= 1;
     }
@@ -120,7 +115,7 @@ fn floor_char_boundary(content: &str, mut index: usize) -> usize {
 }
 
 /// Find the nearest character boundary at or after the given index.
-fn ceil_char_boundary(content: &str, mut index: usize) -> usize {
+const fn ceil_char_boundary(content: &str, mut index: usize) -> usize {
     while index < content.len() && !content.is_char_boundary(index) {
         index += 1;
     }

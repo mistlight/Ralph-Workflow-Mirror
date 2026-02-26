@@ -4,12 +4,12 @@
 //! All functions are pure state transformations implementing retry policies.
 
 use crate::reducer::event::PipelinePhase;
-use crate::reducer::state::*;
+use crate::reducer::state::{ContinuationState, PipelineState};
 
 /// Handles `ReviewEvent::OutputValidationFailed` and `ReviewEvent::IssuesXmlMissing`.
 ///
 /// Increments XSD retry count and either:
-/// - Sets xsd_retry_pending for another attempt (if budget remains)
+/// - Sets `xsd_retry_pending` for another attempt (if budget remains)
 /// - Switches to next agent in chain (if XSD retries exhausted)
 pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_failed(
     state: PipelineState,
@@ -72,7 +72,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
                 // Reuse last session id for review XSD retry when available.
                 xsd_retry_session_reuse_pending: true,
                 // Preserve error detail for XSD retry prompt
-                last_review_xsd_error: error_detail.clone(),
+                last_review_xsd_error: error_detail,
                 ..state.continuation
             },
             // Reset orchestration flags to ensure:

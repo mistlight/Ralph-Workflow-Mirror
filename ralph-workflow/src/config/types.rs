@@ -258,12 +258,12 @@ pub struct Config {
     ///
     /// **CRITICAL:** The system ALWAYS applies a default of 2 (3 total attempts) when this
     /// field is None. The Option wrapper exists ONLY for backward compatibility with direct
-    /// Config construction (Config::default(), Config::test_default()).
+    /// Config construction (`Config::default()`, `Config::test_default()`).
     ///
-    /// When loaded via config_from_unified():
-    /// - UnifiedConfig::general.max_dev_continuations has serde default of 2
+    /// When loaded via `config_from_unified()`:
+    /// - `UnifiedConfig::general.max_dev_continuations` has serde default of 2
     /// - Converted to Some(2) in Config
-    /// - Applied unconditionally in create_initial_state_with_config()
+    /// - Applied unconditionally in `create_initial_state_with_config()`
     ///
     /// This ensures dev loop is ALWAYS bounded, preventing infinite continuation cycles.
     ///
@@ -327,7 +327,7 @@ pub struct GitRemoteConfig {
     pub push_branch: Option<String>,
     /// Whether to create a PR instead of direct push
     pub create_pr: bool,
-    /// PR title template (supports {run_id}, {prompt_summary} placeholders)
+    /// PR title template (supports {`run_id`}, {`prompt_summary`} placeholders)
     pub pr_title_template: Option<String>,
     /// PR body template
     pub pr_body_template: Option<String>,
@@ -343,12 +343,12 @@ pub struct GitRemoteConfig {
 pub enum GitAuthMethod {
     /// Use SSH key (default for containers with mounted keys)
     SshKey {
-        /// Path to private key (default: /root/.ssh/id_rsa or SSH_AUTH_SOCK)
+        /// Path to private key (default: /`root/.ssh/id_rsa` or `SSH_AUTH_SOCK`)
         key_path: Option<String>,
     },
     /// Use token-based HTTPS authentication
     Token {
-        /// Git token (from RALPH_GIT_TOKEN env var)
+        /// Git token (from `RALPH_GIT_TOKEN` env var)
         token: String,
         /// Username for token auth (often "oauth2" or "x-access-token")
         username: String,
@@ -489,6 +489,7 @@ impl Default for GitRemoteConfig {
 impl CloudConfig {
     /// Load cloud config from environment variables ONLY.
     /// Returns disabled config when cloud mode is not enabled.
+    #[must_use]
     pub fn from_env() -> Self {
         let enabled = std::env::var("RALPH_CLOUD_MODE")
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
@@ -514,6 +515,7 @@ impl CloudConfig {
         }
     }
 
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -527,6 +529,10 @@ impl CloudConfig {
     }
 
     /// Validate that required fields are present when enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn validate(&self) -> Result<(), String> {
         if !self.enabled {
             return Ok(());
@@ -614,6 +620,7 @@ impl GitRemoteConfig {
 }
 
 impl GitRemoteConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         let auth_method = match std::env::var("RALPH_GIT_AUTH_METHOD")
             .unwrap_or_else(|_| "ssh".to_string())
@@ -713,54 +720,54 @@ impl Config {
 
     /// Set isolation mode and return self (builder pattern).
     #[must_use]
-    pub fn with_isolation_mode(mut self, isolation_mode: bool) -> Self {
+    pub const fn with_isolation_mode(mut self, isolation_mode: bool) -> Self {
         self.isolation_mode = isolation_mode;
         self
     }
 
     /// Set developer iterations and return self (builder pattern).
     #[must_use]
-    pub fn with_developer_iters(mut self, iters: u32) -> Self {
+    pub const fn with_developer_iters(mut self, iters: u32) -> Self {
         self.developer_iters = iters;
         self
     }
 
     /// Set reviewer reviews and return self (builder pattern).
     #[must_use]
-    pub fn with_reviewer_reviews(mut self, reviews: u32) -> Self {
+    pub const fn with_reviewer_reviews(mut self, reviews: u32) -> Self {
         self.reviewer_reviews = reviews;
         self
     }
 
-    /// Set auto_detect_stack and return self (builder pattern).
+    /// Set `auto_detect_stack` and return self (builder pattern).
     #[must_use]
-    pub fn with_auto_detect_stack(mut self, auto_detect: bool) -> Self {
+    pub const fn with_auto_detect_stack(mut self, auto_detect: bool) -> Self {
         self.behavior.auto_detect_stack = auto_detect;
         self
     }
 
     /// Set verbosity and return self (builder pattern).
     #[must_use]
-    pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
+    pub const fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
         self.verbosity = verbosity;
         self
     }
 
-    /// Set review_depth and return self (builder pattern).
+    /// Set `review_depth` and return self (builder pattern).
     #[must_use]
-    pub fn with_review_depth(mut self, review_depth: ReviewDepth) -> Self {
+    pub const fn with_review_depth(mut self, review_depth: ReviewDepth) -> Self {
         self.review_depth = review_depth;
         self
     }
 
-    /// Set developer_agent and return self (builder pattern).
+    /// Set `developer_agent` and return self (builder pattern).
     #[must_use]
     pub fn with_developer_agent(mut self, agent: String) -> Self {
         self.developer_agent = Some(agent);
         self
     }
 
-    /// Set reviewer_agent and return self (builder pattern).
+    /// Set `reviewer_agent` and return self (builder pattern).
     #[must_use]
     pub fn with_reviewer_agent(mut self, agent: String) -> Self {
         self.reviewer_agent = Some(agent);

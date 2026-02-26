@@ -92,9 +92,8 @@ pub fn prompt_review_xml_with_context(
             format!(
                 "REVIEW MODE\n\nReview the implementation against:\n\n\
                  Read `.agent/PROMPT.md.backup` for the original requirements (DO NOT modify it).\n\n\
-                 Plan:\n{}\n\nChanges:\n{}\n\n\
-                 Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n",
-                plan_content, changes_content
+                 Plan:\n{plan_content}\n\nChanges:\n{changes_content}\n\n\
+                 Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n"
             )
         })
 }
@@ -141,9 +140,9 @@ pub fn prompt_review_xml_with_references_and_log(
 
             let plan = refs.plan_for_template();
             let changes = refs.diff_for_template();
-            let content = format!("REVIEW MODE\n\nPLAN:\n{plan}\n\nCHANGES:\n{changes}\n");
+            let prompt_content = format!("REVIEW MODE\n\nPLAN:\n{plan}\n\nCHANGES:\n{changes}\n");
             RenderedTemplate {
-                content,
+                content: prompt_content,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![
@@ -286,12 +285,11 @@ pub fn prompt_review_xsd_retry_with_context_files(
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
         return format!(
-            "{}XSD VALIDATION FAILED - GENERATE REVIEW\n\n\
-             Error: {}\n\n\
+            "{diagnostic_prefix}XSD VALIDATION FAILED - GENERATE REVIEW\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please review the implementation and provide your feedback.\n\n\
-             Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n"
         );
     }
 
@@ -320,18 +318,17 @@ pub fn prompt_review_xsd_retry_with_context_files(
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
-                "Your previous review failed XSD validation.\n\nError: {}\n\n\
+                "Your previous review failed XSD validation.\n\nError: {xsd_error}\n\n\
                  Read .agent/tmp/issues.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your review in valid XML format conforming to the XSD schema.\n",
-                xsd_error
+                 Please resend your review in valid XML format conforming to the XSD schema.\n"
             )
         });
 
     // Prepend diagnostic prefix if files were missing but we continued anyway
-    if !diagnostic_prefix.is_empty() {
-        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
-    } else {
+    if diagnostic_prefix.is_empty() {
         rendered_prompt
+    } else {
+        format!("{diagnostic_prefix}\n{rendered_prompt}")
     }
 }
 
@@ -381,16 +378,15 @@ pub fn prompt_review_xsd_retry_with_context_files_and_log(
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
-        let content = format!(
-            "{}XSD VALIDATION FAILED - GENERATE REVIEW\n\n\
-             Error: {}\n\n\
+        let prompt_content = format!(
+            "{diagnostic_prefix}XSD VALIDATION FAILED - GENERATE REVIEW\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please review the implementation and provide your feedback.\n\n\
-             Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n"
         );
         return RenderedTemplate {
-            content,
+            content: prompt_content,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![SubstitutionEntry {
@@ -424,31 +420,27 @@ pub fn prompt_review_xsd_retry_with_context_files_and_log(
     ]);
 
     let template = Template::new(&template_content);
-    match template.render_with_log(template_name, &variables, &partials) {
-        Ok(mut rendered) => {
-            if !diagnostic_prefix.is_empty() {
-                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
-            }
-            rendered
+    if let Ok(mut rendered) = template.render_with_log(template_name, &variables, &partials) {
+        if !diagnostic_prefix.is_empty() {
+            rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
         }
-        Err(_) => {
-            let content = format!(
-                "Your previous review failed XSD validation.\n\nError: {}\n\n\
-                 Read .agent/tmp/issues.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your review in valid XML format conforming to the XSD schema.\n",
-                xsd_error
-            );
-            RenderedTemplate {
-                content,
-                log: SubstitutionLog {
-                    template_name: template_name.to_string(),
-                    substituted: vec![SubstitutionEntry {
-                        name: "XSD_ERROR".to_string(),
-                        source: SubstitutionSource::Value,
-                    }],
-                    unsubstituted: vec![],
-                },
-            }
+        rendered
+    } else {
+        let prompt_content = format!(
+            "Your previous review failed XSD validation.\n\nError: {xsd_error}\n\n\
+             Read .agent/tmp/issues.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+             Please resend your review in valid XML format conforming to the XSD schema.\n"
+        );
+        RenderedTemplate {
+            content: prompt_content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: vec![],
+            },
         }
     }
 }
@@ -521,14 +513,13 @@ pub fn prompt_fix_xml_with_log(
                 _ => vec![],
             };
 
-            let content = format!(
-                "FIX MODE\n\nFix the issues:\n\n{}\n\n\
-                 Based on requirements:\n{}\n\nPlan:\n{}\n\n\
-                 Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n",
-                issues_content, prompt_content, plan_content
+            let prompt_content = format!(
+                "FIX MODE\n\nFix the issues:\n\n{issues_content}\n\n\
+                 Based on requirements:\n{prompt_content}\n\nPlan:\n{plan_content}\n\n\
+                 Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n"
             );
             RenderedTemplate {
-                content,
+                content: prompt_content,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![
@@ -614,16 +605,15 @@ pub fn prompt_fix_xsd_retry_with_log(
     };
 
     if !schema_exists && !last_output_exists {
-        let content = format!(
-            "{}XSD VALIDATION FAILED - FIX ISSUES\n\n\
-             Error: {}\n\n\
+        let prompt_content = format!(
+            "{diagnostic_prefix}XSD VALIDATION FAILED - FIX ISSUES\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please fix the issues described in ISSUES.md.\n\n\
-             Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n"
         );
         return RenderedTemplate {
-            content,
+            content: prompt_content,
             log: build_manual_log(template_name, xsd_error),
         };
     }
@@ -650,23 +640,20 @@ pub fn prompt_fix_xsd_retry_with_log(
     ]);
 
     let template = Template::new(&template_content);
-    match template.render_with_log(template_name, &variables, &partials) {
-        Ok(mut rendered) => {
-            if !diagnostic_prefix.is_empty() {
-                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
-            }
-            rendered
+    if let Ok(mut rendered) = template.render_with_log(template_name, &variables, &partials) {
+        if !diagnostic_prefix.is_empty() {
+            rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
         }
-        Err(_) => {
-            let content = format!(
-                "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
-                 Read .agent/tmp/fix_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Rewrite .agent/tmp/fix_result.xml with valid XML.\n"
-            );
-            RenderedTemplate {
-                content,
-                log: build_manual_log(template_name, xsd_error),
-            }
+        rendered
+    } else {
+        let prompt_content = format!(
+            "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
+             Read .agent/tmp/fix_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+             Rewrite .agent/tmp/fix_result.xml with valid XML.\n"
+        );
+        RenderedTemplate {
+            content: prompt_content,
+            log: build_manual_log(template_name, xsd_error),
         }
     }
 }
@@ -714,10 +701,9 @@ pub fn prompt_fix_xml_with_context(
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
-                "FIX MODE\n\nFix the issues:\n\n{}\n\n\
-                 Based on requirements:\n{}\n\nPlan:\n{}\n\n\
-                 Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n",
-                issues_content, prompt_content, plan_content
+                "FIX MODE\n\nFix the issues:\n\n{issues_content}\n\n\
+                 Based on requirements:\n{prompt_content}\n\nPlan:\n{plan_content}\n\n\
+                 Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n"
             )
         })
 }
@@ -797,12 +783,11 @@ pub fn prompt_fix_xsd_retry_with_context_files(
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
         return format!(
-            "{}XSD VALIDATION FAILED - FIX ISSUES\n\n\
-             Error: {}\n\n\
+            "{diagnostic_prefix}XSD VALIDATION FAILED - FIX ISSUES\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please fix the issues described in ISSUES.md.\n\n\
-             Output format: <ralph-fix-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-fix-result>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-fix-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-fix-result>\n"
         );
     }
 
@@ -831,18 +816,17 @@ pub fn prompt_fix_xsd_retry_with_context_files(
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
-                "Your previous fix failed XSD validation.\n\nError: {}\n\n\
+                "Your previous fix failed XSD validation.\n\nError: {xsd_error}\n\n\
                  Read .agent/tmp/fix_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your fix in valid XML format conforming to the XSD schema.\n",
-                xsd_error
+                 Please resend your fix in valid XML format conforming to the XSD schema.\n"
             )
         });
 
     // Prepend diagnostic prefix if files were missing but we continued anyway
-    if !diagnostic_prefix.is_empty() {
-        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
-    } else {
+    if diagnostic_prefix.is_empty() {
         rendered_prompt
+    } else {
+        format!("{diagnostic_prefix}\n{rendered_prompt}")
     }
 }
 

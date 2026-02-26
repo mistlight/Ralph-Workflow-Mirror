@@ -4,11 +4,11 @@
 //! between passes or to the commit phase. All functions are pure state transformations.
 
 use crate::reducer::event::PipelinePhase;
-use crate::reducer::state::*;
+use crate::reducer::state::{CommitState, ContinuationState, PipelineState};
 
 /// Handles `ReviewEvent::Completed`.
 ///
-/// Completes review pass. If no issues found and all passes complete, transitions to CommitMessage.
+/// Completes review pass. If no issues found and all passes complete, transitions to `CommitMessage`.
 /// Otherwise, stays in Review for fix or next pass.
 pub(in crate::reducer::state_reduction::review) fn reduce_completed(
     state: PipelineState,
@@ -59,10 +59,10 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
-            metrics: if !issues_found {
-                state.metrics.increment_review_passes_completed()
-            } else {
+            metrics: if issues_found {
                 state.metrics
+            } else {
+                state.metrics.increment_review_passes_completed()
             },
             ..state
         }
@@ -88,10 +88,10 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
-            metrics: if !issues_found {
-                state.metrics.increment_review_passes_completed()
-            } else {
+            metrics: if issues_found {
                 state.metrics
+            } else {
+                state.metrics.increment_review_passes_completed()
             },
             ..state
         }
@@ -100,7 +100,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
 
 /// Handles `ReviewEvent::PhaseCompleted`.
 ///
-/// Completes entire review phase and transitions to CommitMessage.
+/// Completes entire review phase and transitions to `CommitMessage`.
 pub(in crate::reducer::state_reduction::review) fn reduce_phase_completed(
     state: PipelineState,
 ) -> PipelineState {
@@ -129,7 +129,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_phase_completed(
 /// Handles `ReviewEvent::PassCompletedClean`.
 ///
 /// Completes a clean review pass (no issues found).
-/// Advances to next pass or transitions to CommitMessage if all passes complete.
+/// Advances to next pass or transitions to `CommitMessage` if all passes complete.
 pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
     state: PipelineState,
     pass: u32,

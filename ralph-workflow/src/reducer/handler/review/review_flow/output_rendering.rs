@@ -206,7 +206,7 @@ fn is_safe_workspace_relative_path(path_str: &str) -> bool {
     true
 }
 
-/// Lazy-initialized regex for parsing standard file locations (file:line-line).
+/// Lazy-initialized regex for parsing standard file locations (<file:line-line>).
 fn issue_location_regex() -> &'static Regex {
     static LOCATION_RE: OnceLock<Regex> = OnceLock::new();
     LOCATION_RE.get_or_init(|| {
@@ -252,7 +252,7 @@ fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> 
     let mut out = String::new();
     for (offset, line) in lines[start_idx..=end_idx].iter().enumerate() {
         let line_no = start + offset as u32;
-        out.push_str(&format!("{line_no} | {line}\n"));
+        writeln!(out, "{line_no} | {line}").unwrap();
     }
     Some(out.trim_end().to_string())
 }
@@ -297,8 +297,8 @@ fn render_issues_markdown(
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn write_issues_markdown(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use std::path::Path;
@@ -328,8 +328,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn extract_review_issue_snippets(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
@@ -375,8 +375,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn archive_review_issues_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
@@ -389,8 +389,8 @@ impl MainEffectHandler {
         ))
     }
 
-    pub(in crate::reducer::handler) fn apply_review_outcome(
-        &mut self,
+    pub(in crate::reducer::handler) const fn apply_review_outcome(
+        &self,
         _ctx: &mut PhaseContext<'_>,
         pass: u32,
         issues_found: bool,

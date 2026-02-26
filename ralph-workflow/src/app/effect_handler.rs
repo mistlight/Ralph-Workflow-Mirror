@@ -1,4 +1,4 @@
-//! Real implementation of AppEffectHandler.
+//! Real implementation of `AppEffectHandler`.
 //!
 //! This handler executes actual side effects for production use.
 //! It provides concrete implementations for all [`AppEffect`] variants
@@ -38,7 +38,8 @@ impl RealAppEffectHandler {
     /// Create a new handler without a workspace root.
     ///
     /// Paths will be used as-is, relative to the current working directory.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             workspace_root: None,
         }
@@ -51,7 +52,8 @@ impl RealAppEffectHandler {
     /// # Arguments
     ///
     /// * `root` - The workspace root directory for path resolution.
-    pub fn with_workspace_root(root: PathBuf) -> Self {
+    #[must_use]
+    pub const fn with_workspace_root(root: PathBuf) -> Self {
         Self {
             workspace_root: Some(root),
         }
@@ -193,30 +195,29 @@ impl AppEffectHandler for RealAppEffectHandler {
             // =========================================================================
             AppEffect::GitRequireRepo => match crate::git_helpers::require_git_repo() {
                 Ok(()) => AppEffectResult::Ok,
-                Err(e) => AppEffectResult::Error(format!("Not in a git repository: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Not in a git repository: {e}")),
             },
 
             AppEffect::GitGetRepoRoot => match crate::git_helpers::get_repo_root() {
                 Ok(root) => AppEffectResult::Path(root),
-                Err(e) => AppEffectResult::Error(format!("Failed to get repository root: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to get repository root: {e}")),
             },
 
             AppEffect::GitGetHeadOid => match crate::git_helpers::get_current_head_oid() {
                 Ok(oid) => AppEffectResult::String(oid),
-                Err(e) => AppEffectResult::Error(format!("Failed to get HEAD OID: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to get HEAD OID: {e}")),
             },
 
             AppEffect::GitDiff => match crate::git_helpers::git_diff() {
                 Ok(diff) => AppEffectResult::String(diff),
-                Err(e) => AppEffectResult::Error(format!("Failed to get git diff: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to get git diff: {e}")),
             },
 
             AppEffect::GitDiffFrom { start_oid } => {
                 match crate::git_helpers::git_diff_from(&start_oid) {
                     Ok(diff) => AppEffectResult::String(diff),
                     Err(e) => AppEffectResult::Error(format!(
-                        "Failed to get git diff from '{}': {}",
-                        start_oid, e
+                        "Failed to get git diff from '{start_oid}': {e}"
                     )),
                 }
             }
@@ -224,18 +225,18 @@ impl AppEffectHandler for RealAppEffectHandler {
             AppEffect::GitDiffFromStart => match crate::git_helpers::get_git_diff_from_start() {
                 Ok(diff) => AppEffectResult::String(diff),
                 Err(e) => {
-                    AppEffectResult::Error(format!("Failed to get diff from start commit: {}", e))
+                    AppEffectResult::Error(format!("Failed to get diff from start commit: {e}"))
                 }
             },
 
             AppEffect::GitSnapshot => match crate::git_helpers::git_snapshot() {
                 Ok(snapshot) => AppEffectResult::String(snapshot),
-                Err(e) => AppEffectResult::Error(format!("Failed to create git snapshot: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to create git snapshot: {e}")),
             },
 
             AppEffect::GitAddAll => match crate::git_helpers::git_add_all() {
                 Ok(staged) => AppEffectResult::Bool(staged),
-                Err(e) => AppEffectResult::Error(format!("Failed to stage all changes: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to stage all changes: {e}")),
             },
 
             AppEffect::GitCommit {
@@ -253,18 +254,18 @@ impl AppEffectHandler for RealAppEffectHandler {
                         AppEffectResult::Commit(CommitResult::Success(oid.to_string()))
                     }
                     Ok(None) => AppEffectResult::Commit(CommitResult::NoChanges),
-                    Err(e) => AppEffectResult::Error(format!("Failed to create commit: {}", e)),
+                    Err(e) => AppEffectResult::Error(format!("Failed to create commit: {e}")),
                 }
             }
 
             AppEffect::GitSaveStartCommit => match crate::git_helpers::save_start_commit() {
                 Ok(()) => AppEffectResult::Ok,
-                Err(e) => AppEffectResult::Error(format!("Failed to save start commit: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to save start commit: {e}")),
             },
 
             AppEffect::GitResetStartCommit => match crate::git_helpers::reset_start_commit() {
                 Ok(result) => AppEffectResult::String(result.oid),
-                Err(e) => AppEffectResult::Error(format!("Failed to reset start commit: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to reset start commit: {e}")),
             },
 
             AppEffect::GitRebaseOnto { upstream_branch: _ } => {
@@ -278,7 +279,7 @@ impl AppEffectHandler for RealAppEffectHandler {
 
             AppEffect::GitGetConflictedFiles => match crate::git_helpers::get_conflicted_files() {
                 Ok(files) => AppEffectResult::StringList(files),
-                Err(e) => AppEffectResult::Error(format!("Failed to get conflicted files: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to get conflicted files: {e}")),
             },
 
             AppEffect::GitContinueRebase => {
@@ -298,12 +299,12 @@ impl AppEffectHandler for RealAppEffectHandler {
 
             AppEffect::GitGetDefaultBranch => match crate::git_helpers::get_default_branch() {
                 Ok(branch) => AppEffectResult::String(branch),
-                Err(e) => AppEffectResult::Error(format!("Failed to get default branch: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to get default branch: {e}")),
             },
 
             AppEffect::GitIsMainBranch => match crate::git_helpers::is_main_or_master_branch() {
                 Ok(is_main) => AppEffectResult::Bool(is_main),
-                Err(e) => AppEffectResult::Error(format!("Failed to check branch: {}", e)),
+                Err(e) => AppEffectResult::Error(format!("Failed to check branch: {e}")),
             },
 
             // =========================================================================
@@ -312,11 +313,10 @@ impl AppEffectHandler for RealAppEffectHandler {
             AppEffect::GetEnvVar { name } => match std::env::var(&name) {
                 Ok(value) => AppEffectResult::String(value),
                 Err(std::env::VarError::NotPresent) => {
-                    AppEffectResult::Error(format!("Environment variable '{}' not set", name))
+                    AppEffectResult::Error(format!("Environment variable '{name}' not set"))
                 }
                 Err(std::env::VarError::NotUnicode(_)) => AppEffectResult::Error(format!(
-                    "Environment variable '{}' contains invalid Unicode",
-                    name
+                    "Environment variable '{name}' contains invalid Unicode"
                 )),
             },
 

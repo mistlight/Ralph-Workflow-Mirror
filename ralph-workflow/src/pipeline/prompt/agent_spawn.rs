@@ -30,7 +30,7 @@ const INTERRUPT_KILL_CONFIG: KillConfig = KillConfig::new(
 
 pub(super) fn run_with_agent_spawn(
     cmd: &PromptCommand<'_>,
-    runtime: &mut PipelineRuntime<'_>,
+    runtime: &PipelineRuntime<'_>,
     anthropic_env_vars_to_sanitize: &[&str],
 ) -> io::Result<CommandResult> {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -79,7 +79,7 @@ pub(super) fn run_with_agent_spawn(
     runtime.workspace.write(logfile_path, "")?;
 
     let mut complete_env: std::collections::HashMap<String, String> = std::env::vars().collect();
-    for (key, value) in cmd.env_vars.iter() {
+    for (key, value) in cmd.env_vars {
         complete_env.insert(key.clone(), value.clone());
     }
     super::environment::sanitize_command_env(

@@ -34,7 +34,7 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
 
     // Add --review-depth if specified
     if let Some(ref depth) = cli.review_depth {
-        parts.push(format!("--review-depth {}", depth));
+        parts.push(format!("--review-depth {depth}"));
     }
 
     // Add --no-isolation if false (isolation_mode defaults to true)
@@ -59,7 +59,7 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
 
     // Add --reviewer-json-parser if specified
     if let Some(ref parser) = cli.reviewer_json_parser {
-        parts.push(format!("--reviewer-json-parser {}", parser));
+        parts.push(format!("--reviewer-json-parser {parser}"));
     }
 
     // Add --agent flags if agents differ from defaults
@@ -69,18 +69,18 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
 
     // Add model overrides if present
     if let Some(ref model) = checkpoint.developer_agent_config.model_override {
-        parts.push(format!("--model \"{}\"", model));
+        parts.push(format!("--model \"{model}\""));
     }
     if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
-        parts.push(format!("--reviewer-model \"{}\"", model));
+        parts.push(format!("--reviewer-model \"{model}\""));
     }
 
     // Add provider overrides if present
     if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
-        parts.push(format!("--provider \"{}\"", provider));
+        parts.push(format!("--provider \"{provider}\""));
     }
     if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
-        parts.push(format!("--reviewer-provider \"{}\"", provider));
+        parts.push(format!("--reviewer-provider \"{provider}\""));
     }
 
     if parts.len() > 1 {
@@ -169,7 +169,7 @@ fn create_progress_bar(current: u32, total: u32) -> String {
     }
 
     let width = 20; // Total width of progress bar
-    let filled = ((current as f64 / total as f64) * width as f64).round() as usize;
+    let filled = ((f64::from(current) / f64::from(total)) * width as f64).round() as usize;
     let filled = filled.min(width);
 
     let mut bar = String::from("[");
@@ -182,15 +182,15 @@ fn create_progress_bar(current: u32, total: u32) -> String {
     }
     bar.push(']');
 
-    let percentage = ((current as f64 / total as f64) * 100.0).round() as u32;
-    format!("{} {}%", bar, percentage)
+    let percentage = ((f64::from(current) / f64::from(total)) * 100.0).round() as u32;
+    format!("{bar} {percentage}%")
 }
 
 /// Get a stable, ASCII-only indicator for a pipeline phase.
 ///
 /// This intentionally avoids emoji glyphs to keep output stable and compatible
 /// with terminals and consumers that parse output.
-fn get_phase_indicator(phase: PipelinePhase) -> &'static str {
+const fn get_phase_indicator(phase: PipelinePhase) -> &'static str {
     match phase {
         PipelinePhase::Rebase => "[rebase]",
         PipelinePhase::Planning => "[plan]",
@@ -212,7 +212,7 @@ fn get_phase_indicator(phase: PipelinePhase) -> &'static str {
 ///
 /// This intentionally avoids Unicode glyphs so `--inspect-checkpoint` output
 /// stays stable on non-UTF8 terminals.
-fn outcome_marker_ascii(
+const fn outcome_marker_ascii(
     outcome: &crate::checkpoint::execution_history::StepOutcome,
 ) -> &'static str {
     match outcome {

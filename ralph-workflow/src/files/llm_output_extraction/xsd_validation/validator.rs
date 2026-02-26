@@ -2,15 +2,15 @@
 // Contains the main validation logic and parsed commit message types.
 
 /// Example of a valid commit message XML for error messages.
-const EXAMPLE_COMMIT_XML: &str = r#"<ralph-commit>
+const EXAMPLE_COMMIT_XML: &str = r"<ralph-commit>
 <ralph-subject>feat(api): add user authentication</ralph-subject>
 <ralph-body>Implements JWT-based authentication for the API.</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>";
 
 /// Validate XML content against the XSD schema.
 ///
 /// This function validates that the XML content conforms to the expected
-/// commit message format defined in commit_message.xsd:
+/// commit message format defined in `commit_message.xsd`:
 ///
 /// ```xml
 /// <ralph-commit>
@@ -42,7 +42,7 @@ const EXAMPLE_COMMIT_XML: &str = r#"<ralph-commit>
 /// let result = validate_xml_against_xsd(xml);
 /// assert!(result.is_ok());
 /// ```
-pub(crate) fn validate_xml_against_xsd(
+pub fn validate_xml_against_xsd(
     xml_content: &str,
 ) -> Result<CommitMessageElements, XsdValidationError> {
     let content = xml_content.trim();
@@ -65,7 +65,7 @@ pub(crate) fn validate_xml_against_xsd(
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-commit".to_string(),
                     expected: "<ralph-commit> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-commit> as the root element.".to_string(),
                     example: Some(EXAMPLE_COMMIT_XML.into()),
                 });
@@ -419,7 +419,7 @@ pub(crate) fn validate_xml_against_xsd(
 /// This struct contains all the elements that were successfully
 /// extracted and validated from the XML content.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CommitMessageElements {
+pub struct CommitMessageElements {
     /// The commit subject line (required)
     /// Format: type(scope): description
     pub subject: String,

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// Each event represents a discrete CLI argument or flag being processed.
 /// Events are processed in order, with later events taking precedence
 /// (last-wins semantics for conflicting options like presets).
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CliEvent {
     // ===== Verbosity Events =====
     /// Explicit verbosity level set via -v/--verbosity

@@ -62,7 +62,8 @@ pub enum WorkspaceIoErrorKind {
 }
 
 impl WorkspaceIoErrorKind {
-    pub fn from_io_error_kind(kind: std::io::ErrorKind) -> Self {
+    #[must_use]
+    pub const fn from_io_error_kind(kind: std::io::ErrorKind) -> Self {
         match kind {
             std::io::ErrorKind::NotFound => Self::NotFound,
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
@@ -92,7 +93,7 @@ impl WorkspaceIoErrorKind {
 ///
 /// 1. **Errors are events**: All `Err()` returns from effect handlers MUST contain
 ///    events from this namespace, NOT strings.
-/// 2. **Err() is a carrier**: The `Err()` mechanism just carries error events to the
+/// 2. **`Err()` is a carrier**: The `Err()` mechanism just carries error events to the
 ///    event loop; it doesn't bypass the reducer.
 /// 3. **Reducer owns recovery**: The reducer processes error events identically to
 ///    success events and decides recovery strategy.
@@ -105,13 +106,13 @@ pub enum ErrorEvent {
     /// This is an external termination request, not an internal pipeline failure.
     /// The reducer transitions to `PipelinePhase::Interrupted` and sets
     /// `interrupted_by_user=true` so orchestration can run termination effects
-    /// deterministically (RestorePromptPermissions, SaveCheckpoint) while skipping
+    /// deterministically (`RestorePromptPermissions`, `SaveCheckpoint`) while skipping
     /// the pre-termination commit safety check.
     UserInterruptRequested,
-    /// Review inputs not materialized before prepare_review_prompt.
+    /// Review inputs not materialized before `prepare_review_prompt`.
     ///
-    /// This indicates an effect sequencing bug where prepare_review_prompt was called
-    /// without first materializing the review inputs via materialize_review_inputs.
+    /// This indicates an effect sequencing bug where `prepare_review_prompt` was called
+    /// without first materializing the review inputs via `materialize_review_inputs`.
     ReviewInputsNotMaterialized {
         /// The review pass number.
         pass: u32,
@@ -138,8 +139,8 @@ pub enum ErrorEvent {
     CommitContinuationNotSupported,
     /// Missing fix prompt file when invoking fix agent.
     ///
-    /// This indicates an effect sequencing bug where invoke_fix was called without
-    /// first preparing the fix prompt file at .agent/tmp/fix_prompt.txt.
+    /// This indicates an effect sequencing bug where `invoke_fix` was called without
+    /// first preparing the fix prompt file at .`agent/tmp/fix_prompt.txt`.
     FixPromptMissing,
 
     /// Agent chain exhausted for a phase.
@@ -215,7 +216,7 @@ pub enum ErrorEvent {
 
     /// Commit agent chain not initialized when invoking commit agent.
     ///
-    /// This is an invariant violation: InitializeAgentChain must run before invoking.
+    /// This is an invariant violation: `InitializeAgentChain` must run before invoking.
     /// Effect handlers must surface this as a typed error event (never panic) so the
     /// reducer can deterministically interrupt/checkpoint.
     CommitAgentNotInitialized { attempt: u32 },
@@ -235,128 +236,127 @@ pub enum ErrorEvent {
 impl std::fmt::Display for ErrorEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ErrorEvent::UserInterruptRequested => {
+            Self::UserInterruptRequested => {
                 write!(f, "User interrupt requested (SIGINT / Ctrl+C)")
             }
-            ErrorEvent::ReviewInputsNotMaterialized { pass } => {
+            Self::ReviewInputsNotMaterialized { pass } => {
                 write!(
                     f,
                     "Review inputs not materialized for pass {pass} (expected materialize_review_inputs before prepare_review_prompt)"
                 )
             }
-            ErrorEvent::PlanningContinuationNotSupported => {
+            Self::PlanningContinuationNotSupported => {
                 write!(f, "Planning does not support continuation prompts")
             }
-            ErrorEvent::ReviewContinuationNotSupported => {
+            Self::ReviewContinuationNotSupported => {
                 write!(f, "Review does not support continuation prompts")
             }
-            ErrorEvent::FixContinuationNotSupported => {
+            Self::FixContinuationNotSupported => {
                 write!(f, "Fix does not support continuation prompts")
             }
-            ErrorEvent::CommitContinuationNotSupported => {
+            Self::CommitContinuationNotSupported => {
                 write!(
                     f,
                     "Commit message generation does not support continuation prompts"
                 )
             }
-            ErrorEvent::FixPromptMissing => {
+            Self::FixPromptMissing => {
                 write!(f, "Missing fix prompt at .agent/tmp/fix_prompt.txt")
             }
-            ErrorEvent::AgentChainExhausted { role, phase, cycle } => {
+            Self::AgentChainExhausted { role, phase, cycle } => {
                 write!(
                     f,
-                    "Agent chain exhausted for role {:?} in phase {:?} (cycle {})",
-                    role, phase, cycle
+                    "Agent chain exhausted for role {role:?} in phase {phase:?} (cycle {cycle})"
                 )
             }
-            ErrorEvent::WorkspaceReadFailed { path, kind } => {
+            Self::WorkspaceReadFailed { path, kind } => {
                 write!(f, "Workspace read failed at {path} ({kind:?})")
             }
-            ErrorEvent::WorkspaceWriteFailed { path, kind } => {
+            Self::WorkspaceWriteFailed { path, kind } => {
                 write!(f, "Workspace write failed at {path} ({kind:?})")
             }
-            ErrorEvent::WorkspaceCreateDirAllFailed { path, kind } => {
+            Self::WorkspaceCreateDirAllFailed { path, kind } => {
                 write!(f, "Workspace create_dir_all failed at {path} ({kind:?})")
             }
-            ErrorEvent::WorkspaceRemoveFailed { path, kind } => {
+            Self::WorkspaceRemoveFailed { path, kind } => {
                 write!(f, "Workspace remove failed at {path} ({kind:?})")
             }
-            ErrorEvent::GitAddAllFailed { kind } => {
+            Self::GitAddAllFailed { kind } => {
                 write!(f, "git add -A (stage all changes) failed ({kind:?})")
             }
-            ErrorEvent::GitStatusFailed { kind } => {
+            Self::GitStatusFailed { kind } => {
                 write!(f, "git status (pre-termination check) failed ({kind:?})")
             }
-            ErrorEvent::AgentNotFound { agent } => {
+            Self::AgentNotFound { agent } => {
                 write!(f, "Agent not found: {agent}")
             }
-            ErrorEvent::PlanningInputsNotMaterialized { iteration } => {
+            Self::PlanningInputsNotMaterialized { iteration } => {
                 write!(
                     f,
                     "Planning inputs not materialized for iteration {iteration} (expected materialize_planning_inputs before prepare/invoke)"
                 )
             }
-            ErrorEvent::DevelopmentInputsNotMaterialized { iteration } => {
+            Self::DevelopmentInputsNotMaterialized { iteration } => {
                 write!(
                     f,
                     "Development inputs not materialized for iteration {iteration} (expected materialize_development_inputs before prepare/invoke)"
                 )
             }
-            ErrorEvent::CommitInputsNotMaterialized { attempt } => {
+            Self::CommitInputsNotMaterialized { attempt } => {
                 write!(
                     f,
                     "Commit inputs not materialized for attempt {attempt} (expected materialize_commit_inputs before prepare)"
                 )
             }
-            ErrorEvent::PlanningPromptMissing { iteration } => {
+            Self::PlanningPromptMissing { iteration } => {
                 write!(
                     f,
                     "Missing planning prompt at .agent/tmp/planning_prompt.txt for iteration {iteration}"
                 )
             }
-            ErrorEvent::DevelopmentPromptMissing { iteration } => {
+            Self::DevelopmentPromptMissing { iteration } => {
                 write!(
                     f,
                     "Missing development prompt at .agent/tmp/development_prompt.txt for iteration {iteration}"
                 )
             }
-            ErrorEvent::ReviewPromptMissing { pass } => {
+            Self::ReviewPromptMissing { pass } => {
                 write!(
                     f,
                     "Missing review prompt at .agent/tmp/review_prompt.txt for pass {pass}"
                 )
             }
-            ErrorEvent::CommitPromptMissing { attempt } => {
+            Self::CommitPromptMissing { attempt } => {
                 write!(
                     f,
                     "Missing commit prompt at .agent/tmp/commit_prompt.txt for attempt {attempt}"
                 )
             }
-            ErrorEvent::CommitAgentNotInitialized { attempt } => {
+            Self::CommitAgentNotInitialized { attempt } => {
                 write!(
                     f,
                     "Commit agent not initialized for attempt {attempt} (expected InitializeAgentChain before invoke_commit_agent)"
                 )
             }
-            ErrorEvent::ValidatedPlanningMarkdownMissing { iteration } => {
+            Self::ValidatedPlanningMarkdownMissing { iteration } => {
                 write!(
                     f,
                     "Missing validated planning markdown for iteration {iteration}"
                 )
             }
-            ErrorEvent::ValidatedDevelopmentOutcomeMissing { iteration } => {
+            Self::ValidatedDevelopmentOutcomeMissing { iteration } => {
                 write!(
                     f,
                     "Missing validated development outcome for iteration {iteration}"
                 )
             }
-            ErrorEvent::ValidatedReviewOutcomeMissing { pass } => {
+            Self::ValidatedReviewOutcomeMissing { pass } => {
                 write!(f, "Missing validated review outcome for pass {pass}")
             }
-            ErrorEvent::ValidatedFixOutcomeMissing { pass } => {
+            Self::ValidatedFixOutcomeMissing { pass } => {
                 write!(f, "Missing validated fix outcome for pass {pass}")
             }
-            ErrorEvent::ValidatedCommitOutcomeMissing { attempt } => {
+            Self::ValidatedCommitOutcomeMissing { attempt } => {
                 write!(f, "Missing validated commit outcome for attempt {attempt}")
             }
         }

@@ -8,8 +8,8 @@
 // See: ralph-workflow/src/reducer/handler/commit/inputs.rs:check_commit_diff_with_result
 // for the new fallback behavior.
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::CommitEvent;
+use crate::reducer::state::{CommitState, ContinuationState, PipelineState};
 
 pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineState {
     const MAX_CONSECUTIVE_PUSH_FAILURES: u32 = 3;
@@ -365,8 +365,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
     }
 }
 
-/// Compute phase transition after a commit (used by CommitCreated and CommitSkipped).
-fn compute_post_commit_transition(
+/// Compute phase transition after a commit (used by `CommitCreated` and `CommitSkipped`).
+const fn compute_post_commit_transition(
     state: &PipelineState,
 ) -> (crate::reducer::event::PipelinePhase, u32, u32) {
     match state.previous_phase {
@@ -420,7 +420,7 @@ fn compute_post_commit_transition(
 
 /// Handle commit message validation failure with XSD retry logic.
 ///
-/// This now integrates with the XSD retry tracking in ContinuationState
+/// This now integrates with the XSD retry tracking in `ContinuationState`
 /// for uniformity with other phases.
 fn reduce_commit_validation_failed(
     state: PipelineState,

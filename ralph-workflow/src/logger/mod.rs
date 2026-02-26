@@ -90,6 +90,7 @@ pub fn colors_enabled_with_env(env: &dyn ColorEnvironment) -> bool {
 /// - `CLICOLOR_FORCE=1`: Forces colors even in non-TTY
 /// - `CLICOLOR=0`: Disables colors on macOS
 /// - `TERM=dumb`: Disables colors for basic terminals
+#[must_use]
 pub fn colors_enabled() -> bool {
     colors_enabled_with_env(&RealColorEnvironment)
 }
@@ -101,6 +102,7 @@ pub struct Colors {
 }
 
 impl Colors {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             enabled: colors_enabled(),
@@ -136,10 +138,12 @@ impl Colors {
     /// # }
     /// ```
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub const fn with_enabled(enabled: bool) -> Self {
         Self { enabled }
     }
 
+    #[must_use]
     pub const fn bold(self) -> &'static str {
         if self.enabled {
             "\x1b[1m"
@@ -148,6 +152,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn dim(self) -> &'static str {
         if self.enabled {
             "\x1b[2m"
@@ -156,6 +161,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn reset(self) -> &'static str {
         if self.enabled {
             "\x1b[0m"
@@ -164,6 +170,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn red(self) -> &'static str {
         if self.enabled {
             "\x1b[31m"
@@ -172,6 +179,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn green(self) -> &'static str {
         if self.enabled {
             "\x1b[32m"
@@ -180,6 +188,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn yellow(self) -> &'static str {
         if self.enabled {
             "\x1b[33m"
@@ -188,6 +197,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn blue(self) -> &'static str {
         if self.enabled {
             "\x1b[34m"
@@ -196,6 +206,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn magenta(self) -> &'static str {
         if self.enabled {
             "\x1b[35m"
@@ -204,6 +215,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn cyan(self) -> &'static str {
         if self.enabled {
             "\x1b[36m"
@@ -212,6 +224,7 @@ impl Colors {
         }
     }
 
+    #[must_use]
     pub const fn white(self) -> &'static str {
         if self.enabled {
             "\x1b[37m"

@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// This tracks information about the current pipeline run that is separate
 /// from the configured parameters. It enables:
-/// - Unique identification of each run (run_id)
-/// - Tracking resume lineage (parent_run_id)
-/// - Counting how many times a session has been resumed (resume_count)
+/// - Unique identification of each run (`run_id`)
+/// - Tracking resume lineage (`parent_run_id`)
+/// - Counting how many times a session has been resumed (`resume_count`)
 /// - Tracking actual completed iterations vs configured iterations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunContext {
@@ -29,7 +29,8 @@ pub struct RunContext {
 }
 
 impl RunContext {
-    /// Create a new RunContext for a fresh run.
+    /// Create a new `RunContext` for a fresh run.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             run_id: uuid::Uuid::new_v4().to_string(),
@@ -40,7 +41,8 @@ impl RunContext {
         }
     }
 
-    /// Create a RunContext from a checkpoint (for resume scenarios).
+    /// Create a `RunContext` from a checkpoint (for resume scenarios).
+    #[must_use]
     pub fn from_checkpoint(checkpoint: &super::PipelineCheckpoint) -> Self {
         Self {
             run_id: uuid::Uuid::new_v4().to_string(), // New run_id for resumed run
@@ -66,12 +68,12 @@ impl RunContext {
     }
 
     /// Record a completed developer iteration.
-    pub fn record_developer_iteration(&mut self) {
+    pub const fn record_developer_iteration(&mut self) {
         self.actual_developer_runs += 1;
     }
 
     /// Record a completed reviewer pass.
-    pub fn record_reviewer_pass(&mut self) {
+    pub const fn record_reviewer_pass(&mut self) {
         self.actual_reviewer_runs += 1;
     }
 }

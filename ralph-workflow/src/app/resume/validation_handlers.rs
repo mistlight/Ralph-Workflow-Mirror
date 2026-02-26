@@ -21,6 +21,10 @@
 /// `Ok(Some(ResumeResult))` if a valid checkpoint was found and loaded,
 /// `Ok(None)` if no checkpoint exists or --resume was not specified.
 /// `Err(_)` if --resume was specified and checkpoint validation failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_resume_with_validation(
     args: &crate::cli::Args,
     config: &Config,
@@ -43,7 +47,7 @@ pub fn handle_resume_with_validation(
                 std::process::exit(1);
             }
             Err(e) => {
-                logger.error(&format!("Failed to load checkpoint: {}", e));
+                logger.error(&format!("Failed to load checkpoint: {e}"));
                 std::process::exit(1);
             }
         }
@@ -114,8 +118,7 @@ pub fn handle_resume_with_validation(
 
             if let ValidationOutcome::Failed(reason) = validation_outcome {
                 return Err(anyhow::anyhow!(
-                    "File system state validation failed: {}",
-                    reason
+                    "File system state validation failed: {reason}"
                 ));
             }
 

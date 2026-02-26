@@ -7,14 +7,14 @@
 //!
 //! - If the reducer event loop is running, the handler sets a global interrupt request
 //!   flag and returns. The event loop consumes that flag and performs the reducer-driven
-//!   termination sequence (RestorePromptPermissions -> SaveCheckpoint -> shutdown).
+//!   termination sequence (`RestorePromptPermissions` -> `SaveCheckpoint` -> shutdown).
 //! - If the event loop is not running yet (early startup), the handler falls back to a
 //!   best-effort checkpoint save and exits with the standard SIGINT code (130).
 //!
 //! ## Ctrl+C Exception for Safety Check
 //!
 //! The `interrupted_by_user` flag distinguishes user-initiated interrupts (Ctrl+C)
-//! from programmatic interrupts (AwaitingDevFix exhaustion, completion marker emission).
+//! from programmatic interrupts (`AwaitingDevFix` exhaustion, completion marker emission).
 //! When set to `true`, the pre-termination commit safety check is skipped because
 //! the user explicitly chose to interrupt execution. This respects user intent while
 //! ensuring all other termination paths commit uncommitted work before exiting.
@@ -35,7 +35,7 @@ static INTERRUPT_CONTEXT: Mutex<Option<InterruptContext>> = Mutex::new(None);
 ///
 /// The signal handler sets this flag. The reducer event loop consumes it and
 /// transitions the pipeline to an Interrupted state so termination effects
-/// (RestorePromptPermissions, SaveCheckpoint) execute deterministically.
+/// (`RestorePromptPermissions`, `SaveCheckpoint`) execute deterministically.
 static USER_INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// True once a user interrupt has occurred during this process lifetime.
@@ -51,8 +51,8 @@ static USER_INTERRUPTED_OCCURRED: AtomicBool = AtomicBool::new(false);
 ///
 /// When true, the Ctrl+C handler must NOT call `process::exit()`.
 /// Instead it requests interruption and lets the event loop drive:
-/// - RestorePromptPermissions
-/// - SaveCheckpoint
+/// - `RestorePromptPermissions`
+/// - `SaveCheckpoint`
 /// - orderly shutdown
 static EVENT_LOOP_ACTIVE: AtomicBool = AtomicBool::new(false);
 
@@ -262,7 +262,7 @@ pub fn clear_interrupt_context() {
 /// 2. Clean up generated files
 /// 3. Exit gracefully
 ///
-/// Call this early in main() after initializing the pipeline context.
+/// Call this early in `main()` after initializing the pipeline context.
 pub fn setup_interrupt_handler() {
     let install = ctrlc::set_handler(|| {
         request_user_interrupt();
@@ -291,13 +291,13 @@ pub fn setup_interrupt_handler() {
         let context = {
             let ctx = INTERRUPT_CONTEXT
                 .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             ctx.clone()
         };
 
         if let Some(ref context) = context {
             if let Err(e) = save_interrupt_checkpoint(context) {
-                eprintln!("Warning: Failed to save checkpoint: {}", e);
+                eprintln!("Warning: Failed to save checkpoint: {e}");
             } else {
                 eprintln!("Checkpoint saved. Resume with: ralph --resume");
             }

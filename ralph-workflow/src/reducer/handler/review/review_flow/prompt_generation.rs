@@ -29,7 +29,7 @@
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn prepare_review_prompt(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         pass: u32,
         prompt_mode: PromptMode,
@@ -135,18 +135,15 @@ impl MainEffectHandler {
                     // The canonical file was archived after successful validation or a previous retry.
                     // Try reading from the archived .processed file as a fallback.
                     let processed_path = Path::new(".agent/tmp/issues.xml.processed");
-                    match ctx.workspace.read(processed_path) {
-                        Ok(output) => {
-                            ctx.logger
-                                .info("XSD retry: using archived .processed file as last output");
-                            output
-                        }
-                        Err(_) => {
-                            ctx.logger.warn(
-                                "Missing .agent/tmp/issues.xml and .processed fallback; using empty output for review XSD retry",
-                            );
-                            String::new()
-                        }
+                    if let Ok(output) = ctx.workspace.read(processed_path) {
+                        ctx.logger
+                            .info("XSD retry: using archived .processed file as last output");
+                        output
+                    } else {
+                        ctx.logger.warn(
+                            "Missing .agent/tmp/issues.xml and .processed fallback; using empty output for review XSD retry",
+                        );
+                        String::new()
                     }
                 }
                 Err(err) => {
@@ -280,14 +277,14 @@ impl MainEffectHandler {
                 };
                 let plan_ref = match &inputs.plan.representation {
                     PromptInputRepresentation::Inline => {
-                        let plan_inline = plan_inline.clone().unwrap_or_else(|| {
+                        let plan_inline = plan_inline.unwrap_or_else(|| {
                             Self::sentinel_plan_content(ctx.config.isolation_mode)
                         });
                         PlanContentReference::Inline(plan_inline)
                     }
                     PromptInputRepresentation::FileReference { path } => {
                         PlanContentReference::ReadFromFile {
-                            primary_path: path.to_path_buf(),
+                            primary_path: path.clone(),
                             fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                             description: format!(
                                 "Plan is {} bytes (exceeds {} limit)",
@@ -298,15 +295,15 @@ impl MainEffectHandler {
                 };
                 let diff_ref = match &inputs.diff.representation {
                     PromptInputRepresentation::Inline => {
-                        let diff_inline = diff_inline.clone().unwrap_or_else(|| {
+                        let diff_inline = diff_inline.unwrap_or_else(|| {
                             Self::fallback_diff_instructions(&baseline_oid_for_prompts)
                         });
                         DiffContentReference::Inline(diff_inline)
                     }
                     PromptInputRepresentation::FileReference { path } => {
                         DiffContentReference::ReadFromFile {
-                            path: path.to_path_buf(),
-                            start_commit: baseline_oid_for_prompts.clone(),
+                            path: path.clone(),
+                            start_commit: baseline_oid_for_prompts,
                             description: format!(
                                 "Diff is {} bytes (exceeds {} limit)",
                                 inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
@@ -387,14 +384,14 @@ impl MainEffectHandler {
                 let prompt_key = format!("review_{pass}");
                 let plan_ref = match &inputs.plan.representation {
                     PromptInputRepresentation::Inline => {
-                        let plan_inline = plan_inline.clone().unwrap_or_else(|| {
+                        let plan_inline = plan_inline.unwrap_or_else(|| {
                             Self::sentinel_plan_content(ctx.config.isolation_mode)
                         });
                         PlanContentReference::Inline(plan_inline)
                     }
                     PromptInputRepresentation::FileReference { path } => {
                         PlanContentReference::ReadFromFile {
-                            primary_path: path.to_path_buf(),
+                            primary_path: path.clone(),
                             fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                             description: format!(
                                 "Plan is {} bytes (exceeds {} limit)",
@@ -405,15 +402,15 @@ impl MainEffectHandler {
                 };
                 let diff_ref = match &inputs.diff.representation {
                     PromptInputRepresentation::Inline => {
-                        let diff_inline = diff_inline.clone().unwrap_or_else(|| {
+                        let diff_inline = diff_inline.unwrap_or_else(|| {
                             Self::fallback_diff_instructions(&baseline_oid_for_prompts)
                         });
                         DiffContentReference::Inline(diff_inline)
                     }
                     PromptInputRepresentation::FileReference { path } => {
                         DiffContentReference::ReadFromFile {
-                            path: path.to_path_buf(),
-                            start_commit: baseline_oid_for_prompts.clone(),
+                            path: path.clone(),
+                            start_commit: baseline_oid_for_prompts,
                             description: format!(
                                 "Diff is {} bytes (exceeds {} limit)",
                                 inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
@@ -442,11 +439,13 @@ impl MainEffectHandler {
                     });
 
                 // Validate freshly generated prompts (not replayed ones)
-                let rendered_log = if !was_replayed {
+                let rendered_log = if was_replayed {
+                    None
+                } else {
                     let refs = PromptContentReferences {
                         prompt: None,
-                        plan: Some(plan_ref.clone()),
-                        diff: Some(diff_ref.clone()),
+                        plan: Some(plan_ref),
+                        diff: Some(diff_ref),
                     };
                     let rendered = crate::prompts::prompt_review_xml_with_references_and_log(
                         ctx.template_context,
@@ -471,8 +470,6 @@ impl MainEffectHandler {
                         return Ok(result);
                     }
                     Some(rendered.log)
-                } else {
-                    None
                 };
 
                 (
@@ -502,8 +499,7 @@ impl MainEffectHandler {
             &review_prompt_xml,
         ) {
             ctx.logger.warn(&format!(
-                "Failed to write review prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
+                "Failed to write review prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
             ));
         }
 

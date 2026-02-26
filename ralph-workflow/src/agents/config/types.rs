@@ -54,7 +54,7 @@ pub struct AgentConfig {
     /// Include partial messages flag for streaming in print mode (e.g., "--include-partial-messages").
     /// Required for Claude output streaming when using `--output-format=stream-json` with print mode.
     pub streaming_flag: String,
-    /// Session continuation flag template (e.g., "--session {}" for OpenCode).
+    /// Session continuation flag template (e.g., "--session {}" for `OpenCode`).
     /// The `{}` placeholder is replaced with the session ID at runtime.
     /// If empty, session continuation is not supported for this agent.
     pub session_flag: String,
@@ -86,17 +86,20 @@ impl Default for AgentConfig {
 }
 
 impl AgentConfig {
-    /// Create a new AgentConfig builder.
+    /// Create a new `AgentConfig` builder.
+    #[must_use]
     pub fn builder() -> AgentConfigBuilder {
         AgentConfigBuilder::default()
     }
 
     /// Build full command string with specified flags.
+    #[must_use]
     pub fn build_cmd(&self, output: bool, yolo: bool, verbose: bool) -> String {
         self.build_cmd_with_model(output, yolo, verbose, None)
     }
 
     /// Build full command string with specified flags and optional model override.
+    #[must_use]
     pub fn build_cmd_with_model(
         &self,
         output: bool,
@@ -152,6 +155,7 @@ impl AgentConfig {
     ///
     /// This is used for XSD retries where we want to continue an existing session
     /// so the AI retains memory of its previous reasoning.
+    #[must_use]
     pub fn build_cmd_with_session(
         &self,
         output: bool,
@@ -175,7 +179,8 @@ impl AgentConfig {
     }
 
     /// Check if this agent supports session continuation.
-    pub fn supports_session_continuation(&self) -> bool {
+    #[must_use]
+    pub const fn supports_session_continuation(&self) -> bool {
         !self.session_flag.is_empty()
     }
 
@@ -196,9 +201,9 @@ impl AgentConfig {
     }
 }
 
-/// Builder for AgentConfig.
+/// Builder for `AgentConfig`.
 ///
-/// Provides a fluent API for constructing AgentConfig instances
+/// Provides a fluent API for constructing `AgentConfig` instances
 /// without needing to specify all fields.
 #[derive(Default, Debug, Clone)]
 pub struct AgentConfigBuilder {
@@ -218,78 +223,91 @@ pub struct AgentConfigBuilder {
 
 impl AgentConfigBuilder {
     /// Set the base command to run the agent.
+    #[must_use]
     pub fn cmd(mut self, cmd: impl Into<String>) -> Self {
         self.cmd = Some(cmd.into());
         self
     }
 
     /// Set the output-format flag.
+    #[must_use]
     pub fn output_flag(mut self, flag: impl Into<String>) -> Self {
         self.output_flag = Some(flag.into());
         self
     }
 
     /// Set the autonomous mode flag.
+    #[must_use]
     pub fn yolo_flag(mut self, flag: impl Into<String>) -> Self {
         self.yolo_flag = Some(flag.into());
         self
     }
 
     /// Set the verbose output flag.
+    #[must_use]
     pub fn verbose_flag(mut self, flag: impl Into<String>) -> Self {
         self.verbose_flag = Some(flag.into());
         self
     }
 
     /// Set whether the agent can run git commit.
-    pub fn can_commit(mut self, can_commit: bool) -> Self {
+    #[must_use]
+    pub const fn can_commit(mut self, can_commit: bool) -> Self {
         self.can_commit = Some(can_commit);
         self
     }
 
     /// Set the JSON parser type.
-    pub fn json_parser(mut self, parser: JsonParserType) -> Self {
+    #[must_use]
+    pub const fn json_parser(mut self, parser: JsonParserType) -> Self {
         self.json_parser = Some(parser);
         self
     }
 
     /// Set the model/provider flag.
+    #[must_use]
     pub fn model_flag(mut self, flag: impl Into<String>) -> Self {
         self.model_flag = Some(flag.into());
         self
     }
 
     /// Set the print/non-interactive mode flag.
+    #[must_use]
     pub fn print_flag(mut self, flag: impl Into<String>) -> Self {
         self.print_flag = Some(flag.into());
         self
     }
 
     /// Set the streaming flag.
+    #[must_use]
     pub fn streaming_flag(mut self, flag: impl Into<String>) -> Self {
         self.streaming_flag = Some(flag.into());
         self
     }
 
     /// Set the session continuation flag template.
+    #[must_use]
     pub fn session_flag(mut self, flag: impl Into<String>) -> Self {
         self.session_flag = Some(flag.into());
         self
     }
 
     /// Set environment variables.
+    #[must_use]
     pub fn env_vars(mut self, env_vars: HashMap<String, String>) -> Self {
         self.env_vars = Some(env_vars);
         self
     }
 
     /// Set the display name.
+    #[must_use]
     pub fn display_name(mut self, name: impl Into<String>) -> Self {
         self.display_name = Some(name.into());
         self
     }
 
-    /// Build the AgentConfig.
+    /// Build the `AgentConfig`.
+    #[must_use]
     pub fn build(self) -> AgentConfig {
         AgentConfig {
             cmd: self.cmd.unwrap_or_default(),
@@ -342,7 +360,7 @@ pub struct AgentConfigToml {
     #[serde(default)]
     pub session_flag: String,
     /// CCS profile name (optional). If provided, loads env vars from CCS config.
-    /// These env vars override any manually specified env_vars.
+    /// These env vars override any manually specified `env_vars`.
     #[serde(default)]
     pub ccs_profile: Option<String>,
     /// Additional environment variables (optional).
@@ -353,7 +371,7 @@ pub struct AgentConfigToml {
     pub display_name: Option<String>,
 }
 
-fn default_can_commit() -> bool {
+const fn default_can_commit() -> bool {
     true
 }
 

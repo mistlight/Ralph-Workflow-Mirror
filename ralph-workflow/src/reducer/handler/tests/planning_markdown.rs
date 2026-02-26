@@ -120,7 +120,7 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     let err = handler.write_planning_markdown(&mut ctx, 0).expect_err(
         "write_planning_markdown should return error when validated outcome is missing",
     );

@@ -16,11 +16,15 @@ pub const BASELINE_NOT_SET: &str = "__BASELINE_NOT_SET__";
 pub enum ReviewBaseline {
     /// A concrete commit OID to diff from.
     Commit(git2::Oid),
-    /// No baseline set; fall back to start_commit.
+    /// No baseline set; fall back to `start_commit`.
     NotSet,
 }
 
 /// Load the review baseline from the working directory.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let repo_root = repo
@@ -31,6 +35,10 @@ pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
 }
 
 /// Load the review baseline using the workspace abstraction.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_review_baseline_with_workspace(
     workspace: &dyn Workspace,
 ) -> io::Result<ReviewBaseline> {
@@ -50,8 +58,7 @@ pub fn load_review_baseline_with_workspace(
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "Invalid baseline OID in {}: '{}'",
-                REVIEW_BASELINE_FILE, raw
+                "Invalid baseline OID in {REVIEW_BASELINE_FILE}: '{raw}'"
             ),
         )
     })?;
@@ -60,6 +67,10 @@ pub fn load_review_baseline_with_workspace(
 }
 
 /// Update the review baseline to the current HEAD.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn update_review_baseline() -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let repo_root = repo
@@ -70,6 +81,10 @@ pub fn update_review_baseline() -> io::Result<()> {
 }
 
 /// Update the review baseline using the workspace abstraction.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn update_review_baseline_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let path = Path::new(REVIEW_BASELINE_FILE);
     match get_current_head_oid() {
@@ -79,9 +94,13 @@ pub fn update_review_baseline_with_workspace(workspace: &dyn Workspace) -> io::R
     }
 }
 
-/// Get review baseline info: (baseline_oid, commits_since, is_stale).
+/// Get review baseline info: (`baseline_oid`, `commits_since`, `is_stale`).
 ///
 /// If no baseline is set, returns `(None, 0, false)`.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_review_baseline_info() -> io::Result<(Option<String>, usize, bool)> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     match load_review_baseline()? {
@@ -99,7 +118,7 @@ fn count_commits_since(repo: &git2::Repository, baseline_oid: &str) -> io::Resul
     let baseline = git2::Oid::from_str(baseline_oid).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Invalid baseline OID: {}", baseline_oid),
+            format!("Invalid baseline OID: {baseline_oid}"),
         )
     })?;
 

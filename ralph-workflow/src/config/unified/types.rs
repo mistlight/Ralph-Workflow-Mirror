@@ -162,21 +162,21 @@ pub struct GeneralConfig {
 ///
 /// This allows 2 continuations per iteration (3 total valid attempts including the initial)
 /// for fast iteration cycles.
-fn default_max_dev_continuations() -> u32 {
+const fn default_max_dev_continuations() -> u32 {
     2
 }
 
 /// Default maximum XSD retry attempts before agent fallback.
 ///
 /// This allows 10 retries to fix XML formatting issues before switching agents.
-fn default_max_xsd_retries() -> u32 {
+const fn default_max_xsd_retries() -> u32 {
     10
 }
 
 /// Default maximum same-agent retry attempts before agent fallback.
 ///
 /// This allows 2 retries for the same agent before switching to the next agent.
-fn default_max_same_agent_retries() -> u32 {
+const fn default_max_same_agent_retries() -> u32 {
     2
 }
 
@@ -184,7 +184,7 @@ fn default_max_same_agent_retries() -> u32 {
 ///
 /// This limits memory growth to approximately 400-500 KB of history data.
 /// Older entries are dropped to maintain a bounded memory footprint.
-fn default_execution_history_limit() -> usize {
+const fn default_execution_history_limit() -> usize {
     1000
 }
 
@@ -317,6 +317,7 @@ pub enum CcsAliasToml {
 }
 
 impl CcsAliasToml {
+    #[must_use]
     pub fn as_config(&self) -> CcsAliasConfig {
         match self {
             Self::Command(cmd) => CcsAliasConfig {
@@ -362,13 +363,13 @@ pub struct AgentConfigToml {
     ///
     /// Omitted means "keep built-in default". Empty string explicitly disables streaming flag.
     pub streaming_flag: Option<String>,
-    /// Session continuation flag template (e.g., "-s {}" for OpenCode, "--resume {}" for Claude).
+    /// Session continuation flag template (e.g., "-s {}" for `OpenCode`, "--resume {}" for Claude).
     /// The `{}` placeholder is replaced with the session ID at runtime.
     ///
     /// Omitted means "keep built-in default". Empty string explicitly disables session continuation.
     /// See agent documentation for correct flag format:
-    /// - Claude: --resume <session_id> (from `claude --help`)
-    /// - OpenCode: -s <session_id> (from `opencode run --help`)
+    /// - Claude: --resume <`session_id`> (from `claude --help`)
+    /// - `OpenCode`: -s <`session_id`> (from `opencode run --help`)
     pub session_flag: Option<String>,
     /// Whether the agent can run git commit.
     ///

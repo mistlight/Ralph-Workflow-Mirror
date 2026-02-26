@@ -1,6 +1,6 @@
-//! OpenCode API catalog data structures.
+//! `OpenCode` API catalog data structures.
 //!
-//! Parses and represents the OpenCode model catalog (see <https://models.dev/api.json>), and a
+//! Parses and represents the `OpenCode` model catalog (see <https://models.dev/api.json>), and a
 //! simplified cache format used for local storage.
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -8,12 +8,12 @@ use std::collections::HashMap;
 
 use crate::agents::opencode_api::DEFAULT_CACHE_TTL_SECONDS;
 
-/// OpenCode API catalog containing all available providers and models.
+/// `OpenCode` API catalog containing all available providers and models.
 #[derive(Debug, Clone)]
 pub struct ApiCatalog {
-    /// All providers supported by OpenCode.
+    /// All providers supported by `OpenCode`.
     pub providers: HashMap<String, Provider>,
-    /// All models supported by OpenCode, indexed by provider name.
+    /// All models supported by `OpenCode`, indexed by provider name.
     pub models: HashMap<String, Vec<Model>>,
     /// When this catalog was cached (for TTL tracking).
     pub cached_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -34,7 +34,7 @@ impl<'de> Deserialize<'de> for ApiCatalog {
             // Cache format
             let cache_format: CacheFormat =
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-            Ok(ApiCatalog {
+            Ok(Self {
                 providers: cache_format.providers,
                 models: cache_format.models,
                 cached_at: None,
@@ -44,7 +44,7 @@ impl<'de> Deserialize<'de> for ApiCatalog {
             // API format - parse as provider entries
             let api_format: HashMap<String, RawProviderEntry> =
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-            Ok(ApiCatalog::from(api_format))
+            Ok(Self::from(api_format))
         }
     }
 }
@@ -129,24 +129,24 @@ impl From<HashMap<String, RawProviderEntry>> for ApiCatalog {
 }
 
 impl ApiCatalog {
-    /// Check if the catalog is expired based on its cached_at timestamp and TTL.
+    /// Check if the catalog is expired based on its `cached_at` timestamp and TTL.
+    #[must_use]
     pub fn is_expired(&self) -> bool {
-        if let Some(cached_at) = self.cached_at {
+        self.cached_at.is_none_or(|cached_at| {
             let now = chrono::Utc::now();
             let elapsed = now.signed_duration_since(cached_at);
-            elapsed.num_seconds() as u64 > self.ttl_seconds
-        } else {
-            // No cache timestamp means it should be refreshed
-            true
-        }
+            elapsed.num_seconds().cast_unsigned() > self.ttl_seconds
+        })
     }
 
     /// Check if a provider exists in the catalog.
+    #[must_use]
     pub fn has_provider(&self, provider: &str) -> bool {
         self.providers.contains_key(provider)
     }
 
     /// Check if a specific model exists for a provider.
+    #[must_use]
     pub fn has_model(&self, provider: &str, model: &str) -> bool {
         self.models
             .get(provider)
@@ -154,6 +154,7 @@ impl ApiCatalog {
     }
 
     /// Get all model IDs for a provider.
+    #[must_use]
     pub fn get_model_ids(&self, provider: &str) -> Vec<String> {
         self.models
             .get(provider)
@@ -162,6 +163,7 @@ impl ApiCatalog {
     }
 
     /// Get all provider names.
+    #[must_use]
     pub fn provider_names(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
@@ -196,7 +198,7 @@ impl ApiCatalog {
     }
 }
 
-/// A provider supported by OpenCode.
+/// A provider supported by `OpenCode`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provider {
     /// Unique provider identifier.

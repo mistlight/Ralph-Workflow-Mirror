@@ -3,7 +3,7 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for review issues.
 //!
-//! Uses quick_xml for robust XML parsing with proper whitespace handling.
+//! Uses `quick_xml` for robust XML parsing with proper whitespace handling.
 //!
 //! # Module Organization
 //!

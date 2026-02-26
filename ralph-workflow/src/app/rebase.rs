@@ -15,4 +15,4 @@ mod conflicts;
 pub use conflicts::try_resolve_conflicts_without_phase_ctx;
 pub use orchestration::{run_initial_rebase, run_rebase_to_default};
 
-pub(crate) use types::InitialRebaseOutcome;
+pub use types::InitialRebaseOutcome;

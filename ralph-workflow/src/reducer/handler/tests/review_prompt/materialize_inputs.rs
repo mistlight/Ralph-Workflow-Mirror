@@ -278,7 +278,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect("materialize_review_inputs should succeed with sentinel PLAN");
@@ -350,7 +350,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect("materialize_review_inputs should create .agent/ and write sentinel PLAN");
@@ -411,7 +411,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound PLAN read failures");
@@ -482,7 +482,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound DIFF read failures");
@@ -550,7 +550,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound baseline read failures");
@@ -615,7 +615,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect("materialize_review_inputs should succeed with sentinel PLAN in isolation mode");
@@ -683,7 +683,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
@@ -746,7 +746,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .materialize_review_inputs(&mut ctx, 0)
         .expect("materialize_review_inputs should return an EffectResult");

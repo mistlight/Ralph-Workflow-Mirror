@@ -1,7 +1,7 @@
 //! Semantic XML renderers for user-friendly output.
 //!
 //! This module routes XML rendering to type-specific modules.
-//! Each XML output type (DevelopmentResult, DevelopmentPlan, etc.) has
+//! Each XML output type (`DevelopmentResult`, `DevelopmentPlan`, etc.) has
 //! a dedicated renderer that transforms raw XML into user-friendly
 //! terminal output.
 //!
@@ -24,16 +24,17 @@ use crate::reducer::ui_event::{XmlOutputContext, XmlOutputType};
 ///
 /// Returns formatted string for terminal display.
 /// Falls back to raw XML with warning if parsing fails.
+#[must_use]
 pub fn render_xml(
     xml_type: &XmlOutputType,
     content: &str,
-    context: &Option<XmlOutputContext>,
+    output_context: &Option<XmlOutputContext>,
 ) -> String {
     match xml_type {
-        XmlOutputType::DevelopmentResult => development_result::render(content, context),
+        XmlOutputType::DevelopmentResult => development_result::render(content, output_context),
         XmlOutputType::DevelopmentPlan => development_plan::render(content),
-        XmlOutputType::ReviewIssues => review_issues::render(content, context),
-        XmlOutputType::FixResult => fix_result::render(content, context),
+        XmlOutputType::ReviewIssues => review_issues::render(content, output_context),
+        XmlOutputType::FixResult => fix_result::render(content, output_context),
         XmlOutputType::CommitMessage => commit_message::render(content),
     }
 }

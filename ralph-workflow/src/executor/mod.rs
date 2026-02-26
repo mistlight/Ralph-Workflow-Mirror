@@ -23,7 +23,7 @@
 //! - [`AgentChildHandle`] - Handle to a spawned agent with streaming output
 //! - [`ProcessOutput`] - Captured output from a completed process
 //!
-//! # Testing with MockProcessExecutor
+//! # Testing with `MockProcessExecutor`
 //!
 //! The `test-utils` feature enables `MockProcessExecutor` for integration tests:
 //!

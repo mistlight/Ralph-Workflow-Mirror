@@ -2,7 +2,9 @@
 
 use crate::agents::AgentRole;
 use crate::reducer::event::{PipelinePhase, ReviewEvent};
-use crate::reducer::state::*;
+use crate::reducer::state::{
+    AgentChainState, CommitState, ContinuationState, FixStatus, FixValidatedOutcome, PipelineState,
+};
 
 /// Handles `ReviewEvent::FixAttemptStarted`.
 ///
@@ -144,7 +146,7 @@ pub(super) fn reduce_fix_result_xml_archived(state: PipelineState, pass: u32) ->
 /// Handles `ReviewEvent::FixOutcomeApplied`.
 ///
 /// Applies the fix outcome by checking if continuation is needed or fix is complete.
-/// Recursively reduces the derived event (FixContinuationTriggered, FixContinuationBudgetExhausted, or FixAttemptCompleted).
+/// Recursively reduces the derived event (`FixContinuationTriggered`, `FixContinuationBudgetExhausted`, or `FixAttemptCompleted`).
 pub(super) fn reduce_fix_outcome_applied(state: PipelineState, pass: u32) -> PipelineState {
     let Some(outcome) = state
         .fix_validated_outcome
@@ -180,7 +182,7 @@ pub(super) fn reduce_fix_outcome_applied(state: PipelineState, pass: u32) -> Pip
 
 /// Handles `ReviewEvent::FixAttemptCompleted`.
 ///
-/// Completes fix attempt and transitions to CommitMessage phase.
+/// Completes fix attempt and transitions to `CommitMessage` phase.
 /// Increments completed passes counter.
 pub(super) fn reduce_fix_attempt_completed(
     state: PipelineState,
@@ -222,7 +224,7 @@ pub(super) fn reduce_fix_attempt_completed(
 /// Handles `ReviewEvent::FixContinuationTriggered`.
 ///
 /// Triggers a fix continuation when fix output indicates work is incomplete.
-/// Increments continuation metrics and sets fix_continue_pending.
+/// Increments continuation metrics and sets `fix_continue_pending`.
 pub(super) fn reduce_fix_continuation_triggered(
     state: PipelineState,
     pass: u32,
@@ -249,7 +251,7 @@ pub(super) fn reduce_fix_continuation_triggered(
 
 /// Handles `ReviewEvent::FixContinuationSucceeded`.
 ///
-/// Completes fix continuation successfully and transitions to CommitMessage.
+/// Completes fix continuation successfully and transitions to `CommitMessage`.
 /// Increments completed passes counter.
 pub(super) fn reduce_fix_continuation_succeeded(
     state: PipelineState,
@@ -317,7 +319,7 @@ pub(super) fn reduce_fix_continuation_budget_exhausted(
 /// Handles `ReviewEvent::FixOutputValidationFailed` and `ReviewEvent::FixResultXmlMissing`.
 ///
 /// Increments XSD retry count and either:
-/// - Sets xsd_retry_pending for another attempt (if budget remains)
+/// - Sets `xsd_retry_pending` for another attempt (if budget remains)
 /// - Switches to next agent in chain (if XSD retries exhausted)
 pub(super) fn reduce_fix_output_validation_failed(
     state: PipelineState,

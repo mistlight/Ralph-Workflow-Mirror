@@ -20,7 +20,7 @@ pub struct CodexParser {
     printer: SharedPrinter,
     /// Track last rendered content for append-only streaming pattern.
     ///
-    /// Maps content key (e.g., "text:agent_msg", "thinking:reasoning") to the
+    /// Maps content key (e.g., "`text:agent_msg`", "thinking:reasoning") to the
     /// last rendered sanitized content. Used to compute the new suffix for each
     /// delta and emit only the incremental change, avoiding cursor movement and
     /// wrapping issues.
@@ -78,6 +78,7 @@ impl CodexParser {
     }
 
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -105,6 +106,7 @@ impl CodexParser {
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to configure log file path.
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(PathBuf::from(path));
         self
@@ -115,6 +117,7 @@ impl CodexParser {
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to configure display name.
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_display_name_for_test(mut self, display_name: &str) -> Self {
         self.display_name = display_name.to_string();
         self

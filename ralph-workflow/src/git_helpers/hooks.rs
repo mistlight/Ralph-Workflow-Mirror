@@ -40,6 +40,10 @@ use std::path::{Path, PathBuf};
 ///
 /// This is used for startup cleanup where the process current working directory
 /// may differ from the repo root we're operating on.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn uninstall_hooks_in_repo(repo_root: &Path, logger: &Logger) -> io::Result<()> {
     let hooks_dir = super::repo::get_hooks_dir_from(repo_root)?;
     if !hooks_dir.exists() {
@@ -88,6 +92,10 @@ pub const HOOK_MARKER: &str = "RALPH_RUST_MANAGED_HOOK";
 /// The hook script embeds the repository root path directly, avoiding any
 /// dependency on the git CLI being installed. The repo root is resolved at
 /// installation time using libgit2.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn install_hook(hook_name: &str, hook_path: &Path) -> io::Result<()> {
     use super::repo::get_repo_root;
 
@@ -176,6 +184,10 @@ exit 0
 }
 
 /// Install pre-commit and pre-push hooks.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn install_hooks() -> io::Result<()> {
     let hooks_dir = get_hooks_dir()?;
     fs::create_dir_all(&hooks_dir)?;
@@ -187,6 +199,10 @@ pub fn install_hooks() -> io::Result<()> {
 }
 
 /// Uninstall a single hook by restoring original or removing.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bool> {
     let hook_path_abs = if hook_path.is_absolute() {
         hook_path.to_path_buf()
@@ -225,6 +241,10 @@ pub fn uninstall_hook(hook_path: &Path, logger: &Logger) -> io::Result<bool> {
 }
 
 /// Uninstall all Ralph-managed hooks.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
     let hooks_dir = get_hooks_dir()?;
     if !hooks_dir.exists() {

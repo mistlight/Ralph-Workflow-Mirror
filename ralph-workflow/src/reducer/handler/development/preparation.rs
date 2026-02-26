@@ -5,14 +5,14 @@
 //!
 //! ## Prompt Modes
 //!
-//! - **Normal** - First attempt for iteration, uses developer_iteration_xml template
-//! - **XSD Retry** - Invalid XML output, includes last_output.xml and XSD error context
+//! - **Normal** - First attempt for iteration, uses `developer_iteration_xml` template
+//! - **XSD Retry** - Invalid XML output, includes `last_output.xml` and XSD error context
 //! - **Same-Agent Retry** - Agent failed (non-XML issues), prepends retry preamble
 //! - **Continuation** - Partial progress, includes continuation context from previous attempt
 //!
 //! ## Prompt Replay
 //!
-//! Normal and Continuation mode prompts are replayed from history if available (same prompt_key).
+//! Normal and Continuation mode prompts are replayed from history if available (same `prompt_key`).
 //! This ensures deterministic prompt generation across resume operations.
 
 use super::super::MainEffectHandler;
@@ -39,8 +39,8 @@ impl MainEffectHandler {
     ///
     /// Generates the appropriate prompt for the developer agent based on the current mode:
     ///
-    /// - **Normal** - First attempt for iteration, uses developer_iteration_xml template
-    /// - **XSD Retry** - Invalid XML output, includes last_output.xml and XSD error context
+    /// - **Normal** - First attempt for iteration, uses `developer_iteration_xml` template
+    /// - **XSD Retry** - Invalid XML output, includes `last_output.xml` and XSD error context
     /// - **Same-Agent Retry** - Agent failed (non-XML issues), prepends retry preamble
     /// - **Continuation** - Partial progress, includes continuation context from previous attempt
     ///
@@ -50,12 +50,12 @@ impl MainEffectHandler {
     ///
     /// # Prompt Replay
     ///
-    /// Normal and Continuation mode prompts are replayed from history if available (same prompt_key).
+    /// Normal and Continuation mode prompts are replayed from history if available (same `prompt_key`).
     /// This ensures deterministic prompt generation across resume operations.
     ///
     /// # Template Variables
     ///
-    /// If template variable validation fails, an AgentTemplateVariablesInvalid event is emitted
+    /// If template variable validation fails, an `AgentTemplateVariablesInvalid` event is emitted
     /// and the agent is not invoked. This prevents sending malformed prompts to agents.
     ///
     /// # Non-Fatal Writes
@@ -71,10 +71,10 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentPromptPrepared event, plus optional
-    /// XsdRetryLastOutputMaterialized and PromptInputOversizeDetected events for XSD retry mode.
+    /// `EffectResult` with `DevelopmentPromptPrepared` event, plus optional
+    /// `XsdRetryLastOutputMaterialized` and `PromptInputOversizeDetected` events for XSD retry mode.
     pub(in crate::reducer::handler) fn prepare_development_prompt(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
         prompt_mode: PromptMode,
@@ -105,7 +105,9 @@ impl MainEffectHandler {
                                 ctx.workspace,
                             )
                         });
-                    let rendered_log = if !was_replayed {
+                    let rendered_log = if was_replayed {
+                        None
+                    } else {
                         let rendered = prompt_developer_iteration_continuation_xml_with_log(
                             ctx.template_context,
                             continuation_state,
@@ -130,8 +132,6 @@ impl MainEffectHandler {
                             return Ok(result);
                         }
                         Some(rendered.log)
-                    } else {
-                        None
                     };
                     (
                         prompt,
@@ -293,7 +293,7 @@ impl MainEffectHandler {
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PromptContentReference::file_path(
-                                path.to_path_buf(),
+                                path.clone(),
                                 "Original user requirements from PROMPT.md",
                             )
                         }
@@ -313,7 +313,7 @@ impl MainEffectHandler {
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PlanContentReference::ReadFromFile {
-                                primary_path: path.to_path_buf(),
+                                primary_path: path.clone(),
                                 fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                                 description: format!(
                                     "Plan is {} bytes (exceeds {} limit)",
@@ -324,8 +324,8 @@ impl MainEffectHandler {
                     };
 
                     let refs = PromptContentReferences {
-                        prompt: Some(prompt_ref.clone()),
-                        plan: Some(plan_ref.clone()),
+                        prompt: Some(prompt_ref),
+                        plan: Some(plan_ref),
                         diff: None,
                     };
 
@@ -430,31 +430,33 @@ impl MainEffectHandler {
                         PromptInputRepresentation::FileReference { .. } => None,
                     };
 
-                    let prompt_key = format!("development_{}", iteration);
+                    let prompt_key = format!("development_{iteration}");
                     let prompt_ref = match &inputs.prompt.representation {
                         PromptInputRepresentation::Inline => {
-                            let prompt_md = prompt_md.clone().ok_or(
-                                ErrorEvent::DevelopmentInputsNotMaterialized { iteration },
-                            )?;
+                            let prompt_md =
+                                prompt_md.ok_or(ErrorEvent::DevelopmentInputsNotMaterialized {
+                                    iteration,
+                                })?;
                             PromptContentReference::inline(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PromptContentReference::file_path(
-                                path.to_path_buf(),
+                                path.clone(),
                                 "Original user requirements from PROMPT.md",
                             )
                         }
                     };
                     let plan_ref = match &inputs.plan.representation {
                         PromptInputRepresentation::Inline => {
-                            let plan_md = plan_md.clone().ok_or(
-                                ErrorEvent::DevelopmentInputsNotMaterialized { iteration },
-                            )?;
+                            let plan_md =
+                                plan_md.ok_or(ErrorEvent::DevelopmentInputsNotMaterialized {
+                                    iteration,
+                                })?;
                             PlanContentReference::Inline(plan_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PlanContentReference::ReadFromFile {
-                                primary_path: path.to_path_buf(),
+                                primary_path: path.clone(),
                                 fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                                 description: format!(
                                     "Plan is {} bytes (exceeds {} limit)",
@@ -486,10 +488,12 @@ impl MainEffectHandler {
                     );
 
                     // Validate freshly generated prompts (not replayed ones)
-                    let rendered_log = if !was_replayed {
+                    let rendered_log = if was_replayed {
+                        None
+                    } else {
                         let refs = PromptContentReferences {
-                            prompt: Some(prompt_ref.clone()),
-                            plan: Some(plan_ref.clone()),
+                            prompt: Some(prompt_ref),
+                            plan: Some(plan_ref),
                             diff: None,
                         };
                         let rendered =
@@ -518,8 +522,6 @@ impl MainEffectHandler {
                             return Ok(result);
                         }
                         Some(rendered.log)
-                    } else {
-                        None
                     };
 
                     (
@@ -558,8 +560,7 @@ impl MainEffectHandler {
             .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)
         {
             ctx.logger.warn(&format!(
-                "Failed to write development prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
+                "Failed to write development prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
             ));
         }
 

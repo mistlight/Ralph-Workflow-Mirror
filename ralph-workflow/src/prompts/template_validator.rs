@@ -33,7 +33,11 @@ pub use template_types::{
 ///
 /// Performs comprehensive validation including syntax checking,
 /// variable extraction, and partial reference validation.
-pub fn validate_template(content: &str, available_partials: &HashSet<String>) -> ValidationResult {
+#[must_use]
+pub fn validate_template<S: std::hash::BuildHasher>(
+    content: &str,
+    available_partials: &HashSet<String, S>,
+) -> ValidationResult {
     let mut is_valid = true;
     let mut errors = Vec::new();
     let mut warnings = Vec::new();

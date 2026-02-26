@@ -3,7 +3,7 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for fix results.
 //!
-//! Uses quick_xml for robust XML parsing with proper whitespace handling.
+//! Uses `quick_xml` for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::xml_helpers::{
     create_reader, duplicate_element_error, format_content_preview, malformed_xml_error,
@@ -14,10 +14,10 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 use quick_xml::events::Event;
 
 /// Example of a valid fix result XML for error messages.
-const EXAMPLE_FIX_RESULT_XML: &str = r#"<ralph-fix-result>
+const EXAMPLE_FIX_RESULT_XML: &str = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>Fixed all 3 issues found during review</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
 /// Valid status values for fix results.
 const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_issues_found"];
@@ -25,7 +25,7 @@ const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_
 /// Validate fix result XML content against the XSD schema.
 ///
 /// This function validates that the XML content conforms to the expected
-/// fix result format defined in fix_result.xsd:
+/// fix result format defined in `fix_result.xsd`:
 ///
 /// ```xml
 /// <ralph-fix-result>
@@ -42,6 +42,10 @@ const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_
 ///
 /// * `Ok(FixResultElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, XsdValidationError> {
     let content = xml_content.trim();
 
@@ -63,7 +67,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-fix-result".to_string(),
                     expected: "<ralph-fix-result> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-fix-result> as the root element.".to_string(),
                     example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
@@ -194,7 +198,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixResultElements {
     /// The fix status (required)
-    /// Valid values: all_issues_addressed, issues_remain, no_issues_found
+    /// Valid values: `all_issues_addressed`, `issues_remain`, `no_issues_found`
     pub status: String,
     /// Optional summary of fixes applied
     pub summary: Option<String>,

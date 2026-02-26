@@ -33,13 +33,21 @@ pub struct CommitAttemptResult {
 /// Run a single commit generation attempt with explicit agent and prompt.
 ///
 /// This does **not** perform in-session XSD retries. If validation fails, the
-/// caller should emit a MessageValidationFailed event and let the reducer decide
+/// caller should emit a `MessageValidationFailed` event and let the reducer decide
 /// retry/fallback behavior.
 ///
 /// **IMPORTANT:** The `model_safe_diff` parameter must be pre-truncated to the
 /// effective model budget. Use the reducer's `MaterializeCommitInputs` effect
 /// to truncate the diff before calling this function. The reducer writes the
 /// model-safe diff to `.agent/tmp/commit_diff.model_safe.txt`.
+///
+/// # Panics
+///
+/// Panics if invariants are violated.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn run_commit_attempt(
     ctx: &mut PhaseContext<'_>,
     attempt: u32,
@@ -105,7 +113,7 @@ pub fn run_commit_attempt(
     let agent_config = ctx
         .registry
         .resolve_config(commit_agent)
-        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {commit_agent}"))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     // Use per-run log directory with simplified naming
@@ -207,8 +215,8 @@ pub fn run_commit_attempt(
             None,
         ),
         CommitExtractionOutcome::Skipped(reason) => (
-            AttemptOutcome::Success(format!("SKIPPED: {}", reason)),
-            format!("Commit skipped: {}", reason),
+            AttemptOutcome::Success(format!("SKIPPED: {reason}")),
+            format!("Commit skipped: {reason}"),
             None,
             true,
             Some(reason),
@@ -272,14 +280,18 @@ pub fn run_commit_attempt(
 /// **Implication:** A diff that works via CLI might fail via reducer if the chain
 /// includes an agent with a smaller budget. This is by design - the CLI user
 /// explicitly chose the agent and accepts its budget constraints.
-pub fn generate_commit_message(
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
+pub fn generate_commit_message<S: std::hash::BuildHasher + Default>(
     diff: &str,
     registry: &AgentRegistry,
     runtime: &mut PipelineRuntime,
     commit_agent: &str,
     template_context: &TemplateContext,
     workspace: &dyn Workspace,
-    prompt_history: &HashMap<String, String>,
+    prompt_history: &HashMap<String, String, S>,
 ) -> anyhow::Result<CommitMessageResult> {
     // For CLI plumbing, we truncate to the single agent's budget.
     // This is different from the reducer path which uses min budget across the chain.
@@ -318,7 +330,7 @@ pub fn generate_commit_message(
 
     let agent_config = registry
         .resolve_config(commit_agent)
-        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {commit_agent}"))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let log_prefix = ".agent/logs/commit_generation/commit_generation";
@@ -393,14 +405,18 @@ pub fn generate_commit_message(
 /// # Returns
 /// * `Ok(CommitMessageResult)` - If any agent in the chain succeeds
 /// * `Err` - If all agents in the chain fail
-pub fn generate_commit_message_with_chain(
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
+pub fn generate_commit_message_with_chain<S: std::hash::BuildHasher + Default>(
     diff: &str,
     registry: &AgentRegistry,
     runtime: &mut PipelineRuntime,
     agents: &[String],
     template_context: &TemplateContext,
     workspace: &dyn Workspace,
-    prompt_history: &HashMap<String, String>,
+    prompt_history: &HashMap<String, String, S>,
 ) -> anyhow::Result<CommitMessageResult> {
     if agents.is_empty() {
         anyhow::bail!("No agents provided in commit chain");
@@ -443,12 +459,9 @@ pub fn generate_commit_message_with_chain(
             generated_prompts.insert(prompt_key.clone(), prompt.clone());
         }
 
-        let agent_config = match registry.resolve_config(commit_agent) {
-            Some(config) => config,
-            None => {
-                last_error = Some(anyhow::anyhow!("Agent not found: {}", commit_agent));
-                continue;
-            }
+        let agent_config = if let Some(config) = registry.resolve_config(commit_agent) { config } else {
+            last_error = Some(anyhow::anyhow!("Agent not found: {commit_agent}"));
+            continue;
         };
         let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 

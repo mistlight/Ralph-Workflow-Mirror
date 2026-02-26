@@ -33,15 +33,16 @@ pub enum ConcurrentOperation {
 #[cfg(any(test, feature = "test-utils"))]
 impl ConcurrentOperation {
     /// Returns a human-readable description of the operation.
+    #[must_use]
     pub fn description(&self) -> String {
         match self {
-            ConcurrentOperation::Rebase => "rebase".to_string(),
-            ConcurrentOperation::Merge => "merge".to_string(),
-            ConcurrentOperation::CherryPick => "cherry-pick".to_string(),
-            ConcurrentOperation::Revert => "revert".to_string(),
-            ConcurrentOperation::Bisect => "bisect".to_string(),
-            ConcurrentOperation::OtherGitProcess => "another Git process".to_string(),
-            ConcurrentOperation::Unknown(s) => format!("unknown operation: {s}"),
+            Self::Rebase => "rebase".to_string(),
+            Self::Merge => "merge".to_string(),
+            Self::CherryPick => "cherry-pick".to_string(),
+            Self::Revert => "revert".to_string(),
+            Self::Bisect => "bisect".to_string(),
+            Self::OtherGitProcess => "another Git process".to_string(),
+            Self::Unknown(s) => format!("unknown operation: {s}"),
         }
     }
 }
@@ -171,12 +172,14 @@ pub struct CleanupResult {
 #[cfg(any(test, feature = "test-utils"))]
 impl CleanupResult {
     /// Returns true if any cleanup was performed.
-    pub fn has_cleanup(&self) -> bool {
+    #[must_use]
+    pub const fn has_cleanup(&self) -> bool {
         !self.cleaned_paths.is_empty() || self.locks_removed
     }
 
     /// Returns the number of items cleaned up.
-    pub fn count(&self) -> usize {
+    #[must_use]
+    pub const fn count(&self) -> usize {
         self.cleaned_paths.len() + if self.locks_removed { 1 } else { 0 }
     }
 }
@@ -223,10 +226,10 @@ pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
                 // State is invalid or corrupted, safe to remove
                 let removed = if full_path.is_dir() {
                     fs::remove_dir_all(&full_path)
-                        .map(|_| true)
+                        .map(|()| true)
                         .unwrap_or(false)
                 } else {
-                    fs::remove_file(&full_path).map(|_| true).unwrap_or(false)
+                    fs::remove_file(&full_path).map(|()| true).unwrap_or(false)
                 };
 
                 if removed {

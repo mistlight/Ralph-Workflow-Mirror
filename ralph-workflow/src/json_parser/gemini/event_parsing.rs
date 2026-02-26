@@ -218,7 +218,7 @@ impl GeminiParser {
                                     ));
                                 }
                                 TerminalMode::None => {
-                                    out.push_str(&format!("[{}] {}\n", prefix, sanitized));
+                                    writeln!(out, "[{prefix}] {sanitized}").unwrap();
                                 }
                                 TerminalMode::Full => unreachable!(),
                             }
@@ -235,7 +235,7 @@ impl GeminiParser {
                     if show_metrics {
                         return format!("{}{}\n{}", text_flush_non_tty, completion, metrics.format(*c));
                     }
-                    return format!("{}{}", text_flush_non_tty, completion);
+                    return format!("{text_flush_non_tty}{completion}");
                 }
 
                 // Otherwise, show the full content (non-streaming path)

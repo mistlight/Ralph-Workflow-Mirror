@@ -1,7 +1,7 @@
 // NOTE: split from reducer/state_reduction.rs.
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::LifecycleEvent;
+use crate::reducer::state::PipelineState;
 
 pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent) -> PipelineState {
     match event {

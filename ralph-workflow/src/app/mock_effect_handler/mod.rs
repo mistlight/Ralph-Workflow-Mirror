@@ -1,4 +1,4 @@
-//! Mock implementation of AppEffectHandler for testing.
+//! Mock implementation of `AppEffectHandler` for testing.
 //!
 //! This module provides a mock handler that captures all executed effects
 //! for later inspection, maintains an in-memory filesystem state, and provides
@@ -6,9 +6,9 @@
 //!
 //! # Two Effect Layers
 //!
-//! Ralph has two distinct effect layers (see CODE_STYLE.md):
+//! Ralph has two distinct effect layers (see `CODE_STYLE.md)`:
 //!
-//! - **AppEffect** - Used by CLI layer before repository root is known.
+//! - **`AppEffect`** - Used by CLI layer before repository root is known.
 //!   Includes `GitRequireRepo`, `PathExists`, `ReadFile`, etc.
 //!   This mock handler is for testing these operations.
 //!
@@ -43,7 +43,7 @@
 //!
 //! # See Also
 //!
-//! - `app::effect` - AppEffect definitions and real handler
+//! - `app::effect` - `AppEffect` definitions and real handler
 //! - `reducer::mock_effect_handler` - Pipeline-layer mock (uses Workspace)
 //! - `docs/architecture/effect-system.md` - Two-layer effect system documentation
 

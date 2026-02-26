@@ -41,6 +41,10 @@ impl ClaudeParser {
     }
 
     /// Parse a stream of Claude NDJSON events
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn parse_stream<R: BufRead>(
         &self,
         mut reader: R,
@@ -129,7 +133,7 @@ impl ClaudeParser {
                         // that indicates a real error condition that the user should see.
                         let is_spurious_glm_error = is_error_result
                             && duration_ms.unwrap_or(0) < 100
-                            && (error.is_none() || error.as_ref().is_some_and(|e| e.is_empty()))
+                            && (error.is_none() || error.as_ref().is_some_and(std::string::String::is_empty))
                             && !has_errors_with_content;
 
                         if is_spurious_glm_error && seen_success_result {

@@ -35,6 +35,10 @@ use crate::workspace::Workspace;
 /// - `Ok(None)` - backup created and read-only set successfully
 /// - `Ok(Some(warning))` - backup created but read-only couldn't be set
 /// - `Err(e)` - if the backup cannot be created
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn create_prompt_backup_with_workspace(
     workspace: &dyn Workspace,
 ) -> io::Result<Option<String>> {
@@ -168,6 +172,10 @@ const DIFF_BACKUP_PATH: &str = ".agent/DIFF.backup";
 /// # Returns
 ///
 /// Returns `Ok(PathBuf)` with the backup path on success, or an error.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn write_diff_backup_with_workspace(
     workspace: &dyn Workspace,
     diff_content: &str,

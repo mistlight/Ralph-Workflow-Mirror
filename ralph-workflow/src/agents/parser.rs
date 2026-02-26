@@ -32,6 +32,7 @@ impl JsonParserType {
     /// Supports common names: "claude", "ccs", "codex", "gemini", "opencode", "generic", "none", "raw".
     /// CCS (Claude Code Switch) wraps Claude Code, so "ccs" maps to the Claude parser.
     /// Unknown strings default to `Generic`.
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             // CCS wraps Claude Code, so it uses the same stream-json format

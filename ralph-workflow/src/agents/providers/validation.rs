@@ -8,6 +8,7 @@ use super::types::OpenCodeProviderType;
 /// Validate a model flag and return provider-specific warnings if any issues detected.
 ///
 /// Returns a vector of warning messages (empty if no issues).
+#[must_use]
 pub fn validate_model_flag(model_flag: &str) -> Vec<String> {
     let mut warnings = Vec::new();
 
@@ -66,6 +67,7 @@ pub fn validate_model_flag(model_flag: &str) -> Vec<String> {
 }
 
 /// Get provider-specific authentication failure advice based on model flag.
+#[must_use]
 pub fn auth_failure_advice(model_flag: Option<&str>) -> String {
     match model_flag {
         Some(flag) => {

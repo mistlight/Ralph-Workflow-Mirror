@@ -90,17 +90,17 @@ pub struct StreamingSession {
     pub(super) deduplicator: DeltaDeduplicator,
     /// Track message IDs that have been fully rendered from an assistant event BEFORE streaming.
     /// When an assistant event arrives before streaming deltas, we render it and record
-    /// the message_id. ALL subsequent streaming deltas for that message_id should be
+    /// the `message_id`. ALL subsequent streaming deltas for that `message_id` should be
     /// suppressed to prevent duplication.
     pub(super) pre_rendered_message_ids: HashSet<String>,
     /// Track content hashes of assistant events that have been rendered during streaming.
     /// This prevents duplicate assistant events with the same content from being rendered
     /// multiple times. GLM/CCS may send multiple assistant events during streaming with
-    /// the same content but different message_ids.
+    /// the same content but different `message_ids`.
     /// This is preserved across `MessageStart` boundaries to handle mid-stream assistant events.
     pub(super) rendered_assistant_content_hashes: HashSet<u64>,
     /// Track tool names by index for GLM/CCS deduplication.
-    /// GLM sends assistant events with tool_use blocks (name + input) during streaming,
+    /// GLM sends assistant events with `tool_use` blocks (name + input) during streaming,
     /// but only the input is accumulated via deltas. We track the tool name to properly
     /// reconstruct the normalized representation for deduplication.
     /// Maps the content block index to the tool name.
@@ -109,6 +109,7 @@ pub struct StreamingSession {
 
 impl StreamingSession {
     /// Create a new streaming session.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             max_delta_history: DEFAULT_MAX_DELTA_HISTORY,
@@ -138,6 +139,7 @@ impl StreamingSession {
     /// ```ignore
     /// let mut session = StreamingSession::new().with_verbose_warnings(true);
     /// ```
+    #[must_use] 
     pub const fn with_verbose_warnings(mut self, enabled: bool) -> Self {
         self.verbose_warnings = enabled;
         self

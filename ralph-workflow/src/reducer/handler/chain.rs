@@ -8,8 +8,8 @@ use anyhow::Result;
 
 impl MainEffectHandler {
     pub(super) fn initialize_agent_chain(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         role: AgentRole,
     ) -> Result<EffectResult> {
         let fallback_config = ctx.registry.fallback_config();

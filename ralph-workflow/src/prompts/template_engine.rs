@@ -89,6 +89,7 @@ impl Template {
     ///
     /// Comments (`{# ... #}`) are stripped during creation.
     /// All features are enabled by default: variables, conditionals, loops, and defaults.
+    #[must_use]
     pub fn new(content: &str) -> Self {
         // Strip comments first
         let content = Self::strip_comments(content);

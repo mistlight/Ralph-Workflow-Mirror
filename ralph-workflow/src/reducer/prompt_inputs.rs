@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+#[must_use]
 pub fn sha256_hex_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -7,6 +8,7 @@ pub fn sha256_hex_bytes(bytes: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+#[must_use]
 pub fn sha256_hex_str(s: &str) -> String {
     sha256_hex_bytes(s.as_bytes())
 }

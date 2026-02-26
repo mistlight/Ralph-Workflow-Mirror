@@ -32,24 +32,24 @@
 //!
 //! # Special Cases
 //!
-//! - FinalValidation phase → CheckUncommittedChangesBeforeTermination (safety check), then ValidateFinalState
-//! - Finalizing phase → RestorePromptPermissions effect
-//! - AwaitingDevFix phase → TriggerDevFixFlow effect
-//! - Complete/Interrupted phase → CheckUncommittedChangesBeforeTermination (safety check), then SaveCheckpoint
+//! - `FinalValidation` phase → `CheckUncommittedChangesBeforeTermination` (safety check), then `ValidateFinalState`
+//! - Finalizing phase → `RestorePromptPermissions` effect
+//! - `AwaitingDevFix` phase → `TriggerDevFixFlow` effect
+//! - Complete/Interrupted phase → `CheckUncommittedChangesBeforeTermination` (safety check), then `SaveCheckpoint`
 //!
 //! ## Pre-Termination Safety Check
 //!
-//! Before any pipeline termination (Complete, Interrupted, or after FinalValidation),
+//! Before any pipeline termination (Complete, Interrupted, or after `FinalValidation`),
 //! the orchestration derives a `CheckUncommittedChangesBeforeTermination` effect to
 //! ensure no work is lost:
 //!
-//! - If uncommitted changes exist → route to CommitMessage phase
-//! - If working directory is clean → emit PreTerminationSafetyCheckPassed and proceed
-//! - If git snapshot fails → route to AwaitingDevFix for recovery
+//! - If uncommitted changes exist → route to `CommitMessage` phase
+//! - If working directory is clean → emit `PreTerminationSafetyCheckPassed` and proceed
+//! - If git snapshot fails → route to `AwaitingDevFix` for recovery
 //!
-//! **THE ONLY EXCEPTION:** User-initiated Ctrl+C (interrupted_by_user=true) skips
+//! **THE ONLY EXCEPTION:** User-initiated Ctrl+C (`interrupted_by_user=true`) skips
 //! this check because the user explicitly chose to interrupt. All other termination
-//! paths (AwaitingDevFix exhaustion, completion marker emission, etc.) MUST commit
+//! paths (`AwaitingDevFix` exhaustion, completion marker emission, etc.) MUST commit
 //! uncommitted work before terminating.
 
 mod commit;

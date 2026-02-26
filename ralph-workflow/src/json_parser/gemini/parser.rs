@@ -63,6 +63,7 @@ impl GeminiParser {
     }
 
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -89,6 +90,7 @@ impl GeminiParser {
     ///
     /// This allows tests to verify log file content after parsing.
     #[cfg(feature = "test-utils")]
+    #[must_use]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(std::path::PathBuf::from(path));
         self

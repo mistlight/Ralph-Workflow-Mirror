@@ -5,29 +5,29 @@
 //!
 //! ## Commit Phase Flow
 //!
-//! 1. **CheckCommitDiff** - Verify there are changes to commit
-//! 2. **MaterializeCommitInputs** - Prepare diff input for commit agent
-//! 3. **PrepareCommitPrompt** - Generate commit prompt
-//! 4. **InvokeCommitAgent** - Execute commit agent
-//! 5. **CleanupCommitXml** - Clean any existing XML
-//! 6. **ExtractCommitXml** - Extract XML from agent output
-//! 7. **ValidateCommitXml** - Validate and parse commit message
-//! 8. **ApplyCommitMessageOutcome** - Apply commit message to state
-//! 9. **ArchiveCommitXml** - Archive XML
-//! 10. **CreateCommit** or **SkipCommit** - Create git commit or skip if no changes
+//! 1. **`CheckCommitDiff`** - Verify there are changes to commit
+//! 2. **`MaterializeCommitInputs`** - Prepare diff input for commit agent
+//! 3. **`PrepareCommitPrompt`** - Generate commit prompt
+//! 4. **`InvokeCommitAgent`** - Execute commit agent
+//! 5. **`CleanupCommitXml`** - Clean any existing XML
+//! 6. **`ExtractCommitXml`** - Extract XML from agent output
+//! 7. **`ValidateCommitXml`** - Validate and parse commit message
+//! 8. **`ApplyCommitMessageOutcome`** - Apply commit message to state
+//! 9. **`ArchiveCommitXml`** - Archive XML
+//! 10. **`CreateCommit`** or **`SkipCommit`** - Create git commit or skip if no changes
 //!
 //! ## Rebase Support
 //!
 //! Before commit, the pipeline may rebase onto a target branch:
-//! - **RunRebase** - Rebase onto target branch
-//! - **ResolveRebaseConflicts** - Resolve conflicts if rebase fails
+//! - **`RunRebase`** - Rebase onto target branch
+//! - **`ResolveRebaseConflicts`** - Resolve conflicts if rebase fails
 //!
 //! ## Mock Behavior
 //!
 //! - Mock always returns a valid commit message
-//! - **CheckCommitDiff** can be configured to simulate empty diff (for testing skip logic)
-//! - **CreateCommit** returns a fake commit hash
-//! - **RunRebase** always succeeds with a fake head OID
+//! - **`CheckCommitDiff`** can be configured to simulate empty diff (for testing skip logic)
+//! - **`CreateCommit`** returns a fake commit hash
+//! - **`RunRebase`** always succeeds with a fake head OID
 
 use crate::files::llm_output_extraction::try_extract_xml_commit_with_trace;
 use crate::reducer::effect::Effect;
@@ -46,7 +46,7 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for each commit effect without
     /// performing real agent execution, XML validation, or git operations.
     pub(super) fn handle_commit_effect(
-        &mut self,
+        &self,
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
         match effect {
@@ -137,13 +137,13 @@ impl MockEffectHandler {
                     _ => 1,
                 };
                 let xml = self.simulate_commit_message_xml.clone().unwrap_or_else(|| {
-                    r#"<ralph-commit>
+                    r"<ralph-commit>
 <ralph-subject>feat: mock commit message for testing</ralph-subject>
 <ralph-body>This is a mock commit body generated for testing purposes.
 
 - Changed some files
 - Added new features</ralph-body>
-</ralph-commit>"#
+</ralph-commit>"
                         .to_string()
                 });
 

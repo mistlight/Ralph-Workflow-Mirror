@@ -34,6 +34,7 @@
 /// # Returns
 ///
 /// A formatted string with proper indentation for display.
+#[must_use]
 pub fn format_xml_for_display(xml_content: &str) -> String {
     // Check if content looks like XML (has tags)
     if !xml_content.contains('<') {

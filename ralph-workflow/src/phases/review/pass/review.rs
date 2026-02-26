@@ -29,7 +29,7 @@ use std::time::Instant;
 /// * `j` - The cycle number (used for logging and prompt keys)
 /// * `review_label` - Human-readable label for this review pass
 /// * `_review_prompt` - Unused (kept for API compatibility)
-/// * `_agent` - Optional agent override (defaults to ctx.reviewer_agent)
+/// * `_agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
 ///
 /// # Returns
 ///
@@ -41,6 +41,10 @@ use std::time::Instant;
 /// - Agent configuration is missing
 /// - Prompt template contains unresolved placeholders
 /// - Log file cannot be written
+///
+/// # Panics
+///
+/// Panics if invariants are violated.
 pub fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
@@ -66,14 +70,14 @@ pub fn run_review_pass(
             }
         };
 
-    let prompt_key = format!("review_{}", j);
+    let prompt_key = format!("review_{j}");
     let (review_prompt_xml, was_replayed, substitution_log) =
         if let Some(stored_prompt) = ctx.prompt_history.get(&prompt_key) {
             (stored_prompt.clone(), true, None)
         } else {
             let refs = PromptContentBuilder::new(ctx.workspace)
-                .with_plan(plan_content.clone())
-                .with_diff(changes_content.clone(), &baseline_oid_for_prompts)
+                .with_plan(plan_content)
+                .with_diff(changes_content, &baseline_oid_for_prompts)
                 .build();
             let rendered = prompt_review_xml_with_references_and_log(
                 ctx.template_context,
@@ -95,13 +99,12 @@ pub fn run_review_pass(
         }
     }
 
-    if !was_replayed {
-        ctx.capture_prompt(&prompt_key, &review_prompt_xml);
-    } else {
+    if was_replayed {
         ctx.logger.info(&format!(
-            "Using stored prompt from checkpoint for determinism: {}",
-            prompt_key
+            "Using stored prompt from checkpoint for determinism: {prompt_key}"
         ));
+    } else {
+        ctx.capture_prompt(&prompt_key, &review_prompt_xml);
     }
 
     if ctx.config.verbosity.is_debug() {
@@ -154,7 +157,7 @@ pub fn run_review_pass(
     let agent_config = ctx
         .registry
         .resolve_config(active_agent)
-        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", active_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {active_agent}"))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let mut runtime = PipelineRuntime {

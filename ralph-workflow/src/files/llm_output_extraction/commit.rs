@@ -16,7 +16,8 @@ pub struct CommitExtractionResult(String);
 
 impl CommitExtractionResult {
     /// Create a new extraction result with the given message.
-    pub fn new(message: String) -> Self {
+    #[must_use]
+    pub const fn new(message: String) -> Self {
         Self(message)
     }
 
@@ -24,6 +25,7 @@ impl CommitExtractionResult {
     ///
     /// This applies the final rendering step to ensure no escape sequences leak through
     /// to the actual commit message.
+    #[must_use]
     pub fn into_message(self) -> String {
         render_final_commit_message(&self.0)
     }
@@ -34,10 +36,11 @@ impl CommitExtractionResult {
 /// This uses flexible XML extraction (direct tags, fenced blocks, escaped JSON strings, embedded
 /// text) and validates the resulting XML against the commit XSD.
 ///
-/// Returns: (message, skip_reason, trace_detail)
+/// Returns: (message, `skip_reason`, `trace_detail`)
 /// - message: Some(msg) if commit message found
-/// - skip_reason: Some(reason) if AI determined no commit needed
-/// - trace_detail: Diagnostic string explaining extraction result
+/// - `skip_reason`: Some(reason) if AI determined no commit needed
+/// - `trace_detail`: Diagnostic string explaining extraction result
+#[must_use]
 pub fn try_extract_xml_commit_with_trace(
     content: &str,
 ) -> (Option<String>, Option<String>, String) {
@@ -76,17 +79,14 @@ pub fn try_extract_xml_commit_with_trace(
                 return (
                     None,
                     Some(reason.clone()),
-                    format!(
-                        "Found <ralph-skip> via {}, reason: '{}'",
-                        extraction_pattern, reason
-                    ),
+                    format!("Found <ralph-skip> via {extraction_pattern}, reason: '{reason}'"),
                 );
             }
 
             // Format the commit message using parsed elements
             let body = elements.format_body();
             let message = if body.is_empty() {
-                elements.subject.clone()
+                elements.subject
             } else {
                 format!("{}\n\n{}", elements.subject, body)
             };
@@ -101,7 +101,7 @@ pub fn try_extract_xml_commit_with_trace(
             };
 
             (
-                Some(message.clone()),
+                Some(message),
                 None,
                 format!(
                     "Found <ralph-commit> via {}, XSD validation passed, body={}, message: '{}'",
@@ -114,7 +114,7 @@ pub fn try_extract_xml_commit_with_trace(
         Err(e) => {
             // XSD validation failed - return error with details for AI retry
             let error_msg = e.format_for_ai_retry();
-            (None, None, format!("XSD validation failed: {}", error_msg))
+            (None, None, format!("XSD validation failed: {error_msg}"))
         }
     }
 }

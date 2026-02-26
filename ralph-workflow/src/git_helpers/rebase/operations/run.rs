@@ -31,6 +31,10 @@
 /// has limitations and complexity that make it unreliable for production use.
 /// The git CLI is more robust and better tested for rebase operations.
 ///
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn rebase_onto(
     upstream_branch: &str,
     executor: &dyn crate::executor::ProcessExecutor,
@@ -39,7 +43,7 @@ pub fn rebase_onto(
     rebase_onto_impl(&repo, upstream_branch, executor)
 }
 
-/// Implementation of rebase_onto.
+/// Implementation of `rebase_onto`.
 fn rebase_onto_impl(
     repo: &git2::Repository,
     upstream_branch: &str,

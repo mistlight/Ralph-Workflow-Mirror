@@ -23,16 +23,16 @@ impl MainEffectHandler {
     /// Configure git authentication for remote operations.
     ///
     /// This handler sets up git credentials based on the auth method:
-    /// - SSH key: Configure GIT_SSH_COMMAND environment variable
+    /// - SSH key: Configure `GIT_SSH_COMMAND` environment variable
     /// - Token: Set up git credential helper
     /// - Credential helper: Configure external helper
     pub(super) fn handle_configure_git_auth(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         auth_method: String,
     ) -> Result<EffectResult> {
         ctx.logger
-            .info(&format!("Configuring git authentication: {}", auth_method));
+            .info(&format!("Configuring git authentication: {auth_method}"));
 
         // Parse auth method string (format: "method:param")
         let parts: Vec<&str> = auth_method.splitn(2, ':').collect();
@@ -42,7 +42,11 @@ impl MainEffectHandler {
         match *method {
             "ssh-key" => {
                 // Configure SSH key authentication
-                if *param != "default" {
+                if *param == "default" {
+                    // Use default SSH key (SSH_AUTH_SOCK or ~/.ssh/id_rsa)
+                    ctx.logger
+                        .info("Using default SSH authentication (SSH_AUTH_SOCK or ~/.ssh/id_rsa)");
+                } else {
                     // Set GIT_SSH_COMMAND to use specific key.
                     // Git may execute this via a shell; treat the key path as untrusted.
                     if let Some(cmd) = build_git_ssh_command(param) {
@@ -54,10 +58,6 @@ impl MainEffectHandler {
                             "Invalid SSH key path for cloud git auth; falling back to default SSH",
                         );
                     }
-                } else {
-                    // Use default SSH key (SSH_AUTH_SOCK or ~/.ssh/id_rsa)
-                    ctx.logger
-                        .info("Using default SSH authentication (SSH_AUTH_SOCK or ~/.ssh/id_rsa)");
                 }
             }
             "token" => {
@@ -66,21 +66,19 @@ impl MainEffectHandler {
                 // Push operations use a non-persistent credential helper that reads the token
                 // from environment variables at runtime.
                 ctx.logger.info(&format!(
-                    "Configuring token authentication for user: {}",
-                    param
+                    "Configuring token authentication for user: {param}"
                 ));
                 std::env::set_var("GIT_TERMINAL_PROMPT", "0");
             }
             "credential-helper" => {
                 // Configure external credential helper
                 ctx.logger
-                    .info(&format!("Using credential helper: {}", param));
+                    .info(&format!("Using credential helper: {param}"));
                 std::env::set_var("GIT_TERMINAL_PROMPT", "0");
             }
             _ => {
                 ctx.logger.warn(&format!(
-                    "Unknown auth method: {}, falling back to default SSH",
-                    method
+                    "Unknown auth method: {method}, falling back to default SSH"
                 ));
             }
         }
@@ -94,8 +92,8 @@ impl MainEffectHandler {
     ///
     /// Executes git push command and reports success/failure.
     pub(super) fn handle_push_to_remote(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         remote: String,
         branch: String,
         force: bool,
@@ -166,15 +164,17 @@ impl MainEffectHandler {
             argv.push("--force".to_string());
         }
 
-        let args: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+        let git_args: Vec<&str> = argv.iter().map(std::string::String::as_str).collect();
 
         // Execute push via executor
-        let result = ctx.executor.execute("git", &args, &[], Some(ctx.repo_root));
+        let result = ctx
+            .executor
+            .execute("git", &git_args, &[], Some(ctx.repo_root));
 
         match result {
             Ok(output) if output.status.success() => {
                 ctx.logger
-                    .info(&format!("Successfully pushed to {}/{}", remote, branch));
+                    .info(&format!("Successfully pushed to {remote}/{branch}"));
 
                 let ui = UIEvent::PushCompleted {
                     remote: remote.clone(),
@@ -237,15 +237,15 @@ impl MainEffectHandler {
     ///
     /// Uses gh CLI for GitHub or glab CLI for GitLab.
     pub(super) fn handle_create_pull_request(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         base_branch: String,
         head_branch: String,
         title: String,
         body: String,
     ) -> Result<EffectResult> {
         ctx.logger
-            .info(&format!("Creating PR: {} -> {}", head_branch, base_branch));
+            .info(&format!("Creating PR: {head_branch} -> {base_branch}"));
 
         // Try gh CLI first (GitHub)
         let gh_result = ctx.executor.execute(
@@ -269,7 +269,7 @@ impl MainEffectHandler {
         match gh_result {
             Ok(output) if output.status.success() => {
                 let url = output.stdout.trim().to_string();
-                ctx.logger.info(&format!("Pull request created: {}", url));
+                ctx.logger.info(&format!("Pull request created: {url}"));
 
                 // Extract PR number from URL if possible
                 let number = url
@@ -327,7 +327,7 @@ impl MainEffectHandler {
                 match glab_result {
                     Ok(output) if output.status.success() => {
                         let url = output.stdout.trim().to_string();
-                        ctx.logger.info(&format!("Merge request created: {}", url));
+                        ctx.logger.info(&format!("Merge request created: {url}"));
 
                         let number = url
                             .rsplit('/')

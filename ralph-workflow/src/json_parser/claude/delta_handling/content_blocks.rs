@@ -8,7 +8,7 @@
 //! ## Append-Only Rendering (Full Mode)
 //!
 //! In Full TTY mode, deltas are rendered incrementally:
-//! 1. Track last rendered content for each (content_type, index) pair
+//! 1. Track last rendered content for each (`content_type`, index) pair
 //! 2. Compute longest common prefix between last and current
 //! 3. Emit only the NEW suffix (no prefix, no control codes)
 //! 4. Update last rendered state
@@ -25,15 +25,15 @@
 //! ## Deduplication
 //!
 //! Multiple layers prevent duplicate output:
-//! 1. **StreamingSession**: Protocol-level deduplication (snapshot-as-delta repair, consecutive duplicates)
+//! 1. **`StreamingSession`**: Protocol-level deduplication (snapshot-as-delta repair, consecutive duplicates)
 //! 2. **Parser layer**: Skip whitespace-only content, hash-based deduplication after sanitization
 //! 3. **Prefix trie**: Track rendered prefixes to detect extensions vs new content
 //!
 //! ## Delta Types
 //!
-//! - **TextDelta**: Assistant text output (main content)
-//! - **ThinkingDelta**: Extended thinking blocks (Claude reasoning)
-//! - **ToolUseDelta**: Tool use parameters (partial JSON chunks)
+//! - **`TextDelta`**: Assistant text output (main content)
+//! - **`ThinkingDelta`**: Extended thinking blocks (Claude reasoning)
+//! - **`ToolUseDelta`**: Tool use parameters (partial JSON chunks)
 
 use crate::json_parser::delta_display::{
     compute_append_only_suffix, sanitize_for_display, DeltaDisplayFormatter, DeltaRenderer,
@@ -140,7 +140,7 @@ impl crate::json_parser::claude::ClaudeParser {
 
                 let output = if terminal_mode == TerminalMode::Full {
                     // Append-only pattern in Full mode: track last rendered and emit only new content
-                    let key = format!("text:{}", index);
+                    let key = format!("text:{index}");
                     let last_rendered = self
                         .last_rendered_content
                         .borrow()
@@ -246,7 +246,7 @@ impl crate::json_parser::claude::ClaudeParser {
                         let sanitized = sanitize_for_display(accumulated);
 
                         // Append-only pattern: track last rendered and emit only new content
-                        let key = format!("thinking:{}", index);
+                        let key = format!("thinking:{index}");
                         let last_rendered = self
                             .last_rendered_content
                             .borrow()
@@ -265,7 +265,7 @@ impl crate::json_parser::claude::ClaudeParser {
                             // Track what we rendered (the sanitized content)
                             self.last_rendered_content
                                 .borrow_mut()
-                                .insert(key, sanitized.clone());
+                                .insert(key, sanitized);
                             rendered
                         } else {
                             // Subsequent delta: emit only NEW suffix
@@ -317,7 +317,7 @@ impl crate::json_parser::claude::ClaudeParser {
                 *self.suppress_thinking_for_message.borrow_mut() = true;
                 // Track tool name for GLM/CCS deduplication (if available in delta)
                 if let Some(serde_json::Value::String(name)) = tool_delta.get("name") {
-                    session.set_tool_name(index, Some(name.to_string()));
+                    session.set_tool_name(index, Some(name.clone()));
                 }
 
                 // Handle tool input streaming

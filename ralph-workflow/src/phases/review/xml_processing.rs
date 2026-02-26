@@ -20,7 +20,7 @@ use std::path::Path;
 /// Legacy log extraction and ISSUES.md fallback have been removed. Agents must
 /// produce XML output via the reducer/effect path.
 pub(super) fn extract_and_validate_review_output_xml(
-    ctx: &mut PhaseContext<'_>,
+    ctx: &PhaseContext<'_>,
     log_dir: &str,
     issues_path: &Path,
 ) -> anyhow::Result<ParseResult> {
@@ -50,7 +50,7 @@ pub(super) fn extract_and_validate_review_output_xml(
 
 /// Helper to validate XML and process the result for issues extraction.
 pub(super) fn validate_and_process_issues_xml(
-    ctx: &mut PhaseContext<'_>,
+    ctx: &PhaseContext<'_>,
     xml_content: &str,
     issues_path: &Path,
 ) -> anyhow::Result<ParseResult> {

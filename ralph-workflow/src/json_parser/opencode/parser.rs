@@ -80,6 +80,7 @@ impl OpenCodeParser {
     }
 
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -106,6 +107,7 @@ impl OpenCodeParser {
     ///
     /// This allows tests to verify log file content after parsing.
     #[cfg(feature = "test-utils")]
+    #[must_use]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(std::path::PathBuf::from(path));
         self
@@ -154,7 +156,7 @@ impl OpenCodeParser {
 
     /// Parse and display a single `OpenCode` JSON event
     ///
-    /// From OpenCode source (`run.ts` lines 146-201), the NDJSON format uses events with:
+    /// From `OpenCode` source (`run.ts` lines 146-201), the NDJSON format uses events with:
     /// - `step_start`: Step initialization with snapshot info
     /// - `step_finish`: Step completion with reason, cost, tokens
     /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)

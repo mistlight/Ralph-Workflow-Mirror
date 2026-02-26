@@ -39,7 +39,7 @@ pub fn format_invalid_type_message(error: &str) -> String {
                         return format!("Expected {}, got {}", &expected_part[..end], actual);
                     }
                 }
-                return format!("Invalid value: {}", actual);
+                return format!("Invalid value: {actual}");
             }
         }
     }

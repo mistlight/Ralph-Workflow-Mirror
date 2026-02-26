@@ -1,5 +1,6 @@
 impl FileSystemState {
     /// Create a new file system state.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -12,12 +13,9 @@ impl FileSystemState {
     pub(crate) fn capture_with_optional_executor_impl(
         executor: Option<&dyn ProcessExecutor>,
     ) -> Self {
-        match executor {
-            Some(exec) => Self::capture_current_with_executor_impl(exec),
-            None => {
-                let real_executor = RealProcessExecutor::new();
-                Self::capture_current_with_executor_impl(&real_executor)
-            }
+        if let Some(exec) = executor { Self::capture_current_with_executor_impl(exec) } else {
+            let real_executor = RealProcessExecutor::new();
+            Self::capture_current_with_executor_impl(&real_executor)
         }
     }
 
@@ -75,7 +73,7 @@ impl FileSystemState {
     /// - .agent/PLAN.md: The implementation plan (if exists)
     /// - .agent/ISSUES.md: Review findings (if exists)
     /// - .agent/config.toml: Agent configuration (if exists)
-    /// - .agent/start_commit: Baseline commit reference (if exists)
+    /// - .`agent/start_commit`: Baseline commit reference (if exists)
     /// - .agent/NOTES.md: Development notes (if exists)
     /// - .agent/status: Pipeline status file (if exists)
     pub fn capture_with_workspace(
@@ -143,7 +141,7 @@ impl FileSystemState {
 
     /// Internal implementation of file capture using CWD-relative paths.
     ///
-    /// This is the core logic used by capture_current_with_executor_impl.
+    /// This is the core logic used by `capture_current_with_executor_impl`.
     fn capture_file_impl(&mut self, path: &str) {
         let path_obj = Path::new(path);
         let snapshot = if path_obj.exists() {

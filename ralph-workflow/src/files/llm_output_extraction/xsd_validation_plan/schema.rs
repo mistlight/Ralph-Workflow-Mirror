@@ -126,9 +126,9 @@ pub enum FileAction {
 impl FileAction {
     pub(super) fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "create" => Some(FileAction::Create),
-            "modify" => Some(FileAction::Modify),
-            "delete" => Some(FileAction::Delete),
+            "create" => Some(Self::Create),
+            "modify" => Some(Self::Modify),
+            "delete" => Some(Self::Delete),
             _ => None,
         }
     }
@@ -146,9 +146,9 @@ pub enum StepType {
 impl StepType {
     pub(super) fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "file-change" => Some(StepType::FileChange),
-            "action" => Some(StepType::Action),
-            "research" => Some(StepType::Research),
+            "file-change" => Some(Self::FileChange),
+            "action" => Some(Self::Action),
+            "research" => Some(Self::Research),
             _ => None,
         }
     }
@@ -166,10 +166,10 @@ pub enum Priority {
 impl Priority {
     pub(super) fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "critical" => Some(Priority::Critical),
-            "high" => Some(Priority::High),
-            "medium" => Some(Priority::Medium),
-            "low" => Some(Priority::Low),
+            "critical" => Some(Self::Critical),
+            "high" => Some(Self::High),
+            "medium" => Some(Self::Medium),
+            "low" => Some(Self::Low),
             _ => None,
         }
     }
@@ -238,10 +238,10 @@ pub enum Severity {
 impl Severity {
     pub(super) fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "low" => Some(Severity::Low),
-            "medium" => Some(Severity::Medium),
-            "high" => Some(Severity::High),
-            "critical" => Some(Severity::Critical),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            "critical" => Some(Self::Critical),
             _ => None,
         }
     }

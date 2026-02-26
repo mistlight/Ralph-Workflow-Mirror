@@ -12,52 +12,50 @@ use super::helpers::{
 };
 use crate::files::llm_output_extraction::validate_development_result_xml;
 use crate::reducer::ui_event::XmlOutputContext;
+use std::fmt::Write;
 
 /// Render development result XML with semantic formatting.
-pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with optional iteration context
-    if let Some(ctx) = context {
+    if let Some(ctx) = output_context {
         if let Some(iter) = ctx.iteration {
-            output.push_str(&format!("\n╔═══ Development Iteration {} ═══╗\n\n", iter));
+            write!(output, "\n╔═══ Development Iteration {iter} ═══╗\n\n").unwrap();
         }
     }
 
-    match validate_development_result_xml(content) {
-        Ok(elements) => {
-            // Status with emoji and label
-            let (status_emoji, status_label) = match elements.status.as_str() {
-                "completed" => ("✅", "Completed"),
-                "partial" => ("🔄", "In Progress"),
-                "failed" => ("❌", "Failed"),
-                _ => ("❓", "Unknown"),
-            };
-            output.push_str(&format!("{} Status: {}\n\n", status_emoji, status_label));
+    if let Ok(elements) = validate_development_result_xml(content) {
+        // Status with emoji and label
+        let (status_emoji, status_label) = match elements.status.as_str() {
+            "completed" => ("✅", "Completed"),
+            "partial" => ("🔄", "In Progress"),
+            "failed" => ("❌", "Failed"),
+            _ => ("❓", "Unknown"),
+        };
+        write!(output, "{status_emoji} Status: {status_label}\n\n").unwrap();
 
-            // Summary with proper formatting for multiline
-            output.push_str("📋 Summary:\n");
-            for line in elements.summary.lines() {
-                output.push_str(&format!("   {}\n", line));
-            }
+        // Summary with proper formatting for multiline
+        output.push_str("📋 Summary:\n");
+        for line in elements.summary.lines() {
+            writeln!(output, "   {line}").unwrap();
+        }
 
-            // Files changed: prefer diff-like rendering when unified diff is present.
-            if let Some(ref files) = elements.files_changed {
-                output.push_str(&render_files_changed_as_diff_like_view(files));
-            }
+        // Files changed: prefer diff-like rendering when unified diff is present.
+        if let Some(ref files) = elements.files_changed {
+            output.push_str(&render_files_changed_as_diff_like_view(files));
+        }
 
-            // Next steps with proper formatting
-            if let Some(ref next) = elements.next_steps {
-                output.push_str("\n➡️  Next Steps:\n");
-                for line in next.lines() {
-                    output.push_str(&format!("   {}\n", line));
-                }
+        // Next steps with proper formatting
+        if let Some(ref next) = elements.next_steps {
+            output.push_str("\n➡️  Next Steps:\n");
+            for line in next.lines() {
+                writeln!(output, "   {line}").unwrap();
             }
         }
-        Err(_) => {
-            output.push_str("⚠️  Unable to parse development result XML\n\n");
-            output.push_str(content);
-        }
+    } else {
+        output.push_str("⚠️  Unable to parse development result XML\n\n");
+        output.push_str(content);
     }
 
     output
@@ -89,7 +87,7 @@ fn render_files_changed_as_diff_like_view(files_changed: &str) -> String {
     ));
 
     for (path, action) in items {
-        output.push_str(&format!("\n   📄 {}\n", path));
+        write!(output, "\n   📄 {path}\n").unwrap();
         output.push_str(&format!(
             "      Action: {}\n",
             match action {

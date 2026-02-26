@@ -1,9 +1,10 @@
 /// Check if a string contains a GLM-like model name.
 ///
-/// GLM-like models include GLM, ZhipuAI, ZAI, Qwen, and DeepSeek.
+/// GLM-like models include GLM, `ZhipuAI`, ZAI, Qwen, and `DeepSeek`.
 /// Use this for detecting GLM models in any context (e.g., prompt selection).
 /// For detecting CCS/Claude-based GLM agents specifically (error handling),
 /// use `is_glm_like_agent` instead.
+#[must_use]
 pub fn contains_glm_model(s: &str) -> bool {
     let s_lower = s.to_lowercase();
     s_lower.contains("glm")
@@ -20,8 +21,9 @@ pub fn contains_glm_model(s: &str) -> bool {
 /// - The `-p` flag for non-interactive mode
 /// - Special error handling for GLM-specific quirks
 ///
-/// This does NOT match OpenCode agents using GLM models, as OpenCode has
+/// This does NOT match `OpenCode` agents using GLM models, as `OpenCode` has
 /// its own mechanism (`--auto-approve`) and JSON format.
+#[must_use]
 pub fn is_glm_like_agent(s: &str) -> bool {
     let s_lower = s.to_lowercase();
 

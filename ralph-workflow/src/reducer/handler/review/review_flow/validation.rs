@@ -28,8 +28,8 @@
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn cleanup_review_issues_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         let issues_xml = Path::new(xml_paths::ISSUES_XML);
@@ -40,8 +40,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn extract_review_issues_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
@@ -79,8 +79,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn validate_review_issues_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;

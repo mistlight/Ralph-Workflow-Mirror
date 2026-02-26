@@ -29,6 +29,7 @@ pub struct TestLogger {
 
 impl TestLogger {
     /// Create a new test logger.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

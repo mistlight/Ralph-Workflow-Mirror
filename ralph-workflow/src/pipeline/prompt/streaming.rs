@@ -28,7 +28,7 @@ struct CancelAwareReceiverBufRead {
 }
 
 impl CancelAwareReceiverBufRead {
-    fn new(
+    const fn new(
         rx: mpsc::Receiver<io::Result<Vec<u8>>>,
         cancel: Arc<AtomicBool>,
         poll_interval: Duration,
@@ -197,7 +197,7 @@ fn cleanup_stdout_pump(
     }
 }
 
-/// Extract session_id from a log file.
+/// Extract `session_id` from a log file.
 pub(super) fn extract_session_id_from_logfile(
     logfile: &str,
     workspace: &dyn crate::workspace::Workspace,
@@ -214,12 +214,12 @@ pub(super) fn extract_session_id_from_logfile(
     None
 }
 
-/// Extract session_id from a single JSON line.
+/// Extract `session_id` from a single JSON line.
 ///
 /// Supports multiple agent formats:
 /// - Claude: `{"type":"system","subtype":"init","session_id":"abc123"}`
 /// - Gemini: `{"type":"init","session_id":"abc123","model":"gemini-pro"}`
-/// - OpenCode: `{"event_type":"...", "session_id":"abc123"}`
+/// - `OpenCode`: `{"event_type":"...", "session_id":"abc123"}`
 fn extract_session_id_from_json_line(line: &str) -> Option<String> {
     // Try to parse as JSON
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
@@ -240,12 +240,12 @@ fn extract_session_id_from_json_line(line: &str) -> Option<String> {
 /// Extract a human-readable error message from a logfile containing agent JSON output.
 ///
 /// This function searches for error events in the logfile (typically from stdout)
-/// and extracts the error message. This is critical for agents like OpenCode that
+/// and extracts the error message. This is critical for agents like `OpenCode` that
 /// emit errors as JSON to stdout rather than stderr.
 ///
 /// Supported error formats:
-/// - OpenCode: `{"type":"error","error":{"message":"usage limit reached"}}`
-/// - OpenCode: `{"type":"error","error":{"data":{"message":"Invalid API key"}}}`
+/// - `OpenCode`: `{"type":"error","error":{"message":"usage limit reached"}}`
+/// - `OpenCode`: `{"type":"error","error":{"data":{"message":"Invalid API key"}}}`
 /// - Claude: `{"type":"error","message":"Rate limit exceeded"}`
 ///
 /// Note: For safety, this extractor only considers lines explicitly marked as
@@ -315,38 +315,38 @@ fn error_code_to_human_message(code: &str) -> Option<&'static str> {
 /// Extract a human-readable error message from a single JSON line.
 ///
 /// Supports multiple agent error formats:
-/// - OpenCode: `{"type":"error","error":{"message":"..."}}`
-/// - OpenCode: `{"type":"error","error":{"data":{"message":"..."}}}`
-/// - OpenCode: `{"type":"error","error":{"name":"APIError"}}`
-/// - OpenCode: `{"type":"error","error":{"code":"usage_limit_exceeded"}}`
-/// - OpenCode: `{"type":"error","error":{"provider":"anthropic","message":"..."}}`
+/// - `OpenCode`: `{"type":"error","error":{"message":"..."}}`
+/// - `OpenCode`: `{"type":"error","error":{"data":{"message":"..."}}}`
+/// - `OpenCode`: `{"type":"error","error":{"name":"APIError"}}`
+/// - `OpenCode`: `{"type":"error","error":{"code":"usage_limit_exceeded"}}`
+/// - `OpenCode`: `{"type":"error","error":{"provider":"anthropic","message":"..."}}`
 /// - Claude: `{"type":"error","message":"..."}`
 ///
 /// This extractor requires an explicit error marker (`type == "error"`) to avoid
 /// false positives from non-error events that include an `error` object.
 ///
-/// # OpenCode Error Code Detection
+/// # `OpenCode` Error Code Detection
 ///
-/// OpenCode (and some providers) emit structured JSON errors with stable error codes.
+/// `OpenCode` (and some providers) emit structured JSON errors with stable error codes.
 /// Error codes are more reliable than message text for detection because they don't
-/// change across OpenCode versions or provider updates.
+/// change across `OpenCode` versions or provider updates.
 ///
-/// Supported error codes (verified 2026-02-12 against OpenCode source):
+/// Supported error codes (verified 2026-02-12 against `OpenCode` source):
 /// - `usage_limit_exceeded`: Usage/quota limit reached
 /// - `rate_limit_exceeded`: Rate limit reached
 /// - `quota_exceeded`: Quota exhausted
-/// - `insufficient_quota`: OpenAI quota exhaustion (source: /packages/opencode/src/provider/error.ts)
+/// - `insufficient_quota`: `OpenAI` quota exhaustion (source: /packages/opencode/src/provider/error.ts)
 /// - `usage_limit_reached`: Alternative usage limit code
 ///
-/// Source: https://github.com/anomalyco/opencode
+/// Source: <https://github.com/anomalyco/opencode>
 /// - /packages/opencode/src/cli/cmd/run.ts (error emission)
 /// - /packages/opencode/src/session/message-v2.ts (error format definitions)
 /// - /packages/opencode/src/provider/error.ts (error code parsing)
 ///
 /// # Provider-Specific Error Format
 ///
-/// OpenCode multi-provider gateway forwards errors from underlying providers
-/// (OpenAI, Anthropic, Google, etc.) with a `provider` field:
+/// `OpenCode` multi-provider gateway forwards errors from underlying providers
+/// (`OpenAI`, Anthropic, Google, etc.) with a `provider` field:
 ///
 /// ```json
 /// {
@@ -369,7 +369,7 @@ fn extract_error_message_from_json_line(line: &str) -> Option<String> {
     // Prefer human-readable messages over codes.
     if let Some(provider) = value.pointer("/error/provider").and_then(|v| v.as_str()) {
         if let Some(msg) = value.pointer("/error/message").and_then(|v| v.as_str()) {
-            return Some(format!("{}: {}", provider, msg));
+            return Some(format!("{provider}: {msg}"));
         }
     }
 
@@ -417,7 +417,7 @@ fn extract_error_identifier_from_json_line(line: &str) -> Option<String> {
     // Next best: provider-qualified message.
     if let Some(provider) = value.pointer("/error/provider").and_then(|v| v.as_str()) {
         if let Some(msg) = value.pointer("/error/message").and_then(|v| v.as_str()) {
-            return Some(format!("{}: {}", provider, msg));
+            return Some(format!("{provider}: {msg}"));
         }
     }
 
@@ -442,7 +442,7 @@ fn extract_error_identifier_from_json_line(line: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
-/// Stream agent output from an AgentChildHandle.
+/// Stream agent output from an `AgentChildHandle`.
 ///
 /// This function streams the agent's stdout in real-time, parsing JSON
 /// output based on the parser type, and tracking activity for idle timeout detection.

@@ -35,6 +35,31 @@ Effect handlers → Integration tests with mocked I/O
 Real filesystem/git → System tests only
 ```
 
+## Code Quality
+
+Test code follows the same strict linting standards as production code:
+
+- All clippy warnings must be fixed (including `clippy::pedantic` and `clippy::nursery`)
+- Add `#[must_use]` to test helper functions returning important values
+- Document test helper functions with `///` doc comments
+- Use format string interpolation: `format!("{var}")` not `format!("{}", var)`
+- Avoid unnecessary clones and allocations
+- Add `# Errors` and `# Panics` sections to helper functions that return `Result` or may panic
+
+Run `cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings` to check compliance.
+
+Lint configuration is enforced at the crate level in `tests/integration_tests/main.rs` and `tests/system_tests/main.rs`:
+
+```rust
+#![deny(
+    warnings,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo
+)]
+```
+
 ## Banned
 
 | Banned | Use Instead |
@@ -44,6 +69,7 @@ Real filesystem/git → System tests only
 | `std::process::Command` | `MockProcessExecutor` |
 | `cfg!(test)` in prod code | Dependency injection |
 | Test file >1000 lines | Split into modules |
+| `#[allow(..)]` attributes | Fix the code or refactor to avoid the lint |
 
 **Exception:** End-to-end tests that require real OS signals (e.g. SIGINT/Ctrl+C) are **system tests**.
 They must live under `tests/system_tests/` because integration tests must not spawn processes.

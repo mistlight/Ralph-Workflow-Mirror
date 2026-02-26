@@ -35,11 +35,11 @@ pub(crate) fn validate_file_system_state(
 
     for error in &errors {
         let (problem, commands) = error.recovery_commands();
-        logger.warn(&format!("  - {}", error));
-        logger.info(&format!("    What's wrong: {}", problem));
+        logger.warn(&format!("  - {error}"));
+        logger.info(&format!("    What's wrong: {problem}"));
         logger.info("    How to fix:");
         for cmd in commands {
-            logger.info(&format!("      {}", cmd));
+            logger.info(&format!("      {cmd}"));
         }
     }
 
@@ -69,7 +69,7 @@ pub(crate) fn validate_file_system_state(
             } else {
                 logger.warn("Some issues could not be automatically recovered:");
                 for error in &remaining {
-                    logger.warn(&format!("  - {}", error));
+                    logger.warn(&format!("  - {error}"));
                 }
                 logger.warn("Proceeding with resume despite unrecovered issues (strategy: auto).");
                 logger.info("Note: Pipeline behavior may be unpredictable.");
@@ -107,11 +107,11 @@ fn attempt_auto_recovery(
         match attempt_recovery_for_error(file_system_state, error, logger, workspace) {
             Ok(()) => {
                 recovered += 1;
-                logger.success(&format!("Recovered: {}", error));
+                logger.success(&format!("Recovered: {error}"));
             }
             Err(e) => {
                 remaining.push(error.clone());
-                logger.warn(&format!("Could not recover: {} - {}", error, e));
+                logger.warn(&format!("Could not recover: {error} - {e}"));
             }
         }
     }
@@ -137,8 +137,8 @@ fn attempt_recovery_for_error(
                 if let Some(content) = snapshot.get_content() {
                     workspace
                         .write(Path::new(path), &content)
-                        .map_err(|e| format!("Failed to write file: {}", e))?;
-                    logger.info(&format!("Restored {} from checkpoint content.", path));
+                        .map_err(|e| format!("Failed to write file: {e}"))?;
+                    logger.info(&format!("Restored {path} from checkpoint content."));
                     return Ok(());
                 }
             }
@@ -162,18 +162,17 @@ fn attempt_recovery_for_error(
                 if let Some(content) = snapshot.get_content() {
                     workspace
                         .write(Path::new(path), &content)
-                        .map_err(|e| format!("Failed to write file: {}", e))?;
-                    logger.info(&format!("Restored missing {} from checkpoint.", path));
+                        .map_err(|e| format!("Failed to write file: {e}"))?;
+                    logger.info(&format!("Restored missing {path} from checkpoint."));
                     return Ok(());
                 }
             }
-            Err(format!("Cannot recover missing file {}", path))
+            Err(format!("Cannot recover missing file {path}"))
         }
         ValidationError::FileUnexpectedlyExists { path } => {
             // Unexpected files should be removed by user
             Err(format!(
-                "File {} should not exist - requires manual removal",
-                path
+                "File {path} should not exist - requires manual removal"
             ))
         }
     }

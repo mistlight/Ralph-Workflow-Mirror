@@ -2,7 +2,7 @@ mod event_loop_logger;
 /// Per-run logging infrastructure.
 ///
 /// This module provides types and utilities for organizing all logs from a single
-/// pipeline run under a per-run directory (.agent/logs-<run_id>/).
+/// pipeline run under a per-run directory (.agent/logs-<`run_id`>/).
 ///
 /// Key types:
 /// - `RunId`: Unique timestamp-based identifier for each pipeline run

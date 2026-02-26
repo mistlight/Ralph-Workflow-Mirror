@@ -21,6 +21,7 @@
 //! - `key_detection`: TOML structure traversal for unknown key detection
 //! - `error_formatting`: User-friendly error message generation
 
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -65,12 +66,16 @@ pub type ValidationResult = Result<Vec<String>, Vec<ConfigValidationError>>;
 ///
 /// This validates:
 /// - TOML syntax
-/// - Type checking against UnifiedConfig schema
+/// - Type checking against `UnifiedConfig` schema
 /// - Unknown keys with typo suggestions
 /// - Deprecated keys (returns as warnings, not errors)
 ///
 /// Returns Ok((warnings)) on success with optional deprecation warnings,
 /// or Err(errors) on validation failure.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_config_file(
     path: &Path,
     content: &str,
@@ -101,14 +106,14 @@ pub fn validate_config_file(
         let suggestion = levenshtein::suggest_key(&key, &valid_keys);
         errors.push(ConfigValidationError::UnknownKey {
             file: path.to_path_buf(),
-            key: format!("{}{}", location, key),
+            key: format!("{location}{key}"),
             suggestion,
         });
     }
 
     // Deprecated keys are warnings
     for (key, location) in deprecated_keys {
-        let full_key = format!("{}{}", location, key);
+        let full_key = format!("{location}{key}");
         warnings.push(format!(
             "Deprecated key '{}' in {} - this key is no longer used and can be safely removed",
             full_key,
@@ -155,18 +160,19 @@ pub fn validate_config_file(
 }
 
 /// Format validation errors for user display.
+#[must_use]
 pub fn format_validation_errors(errors: &[ConfigValidationError]) -> String {
     let mut output = String::new();
 
     for error in errors {
-        output.push_str(&format!("  {}\n", error));
+        writeln!(output, "  {error}").unwrap();
 
         if let ConfigValidationError::UnknownKey {
             suggestion: Some(s),
             ..
         } = error
         {
-            output.push_str(&format!("    Did you mean '{}'?\n", s));
+            writeln!(output, "    Did you mean '{s}'?").unwrap();
         }
     }
 

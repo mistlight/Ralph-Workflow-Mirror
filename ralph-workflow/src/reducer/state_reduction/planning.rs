@@ -1,7 +1,9 @@
 // NOTE: split from reducer/state_reduction.rs.
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::PlanningEvent;
+use crate::reducer::state::{
+    ContinuationState, PipelineState, PlanningValidatedOutcome, PromptInputsState,
+};
 
 pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> PipelineState {
     match event {

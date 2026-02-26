@@ -57,7 +57,7 @@ pub struct VirtualTerminal {
     pub(self) cursor_row: RefCell<usize>,
     /// Current cursor column (0-indexed)
     pub(self) cursor_col: RefCell<usize>,
-    /// Whether to simulate terminal mode (affects is_terminal())
+    /// Whether to simulate terminal mode (affects `is_terminal()`)
     pub(self) simulated_is_terminal: bool,
     /// Raw write history for debugging
     pub(self) write_history: RefCell<Vec<String>>,
@@ -71,6 +71,7 @@ pub struct VirtualTerminal {
 impl VirtualTerminal {
     /// Create a new virtual terminal (simulates being a TTY by default).
     /// This creates an unbounded terminal (no wrapping, no scrolling) for backward compatibility.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             screen: RefCell::new(vec![String::new()]),
@@ -85,6 +86,7 @@ impl VirtualTerminal {
 
     /// Create a new virtual terminal with specified terminal simulation.
     /// This creates an unbounded terminal (no wrapping, no scrolling) for backward compatibility.
+    #[must_use]
     pub fn new_with_terminal(is_terminal: bool) -> Self {
         Self {
             screen: RefCell::new(vec![String::new()]),
@@ -112,6 +114,7 @@ impl VirtualTerminal {
     /// let term = VirtualTerminal::new_with_geometry(80, 24);
     /// // Writing 100 characters will wrap to multiple rows
     /// ```
+    #[must_use]
     pub fn new_with_geometry(cols: usize, rows: usize) -> Self {
         Self {
             screen: RefCell::new(vec![String::new()]),
@@ -164,7 +167,7 @@ impl VirtualTerminal {
         self.screen.borrow().clone()
     }
 
-    /// Get all screen lines (alias for get_screen_content for clarity).
+    /// Get all screen lines (alias for `get_screen_content` for clarity).
     ///
     /// Returns the full screen buffer including empty lines.
     /// This allows tests to assert on exact screen state.
@@ -312,7 +315,7 @@ impl VirtualTerminal {
     pub fn debug_summary(&self) -> String {
         let (row, col) = self.cursor_position();
         let geometry = match (self.cols, self.rows) {
-            (Some(c), Some(r)) => format!("{}x{}", c, r),
+            (Some(c), Some(r)) => format!("{c}x{r}"),
             _ => "unbounded".to_string(),
         };
 

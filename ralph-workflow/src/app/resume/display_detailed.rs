@@ -25,7 +25,7 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
         } else {
             "just now".to_string()
         };
-        logger.info(&format!("Time elapsed: {}", time_str));
+        logger.info(&format!("Time elapsed: {time_str}"));
     }
 
     logger.info("");
@@ -60,22 +60,22 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
 
     // Show model overrides
     if let Some(ref model) = checkpoint.developer_agent_config.model_override {
-        logger.info(&format!("  Developer model: {}", model));
+        logger.info(&format!("  Developer model: {model}"));
     }
     if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
-        logger.info(&format!("  Reviewer model: {}", model));
+        logger.info(&format!("  Reviewer model: {model}"));
     }
     if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
-        logger.info(&format!("  Developer provider: {}", provider));
+        logger.info(&format!("  Developer provider: {provider}"));
     }
     if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
-        logger.info(&format!("  Reviewer provider: {}", provider));
+        logger.info(&format!("  Reviewer provider: {provider}"));
     }
 
     // Show CLI args
     if let Some(ref cmd) = reconstruct_command(checkpoint) {
         logger.info("");
-        logger.info(&format!("Command: {}", cmd));
+        logger.info(&format!("Command: {cmd}"));
     }
 
     // Show resume count
@@ -91,7 +91,7 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
     logger.info("");
     logger.info(&format!("Run ID: {}", checkpoint.run_id));
     if let Some(ref parent_id) = checkpoint.parent_run_id {
-        logger.info(&format!("Parent Run ID: {}", parent_id));
+        logger.info(&format!("Parent Run ID: {parent_id}"));
     }
 
     // Show rebase state if applicable
@@ -103,7 +103,7 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
         logger.warn("Rebase conflicts detected:");
         if let crate::checkpoint::RebaseState::HasConflicts { files } = &checkpoint.rebase_state {
             for file in files.iter().take(10) {
-                logger.info(&format!("  - {}", file));
+                logger.info(&format!("  - {file}"));
             }
             if files.len() > 10 {
                 logger.info(&format!("  ... and {} more", files.len() - 10));
@@ -148,16 +148,16 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
 
         // Show git state
         if let Some(ref branch) = fs_state.git_branch {
-            logger.info(&format!("  Git branch: {}", branch));
+            logger.info(&format!("  Git branch: {branch}"));
         }
         if let Some(ref head) = fs_state.git_head_oid {
-            logger.info(&format!("  Git HEAD: {}", head));
+            logger.info(&format!("  Git HEAD: {head}"));
         }
         if let Some(ref status) = fs_state.git_status {
             if !status.is_empty() {
                 logger.warn("  Git working tree has changes:");
                 for line in status.lines().take(5) {
-                    logger.info(&format!("    {}", line));
+                    logger.info(&format!("    {line}"));
                 }
             }
         }
@@ -172,7 +172,7 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
                 env_snap.ralph_vars.len()
             ));
             for (key, value) in env_snap.ralph_vars.iter().take(10) {
-                logger.info(&format!("  {}={}", key, value));
+                logger.info(&format!("  {key}={value}"));
             }
             if env_snap.ralph_vars.len() > 10 {
                 logger.info(&format!(

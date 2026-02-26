@@ -315,7 +315,7 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err(

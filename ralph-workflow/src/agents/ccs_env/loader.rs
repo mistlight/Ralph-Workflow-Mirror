@@ -42,7 +42,7 @@ fn list_available_ccs_profiles_with_deps(
 ///
 /// Returns profile names from ~/.ccs that match the input case-insensitively,
 /// or contain the input as a substring.
-pub(crate) fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
+pub fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
     find_ccs_profile_suggestions_with_deps(&RealCcsEnvironment, &RealCcsFilesystem, input)
 }
 
@@ -97,7 +97,7 @@ fn find_ccs_profile_suggestions_with_deps(
 /// //   "ANTHROPIC_MODEL": "glm-4.7",
 /// // }
 /// ```
-pub(crate) fn load_ccs_env_vars(
+pub fn load_ccs_env_vars(
     profile: &str,
 ) -> Result<std::collections::HashMap<String, String>, CcsEnvVarsError> {
     load_ccs_env_vars_with_deps(&RealCcsEnvironment, &RealCcsFilesystem, profile)

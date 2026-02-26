@@ -179,97 +179,87 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                 locked_child.try_wait()
             };
 
-            match status {
-                Ok(Some(_)) => {
-                    return MonitorResult::TimedOut {
-                        escalated: state.escalated,
-                    }
-                }
-                Ok(None) | Err(_) => {
-                    let now = std::time::Instant::now();
+            if let Ok(Some(_)) = status {
+                return MonitorResult::TimedOut {
+                    escalated: state.escalated,
+                };
+            }
 
-                    // Be robust to future changes: if we ever enter the enforcement state
-                    // without having escalated yet, force escalation now.
-                    if !state.escalated {
-                        let _ = force_kill_best_effort(state.pid, executor.as_ref());
-                        state.escalated = true;
-                        state.last_sigkill_sent_at = Some(now);
-                    } else {
-                        let should_resend = match state.last_sigkill_sent_at {
+            let now = std::time::Instant::now();
+
+            // Be robust to future changes: if we ever enter the enforcement state
+            // without having escalated yet, force escalation now.
+            if state.escalated {
+                let should_resend = match state.last_sigkill_sent_at {
+                    None => true,
+                    Some(t) => now.duration_since(t) >= kill_config.sigkill_resend_interval(),
+                };
+                if should_resend {
+                    let _ = force_kill_best_effort(state.pid, executor.as_ref());
+                    state.last_sigkill_sent_at = Some(now);
+                }
+            } else {
+                let _ = force_kill_best_effort(state.pid, executor.as_ref());
+                state.escalated = true;
+                state.last_sigkill_sent_at = Some(now);
+            }
+
+            // After a bounded enforcement window, return TimedOut so the
+            // main pipeline can regain control. A detached reaper keeps
+            // trying to kill until the process is observed dead.
+            if now.duration_since(state.triggered_at) >= kill_config.post_sigkill_hard_cap()
+                && state.escalated
+            {
+                let child_for_reaper = Arc::clone(&child);
+                let executor_for_reaper = Arc::clone(&executor);
+                let should_stop_for_reaper = Arc::clone(&should_stop);
+                let config_for_reaper = kill_config;
+                let pid = state.pid;
+                std::thread::spawn(move || {
+                    // Bound the reaper's lifetime to avoid leaking threads across
+                    // repeated timeouts. If the process is truly unkillable, a bounded
+                    // best-effort reaper is the least-bad option.
+                    let deadline =
+                        std::time::Instant::now() + config_for_reaper.post_sigkill_hard_cap();
+                    let mut last_kill_sent_at: Option<std::time::Instant> = None;
+
+                    while std::time::Instant::now() < deadline {
+                        if should_stop_for_reaper.load(Ordering::Acquire) {
+                            return;
+                        }
+
+                        let status = {
+                            let mut locked_child = child_for_reaper.lock().expect(
+                                "child process mutex poisoned - indicates panic in another thread",
+                            );
+                            locked_child.try_wait()
+                        };
+
+                        if let Ok(Some(_)) = status {
+                            return;
+                        }
+                        let now = std::time::Instant::now();
+                        let should_resend = match last_kill_sent_at {
                             None => true,
                             Some(t) => {
-                                now.duration_since(t) >= kill_config.sigkill_resend_interval()
+                                now.duration_since(t) >= config_for_reaper.sigkill_resend_interval()
                             }
                         };
                         if should_resend {
-                            let _ = force_kill_best_effort(state.pid, executor.as_ref());
-                            state.last_sigkill_sent_at = Some(now);
+                            let _ = force_kill_best_effort(pid, executor_for_reaper.as_ref());
+                            last_kill_sent_at = Some(now);
                         }
+                        std::thread::sleep(config_for_reaper.poll_interval());
                     }
+                });
 
-                    // After a bounded enforcement window, return TimedOut so the
-                    // main pipeline can regain control. A detached reaper keeps
-                    // trying to kill until the process is observed dead.
-                    if now.duration_since(state.triggered_at) >= kill_config.post_sigkill_hard_cap()
-                        && state.escalated
-                    {
-                        let child_for_reaper = Arc::clone(&child);
-                        let executor_for_reaper = Arc::clone(&executor);
-                        let should_stop_for_reaper = Arc::clone(&should_stop);
-                        let config_for_reaper = kill_config;
-                        let pid = state.pid;
-                        std::thread::spawn(move || {
-                            // Bound the reaper's lifetime to avoid leaking threads across
-                            // repeated timeouts. If the process is truly unkillable, a bounded
-                            // best-effort reaper is the least-bad option.
-                            let deadline = std::time::Instant::now()
-                                + config_for_reaper.post_sigkill_hard_cap();
-                            let mut last_kill_sent_at: Option<std::time::Instant> = None;
-
-                            while std::time::Instant::now() < deadline {
-                                if should_stop_for_reaper.load(Ordering::Acquire) {
-                                    return;
-                                }
-
-                                let status = {
-                                    let mut locked_child = child_for_reaper.lock()
-                                        .expect("child process mutex poisoned - indicates panic in another thread");
-                                    locked_child.try_wait()
-                                };
-
-                                match status {
-                                    Ok(Some(_)) => return,
-                                    Ok(None) | Err(_) => {
-                                        let now = std::time::Instant::now();
-                                        let should_resend = match last_kill_sent_at {
-                                            None => true,
-                                            Some(t) => {
-                                                now.duration_since(t)
-                                                    >= config_for_reaper.sigkill_resend_interval()
-                                            }
-                                        };
-                                        if should_resend {
-                                            let _ = force_kill_best_effort(
-                                                pid,
-                                                executor_for_reaper.as_ref(),
-                                            );
-                                            last_kill_sent_at = Some(now);
-                                        }
-                                        std::thread::sleep(config_for_reaper.poll_interval());
-                                    }
-                                }
-                            }
-                        });
-
-                        return MonitorResult::TimedOut {
-                            escalated: state.escalated,
-                        };
-                    }
-
-                    timeout_triggered = Some(state);
-                    continue;
-                }
+                return MonitorResult::TimedOut {
+                    escalated: state.escalated,
+                };
             }
+
+            timeout_triggered = Some(state);
+            continue;
         }
 
         if !is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
@@ -298,14 +288,12 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                 }
                 Ok(false) => {
                     eprintln!(
-                        "No AI-generated file updates in the last {} seconds, proceeding with timeout",
-                        timeout_secs
+                        "No AI-generated file updates in the last {timeout_secs} seconds, proceeding with timeout"
                     );
                 }
                 Err(e) => {
                     eprintln!(
-                        "Warning: file activity check failed (treating as indeterminate, skipping timeout enforcement this cycle): {}",
-                        e
+                        "Warning: file activity check failed (treating as indeterminate, skipping timeout enforcement this cycle): {e}"
                     );
                     continue;
                 }

@@ -54,7 +54,7 @@ fn test_extract_planning_xml_emits_missing_event() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     let result = handler
         .extract_planning_xml(&mut ctx, 0)
         .expect("extract_planning_xml should succeed");
@@ -105,7 +105,7 @@ fn test_extract_development_xml_emits_missing_event() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     let result = handler
         .extract_development_xml(&mut ctx, 0)
         .expect("extract_development_xml should succeed");
@@ -156,7 +156,7 @@ fn test_extract_review_issues_xml_emits_missing_event() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .extract_review_issues_xml(&mut ctx, 0)
         .expect("extract_review_issues_xml should succeed");
@@ -207,7 +207,7 @@ fn test_extract_fix_result_xml_emits_missing_event() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .extract_fix_result_xml(&mut ctx, 0)
         .expect("extract_fix_result_xml should succeed");

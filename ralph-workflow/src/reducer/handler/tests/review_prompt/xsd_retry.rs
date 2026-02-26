@@ -68,7 +68,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             ..ContinuationState::new()
@@ -235,7 +235,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             ..ContinuationState::new()
@@ -294,7 +294,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             last_review_xsd_error: Some("XSD error {{BROKEN}}".to_string()),
@@ -364,7 +364,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             ..ContinuationState::new()
@@ -432,7 +432,7 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             ..ContinuationState::new()
@@ -504,7 +504,7 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             ..ContinuationState::new()
@@ -568,7 +568,7 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             last_fix_xsd_error: Some("XSD error {{BROKEN}}".to_string()),
@@ -632,7 +632,7 @@ fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             invalid_output_attempts: 1,
             last_fix_xsd_error: Some(String::new()),
@@ -714,7 +714,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");

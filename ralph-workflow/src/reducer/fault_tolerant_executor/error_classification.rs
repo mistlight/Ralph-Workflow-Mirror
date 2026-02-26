@@ -3,11 +3,11 @@
 //! This module provides functions to classify errors from agent execution
 //! into categories that determine retry vs fallback behavior.
 //!
-//! # OpenCode Usage Limit Detection
+//! # `OpenCode` Usage Limit Detection
 //!
-//! OpenCode and multi-provider gateways emit usage limit errors when underlying
-//! providers (OpenAI, Anthropic, Google, etc.) hit quota/usage limits. This module
-//! provides comprehensive detection for all OpenCode error formats:
+//! `OpenCode` and multi-provider gateways emit usage limit errors when underlying
+//! providers (`OpenAI`, Anthropic, Google, etc.) hit quota/usage limits. This module
+//! provides comprehensive detection for all `OpenCode` error formats:
 //!
 //! ## Detection Methods (Priority Order)
 //!
@@ -18,17 +18,17 @@
 //!
 //! 2. **Message patterns** (stderr or extracted from JSON):
 //!    - "usage limit has been reached", "usage limit reached", "usage limit exceeded"
-//!    - "OpenCode Zen usage limit", "opencode usage limit"
+//!    - "`OpenCode` Zen usage limit", "opencode usage limit"
 //!    - Provider-prefixed: "anthropic: usage limit reached"
 //!
-//! 3. **Exit codes**: OpenCode uses generic exit code 1 for most errors.
+//! 3. **Exit codes**: `OpenCode` uses generic exit code 1 for most errors.
 //!    - Exit codes are NOT reliable for usage limit detection
 //!    - No specific exit codes for rate limits vs other errors
 //!    - Exit code-based detection NOT implemented to avoid false positives
 //!
 //! ## Error Emission Behavior
 //!
-//! Based on OpenCode source analysis (2026-02-12):
+//! Based on `OpenCode` source analysis (2026-02-12):
 //!
 //! - **Primary channel**: JSON events to stdout via `--format json` logfile
 //!   - Format: `{"type":"error","error":{"code":"usage_limit_exceeded"}}`
@@ -47,12 +47,12 @@
 //!
 //! ## Edge Cases and Limitations
 //!
-//! - **Silent failures**: If OpenCode exits before writing error logs, detection
+//! - **Silent failures**: If `OpenCode` exits before writing error logs, detection
 //!   may fall back to logging a warning about potential undetected usage limits
 //! - **Empty logfiles**: Can occur if process terminates during initialization
 //! - **Timing issues**: Error may appear in stderr but not in logfile if process
 //!   exits before flushing stdout buffer
-//! - **No heuristics**: Exit code-based detection NOT implemented because OpenCode
+//! - **No heuristics**: Exit code-based detection NOT implemented because `OpenCode`
 //!   uses exit code 1 for all errors (would cause false positives)
 //!
 //! ## Verification and Maintenance
@@ -60,12 +60,12 @@
 //! Last Verified: 2026-02-12
 //! Last Updated: 2026-02-12
 //!
-//! To verify patterns remain accurate as OpenCode evolves:
-//! 1. Check OpenCode source: <https://github.com/anomalyco/opencode>
+//! To verify patterns remain accurate as `OpenCode` evolves:
+//! 1. Check `OpenCode` source: <https://github.com/anomalyco/opencode>
 //! 2. Review `/packages/opencode/src/cli/cmd/run.ts` for error emission
 //! 3. Review `/packages/opencode/src/session/message-v2.ts` for error formats
 //! 4. Review `/packages/opencode/src/session/retry.ts` for retry logic
-//! 5. Test with OpenCode CLI near usage limit to observe actual messages
+//! 5. Test with `OpenCode` CLI near usage limit to observe actual messages
 //! 6. Update patterns in this file if format changes
 
 use crate::reducer::event::AgentErrorKind;
@@ -82,9 +82,10 @@ use std::io;
 ///
 /// # Stdout Error Detection
 ///
-/// Some agents (like OpenCode) emit errors as JSON to stdout rather than stderr.
+/// Some agents (like `OpenCode`) emit errors as JSON to stdout rather than stderr.
 /// When `stdout_error` is provided, it is examined for rate limit patterns alongside stderr.
 /// This ensures rate limit errors are properly detected regardless of output stream.
+#[must_use]
 pub fn classify_agent_error(
     exit_code: i32,
     stderr: &str,
@@ -182,7 +183,7 @@ fn contains_timeout_phrase(text_lower: &str) -> bool {
 ///
 /// This function examines:
 /// 1. stderr (traditional error output)
-/// 2. stdout_error (extracted from JSON logs, e.g., OpenCode)
+/// 2. `stdout_error` (extracted from JSON logs, e.g., `OpenCode`)
 ///
 /// This dual-source approach ensures rate limit errors are detected
 /// regardless of which stream the agent uses for error reporting.
@@ -363,16 +364,16 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
 
 /// Check if input is a direct error code (not wrapped in JSON).
 ///
-/// When `extract_error_identifier_from_logfile` extracts error codes from OpenCode JSON logfiles,
+/// When `extract_error_identifier_from_logfile` extracts error codes from `OpenCode` JSON logfiles,
 /// it returns the bare error code string (e.g., `"usage_limit_exceeded"`), not the full JSON.
 ///
-/// This function detects these bare error codes so they are properly classified as RateLimit.
+/// This function detects these bare error codes so they are properly classified as `RateLimit`.
 ///
 /// Supported codes:
 /// - `usage_limit_exceeded`: Usage/quota limit reached
 /// - `quota_exceeded`: Quota exhausted
 /// - `usage_limit_reached`: Alternative usage limit code
-/// - `insufficient_quota`: OpenAI quota exhaustion
+/// - `insufficient_quota`: `OpenAI` quota exhaustion
 /// - `rate_limit_exceeded`: Standard rate limit error
 fn is_direct_error_code(text: &str) -> bool {
     // Trim whitespace to handle cases where the code might have surrounding whitespace
@@ -424,10 +425,12 @@ fn is_structured_rate_limit_error(stderr: &str) -> bool {
     // - usage_limit_reached: Alternative usage limit code
     if matches!(
         code.as_deref(),
-        Some("usage_limit_exceeded")
-            | Some("quota_exceeded")
-            | Some("usage_limit_reached")
-            | Some("insufficient_quota")
+        Some(
+            "usage_limit_exceeded"
+                | "quota_exceeded"
+                | "usage_limit_reached"
+                | "insufficient_quota"
+        )
     ) {
         return true;
     }
@@ -449,16 +452,17 @@ fn extract_error_code(value: &Value) -> Option<String> {
     value
         .pointer("/error/code")
         .and_then(Value::as_str)
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .or_else(|| {
             value
                 .pointer("/error/error/code")
                 .and_then(Value::as_str)
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })
 }
 
 /// Classify I/O error during agent execution.
+#[must_use]
 pub fn classify_io_error(error: &io::Error) -> AgentErrorKind {
     match error.kind() {
         io::ErrorKind::TimedOut => AgentErrorKind::Timeout,
@@ -500,7 +504,7 @@ pub fn classify_io_error(error: &io::Error) -> AgentErrorKind {
 ///
 /// # Non-retriable errors with dedicated fact events:
 ///
-/// - **RateLimit (429)**: Emitted as `AgentEvent::RateLimited` with prompt context.
+/// - **`RateLimit` (429)**: Emitted as `AgentEvent::RateLimited` with prompt context.
 ///   The reducer typically switches to the next agent immediately.
 ///
 /// - **Timeout**: Emitted as `AgentEvent::TimedOut`.
@@ -509,7 +513,8 @@ pub fn classify_io_error(error: &io::Error) -> AgentErrorKind {
 ///
 /// - **Authentication**: Emitted as `AgentEvent::AuthFailed`.
 ///   The reducer typically switches to the next agent immediately.
-pub fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
+#[must_use]
+pub const fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
     matches!(
         error_kind,
         AgentErrorKind::Network | AgentErrorKind::ModelUnavailable
@@ -517,23 +522,26 @@ pub fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
 }
 
 /// Check if an error kind represents a timeout error.
-pub fn is_timeout_error(error_kind: &AgentErrorKind) -> bool {
+#[must_use]
+pub const fn is_timeout_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Timeout)
 }
 
 /// Check if an error kind represents a rate limit (429) error.
 ///
 /// Rate limit errors are emitted as `AgentEvent::RateLimited` instead of a generic
-/// InvocationFailed so the reducer can apply deterministic policy.
-pub fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
+/// `InvocationFailed` so the reducer can apply deterministic policy.
+#[must_use]
+pub const fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::RateLimit)
 }
 
 /// Check if an error kind represents an authentication error.
 ///
 /// Auth errors are emitted as `AgentEvent::AuthFailed` instead of a generic
-/// InvocationFailed so the reducer can apply deterministic policy.
-pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
+/// `InvocationFailed` so the reducer can apply deterministic policy.
+#[must_use]
+pub const fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Authentication)
 }
 
@@ -546,11 +554,11 @@ pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
 /// Uses a regex pattern to match any file extension (dot followed by 1-5 alphanumeric chars).
 /// This covers all common programming language file extensions and is future-proof.
 ///
-/// The regex is compiled once at startup using LazyLock for efficiency.
+/// The regex is compiled once at startup using `LazyLock` for efficiency.
 ///
 /// # Arguments
 /// * `text` - The full text to search in (lowercase)
-/// * `pattern` - The pattern to check (e.g., "usage limit", "usage_limit")
+/// * `pattern` - The pattern to check (e.g., "usage limit", "`usage_limit`")
 ///
 /// # Returns
 /// `true` if the pattern is found and is followed by a file extension pattern
@@ -584,7 +592,7 @@ fn is_followed_by_file_extension_generic_at(
     pattern_pos: usize,
     pattern: &str,
 ) -> bool {
-    /// LazyLock for one-time regex initialization (compiled on first use, then cached).
+    /// `LazyLock` for one-time regex initialization (compiled on first use, then cached).
     /// Pattern matches: optional whitespace + dot + 1-10 alphanumeric chars + non-alphanumeric or end.
     /// Matches common file extensions: .rs, .py, .js, .ts, .go, .rb, .java, .cpp, .c, .h, .php, .cs, .swift, .kt, .scala, .sh, .properties, .markdown, .terraform, etc.
     /// Handles edge case of whitespace between pattern and extension: "usage limit .rs"

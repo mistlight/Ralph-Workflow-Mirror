@@ -3,7 +3,7 @@
 impl OpenCodeParser {
     /// Format a `tool_use` event
     ///
-    /// Based on OpenCode source (`run.ts` lines 163-174, `message-v2.ts` lines 221-287):
+    /// Based on `OpenCode` source (`run.ts` lines 163-174, `message-v2.ts` lines 221-287):
     /// - Shows tool name with status-specific icon and color
     /// - Status handling: pending (…), running (►), completed (✓), error (✗)
     /// - Title/description when available (from `state.title`)
@@ -194,7 +194,7 @@ impl OpenCodeParser {
 
     /// Format tool input based on tool type
     ///
-    /// From OpenCode source, each tool has specific input fields:
+    /// From `OpenCode` source, each tool has specific input fields:
     /// - `read`: `filePath`, `offset?`, `limit?`
     /// - `bash`: `command`, `timeout?`
     /// - `write`: `filePath`, `content`
@@ -216,11 +216,11 @@ impl OpenCodeParser {
                 // Primary: filePath, optional: offset, limit
                 let file_path = obj.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
                 let mut result = file_path.to_string();
-                if let Some(offset) = obj.get("offset").and_then(|v| v.as_u64()) {
-                    result.push_str(&format!(" (offset: {offset})"));
+                if let Some(offset) = obj.get("offset").and_then(serde_json::Value::as_u64) {
+                    write!(result, " (offset: {offset})").unwrap();
                 }
-                if let Some(limit) = obj.get("limit").and_then(|v| v.as_u64()) {
-                    result.push_str(&format!(" (limit: {limit})"));
+                if let Some(limit) = obj.get("limit").and_then(serde_json::Value::as_u64) {
+                    write!(result, " (limit: {limit})").unwrap();
                 }
                 result
             }
@@ -237,8 +237,7 @@ impl OpenCodeParser {
                 let content_len = obj
                     .get("content")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.len())
-                    .unwrap_or(0);
+                    .map_or(0, str::len);
                 if content_len > 0 {
                     format!("{file_path} ({content_len} bytes)")
                 } else {
@@ -267,10 +266,10 @@ impl OpenCodeParser {
                 let pattern = obj.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                 let mut result = format!("/{pattern}/");
                 if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
-                    result.push_str(&format!(" in {path}"));
+                    write!(result, " in {path}").unwrap();
                 }
                 if let Some(include) = obj.get("include").and_then(|v| v.as_str()) {
-                    result.push_str(&format!(" ({include})"));
+                    write!(result, " ({include})").unwrap();
                 }
                 result
             }

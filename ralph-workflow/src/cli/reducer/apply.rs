@@ -1,7 +1,7 @@
 //! Apply CLI state to Config.
 //!
 //! This module handles the final step of the CLI processing pipeline:
-//! taking a CliState and applying its values to the actual Config struct.
+//! taking a `CliState` and applying its values to the actual Config struct.
 
 use super::state::CliState;
 use crate::config::{Config, ReviewDepth, Verbosity};

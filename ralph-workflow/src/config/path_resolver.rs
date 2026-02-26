@@ -78,12 +78,24 @@ pub trait ConfigEnvironment: Send + Sync {
     fn file_exists(&self, path: &Path) -> bool;
 
     /// Read the contents of a file.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn read_file(&self, path: &Path) -> io::Result<String>;
 
     /// Write content to a file, creating parent directories if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn write_file(&self, path: &Path, content: &str) -> io::Result<()>;
 
     /// Create directories recursively.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 
     /// Get the root of the current git worktree, if running inside one.
@@ -179,6 +191,7 @@ pub struct MemoryConfigEnvironment {
 
 impl MemoryConfigEnvironment {
     /// Create a new memory environment with no paths configured.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -222,6 +235,7 @@ impl MemoryConfigEnvironment {
     }
 
     /// Get the contents of a file (for test assertions).
+    #[must_use]
     pub fn get_file(&self, path: &Path) -> Option<String> {
         self.files.read()
             .expect("RwLock poisoned - indicates panic in another thread holding MemoryConfigEnvironment files lock")
@@ -229,6 +243,7 @@ impl MemoryConfigEnvironment {
     }
 
     /// Check if a file was written (for test assertions).
+    #[must_use]
     pub fn was_written(&self, path: &Path) -> bool {
         self.files.read()
             .expect("RwLock poisoned - indicates panic in another thread holding MemoryConfigEnvironment files lock")

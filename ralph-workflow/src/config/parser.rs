@@ -17,6 +17,7 @@
 ///
 /// Returns `Some(true)` for truthy values, `Some(false)` for falsy values,
 /// and `None` for empty or unrecognized values.
+#[must_use]
 pub fn parse_env_bool(value: &str) -> Option<bool> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {

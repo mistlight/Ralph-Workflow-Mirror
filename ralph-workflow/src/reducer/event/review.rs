@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// - `PhaseStarted`: Sets phase to Review, resets pass counter
 /// - `PassStarted`: Resets agent chain for the pass
-/// - `Completed(issues_found=false)`: Advances to next pass or CommitMessage
+/// - `Completed(issues_found=false)`: Advances to next pass or `CommitMessage`
 /// - `Completed(issues_found=true)`: Triggers fix attempt
-/// - `FixAttemptCompleted`: Transitions to CommitMessage
-/// - `PhaseCompleted`: Transitions to CommitMessage
+/// - `FixAttemptCompleted`: Transitions to `CommitMessage`
+/// - `PhaseCompleted`: Transitions to `CommitMessage`
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum ReviewEvent {
     /// Review phase has started.
@@ -60,7 +60,7 @@ pub enum ReviewEvent {
         pass: u32,
         /// The invalid output attempt count.
         attempt: u32,
-        /// Error detail if file read failed for a reason other than NotFound.
+        /// Error detail if file read failed for a reason other than `NotFound`.
         error_detail: Option<String>,
     },
 
@@ -115,10 +115,10 @@ pub enum ReviewEvent {
         pass: u32,
         /// The invalid output attempt count.
         attempt: u32,
-        /// Detailed error message from file read failure (if not NotFound).
+        /// Detailed error message from file read failure (if not `NotFound`).
         ///
         /// This field is populated when the file exists but cannot be read
-        /// (e.g., permission denied, I/O error). It's None for simple NotFound.
+        /// (e.g., permission denied, I/O error). It's None for simple `NotFound`.
         error_detail: Option<String>,
     },
 
@@ -202,11 +202,11 @@ pub enum ReviewEvent {
     /// Fix attempt completed with incomplete status, needs continuation.
     ///
     /// Emitted when fix output is valid XML but indicates work is not complete
-    /// (status is "issues_remain"). Triggers a continuation with new session.
+    /// (status is "`issues_remain`"). Triggers a continuation with new session.
     FixContinuationTriggered {
         /// The pass number this fix was for.
         pass: u32,
-        /// Status from the agent (typically IssuesRemain).
+        /// Status from the agent (typically `IssuesRemain`).
         status: crate::reducer::state::FixStatus,
         /// Summary of what was accomplished.
         summary: Option<String>,
@@ -215,7 +215,7 @@ pub enum ReviewEvent {
     /// Fix continuation succeeded after multiple attempts.
     ///
     /// Emitted when a fix continuation finally reaches a complete state
-    /// (all_issues_addressed or no_issues_found).
+    /// (`all_issues_addressed` or `no_issues_found`).
     FixContinuationSucceeded {
         /// The pass number this fix was for.
         pass: u32,
@@ -235,7 +235,7 @@ pub enum ReviewEvent {
         pass: u32,
         /// Total number of continuation attempts made.
         total_attempts: u32,
-        /// The last status received (typically IssuesRemain).
+        /// The last status received (typically `IssuesRemain`).
         last_status: crate::reducer::state::FixStatus,
     },
 

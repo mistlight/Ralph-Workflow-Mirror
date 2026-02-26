@@ -1,9 +1,9 @@
 //! Development XML validation and extraction.
 //!
 //! This module handles:
-//! - Extracting development_result.xml from workspace
+//! - Extracting `development_result.xml` from workspace
 //! - Validating XML against XSD schema
-//! - Parsing status, summary, files_changed, and next_steps
+//! - Parsing status, summary, `files_changed`, and `next_steps`
 //! - Writing XSD error context for retry
 
 use super::super::MainEffectHandler;
@@ -21,8 +21,8 @@ impl MainEffectHandler {
     /// Extract development XML output from workspace.
     ///
     /// Checks for the presence of `.agent/tmp/development_result.xml` in the workspace.
-    /// If found, emits DevelopmentXmlExtracted with the content in a UIEvent.
-    /// If missing, emits DevelopmentXmlMissing (triggers invalid output handling).
+    /// If found, emits `DevelopmentXmlExtracted` with the content in a `UIEvent`.
+    /// If missing, emits `DevelopmentXmlMissing` (triggers invalid output handling).
     ///
     /// # Arguments
     ///
@@ -31,11 +31,11 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentXmlExtracted or DevelopmentXmlMissing event,
-    /// plus IterationProgress UI event.
+    /// `EffectResult` with `DevelopmentXmlExtracted` or `DevelopmentXmlMissing` event,
+    /// plus `IterationProgress` UI event.
     pub(in crate::reducer::handler) fn extract_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         let xml_path = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
@@ -74,14 +74,14 @@ impl MainEffectHandler {
     ///
     /// Reads `.agent/tmp/development_result.xml` and validates it against the
     /// development result XSD schema. On success, parses the status, summary,
-    /// files_changed, and next_steps elements. On failure, writes the XSD error
+    /// `files_changed`, and `next_steps` elements. On failure, writes the XSD error
     /// to `.agent/tmp/development_xsd_error.txt` for inclusion in retry prompt.
     ///
     /// # Status Mapping
     ///
-    /// - `<status>completed</status>` → DevelopmentStatus::Completed
-    /// - `<status>partial</status>` → DevelopmentStatus::Partial (triggers continuation)
-    /// - `<status>failed</status>` or invalid XML → DevelopmentStatus::Failed (triggers retry)
+    /// - `<status>completed</status>` → `DevelopmentStatus::Completed`
+    /// - `<status>partial</status>` → `DevelopmentStatus::Partial` (triggers continuation)
+    /// - `<status>failed</status>` or invalid XML → `DevelopmentStatus::Failed` (triggers retry)
     ///
     /// # XSD Retry Context
     ///
@@ -96,11 +96,11 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentXmlValidated (on success) or
-    /// DevelopmentOutputValidationFailed (on XSD error or missing file).
+    /// `EffectResult` with `DevelopmentXmlValidated` (on success) or
+    /// `DevelopmentOutputValidationFailed` (on XSD error or missing file).
     pub(in crate::reducer::handler) fn validate_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::validate_development_result_xml;
@@ -136,7 +136,7 @@ impl MainEffectHandler {
                 let files_changed = elements
                     .files_changed
                     .as_ref()
-                    .map(|f| f.lines().map(|s| s.to_string()).collect());
+                    .map(|f| f.lines().map(std::string::ToString::to_string).collect());
 
                 Ok(EffectResult::event(
                     PipelineEvent::development_xml_validated(
@@ -144,7 +144,7 @@ impl MainEffectHandler {
                         status,
                         elements.summary.clone(),
                         files_changed,
-                        elements.next_steps.clone(),
+                        elements.next_steps,
                     ),
                 ))
             }

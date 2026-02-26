@@ -72,14 +72,14 @@ impl ClaudeParser {
 
     /// Extract content from assistant message for hash-based deduplication.
     ///
-    /// This includes both text and tool_use blocks, normalized for comparison.
-    /// Tool_use blocks are serialized in a deterministic way (name + sorted input JSON)
+    /// This includes both text and `tool_use` blocks, normalized for comparison.
+    /// `Tool_use` blocks are serialized in a deterministic way (name + sorted input JSON)
     /// to ensure semantically identical tool calls produce the same hash.
     ///
     /// # Returns
-    /// A tuple of (normalized_content, tool_names_by_index) where:
-    /// - normalized_content: The concatenated normalized content (text + tool_use markers)
-    /// - tool_names_by_index: Map from content block index to tool name (for tool_use blocks)
+    /// A tuple of (`normalized_content`, `tool_names_by_index`) where:
+    /// - `normalized_content`: The concatenated normalized content (text + `tool_use` markers)
+    /// - `tool_names_by_index`: Map from content block index to tool name (for `tool_use` blocks)
     fn extract_text_content_for_hash(
         message: Option<&crate::json_parser::types::AssistantMessage>,
     ) -> Option<(String, std::collections::HashMap<usize, String>)> {
@@ -113,7 +113,7 @@ impl ClaudeParser {
                                     if v.is_object() {
                                         serde_json::to_string(v).ok()
                                     } else if v.is_string() {
-                                        v.as_str().map(|s| s.to_string())
+                                        v.as_str().map(std::string::ToString::to_string)
                                     } else {
                                         serde_json::to_string(v).ok()
                                     }

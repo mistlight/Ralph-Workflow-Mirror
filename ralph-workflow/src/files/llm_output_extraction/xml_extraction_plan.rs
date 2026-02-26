@@ -70,9 +70,9 @@ impl XmlExtractionStrategy for MarkdownFenceStrategy {
     }
 }
 
-/// Strategy for extracting XML from OpenCode NDJSON streams.
+/// Strategy for extracting XML from `OpenCode` NDJSON streams.
 ///
-/// OpenCode outputs text in multiple `{"type":"text","part":{"text":"..."}}` events.
+/// `OpenCode` outputs text in multiple `{"type":"text","part":{"text":"..."}}` events.
 /// This strategy accumulates all text fragments and extracts XML from the result.
 struct OpenCodeStrategy;
 
@@ -167,7 +167,7 @@ impl XmlExtractionStrategy for EmbeddedXmlStrategy {
 ///
 /// 1. **Direct XML**: Content starts with `<ralph-plan>` tag
 /// 2. **Markdown fence**: XML wrapped in ```xml or ``` fences
-/// 3. **OpenCode NDJSON**: Accumulated text from `{"type":"text","part":{"text":"..."}}` events
+/// 3. **`OpenCode` NDJSON**: Accumulated text from `{"type":"text","part":{"text":"..."}}` events
 /// 4. **JSON result**: XML in `result`, `content`, `message`, `output`, or `text` fields
 /// 5. **Embedded search**: Look for `<ralph-plan>` anywhere in content
 ///
@@ -179,6 +179,7 @@ impl XmlExtractionStrategy for EmbeddedXmlStrategy {
 ///
 /// * `Some(xml_content)` - The extracted XML content including tags
 /// * `None` - No valid XML plan found
+#[must_use]
 pub fn extract_plan_xml(content: &str) -> Option<String> {
     let strategies: &[&dyn XmlExtractionStrategy] = &[
         &DirectXmlStrategy,

@@ -63,8 +63,7 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         ctx.logger.error("WARNING: PIPELINE FAILURE DETECTED");
         ctx.logger.warn(&format!(
-            "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
-            failed_phase, failed_role, retry_cycle
+            "Pipeline failure detected (phase: {failed_phase}, role: {failed_role:?}, cycle: {retry_cycle})"
         ));
         ctx.logger.info("Entering AwaitingDevFix flow...");
         ctx.logger
@@ -76,10 +75,9 @@ impl MainEffectHandler {
                 Ok(content) => content,
                 Err(err) => {
                     ctx.logger.warn(&format!(
-                        "Dev-fix prompt fallback: failed to read {}: {}",
-                        label, err
+                        "Dev-fix prompt fallback: failed to read {label}: {err}"
                     ));
-                    format!("(Missing {}: {})", label, err)
+                    format!("(Missing {label}: {err})")
                 }
             }
         };
@@ -87,8 +85,7 @@ impl MainEffectHandler {
         let prompt_content = read_or_fallback("PROMPT.md", "PROMPT.md");
         let plan_content = read_or_fallback(".agent/PLAN.md", ".agent/PLAN.md");
         let issues_content = format!(
-            "# Issues\n\n- [High] Pipeline failure (phase: {}, role: {:?}, cycle: {}).\n  Diagnose the root cause and fix the failure.\n",
-            failed_phase, failed_role, retry_cycle
+            "# Issues\n\n- [High] Pipeline failure (phase: {failed_phase}, role: {failed_role:?}, cycle: {retry_cycle}).\n  Diagnose the root cause and fix the failure.\n"
         );
         let dev_fix_prompt = crate::prompts::prompt_fix_with_context(
             ctx.template_context,
@@ -103,8 +100,7 @@ impl MainEffectHandler {
             &dev_fix_prompt,
         ) {
             ctx.logger.warn(&format!(
-                "Failed to write dev-fix prompt to workspace: {}",
-                err
+                "Failed to write dev-fix prompt to workspace: {err}"
             ));
         }
 
@@ -135,12 +131,11 @@ impl MainEffectHandler {
 
                 if unavailable {
                     ctx.logger.warn(&format!(
-                        "Dev-fix agent unavailable: {}. Continuing unattended recovery loop without dev-fix agent.",
-                        err
+                        "Dev-fix agent unavailable: {err}. Continuing unattended recovery loop without dev-fix agent."
                     ));
                 } else {
                     ctx.logger
-                        .warn(&format!("Dev-fix agent invocation failed: {}", err));
+                        .warn(&format!("Dev-fix agent invocation failed: {err}"));
                 }
                 Err(err)
             }
@@ -149,8 +144,7 @@ impl MainEffectHandler {
         let is_agent_unavailable = agent_result
             .as_ref()
             .err()
-            .map(|err| is_agent_unavailable_error(&err.to_string()))
-            .unwrap_or(false);
+            .is_some_and(|err| is_agent_unavailable_error(&err.to_string()));
 
         // Dev-fix "success" cannot be determined at invocation time.
         //
@@ -159,7 +153,10 @@ impl MainEffectHandler {
         // the underlying pipeline failure is fixed.
 
         // Extract error reason for logging and summary
-        let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
+        let error_reason = agent_result
+            .as_ref()
+            .err()
+            .map(std::string::ToString::to_string);
 
         // In unattended mode, we need a concrete reducer-visible signal that a dev-fix
         // attempt completed so the recovery loop can advance attempt counters and

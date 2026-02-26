@@ -123,6 +123,7 @@ impl StreamingQualityMetrics {
     }
 
     /// Format metrics for display.
+    #[must_use] 
     pub fn format(&self, colors: Colors) -> String {
         if self.total_deltas == 0 {
             return format!(

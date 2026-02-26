@@ -62,6 +62,7 @@ pub fn prompt_developer_iteration(
 /// * `ctx_level` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+#[must_use] 
 pub fn prompt_developer_iteration_with_context(
     context: &TemplateContext,
     iteration: u32,
@@ -191,13 +192,13 @@ pub fn prompt_developer_iteration_xml_with_references_and_log(
 
             let prompt = refs.prompt_for_template();
             let plan = refs.plan_for_template();
-            let content = format!(
+            let prompt_content = format!(
                 "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt}\n\n\
              IMPLEMENTATION PLAN:\n{plan}\n\n\
              Output format: <ralph-development-result>...</ralph-development-result>\n"
             );
             RenderedTemplate {
-                content,
+                content: prompt_content,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![
@@ -342,12 +343,11 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
         return format!(
-            "{}XSD VALIDATION FAILED - CONTINUE IMPLEMENTATION\n\n\
-             Error: {}\n\n\
+            "{diagnostic_prefix}XSD VALIDATION FAILED - CONTINUE IMPLEMENTATION\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please continue the implementation based on PROMPT.md and PLAN.md.\n\n\
-             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
         );
     }
 
@@ -378,18 +378,17 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files(
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
-                "Your previous development status failed XSD validation.\n\nError: {}\n\n\
+                "Your previous development status failed XSD validation.\n\nError: {xsd_error}\n\n\
                  Read .agent/tmp/development_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your status in valid XML format conforming to the XSD schema.\n",
-                xsd_error
+                 Please resend your status in valid XML format conforming to the XSD schema.\n"
             )
         });
 
     // Prepend diagnostic prefix if files were missing but we continued anyway
-    if !diagnostic_prefix.is_empty() {
-        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
-    } else {
+    if diagnostic_prefix.is_empty() {
         rendered_prompt
+    } else {
+        format!("{diagnostic_prefix}\n{rendered_prompt}")
     }
 }
 
@@ -442,16 +441,15 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files_and_log(
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
-        let content = format!(
-            "{}XSD VALIDATION FAILED - CONTINUE IMPLEMENTATION\n\n\
-             Error: {}\n\n\
+        let prompt_content = format!(
+            "{diagnostic_prefix}XSD VALIDATION FAILED - CONTINUE IMPLEMENTATION\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please continue the implementation based on PROMPT.md and PLAN.md.\n\n\
-             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
         );
         return RenderedTemplate {
-            content,
+            content: prompt_content,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![SubstitutionEntry {
@@ -487,31 +485,27 @@ pub fn prompt_developer_iteration_xsd_retry_with_context_files_and_log(
     ]);
 
     let template = Template::new(&template_content);
-    match template.render_with_log(template_name, &variables, &partials) {
-        Ok(mut rendered) => {
-            if !diagnostic_prefix.is_empty() {
-                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
-            }
-            rendered
+    if let Ok(mut rendered) = template.render_with_log(template_name, &variables, &partials) {
+        if !diagnostic_prefix.is_empty() {
+            rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
         }
-        Err(_) => {
-            let content = format!(
-                "Your previous development status failed XSD validation.\n\nError: {}\n\n\
-                 Read .agent/tmp/development_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your status in valid XML format conforming to the XSD schema.\n",
-                xsd_error
-            );
-            RenderedTemplate {
-                content,
-                log: SubstitutionLog {
-                    template_name: template_name.to_string(),
-                    substituted: vec![SubstitutionEntry {
-                        name: "XSD_ERROR".to_string(),
-                        source: SubstitutionSource::Value,
-                    }],
-                    unsubstituted: vec![],
-                },
-            }
+        rendered
+    } else {
+        let prompt_content = format!(
+            "Your previous development status failed XSD validation.\n\nError: {xsd_error}\n\n\
+             Read .agent/tmp/development_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+             Please resend your status in valid XML format conforming to the XSD schema.\n"
+        );
+        RenderedTemplate {
+            content: prompt_content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: vec![],
+            },
         }
     }
 }
@@ -537,7 +531,7 @@ pub fn prompt_developer_iteration_continuation_xml(
     let previous_status = continuation_state
         .previous_status
         .as_ref()
-        .map_or("unknown".to_string(), |s| format!("{}", s));
+        .map_or("unknown".to_string(), |s| format!("{s}"));
 
     let previous_summary = continuation_state
         .previous_summary
@@ -646,7 +640,7 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
     let previous_status = continuation_state
         .previous_status
         .as_ref()
-        .map_or("unknown".to_string(), |s| format!("{}", s));
+        .map_or("unknown".to_string(), |s| format!("{s}"));
 
     let previous_summary = continuation_state
         .previous_summary
@@ -702,50 +696,47 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
         variables.insert("PREVIOUS_NEXT_STEPS", next_steps);
     }
 
-    match template.render_with_log(template_name, &variables, &partials) {
-        Ok(rendered) => rendered,
-        Err(_) => {
-            let status =
-                continuation_state
-                    .previous_status
-                    .as_ref()
-                    .map_or("unknown", |s| match s {
-                        crate::reducer::state::DevelopmentStatus::Completed => "completed",
-                        crate::reducer::state::DevelopmentStatus::Partial => "partial",
-                        crate::reducer::state::DevelopmentStatus::Failed => "failed",
-                    });
-            let summary = continuation_state
-                .previous_summary
+    if let Ok(rendered) = template.render_with_log(template_name, &variables, &partials) { rendered } else {
+        let status =
+            continuation_state
+                .previous_status
                 .as_ref()
-                .map_or("No summary", |s| s.as_str());
-            let content = format!(
-                "CONTINUATION MODE\n\n\
-                 This is continuation attempt #{}. Previous status: {}\n\n\
-                 Previous summary: {}\n\n\
-                 Continue the implementation from where you left off.\n\
-                 Read PROMPT.md and .agent/PLAN.md for the full context.\n\n\
-                 Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
-                continuation_state.continuation_attempt,
-                status,
-                summary
-            );
-            RenderedTemplate {
-                content,
-                log: SubstitutionLog {
-                    template_name: template_name.to_string(),
-                    substituted: vec![
-                        SubstitutionEntry {
-                            name: "PREVIOUS_STATUS".to_string(),
-                            source: SubstitutionSource::Value,
-                        },
-                        SubstitutionEntry {
-                            name: "PREVIOUS_SUMMARY".to_string(),
-                            source: SubstitutionSource::Value,
-                        },
-                    ],
-                    unsubstituted: vec![],
-                },
-            }
+                .map_or("unknown", |s| match s {
+                    crate::reducer::state::DevelopmentStatus::Completed => "completed",
+                    crate::reducer::state::DevelopmentStatus::Partial => "partial",
+                    crate::reducer::state::DevelopmentStatus::Failed => "failed",
+                });
+        let summary = continuation_state
+            .previous_summary
+            .as_ref()
+            .map_or("No summary", |s| s.as_str());
+        let prompt_content = format!(
+            "CONTINUATION MODE\n\n\
+             This is continuation attempt #{}. Previous status: {}\n\n\
+             Previous summary: {}\n\n\
+             Continue the implementation from where you left off.\n\
+             Read PROMPT.md and .agent/PLAN.md for the full context.\n\n\
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
+            continuation_state.continuation_attempt,
+            status,
+            summary
+        );
+        RenderedTemplate {
+            content: prompt_content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![
+                    SubstitutionEntry {
+                        name: "PREVIOUS_STATUS".to_string(),
+                        source: SubstitutionSource::Value,
+                    },
+                    SubstitutionEntry {
+                        name: "PREVIOUS_SUMMARY".to_string(),
+                        source: SubstitutionSource::Value,
+                    },
+                ],
+                unsubstituted: vec![],
+            },
         }
     }
 }

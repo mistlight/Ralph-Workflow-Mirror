@@ -165,7 +165,7 @@ fn print_config_info(
     } else {
         "no".to_string()
     };
-    println!("  Config exists: {}", exists_status);
+    println!("  Config exists: {exists_status}");
     println!(
         "  Review depth: {:?} ({})",
         config.review_depth,
@@ -362,7 +362,7 @@ fn print_recent_logs(colors: Colors, workspace: &dyn Workspace) {
     {
         // Use log_run_id from checkpoint to find per-run logs
         if let Some(log_run_id) = checkpoint.log_run_id {
-            PathBuf::from(format!(".agent/logs-{}/pipeline.log", log_run_id))
+            PathBuf::from(format!(".agent/logs-{log_run_id}/pipeline.log"))
         } else {
             // Older checkpoint without log_run_id, try to find latest run directory
             find_latest_run_log_directory(workspace)
@@ -411,14 +411,13 @@ fn find_latest_run_log_directory(workspace: &dyn Workspace) -> Option<PathBuf> {
             entry
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.starts_with("logs-") && entry.is_dir())
-                .unwrap_or(false)
+                .is_some_and(|s| s.starts_with("logs-") && entry.is_dir())
         })
         .filter_map(|entry| {
             entry
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })
         .collect();
 
@@ -427,5 +426,5 @@ fn find_latest_run_log_directory(workspace: &dyn Workspace) -> Option<PathBuf> {
     // Return the pipeline.log path for the latest directory
     log_dirs
         .last()
-        .map(|dir_name| PathBuf::from(format!(".agent/{}/pipeline.log", dir_name)))
+        .map(|dir_name| PathBuf::from(format!(".agent/{dir_name}/pipeline.log")))
 }

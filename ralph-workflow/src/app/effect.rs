@@ -81,7 +81,7 @@ pub enum RebaseResult {
 /// - **Git**: Version control operations
 /// - **Environment**: Environment variable access
 /// - **Logging**: User-facing output
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AppEffect {
     // =========================================================================
     // Working Directory Effects

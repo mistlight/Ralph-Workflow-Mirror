@@ -1,4 +1,4 @@
-//! Events for AwaitingDevFix phase.
+//! Events for `AwaitingDevFix` phase.
 //!
 //! This phase handles pipeline failure remediation with escalating recovery strategies.
 
@@ -8,25 +8,25 @@ use serde::{Deserialize, Serialize};
 // Import PipelinePhase from the parent event module (defined in mod.rs)
 use crate::reducer::event::PipelinePhase;
 
-/// Events for AwaitingDevFix phase.
+/// Events for `AwaitingDevFix` phase.
 ///
 /// This phase handles pipeline failure remediation with escalating recovery strategies.
 ///
 /// # When This Occurs
 ///
-/// The AwaitingDevFix phase is entered when the pipeline encounters a terminal
+/// The `AwaitingDevFix` phase is entered when the pipeline encounters a terminal
 /// failure condition (e.g., agent chain exhausted) in any phase. The pipeline
 /// implements an aggressive recovery system with escalating strategies rather
 /// than immediate termination.
 ///
 /// # State Flow (Updated)
 ///
-/// 1. Terminal failure detected (e.g., AgentChainExhausted)
-/// 2. Reducer transitions to AwaitingDevFix phase
-/// 3. DevFixTriggered event emitted
+/// 1. Terminal failure detected (e.g., `AgentChainExhausted`)
+/// 2. Reducer transitions to `AwaitingDevFix` phase
+/// 3. `DevFixTriggered` event emitted
 /// 4. Development agent invoked with failure context
-/// 5. DevFixCompleted event emitted (attempt count incremented, level set)
-/// 6. RecoveryAttempted event transitions back to failed phase
+/// 5. `DevFixCompleted` event emitted (attempt count incremented, level set)
+/// 6. `RecoveryAttempted` event transitions back to failed phase
 /// 7. Recovery attempt (retry same operation, or escalate to phase reset, etc.)
 /// 8. If recovery fails, repeat steps 3-7 with escalating strategies:
 ///    - Level 1 (attempts 1-3): Retry same operation
@@ -84,7 +84,7 @@ pub enum AwaitingDevFixEvent {
     /// Completion marker was emitted to filesystem.
     ///
     /// Emitted after writing the completion marker to `.agent/tmp/completion_marker`.
-    /// The reducer uses this event to transition from AwaitingDevFix to Interrupted,
+    /// The reducer uses this event to transition from `AwaitingDevFix` to Interrupted,
     /// enabling the pipeline to complete gracefully.
     CompletionMarkerEmitted {
         /// Whether this is a failure completion (true) or success (false).
@@ -92,7 +92,7 @@ pub enum AwaitingDevFixEvent {
     },
     /// Completion marker failed to write to filesystem.
     ///
-    /// This event is emitted when EmitCompletionMarkerAndTerminate attempts to write
+    /// This event is emitted when `EmitCompletionMarkerAndTerminate` attempts to write
     /// `.agent/tmp/completion_marker` but the workspace write fails.
     ///
     /// The reducer must NOT transition to Interrupted in this case so orchestration

@@ -34,6 +34,10 @@ impl Drop for RebaseLock {
 
 impl RebaseLock {
     /// Create a new lock guard that owns the lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn new() -> io::Result<Self> {
         acquire_rebase_lock()?;
         Ok(Self { owns_lock: true })

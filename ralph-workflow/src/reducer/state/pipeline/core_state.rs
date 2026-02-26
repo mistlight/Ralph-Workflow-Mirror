@@ -13,23 +13,28 @@
 pub struct BoundedExecutionHistory(std::collections::VecDeque<ExecutionStep>);
 
 impl BoundedExecutionHistory {
-    pub fn new() -> Self {
+    #[must_use] 
+    pub const fn new() -> Self {
         Self(std::collections::VecDeque::new())
     }
 
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    #[must_use] 
     pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, ExecutionStep> {
         self.0.iter()
     }
 
-    pub fn as_deque(&self) -> &std::collections::VecDeque<ExecutionStep> {
+    #[must_use] 
+    pub const fn as_deque(&self) -> &std::collections::VecDeque<ExecutionStep> {
         &self.0
     }
 
@@ -148,7 +153,7 @@ pub struct PipelineState {
     pub development_xml_archived_iteration: Option<u32>,
     /// Tracks whether review context was prepared for the current pass.
     ///
-    /// Used to sequence single-task review effects (PrepareReviewContext -> ...).
+    /// Used to sequence single-task review effects (`PrepareReviewContext` -> ...).
     #[serde(default)]
     pub review_context_prepared_pass: Option<u32>,
     /// Tracks whether the review prompt was prepared for the current pass.
@@ -232,7 +237,7 @@ pub struct PipelineState {
     pub commit: CommitState,
     #[serde(default)]
     pub execution_history: BoundedExecutionHistory,
-    /// Count of CheckpointSaved events applied to state.
+    /// Count of `CheckpointSaved` events applied to state.
     ///
     /// This is a reducer-visible record of checkpoint saves, intended for
     /// observability and tests that enforce checkpointing happens via effects.
@@ -252,11 +257,11 @@ pub struct PipelineState {
     #[serde(default)]
     pub metrics: RunMetrics,
 
-    /// Whether TriggerDevFixFlow has been executed in the current AwaitingDevFix phase.
+    /// Whether `TriggerDevFixFlow` has been executed in the current `AwaitingDevFix` phase.
     ///
-    /// This flag is set to true when DevFixTriggered event is reduced.
+    /// This flag is set to true when `DevFixTriggered` event is reduced.
     /// It ensures the event loop allows at least one iteration to execute
-    /// TriggerDevFixFlow before checking completion, preventing premature
+    /// `TriggerDevFixFlow` before checking completion, preventing premature
     /// exit when max iterations is imminent.
     #[serde(default)]
     pub dev_fix_triggered: bool,
@@ -286,8 +291,8 @@ pub struct PipelineState {
 
     /// Snapshot of the phase where the current failure occurred.
     ///
-    /// Preserved when transitioning to AwaitingDevFix so we know which phase
-    /// to return to after dev-fix completes. Set when entering AwaitingDevFix,
+    /// Preserved when transitioning to `AwaitingDevFix` so we know which phase
+    /// to return to after dev-fix completes. Set when entering `AwaitingDevFix`,
     /// cleared when recovery succeeds or when reaching terminal state.
     #[serde(default)]
     pub failed_phase_for_recovery: Option<PipelinePhase>,
@@ -298,7 +303,7 @@ pub struct PipelineState {
     /// external termination), not attempt-count based recovery escalation.
     ///
     /// When true, orchestration must derive `Effect::EmitCompletionMarkerAndTerminate`
-    /// until it succeeds (CompletionMarkerEmitted) so external orchestration can
+    /// until it succeeds (`CompletionMarkerEmitted`) so external orchestration can
     /// reliably observe termination.
     #[serde(default)]
     pub completion_marker_pending: bool,
@@ -313,7 +318,7 @@ pub struct PipelineState {
 
     /// Whether gitignore entries have been ensured for this pipeline run.
     ///
-    /// Set to true after Effect::EnsureGitignoreEntries completes successfully.
+    /// Set to true after `Effect::EnsureGitignoreEntries` completes successfully.
     /// This prevents re-running the effect on every orchestration cycle.
     #[serde(default)]
     pub gitignore_entries_ensured: bool,
@@ -336,7 +341,7 @@ pub struct PipelineState {
 
     /// Last template substitution log for validation and observability.
     ///
-    /// Updated when TemplateRendered event is reduced. Used by the reducer
+    /// Updated when `TemplateRendered` event is reduced. Used by the reducer
     /// to validate templates based on tracked substitutions rather than
     /// regex scanning rendered output.
     #[serde(default)]
@@ -352,7 +357,7 @@ pub struct PipelineState {
 
     /// True if pipeline was interrupted by user signal (Ctrl+C).
     /// This is the ONLY case where pre-termination commit safety check is skipped.
-    /// All other termination paths (AwaitingDevFix exhaustion, programmatic interrupts, etc.)
+    /// All other termination paths (`AwaitingDevFix` exhaustion, programmatic interrupts, etc.)
     /// must commit before terminating.
     #[serde(default)]
     pub interrupted_by_user: bool,
@@ -387,43 +392,43 @@ pub struct PipelineState {
 
     /// Commit SHA pending push (cloud mode only, None in CLI mode).
     ///
-    /// Set when CommitCreated event is reduced in cloud mode.
-    /// Cleared when CommitEvent::PushCompleted is reduced.
-    /// Used by orchestration to emit PushToRemote effects.
+    /// Set when `CommitCreated` event is reduced in cloud mode.
+    /// Cleared when `CommitEvent::PushCompleted` is reduced.
+    /// Used by orchestration to emit `PushToRemote` effects.
     #[serde(default)]
     pub pending_push_commit: Option<String>,
 
     /// Whether git auth has been configured this run (cloud mode only).
     ///
-    /// Set to true when CommitEvent::GitAuthConfigured is reduced.
+    /// Set to true when `CommitEvent::GitAuthConfigured` is reduced.
     /// Used to avoid re-configuring authentication on every push.
     #[serde(default)]
     pub git_auth_configured: bool,
 
     /// Whether PR has been created (cloud mode only).
     ///
-    /// Set to true when CommitEvent::PullRequestCreated is reduced.
+    /// Set to true when `CommitEvent::PullRequestCreated` is reduced.
     /// Prevents duplicate PR creation attempts.
     #[serde(default)]
     pub pr_created: bool,
 
     /// URL of created PR (cloud mode only).
     ///
-    /// Populated when CommitEvent::PullRequestCreated is reduced.
+    /// Populated when `CommitEvent::PullRequestCreated` is reduced.
     /// Used for reporting and observability.
     #[serde(default)]
     pub pr_url: Option<String>,
 
     /// Count of successful push operations (cloud mode only).
     ///
-    /// Incremented when CommitEvent::PushCompleted is reduced.
+    /// Incremented when `CommitEvent::PushCompleted` is reduced.
     /// Used for metrics and observability.
     #[serde(default)]
     pub push_count: u32,
 
     /// Consecutive push failure count for the current pending commit.
     ///
-    /// Reset on CommitEvent::PushCompleted or when the pending push is cleared.
+    /// Reset on `CommitEvent::PushCompleted` or when the pending push is cleared.
     #[serde(default)]
     pub push_retry_count: u32,
 
@@ -441,28 +446,31 @@ pub struct PipelineState {
 
     /// SHA of the last successfully pushed commit (cloud mode only).
     ///
-    /// Updated when CommitEvent::PushCompleted is reduced.
+    /// Updated when `CommitEvent::PushCompleted` is reduced.
     /// Used for observability and debugging.
     #[serde(default)]
     pub last_pushed_commit: Option<String>,
 
     /// PR number for the created pull request (cloud mode only).
     ///
-    /// Populated when CommitEvent::PullRequestCreated is reduced.
+    /// Populated when `CommitEvent::PullRequestCreated` is reduced.
     /// Used for reporting and observability.
     #[serde(default)]
     pub pr_number: Option<u32>,
 }
 
 impl PipelineState {
-    pub fn execution_history(&self) -> &std::collections::VecDeque<ExecutionStep> {
+    #[must_use] 
+    pub const fn execution_history(&self) -> &std::collections::VecDeque<ExecutionStep> {
         self.execution_history.as_deque()
     }
 
+    #[must_use] 
     pub fn execution_history_len(&self) -> usize {
         self.execution_history.len()
     }
 
+    #[must_use] 
     pub fn initial(developer_iters: u32, reviewer_reviews: u32) -> Self {
         Self::initial_with_continuation(developer_iters, reviewer_reviews, ContinuationState::new())
     }
@@ -482,6 +490,7 @@ impl PipelineState {
     /// );
     /// let state = PipelineState::initial_with_continuation(dev_iters, reviews, continuation);
     /// ```
+    #[must_use] 
     pub fn initial_with_continuation(
         developer_iters: u32,
         reviewer_reviews: u32,
@@ -593,21 +602,22 @@ impl PipelineState {
     /// - **Complete phase**: Always terminal (successful completion)
     /// - **Interrupted phase**: Terminal under these conditions:
     ///   1. A checkpoint has been saved (normal Ctrl+C interruption path)
-    ///   2. Transitioning from AwaitingDevFix phase (failure handling completed)
+    ///   2. Transitioning from `AwaitingDevFix` phase (failure handling completed)
     ///
-    /// # AwaitingDevFix → Interrupted Path
+    /// # `AwaitingDevFix` → Interrupted Path
     ///
     /// When the pipeline terminates via completion marker emission, it transitions
-    /// through AwaitingDevFix where:
+    /// through `AwaitingDevFix` where:
     /// 1. Orchestration derives `EmitCompletionMarkerAndTerminate`
     /// 2. The handler writes the completion marker to filesystem
-    /// 3. CompletionMarkerEmitted transitions the reducer state to Interrupted
+    /// 3. `CompletionMarkerEmitted` transitions the reducer state to Interrupted
     ///
     /// At this point, the completion marker has been written, signaling external
-    /// orchestration that the pipeline has terminated. The SaveCheckpoint effect
+    /// orchestration that the pipeline has terminated. The `SaveCheckpoint` effect
     /// will execute next, but the phase is already considered terminal because
     /// the failure has been properly signaled.
-    pub fn is_terminal(&self) -> bool {
+    #[must_use] 
+    pub const fn is_terminal(&self) -> bool {
         use crate::reducer::event::PipelinePhase;
         match self.phase {
             PipelinePhase::Complete => true,

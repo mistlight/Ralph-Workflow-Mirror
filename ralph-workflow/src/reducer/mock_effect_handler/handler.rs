@@ -1,11 +1,11 @@
-//! EffectHandler and StatefulHandler trait implementations for MockEffectHandler.
+//! `EffectHandler` and `StatefulHandler` trait implementations for `MockEffectHandler`.
 //!
 //! This module implements the standard handler traits, allowing `MockEffectHandler`
 //! to be used as a drop-in replacement for `MainEffectHandler` in tests.
 //!
 //! ## Trait Implementations
 //!
-//! ### EffectHandler
+//! ### `EffectHandler`
 //!
 //! The `execute()` method handles effects that require workspace access:
 //! - `SaveCheckpoint` - Actually saves checkpoint for resume tests
@@ -13,7 +13,7 @@
 //! - `EmitCompletionMarkerAndTerminate` - Writes completion marker for termination tests
 //! - All other effects delegate to `execute_mock()` (see [`super::effect_mapping`])
 //!
-//! ### StatefulHandler
+//! ### `StatefulHandler`
 //!
 //! The `update_state()` method synchronizes the mock's internal state after each
 //! event is processed. This allows effect mapping to depend on current pipeline
@@ -24,10 +24,10 @@
 //! Most effects can be mocked without workspace access - they're pure effect-to-event
 //! mappings. Only a few effects genuinely need to interact with the workspace:
 //!
-//! - **SaveCheckpoint**: Integration tests verify checkpoint/resume behavior, so
+//! - **`SaveCheckpoint`**: Integration tests verify checkpoint/resume behavior, so
 //!   the mock actually writes checkpoint files to the test workspace.
 //!
-//! - **EmitCompletionMarkerAndTerminate**: Tests verify completion marker file creation,
+//! - **`EmitCompletionMarkerAndTerminate`**: Tests verify completion marker file creation,
 //!   so the mock writes the marker file before emitting events.
 //!
 //! This separation keeps most mock logic pure (in `effect_mapping`) while handling
@@ -36,20 +36,23 @@
 //! ## See Also
 //!
 //! - [`super::effect_mapping`] - Pure effect-to-event mapping logic
-//! - [`super::core`] - MockEffectHandler struct and builder methods
+//! - [`super::core`] - `MockEffectHandler` struct and builder methods
 
-use super::*;
+use super::{
+    Effect, EffectHandler, EffectResult, MockEffectHandler, PhaseContext, PipelineEvent,
+    PipelineState, Result,
+};
 
-/// Implement the EffectHandler trait for MockEffectHandler.
+/// Implement the `EffectHandler` trait for `MockEffectHandler`.
 ///
-/// This allows MockEffectHandler to be used as a drop-in replacement for
-/// MainEffectHandler in tests. The PhaseContext is ignored for most effects -
+/// This allows `MockEffectHandler` to be used as a drop-in replacement for
+/// `MainEffectHandler` in tests. The `PhaseContext` is ignored for most effects -
 /// the mock simply captures the effect and returns an appropriate mock event.
 ///
 /// Special cases that require workspace access:
 /// - `SaveCheckpoint` - Actually saves checkpoint for resume tests
 /// - `EmitCompletionMarkerAndTerminate` - Writes completion marker file
-impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
+impl EffectHandler<'_> for MockEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         if self.panic_on_next_execute {
             self.panic_on_next_execute = false;
@@ -72,9 +75,9 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
 
                 let content = if let Some(ref err) = self.simulate_commit_diff_error {
                     format!(
-                        r#"## DIFF UNAVAILABLE - INVESTIGATION REQUIRED
+                        r"## DIFF UNAVAILABLE - INVESTIGATION REQUIRED
 
-The `git diff` command failed with error: {}
+The `git diff` command failed with error: {err}
 
 You must investigate what changed by:
 
@@ -85,8 +88,7 @@ You must investigate what changed by:
 
 If you determine there are NO actual changes to commit, respond with:
 <ralph-commit><ralph-skip>Your reason why no commit is needed</ralph-skip></ralph-commit>
-"#,
-                        err
+"
                     )
                 } else if let Some(ref content) = self.simulate_commit_diff_content {
                     content.clone()
@@ -200,7 +202,7 @@ If you determine there are NO actual changes to commit, respond with:
 
                     if let Err(err) = save_checkpoint_with_workspace(ctx.workspace, &checkpoint) {
                         ctx.logger
-                            .warn(&format!("Failed to save checkpoint in mock: {}", err));
+                            .warn(&format!("Failed to save checkpoint in mock: {err}"));
                     }
                 }
 
@@ -243,24 +245,21 @@ If you determine there are NO actual changes to commit, respond with:
                 let marker_dir = std::path::Path::new(".agent/tmp");
                 if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
                     ctx.logger.warn(&format!(
-                        "Failed to create completion marker directory in mock: {}",
-                        err
+                        "Failed to create completion marker directory in mock: {err}"
                     ));
                 }
                 let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
                 let content = if is_failure {
                     format!(
                         "failure\n{}",
-                        reason.clone().unwrap_or_else(|| "unknown".to_string())
+                        reason.unwrap_or_else(|| "unknown".to_string())
                     )
                 } else {
                     "success\n".to_string()
                 };
                 if let Err(err) = ctx.workspace.write(marker_path, &content) {
-                    ctx.logger.warn(&format!(
-                        "Failed to write completion marker in mock: {}",
-                        err
-                    ));
+                    ctx.logger
+                        .warn(&format!("Failed to write completion marker in mock: {err}"));
                 }
 
                 // Delegate to execute_mock for effect capture + mock event emission.
@@ -274,7 +273,7 @@ If you determine there are NO actual changes to commit, respond with:
     }
 }
 
-/// Implement StatefulHandler for MockEffectHandler.
+/// Implement `StatefulHandler` for `MockEffectHandler`.
 ///
 /// This allows the event loop to update the mock's internal state after
 /// each event is processed. The mock maintains synchronized state to support

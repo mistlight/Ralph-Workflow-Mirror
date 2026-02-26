@@ -32,7 +32,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
         "just now".to_string()
     };
 
-    logger.info(&format!("Session was interrupted: {}", time_str));
+    logger.info(&format!("Session was interrupted: {time_str}"));
 
     // Show rebase conflict information if applicable
     if matches!(
@@ -47,7 +47,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
             // Show up to 5 conflicted files
             let display_files: Vec<_> = files.iter().take(5).cloned().collect();
             for file in display_files {
-                logger.info(&format!("  - {}", file));
+                logger.info(&format!("  - {file}"));
             }
             if files.len() > 5 {
                 logger.info(&format!("  ... and {} more", files.len() - 5));
@@ -87,7 +87,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
     // Show the reconstructed command that was used
     if let Some(reconstructed_command) = reconstruct_command(checkpoint) {
-        logger.info(&format!("Original command: {}", reconstructed_command));
+        logger.info(&format!("Original command: {reconstructed_command}"));
     }
 
     // Show agent configuration details
@@ -96,18 +96,18 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
     // Show model overrides if present
     if let Some(ref model) = checkpoint.developer_agent_config.model_override {
-        logger.info(&format!("Developer model: {}", model));
+        logger.info(&format!("Developer model: {model}"));
     }
     if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
-        logger.info(&format!("Reviewer model: {}", model));
+        logger.info(&format!("Reviewer model: {model}"));
     }
 
     // Show provider overrides if present
     if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
-        logger.info(&format!("Developer provider: {}", provider));
+        logger.info(&format!("Developer provider: {provider}"));
     }
     if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
-        logger.info(&format!("Reviewer provider: {}", provider));
+        logger.info(&format!("Reviewer provider: {provider}"));
     }
 
     // Show execution history info if available
@@ -151,13 +151,13 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
                         let mut file_summary = String::from("    Files: ");
                         let mut parts = Vec::new();
                         if added_count > 0 {
-                            parts.push(format!("{} added", added_count));
+                            parts.push(format!("{added_count} added"));
                         }
                         if modified_count > 0 {
-                            parts.push(format!("{} modified", modified_count));
+                            parts.push(format!("{modified_count} modified"));
                         }
                         if deleted_count > 0 {
-                            parts.push(format!("{} deleted", deleted_count));
+                            parts.push(format!("{deleted_count} deleted"));
                         }
                         file_summary.push_str(&parts.join(", "));
                         logger.info(&file_summary);
@@ -181,7 +181,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
                     } else {
                         oid
                     };
-                    logger.info(&format!("    Commit: {}", short_oid));
+                    logger.info(&format!("    Commit: {short_oid}"));
                 }
             }
         }
@@ -190,7 +190,7 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
     // Show helpful next step based on current phase
     if let Some(next_step) = suggest_next_step(checkpoint) {
         logger.info("");
-        logger.info(&format!("Next: {}", next_step));
+        logger.info(&format!("Next: {next_step}"));
     }
 
     // Show example commands for inspecting state
@@ -216,7 +216,7 @@ fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) 
         ));
     }
     if let Some(ref parent_id) = checkpoint.parent_run_id {
-        logger.info(&format!("Parent run ID: {}", parent_id));
+        logger.info(&format!("Parent run ID: {parent_id}"));
     }
 
     // Show actual execution counts vs configured counts
@@ -258,29 +258,29 @@ fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) 
 
     // Show model overrides if present
     if let Some(ref model) = checkpoint.developer_agent_config.model_override {
-        logger.info(&format!("Developer model override: {}", model));
+        logger.info(&format!("Developer model override: {model}"));
     }
     if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
-        logger.info(&format!("Reviewer model override: {}", model));
+        logger.info(&format!("Reviewer model override: {model}"));
     }
 
     // Show provider overrides if present
     if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
-        logger.info(&format!("Developer provider: {}", provider));
+        logger.info(&format!("Developer provider: {provider}"));
     }
     if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
-        logger.info(&format!("Reviewer provider: {}", provider));
+        logger.info(&format!("Reviewer provider: {provider}"));
     }
 
     // Show rebase state if applicable
     match &checkpoint.rebase_state {
         crate::checkpoint::RebaseState::PreRebaseInProgress { upstream_branch } => {
-            logger.warn(&format!("Pre-rebase in progress to: {}", upstream_branch));
+            logger.warn(&format!("Pre-rebase in progress to: {upstream_branch}"));
         }
         crate::checkpoint::RebaseState::HasConflicts { files } => {
             logger.warn(&format!("Rebase has conflicts in {} files", files.len()));
             for file in files.iter().take(3) {
-                logger.warn(&format!("  - {}", file));
+                logger.warn(&format!("  - {file}"));
             }
             if files.len() > 3 {
                 logger.warn(&format!("  ... and {} more", files.len() - 3));

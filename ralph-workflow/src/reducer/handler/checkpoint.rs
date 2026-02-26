@@ -10,8 +10,8 @@ use anyhow::Result;
 
 impl MainEffectHandler {
     pub(super) fn save_checkpoint(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         trigger: CheckpointTrigger,
     ) -> Result<EffectResult> {
         if ctx.config.features.checkpoint_enabled {
@@ -49,10 +49,7 @@ impl MainEffectHandler {
     }
 }
 
-fn save_checkpoint_from_state(
-    state: &PipelineState,
-    ctx: &mut PhaseContext<'_>,
-) -> anyhow::Result<()> {
+fn save_checkpoint_from_state(state: &PipelineState, ctx: &PhaseContext<'_>) -> anyhow::Result<()> {
     // When the user pressed Ctrl+C, we must write a checkpoint for resume
     // support, but we skip large optional fields (execution_history,
     // prompt_history, last_substitution_log, env_snapshot) to avoid slow JSON
@@ -121,7 +118,7 @@ fn save_checkpoint_from_state(
     Ok(())
 }
 
-fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> CheckpointPhase {
+const fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> CheckpointPhase {
     match phase {
         crate::reducer::event::PipelinePhase::Planning => CheckpointPhase::Planning,
         crate::reducer::event::PipelinePhase::Development => CheckpointPhase::Development,

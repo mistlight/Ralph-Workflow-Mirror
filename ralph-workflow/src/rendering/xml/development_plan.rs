@@ -8,6 +8,8 @@
 //! - Risks and mitigations with severity
 //! - Verification strategy
 
+use std::fmt::Write;
+
 use crate::files::llm_output_extraction::validate_plan_xml;
 use crate::files::llm_output_extraction::xsd_validation_plan::{FileAction, Priority, Severity};
 
@@ -19,100 +21,97 @@ pub fn render(content: &str) -> String {
     output.push_str("║      Implementation Plan           ║\n");
     output.push_str("╚════════════════════════════════════╝\n\n");
 
-    match validate_plan_xml(content) {
-        Ok(elements) => {
-            // Context section
-            output.push_str("📋 Context:\n");
-            output.push_str(&format!("   {}\n\n", elements.summary.context));
+    if let Ok(elements) = validate_plan_xml(content) {
+        // Context section
+        output.push_str("📋 Context:\n");
+        write!(output, "   {}\n\n", elements.summary.context).unwrap();
 
-            // Scope section with categories
-            output.push_str("📊 Scope:\n");
-            for item in &elements.summary.scope_items {
-                if let Some(ref count) = item.count {
-                    output.push_str(&format!("   • {} {}", count, item.description));
-                } else {
-                    output.push_str(&format!("   • {}", item.description));
-                }
-                if let Some(ref category) = item.category {
-                    output.push_str(&format!(" ({})", category));
-                }
-                output.push('\n');
+        // Scope section with categories
+        output.push_str("📊 Scope:\n");
+        for item in &elements.summary.scope_items {
+            if let Some(ref count) = item.count {
+                write!(output, "   • {} {}", count, item.description).unwrap();
+            } else {
+                write!(output, "   • {}", item.description).unwrap();
+            }
+            if let Some(ref category) = item.category {
+                write!(output, " ({category})").unwrap();
+            }
+            output.push('\n');
+        }
+
+        // Steps section with priorities and dependencies
+        output.push_str("\n───────────────────────────────────\n");
+        output.push_str("📝 Implementation Steps:\n\n");
+        for step in &elements.steps {
+            let priority_badge = step.priority.map_or(String::new(), |p| {
+                format!(
+                    " [{}]",
+                    match p {
+                        Priority::Critical => "🔴 critical",
+                        Priority::High => "🟠 high",
+                        Priority::Medium => "🟡 medium",
+                        Priority::Low => "🟢 low",
+                    }
+                )
+            });
+            output.push_str(&format!(
+                "   {}. {}{}\n",
+                step.number, step.title, priority_badge
+            ));
+
+            for file in &step.target_files {
+                let action_icon = match file.action {
+                    FileAction::Create => "➕",
+                    FileAction::Modify => "📝",
+                    FileAction::Delete => "🗑️",
+                };
+                writeln!(output, "      {} {}", action_icon, file.path).unwrap();
             }
 
-            // Steps section with priorities and dependencies
-            output.push_str("\n───────────────────────────────────\n");
-            output.push_str("📝 Implementation Steps:\n\n");
-            for step in &elements.steps {
-                let priority_badge = step.priority.map_or(String::new(), |p| {
-                    format!(
-                        " [{}]",
-                        match p {
-                            Priority::Critical => "🔴 critical",
-                            Priority::High => "🟠 high",
-                            Priority::Medium => "🟡 medium",
-                            Priority::Low => "🟢 low",
-                        }
-                    )
+            if let Some(ref rationale) = step.rationale {
+                writeln!(output, "      💡 {rationale}").unwrap();
+            }
+
+            if !step.depends_on.is_empty() {
+                let deps: Vec<String> = step
+                    .depends_on
+                    .iter()
+                    .map(|d| format!("Step {d}"))
+                    .collect();
+                writeln!(output, "      🔗 Depends on: {}", deps.join(", ")).unwrap();
+            }
+            output.push('\n');
+        }
+
+        // Risks section with severity
+        if !elements.risks_mitigations.is_empty() {
+            output.push_str("───────────────────────────────────\n");
+            output.push_str("⚠️  Risks & Mitigations:\n\n");
+            for risk in &elements.risks_mitigations {
+                let severity_icon = risk.severity.map_or("", |s| match s {
+                    Severity::Critical => "🔴",
+                    Severity::High => "🟠",
+                    Severity::Medium => "🟡",
+                    Severity::Low => "🟢",
                 });
-                output.push_str(&format!(
-                    "   {}. {}{}\n",
-                    step.number, step.title, priority_badge
-                ));
-
-                for file in &step.target_files {
-                    let action_icon = match file.action {
-                        FileAction::Create => "➕",
-                        FileAction::Modify => "📝",
-                        FileAction::Delete => "🗑️",
-                    };
-                    output.push_str(&format!("      {} {}\n", action_icon, file.path));
-                }
-
-                if let Some(ref rationale) = step.rationale {
-                    output.push_str(&format!("      💡 {}\n", rationale));
-                }
-
-                if !step.depends_on.is_empty() {
-                    let deps: Vec<String> = step
-                        .depends_on
-                        .iter()
-                        .map(|d| format!("Step {}", d))
-                        .collect();
-                    output.push_str(&format!("      🔗 Depends on: {}\n", deps.join(", ")));
-                }
-                output.push('\n');
-            }
-
-            // Risks section with severity
-            if !elements.risks_mitigations.is_empty() {
-                output.push_str("───────────────────────────────────\n");
-                output.push_str("⚠️  Risks & Mitigations:\n\n");
-                for risk in &elements.risks_mitigations {
-                    let severity_icon = risk.severity.map_or("", |s| match s {
-                        Severity::Critical => "🔴",
-                        Severity::High => "🟠",
-                        Severity::Medium => "🟡",
-                        Severity::Low => "🟢",
-                    });
-                    output.push_str(&format!("   {} Risk: {}\n", severity_icon, risk.risk));
-                    output.push_str(&format!("     → Mitigation: {}\n\n", risk.mitigation));
-                }
-            }
-
-            // Verification section
-            if !elements.verification_strategy.is_empty() {
-                output.push_str("───────────────────────────────────\n");
-                output.push_str("✓ Verification Strategy:\n\n");
-                for (i, v) in elements.verification_strategy.iter().enumerate() {
-                    output.push_str(&format!("   {}. {}\n", i + 1, v.method));
-                    output.push_str(&format!("      Expected: {}\n", v.expected_outcome));
-                }
+                writeln!(output, "   {} Risk: {}", severity_icon, risk.risk).unwrap();
+                write!(output, "     → Mitigation: {}\n\n", risk.mitigation).unwrap();
             }
         }
-        Err(_) => {
-            output.push_str("⚠️  Unable to parse plan XML\n\n");
-            output.push_str(content);
+
+        // Verification section
+        if !elements.verification_strategy.is_empty() {
+            output.push_str("───────────────────────────────────\n");
+            output.push_str("✓ Verification Strategy:\n\n");
+            for (i, v) in elements.verification_strategy.iter().enumerate() {
+                writeln!(output, "   {}. {}", i + 1, v.method).unwrap();
+                writeln!(output, "      Expected: {}", v.expected_outcome).unwrap();
+            }
         }
+    } else {
+        output.push_str("⚠️  Unable to parse plan XML\n\n");
+        output.push_str(content);
     }
 
     output

@@ -68,8 +68,8 @@ pub struct ClaudeParser {
     /// Tracks the last rendered content for append-only streaming in Full mode.
     ///
     /// In append-only mode, we emit the prefix once, then only emit new suffixes for subsequent deltas.
-    /// This map stores the last rendered content for each (ContentType, index) pair.
-    /// Key format: "{content_type}:{index}" (e.g., "text:0", "thinking:1")
+    /// This map stores the last rendered content for each (`ContentType`, index) pair.
+    /// Key format: "{`content_type}:{index`}" (e.g., "text:0", "thinking:1")
     last_rendered_content: RefCell<std::collections::HashMap<String, String>>,
 }
 
@@ -94,6 +94,7 @@ impl ClaudeParser {
     ///
     /// let parser = ClaudeParser::new(Colors::new(), Verbosity::Normal);
     /// ```
+    #[must_use] 
     pub fn new(colors: Colors, verbosity: Verbosity) -> Self {
         Self::with_printer(colors, verbosity, super::printer::shared_stdout())
     }
@@ -149,6 +150,7 @@ impl ClaudeParser {
     /// # Returns
     ///
     /// Self for builder pattern chaining
+    #[must_use]
     pub fn with_display_name(mut self, display_name: &str) -> Self {
         self.display_name = display_name.to_string();
         self
@@ -169,6 +171,7 @@ impl ClaudeParser {
     ///
     /// Self for builder pattern chaining
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self

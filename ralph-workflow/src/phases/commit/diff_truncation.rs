@@ -1,13 +1,14 @@
 /// Maximum safe prompt size in bytes before pre-truncation.
 const MAX_SAFE_PROMPT_SIZE: u64 = 200_000;
 
-/// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, DeepSeek).
+/// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, `DeepSeek`).
 const GLM_MAX_PROMPT_SIZE: u64 = 100_000;
 
 /// Maximum prompt size for Claude-based agents.
 const CLAUDE_MAX_PROMPT_SIZE: u64 = 300_000;
 
 /// Get the maximum safe prompt size for a specific agent.
+#[must_use] 
 pub fn model_budget_bytes_for_agent_name(commit_agent: &str) -> u64 {
     let agent_lower = commit_agent.to_lowercase();
 
@@ -28,6 +29,7 @@ pub fn model_budget_bytes_for_agent_name(commit_agent: &str) -> u64 {
     }
 }
 
+#[must_use] 
 pub fn effective_model_budget_bytes(agent_names: &[String]) -> u64 {
     agent_names
         .iter()
@@ -99,8 +101,7 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
 
     if files_included < total_files {
         let summary = format!(
-            "\n[Truncated: {} of {} files shown]\n",
-            files_included, total_files
+            "\n[Truncated: {files_included} of {total_files} files shown]\n"
         );
         if summary.len() <= max_size {
             if result.len() + summary.len() <= max_size {
@@ -125,6 +126,7 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
     result
 }
 
+#[must_use] 
 pub fn truncate_diff_to_model_budget(diff: &str, max_size_bytes: u64) -> (String, bool) {
     let max_size = usize::try_from(max_size_bytes).unwrap_or(usize::MAX);
     if diff.len() <= max_size {
@@ -149,7 +151,10 @@ fn prioritize_file_path(path: &str) -> i32 {
         100
     } else if parts.contains(&"tests") {
         50
-    } else if normalized.ends_with(".md") || normalized.ends_with(".txt") {
+    } else if std::path::Path::new(&normalized)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("txt"))
+    {
         10
     } else {
         0

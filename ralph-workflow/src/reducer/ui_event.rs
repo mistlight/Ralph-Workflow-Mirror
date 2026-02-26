@@ -1,7 +1,7 @@
 //! UI events for user-facing display.
 //!
-//! UIEvent is separate from PipelineEvent to maintain reducer purity.
-//! These events are emitted by effect handlers alongside PipelineEvents
+//! `UIEvent` is separate from `PipelineEvent` to maintain reducer purity.
+//! These events are emitted by effect handlers alongside `PipelineEvents`
 //! and are displayed to users but do not affect pipeline state or checkpoints.
 
 use super::event::PipelinePhase;
@@ -117,7 +117,8 @@ pub enum UIEvent {
 
 impl UIEvent {
     /// Get emoji indicator for phase.
-    pub fn phase_emoji(phase: &PipelinePhase) -> &'static str {
+    #[must_use]
+    pub const fn phase_emoji(phase: &PipelinePhase) -> &'static str {
         match phase {
             PipelinePhase::Planning => "📋",
             PipelinePhase::Development => "🔨",
@@ -135,6 +136,7 @@ impl UIEvent {
     ///
     /// This method delegates to the rendering module for actual formatting.
     /// Prefer calling `rendering::render_ui_event()` directly in new code.
+    #[must_use]
     pub fn format_for_display(&self) -> String {
         crate::rendering::render_ui_event(self)
     }

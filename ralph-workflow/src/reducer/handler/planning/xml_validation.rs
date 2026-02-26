@@ -16,8 +16,8 @@ use std::path::Path;
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn extract_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         let plan_xml = Path::new(xml_paths::PLAN_XML);
@@ -35,8 +35,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn validate_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         let plan_xml = match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {

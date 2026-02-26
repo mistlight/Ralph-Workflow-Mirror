@@ -1,4 +1,4 @@
-//! Terminal state management for VirtualTerminal.
+//! Terminal state management for `VirtualTerminal`.
 //!
 //! This module handles the terminal screen buffer, cursor positioning,
 //! and character/string writing operations.
@@ -82,7 +82,7 @@ impl VirtualTerminal {
         // Build new line: prefix + new char + suffix
         let prefix: String = line.chars().take(col).collect();
         let suffix: String = line.chars().skip(col + 1).collect();
-        *line = format!("{}{}{}", prefix, ch, suffix);
+        *line = format!("{prefix}{ch}{suffix}");
 
         // Move cursor right
         *self.cursor_col.borrow_mut() = col + 1;
@@ -104,7 +104,7 @@ impl VirtualTerminal {
         // Build new line: prefix + new content + suffix
         let prefix: String = line.chars().take(col).collect();
         let suffix: String = line.chars().skip(col + s.chars().count()).collect();
-        *line = format!("{}{}{}", prefix, s, suffix);
+        *line = format!("{prefix}{s}{suffix}");
 
         // Move cursor right
         *self.cursor_col.borrow_mut() = col + s.chars().count();

@@ -1,9 +1,9 @@
-fn build_commit_prompt(
+fn build_commit_prompt<S: std::hash::BuildHasher>(
     prompt_key: &str,
     template_context: &TemplateContext,
     working_diff: &str,
     workspace: &dyn Workspace,
-    prompt_history: &HashMap<String, String>,
+    prompt_history: &HashMap<String, String, S>,
 ) -> (String, bool, Option<crate::prompts::SubstitutionLog>) {
     if let Some(stored_prompt) = prompt_history.get(prompt_key) {
         (stored_prompt.clone(), true, None)

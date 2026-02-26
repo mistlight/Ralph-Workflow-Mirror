@@ -55,7 +55,7 @@
 /// # CCS Spam Prevention Architecture
 ///
 /// 1. **Layer 1 (Suppression):** Renderer returned empty strings during deltas (non-TTY)
-/// 2. **Layer 2 (Accumulation):** StreamingSession preserved content across deltas
+/// 2. **Layer 2 (Accumulation):** `StreamingSession` preserved content across deltas
 /// 3. **Layer 3 (Flush):** This handler emits accumulated content ONCE at completion
 ///
 /// See file-level documentation for details.
@@ -215,10 +215,10 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
             };
 
             let result = if let Some(thinking) = streamed_thinking {
-                if !thinking.is_empty() {
-                    ThinkingDeltaRenderer::render_completion(ctx.terminal_mode)
-                } else {
+                if thinking.is_empty() {
                     String::new()
+                } else {
+                    ThinkingDeltaRenderer::render_completion(ctx.terminal_mode)
                 }
             } else if let Some(text) = completion_text {
                 let sanitized = sanitize_for_display(text);

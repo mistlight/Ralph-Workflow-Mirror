@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// - `PhaseStarted`: Sets phase to Development
 /// - `IterationStarted`: Resets agent chain, clears continuation state
-/// - `IterationCompleted(output_valid=true)`: Transitions to CommitMessage
+/// - `IterationCompleted(output_valid=true)`: Transitions to `CommitMessage`
 /// - `IterationCompleted(output_valid=false)`: Stays in Development for retry
 /// - `ContinuationTriggered`: Saves context for continuation attempt
-/// - `ContinuationSucceeded`: Clears continuation, proceeds to CommitMessage
+/// - `ContinuationSucceeded`: Clears continuation, proceeds to `CommitMessage`
 /// - `PhaseCompleted`: Transitions to Review
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum DevelopmentEvent {
@@ -169,7 +169,7 @@ pub enum DevelopmentEvent {
     },
     /// Continuation context file was written successfully.
     ///
-    /// Emitted after WriteContinuationContext effect completes. The reducer
+    /// Emitted after `WriteContinuationContext` effect completes. The reducer
     /// clears the `needs_context_write` flag on this event.
     ContinuationContextWritten {
         /// Current iteration number.
@@ -179,6 +179,6 @@ pub enum DevelopmentEvent {
     },
     /// Continuation context file was cleaned up.
     ///
-    /// Emitted after CleanupContinuationContext effect completes.
+    /// Emitted after `CleanupContinuationContext` effect completes.
     ContinuationContextCleaned,
 }

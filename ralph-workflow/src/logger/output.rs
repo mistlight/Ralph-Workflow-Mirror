@@ -97,6 +97,7 @@ pub use test_logger::TestLogger;
 /// Strip ANSI escape sequences from a string.
 ///
 /// Used when writing to log files where ANSI codes are not supported.
+#[must_use]
 pub fn strip_ansi_codes(s: &str) -> String {
     static ANSI_RE: std::sync::LazyLock<Result<regex::Regex, regex::Error>> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"\x1b\[[0-9;]*m"));

@@ -60,11 +60,13 @@ pub struct PromptValidationResult {
 
 impl PromptValidationResult {
     /// Returns true if PROMPT.md exists.
+    #[must_use] 
     pub const fn exists(&self) -> bool {
         matches!(self.file_state, FileState::Present | FileState::Empty)
     }
 
     /// Returns true if PROMPT.md has non-empty content.
+    #[must_use] 
     pub const fn has_content(&self) -> bool {
         matches!(self.file_state, FileState::Present)
     }
@@ -72,11 +74,13 @@ impl PromptValidationResult {
 
 impl PromptValidationResult {
     /// Returns true if validation passed (no errors).
+    #[must_use] 
     pub const fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
 
     /// Returns true if validation passed with no warnings.
+    #[must_use] 
     pub const fn is_perfect(&self) -> bool {
         self.errors.is_empty() && self.warnings.is_empty()
     }
@@ -204,6 +208,7 @@ pub(super) fn check_acceptance_section(content: &str) -> bool {
 /// # Returns
 ///
 /// A `PromptValidationResult` containing validation findings.
+#[must_use] 
 pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationResult {
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let workspace = WorkspaceFs::new(root);

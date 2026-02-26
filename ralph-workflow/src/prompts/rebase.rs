@@ -86,9 +86,10 @@ pub fn build_conflict_resolution_prompt(
 /// * `conflicts` - Map of file paths to their conflict information
 /// * `prompt_md_content` - Optional content from PROMPT.md for task context
 /// * `plan_content` - Optional content from PLAN.md for additional context
-pub fn build_conflict_resolution_prompt_with_context(
+#[must_use]
+pub fn build_conflict_resolution_prompt_with_context<S: std::hash::BuildHasher>(
     context: &TemplateContext,
-    conflicts: &HashMap<String, FileConflict>,
+    conflicts: &HashMap<String, FileConflict, S>,
     prompt_md_content: Option<&str>,
     plan_content: Option<&str>,
 ) -> String {
@@ -159,7 +160,9 @@ fn format_context_section(prompt_md_content: Option<&str>, plan_content: Option<
 ///
 /// This helper builds the conflicts section that gets injected into the
 /// {{CONFLICTS}} template variable.
-fn format_conflicts_section(conflicts: &HashMap<String, FileConflict>) -> String {
+fn format_conflicts_section<S: std::hash::BuildHasher>(
+    conflicts: &HashMap<String, FileConflict, S>,
+) -> String {
     let mut section = String::new();
 
     for (path, conflict) in conflicts {
@@ -247,9 +250,10 @@ pub struct BranchInfo {
 /// * `branch_info` - Optional branch information for enhanced context
 /// * `prompt_md_content` - Optional content from PROMPT.md for task context
 /// * `plan_content` - Optional content from PLAN.md for additional context
-pub fn build_enhanced_conflict_resolution_prompt(
+#[must_use]
+pub fn build_enhanced_conflict_resolution_prompt<S: std::hash::BuildHasher>(
     context: &TemplateContext,
-    conflicts: &HashMap<String, FileConflict>,
+    conflicts: &HashMap<String, FileConflict, S>,
     branch_info: Option<&BranchInfo>,
     prompt_md_content: Option<&str>,
     plan_content: Option<&str>,
@@ -319,7 +323,7 @@ fn format_branch_info_section(info: &BranchInfo) -> String {
     if !info.current_commits.is_empty() {
         section.push_str("### Recent commits on current branch:\n\n");
         for (i, msg) in info.current_commits.iter().enumerate().take(5) {
-            section.push_str(&format!("{}. {}\n", i + 1, msg));
+            writeln!(section, "{}. {}", i + 1, msg).unwrap();
         }
         section.push('\n');
     }
@@ -327,7 +331,7 @@ fn format_branch_info_section(info: &BranchInfo) -> String {
     if !info.upstream_commits.is_empty() {
         section.push_str("### Recent commits on target branch:\n\n");
         for (i, msg) in info.upstream_commits.iter().enumerate().take(5) {
-            section.push_str(&format!("{}. {}\n", i + 1, msg));
+            writeln!(section, "{}. {}", i + 1, msg).unwrap();
         }
         section.push('\n');
     }
@@ -347,6 +351,10 @@ fn format_branch_info_section(info: &BranchInfo) -> String {
 /// # Returns
 ///
 /// Returns `Ok(BranchInfo)` with the gathered information, or an error if git operations fail.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn collect_branch_info(
     upstream_branch: &str,
     executor: &dyn crate::executor::ProcessExecutor,
@@ -360,7 +368,11 @@ pub fn collect_branch_info(
     // Get recent commits from current branch
     let current_log = executor.execute("git", &["log", "--oneline", "-10", "HEAD"], &[], None)?;
 
-    let current_commits: Vec<String> = current_log.stdout.lines().map(|s| s.to_string()).collect();
+    let current_commits: Vec<String> = current_log
+        .stdout
+        .lines()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     // Get recent commits from upstream branch
     let upstream_log = executor.execute(
@@ -370,8 +382,11 @@ pub fn collect_branch_info(
         None,
     )?;
 
-    let upstream_commits: Vec<String> =
-        upstream_log.stdout.lines().map(|s| s.to_string()).collect();
+    let upstream_commits: Vec<String> = upstream_log
+        .stdout
+        .lines()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     // Count diverging commits
     let diverging = executor.execute(
@@ -414,6 +429,10 @@ pub fn collect_branch_info(
 ///
 /// Returns `Ok(HashMap)` mapping file paths to conflict information,
 /// or an error if a file cannot be read.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn collect_conflict_info_with_workspace(
     workspace: &dyn Workspace,
     conflicted_paths: &[String],

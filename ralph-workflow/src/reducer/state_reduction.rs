@@ -9,13 +9,13 @@
 //!
 //! | Category     | Handler                    | Responsibility                    |
 //! |--------------|----------------------------|-----------------------------------|
-//! | Lifecycle    | reduce_lifecycle_event     | Pipeline start/resume/complete    |
-//! | Planning     | reduce_planning_event      | Plan generation                   |
-//! | Development  | reduce_development_event   | Dev iterations, continuation      |
-//! | Review       | reduce_review_event        | Review passes, fix attempts       |
-//! | Agent        | reduce_agent_event         | Agent chain, fallback, retries    |
-//! | Rebase       | reduce_rebase_event        | Rebase state machine              |
-//! | Commit       | reduce_commit_event        | Commit message generation         |
+//! | Lifecycle    | `reduce_lifecycle_event`     | Pipeline start/resume/complete    |
+//! | Planning     | `reduce_planning_event`      | Plan generation                   |
+//! | Development  | `reduce_development_event`   | Dev iterations, continuation      |
+//! | Review       | `reduce_review_event`        | Review passes, fix attempts       |
+//! | Agent        | `reduce_agent_event`         | Agent chain, fallback, retries    |
+//! | Rebase       | `reduce_rebase_event`        | Rebase state machine              |
+//! | Commit       | `reduce_commit_event`        | Commit message generation         |
 //!
 //! Each handler is a pure function that takes state and its specific event type,
 //! enabling compile-time verification of exhaustive matching within each category.
@@ -34,15 +34,16 @@ use super::state::PipelineState;
 ///
 /// | Category     | Handler                    | Responsibility                    |
 /// |--------------|----------------------------|-----------------------------------|
-/// | Lifecycle    | reduce_lifecycle_event     | Pipeline start/resume/complete    |
-/// | Planning     | reduce_planning_event      | Plan generation                   |
-/// | Development  | reduce_development_event   | Dev iterations, continuation      |
-/// | Review       | reduce_review_event        | Review passes, fix attempts       |
-/// | Agent        | reduce_agent_event         | Agent chain, fallback, retries    |
-/// | Rebase       | reduce_rebase_event        | Rebase state machine              |
-/// | Commit       | reduce_commit_event        | Commit message generation         |
+/// | Lifecycle    | `reduce_lifecycle_event`     | Pipeline start/resume/complete    |
+/// | Planning     | `reduce_planning_event`      | Plan generation                   |
+/// | Development  | `reduce_development_event`   | Dev iterations, continuation      |
+/// | Review       | `reduce_review_event`        | Review passes, fix attempts       |
+/// | Agent        | `reduce_agent_event`         | Agent chain, fallback, retries    |
+/// | Rebase       | `reduce_rebase_event`        | Rebase state machine              |
+/// | Commit       | `reduce_commit_event`        | Commit message generation         |
 ///
 /// Miscellaneous events are handled directly in this function.
+#[must_use]
 pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
     match event {
         // Route to category-specific reducers

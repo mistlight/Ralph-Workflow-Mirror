@@ -14,6 +14,7 @@ use crate::config::Verbosity;
 /// - `--format json`
 /// - `-F json`
 /// - `-o stream-json` or similar
+#[must_use]
 pub fn argv_requests_json(argv: &[String]) -> bool {
     // Skip argv[0] (the executable); scan flags/args only.
     let mut iter = argv.iter().skip(1).peekable();
@@ -81,6 +82,7 @@ pub fn argv_requests_json(argv: &[String]) -> bool {
 /// - Other levels: Compact single-line format
 ///
 /// Output is truncated according to verbosity limits.
+#[must_use]
 pub fn format_generic_json_for_display(line: &str, verbosity: Verbosity) -> String {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
         return truncate_text(line, verbosity.truncate_limit("agent_msg"));

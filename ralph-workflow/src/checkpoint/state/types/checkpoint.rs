@@ -90,9 +90,9 @@ pub struct PipelineCheckpoint {
     pub parent_run_id: Option<String>,
     /// Number of times this session has been resumed
     pub resume_count: u32,
-    /// Logging run_id (timestamp-based) for per-run log directory
+    /// Logging `run_id` (timestamp-based) for per-run log directory
     /// Format: YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]
-    /// This is separate from run_id which uses format "run-{uuid}"
+    /// This is separate from `run_id` which uses format "run-{uuid}"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_run_id: Option<String>,
 
@@ -158,7 +158,7 @@ pub struct PipelineCheckpoint {
     ///
     /// When true, the pre-termination commit safety check is skipped because the
     /// user explicitly chose to interrupt execution. All other termination paths
-    /// (AwaitingDevFix exhaustion, DiffFailed, agent failures, etc.) MUST commit
+    /// (`AwaitingDevFix` exhaustion, `DiffFailed`, agent failures, etc.) MUST commit
     /// uncommitted work before terminating.
     ///
     /// This flag is set by the SIGINT handler when the user presses Ctrl+C and
@@ -231,6 +231,7 @@ impl PipelineCheckpoint {
     ///
     /// Returns a string describing the current phase and progress,
     /// suitable for display to the user when resuming.
+    #[must_use] 
     pub fn description(&self) -> String {
         match self.phase {
             PipelinePhase::Rebase => "Rebase in progress".to_string(),
@@ -325,6 +326,7 @@ pub struct CloudCheckpointState {
 }
 
 impl CloudCheckpointState {
+    #[must_use] 
     pub fn from_pipeline_state(state: &crate::reducer::state::PipelineState) -> Self {
         Self {
             cloud_config: state.cloud_config.clone(),
@@ -343,6 +345,7 @@ impl CloudCheckpointState {
 }
 
 /// Get current timestamp in "YYYY-MM-DD HH:MM:SS" format.
+#[must_use] 
 pub fn timestamp() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }

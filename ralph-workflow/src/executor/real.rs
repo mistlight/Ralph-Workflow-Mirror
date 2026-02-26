@@ -84,8 +84,9 @@ fn ensure_nonblocking_or_terminate(
 pub struct RealProcessExecutor;
 
 impl RealProcessExecutor {
-    /// Create a new RealProcessExecutor.
-    pub fn new() -> Self {
+    /// Create a new `RealProcessExecutor`.
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 }

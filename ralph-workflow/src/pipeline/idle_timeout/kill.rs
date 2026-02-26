@@ -6,7 +6,7 @@ use std::time::Duration;
 
 /// Result of attempting to kill a process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum KillResult {
+pub enum KillResult {
     /// Process was successfully killed with SIGTERM.
     TerminatedByTerm,
     /// Process required SIGKILL/taskkill escalation.
@@ -32,6 +32,7 @@ pub struct KillConfig {
 }
 
 impl KillConfig {
+    #[must_use]
     pub const fn new(
         sigterm_grace: Duration,
         poll_interval: Duration,
@@ -48,23 +49,28 @@ impl KillConfig {
         }
     }
 
-    pub fn sigterm_grace(&self) -> Duration {
+    #[must_use]
+    pub const fn sigterm_grace(&self) -> Duration {
         self.sigterm_grace
     }
 
-    pub fn poll_interval(&self) -> Duration {
+    #[must_use]
+    pub const fn poll_interval(&self) -> Duration {
         self.poll_interval
     }
 
-    pub fn sigkill_confirm_timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn sigkill_confirm_timeout(&self) -> Duration {
         self.sigkill_confirm_timeout
     }
 
-    pub fn post_sigkill_hard_cap(&self) -> Duration {
+    #[must_use]
+    pub const fn post_sigkill_hard_cap(&self) -> Duration {
         self.post_sigkill_hard_cap
     }
 
-    pub fn sigkill_resend_interval(&self) -> Duration {
+    #[must_use]
+    pub const fn sigkill_resend_interval(&self) -> Duration {
         self.sigkill_resend_interval
     }
 }
@@ -85,14 +91,14 @@ pub const DEFAULT_KILL_CONFIG: KillConfig = KillConfig::new(
 );
 
 #[cfg(unix)]
-pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+pub fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
     let pid_str = pid.to_string();
-    let pgid_str = format!("-{pid_str}");
+    let process_group_id = format!("-{pid_str}");
 
     // Prefer killing the whole process group so descendant processes that inherited
     // stdout/stderr FDs don't keep pipes open after the parent is gone.
     let group_ok = executor
-        .execute("kill", &["-KILL", "--", &pgid_str], &[], None)
+        .execute("kill", &["-KILL", "--", &process_group_id], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false);
 
@@ -124,18 +130,18 @@ pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -
 /// First attempts SIGTERM, waits for a grace period while verifying liveness,
 /// then escalates to SIGKILL if the process hasn't terminated.
 #[cfg(unix)]
-pub(crate) fn kill_process(
+pub fn kill_process(
     pid: u32,
     executor: &dyn ProcessExecutor,
     child: Option<&Arc<Mutex<Box<dyn AgentChild>>>>,
     config: KillConfig,
 ) -> KillResult {
     let pid_str = pid.to_string();
-    let pgid_str = format!("-{pid_str}");
+    let process_group_id = format!("-{pid_str}");
 
     // Send SIGTERM to the process group first (see module docs).
     let term_ok = executor
-        .execute("kill", &["-TERM", "--", &pgid_str], &[], None)
+        .execute("kill", &["-TERM", "--", &process_group_id], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false)
         || executor
@@ -165,7 +171,7 @@ pub(crate) fn kill_process(
         }
 
         let kill_ok = executor
-            .execute("kill", &["-KILL", "--", &pgid_str], &[], None)
+            .execute("kill", &["-KILL", "--", &process_group_id], &[], None)
             .map(|o| o.status.success())
             .unwrap_or(false)
             || executor

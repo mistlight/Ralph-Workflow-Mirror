@@ -87,7 +87,7 @@ impl OpenCodeParser {
 
     /// Format an `error` event
     ///
-    /// From OpenCode source (`run.ts` lines 192-202), error events are emitted for session errors:
+    /// From `OpenCode` source (`run.ts` lines 192-202), error events are emitted for session errors:
     /// ```typescript
     /// if (event.type === "session.error") {
     ///   let err = String(props.error.name)

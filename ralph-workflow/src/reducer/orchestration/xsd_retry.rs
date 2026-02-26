@@ -13,6 +13,7 @@
 ///
 /// Intentionally excludes retry counters like `xsd_retry_count` so that repeated
 /// retries still register as the "same effect" for tight-loop detection.
+#[must_use] 
 pub fn compute_effect_fingerprint(state: &PipelineState) -> String {
     format!(
         "{}:{}:iter={}:pass={}:xsd_retry={}",
@@ -208,6 +209,7 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
 /// 5. Agent chain exhausted
 /// 6. Backoff wait
 /// 7. Phase-specific effects
+#[must_use] 
 pub fn determine_next_effect(state: &PipelineState) -> Effect {
     // Terminal: once aborted, drive a single checkpoint save so the event loop can
     // deterministically complete (Interrupted + checkpoint_saved_count > 0).
@@ -409,9 +411,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 // Format auth method for the effect
                 let auth_method = match &state.cloud_config.git_remote.auth_method {
                     crate::config::GitAuthStateMethod::SshKey { key_path } => key_path
-                        .as_ref()
-                        .map(|p| format!("ssh-key:{p}"))
-                        .unwrap_or_else(|| "ssh-key:default".to_string()),
+                        .as_ref().map_or_else(|| "ssh-key:default".to_string(), |p| format!("ssh-key:{p}")),
                     crate::config::GitAuthStateMethod::Token { username } => {
                         format!("token:{username}")
                     }

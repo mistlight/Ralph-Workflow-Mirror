@@ -35,6 +35,10 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 ///
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_add_all() -> io::Result<bool> {
     git_add_all_in_repo(Path::new("."))
 }
@@ -43,6 +47,10 @@ pub fn git_add_all() -> io::Result<bool> {
 ///
 /// This avoids relying on process-wide CWD and allows callers (including tests)
 /// to control which repository is targeted.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_add_all_in_repo(repo_root: &Path) -> io::Result<bool> {
     let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_add_all_impl(&repo)
@@ -206,6 +214,10 @@ fn resolve_commit_identity(
 ///
 /// Partial overrides are supported: CLI args/env vars/config can override individual
 /// fields (name or email) from git config.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_commit(
     message: &str,
     git_user_name: Option<&str>,
@@ -225,6 +237,10 @@ pub fn git_commit(
 ///
 /// This avoids relying on process-wide CWD and allows callers to select the
 /// repository to operate on.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_commit_in_repo(
     repo_root: &Path,
     message: &str,

@@ -1,7 +1,7 @@
-//! Mock implementation of EffectHandler for testing.
+//! Mock implementation of `EffectHandler` for testing.
 //!
 //! This module provides a mock handler that captures all executed effects
-//! for later inspection, returning appropriate mock PipelineEvents without
+//! for later inspection, returning appropriate mock `PipelineEvents` without
 //! performing any real side effects (no git calls, no file I/O, no agent execution).
 //!
 //! ## Purpose

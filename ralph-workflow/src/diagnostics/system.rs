@@ -17,6 +17,7 @@ pub struct SystemInfo {
 
 impl SystemInfo {
     /// Gather system information using default process executor.
+    #[must_use]
     pub fn gather() -> Self {
         Self::gather_with_executor(&RealProcessExecutor)
     }

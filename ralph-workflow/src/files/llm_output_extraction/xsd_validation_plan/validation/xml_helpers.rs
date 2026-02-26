@@ -1,6 +1,6 @@
 // XML parsing helpers (get_attributes, read_text_until_end, skip_to_end, read_inner_xml)
 
-/// Extract attributes from a quick-xml BytesStart
+/// Extract attributes from a quick-xml `BytesStart`
 fn get_attributes(e: &quick_xml::events::BytesStart) -> HashMap<String, String> {
     let mut attrs = HashMap::new();
     for attr in e.attributes().flatten() {
@@ -50,7 +50,7 @@ fn read_text_until_end(
                     error_type: XsdErrorType::MalformedXml,
                     element_path: String::from_utf8_lossy(end_tag).to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -94,7 +94,7 @@ fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), XsdVali
                     error_type: XsdErrorType::MalformedXml,
                     element_path: String::from_utf8_lossy(end_tag).to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -183,7 +183,7 @@ fn read_inner_xml(
                     error_type: XsdErrorType::MalformedXml,
                     element_path: String::from_utf8_lossy(end_tag).to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });

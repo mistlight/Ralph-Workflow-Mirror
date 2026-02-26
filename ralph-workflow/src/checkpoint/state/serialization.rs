@@ -11,7 +11,7 @@
 /// - v3 (current)
 /// - v2 (migrated in-memory to v3 by bumping `version`; v3-only fields remain empty)
 ///
-/// Legacy formats (v1, pre-v1) and legacy phases (Fix, ReviewAgain) are not supported.
+/// Legacy formats (v1, pre-v1) and legacy phases (Fix, `ReviewAgain`) are not supported.
 fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
@@ -52,10 +52,9 @@ fn load_checkpoint_with_fallback(
         Err(e) => {
             // Parsing failed - likely legacy format or legacy phase
             Err(format!(
-                "Invalid checkpoint format: {}. \
+                "Invalid checkpoint format: {e}. \
                  Legacy checkpoint formats (v1 and earlier) are no longer supported. \
-                 To start fresh without data loss: cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json",
-                e
+                 To start fresh without data loss: cp .agent/checkpoint.json .agent/checkpoint.backup.json && rm .agent/checkpoint.json"
             )
             .into())
         }
@@ -93,6 +92,10 @@ pub fn calculate_file_checksum_with_workspace(
 ///
 /// Uses optimized serialization with pre-allocated buffer and compact JSON
 /// encoding (no pretty-printing) to minimize serialization time.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn save_checkpoint_with_workspace(
     workspace: &dyn Workspace,
     checkpoint: &PipelineCheckpoint,
@@ -135,8 +138,7 @@ fn estimate_checkpoint_size(checkpoint: &PipelineCheckpoint) -> usize {
     let history_len = checkpoint
         .execution_history
         .as_ref()
-        .map(|h| h.steps.len())
-        .unwrap_or(0);
+        .map_or(0, |h| h.steps.len());
 
     estimate_checkpoint_size_from_history_len(history_len)
 }
@@ -159,6 +161,10 @@ fn estimate_checkpoint_size_from_history_len(history_len: usize) -> usize {
 /// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
 /// `Ok(None)` if no checkpoint file exists, or an error if the file
 /// exists but cannot be parsed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_checkpoint_with_workspace(
     workspace: &dyn Workspace,
 ) -> io::Result<Option<PipelineCheckpoint>> {
@@ -183,6 +189,10 @@ pub fn load_checkpoint_with_workspace(
 /// Delete the checkpoint file using the workspace.
 ///
 /// Does nothing if the checkpoint file doesn't exist.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn clear_checkpoint_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let checkpoint_path_str = checkpoint_path();
     let checkpoint_file = Path::new(&checkpoint_path_str);

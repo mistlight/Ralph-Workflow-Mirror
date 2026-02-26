@@ -1,6 +1,6 @@
 //! Error event reduction.
 //!
-//! Handles error events returned through Err() from effect handlers.
+//! Handles error events returned through `Err()` from effect handlers.
 //! Each error type has a specific recovery strategy decided by the reducer.
 
 use crate::reducer::event::ErrorEvent;

@@ -56,8 +56,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn cleanup_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         let plan_xml = Path::new(xml_paths::PLAN_XML);

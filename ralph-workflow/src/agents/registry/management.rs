@@ -1,20 +1,20 @@
 // Registry management and lookup operations.
 // Includes the AgentRegistry struct definition and core lookup/management methods.
 
-/// Agent registry with CCS alias and OpenCode dynamic provider/model support.
+/// Agent registry with CCS alias and `OpenCode` dynamic provider/model support.
 ///
 /// CCS aliases are eagerly resolved and registered as regular agents
 /// when set via `set_ccs_aliases()`. This allows `get()` to work
 /// uniformly for both regular agents and CCS aliases.
 ///
-/// OpenCode provider/model combinations are resolved on-the-fly using
+/// `OpenCode` provider/model combinations are resolved on-the-fly using
 /// the `opencode/` prefix.
 pub struct AgentRegistry {
     agents: HashMap<String, AgentConfig>,
     fallback: FallbackConfig,
     /// CCS alias resolver for `ccs/alias` syntax.
     ccs_resolver: CcsAliasResolver,
-    /// OpenCode resolver for `opencode/provider/model` syntax.
+    /// `OpenCode` resolver for `opencode/provider/model` syntax.
     opencode_resolver: Option<OpenCodeResolver>,
     /// Retry timer provider for controlling sleep behavior in retry logic.
     retry_timer: Arc<dyn RetryTimerProvider>,
@@ -22,6 +22,10 @@ pub struct AgentRegistry {
 
 impl AgentRegistry {
     /// Create a new registry with default agents.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn new() -> Result<Self, AgentConfigError> {
         let AgentsConfigFile { agents, fallback } =
             toml::from_str(DEFAULT_AGENTS_TOML).map_err(AgentConfigError::DefaultTemplateToml)?;
@@ -41,7 +45,7 @@ impl AgentRegistry {
         Ok(registry)
     }
 
-    /// Set the OpenCode API catalog for dynamic provider/model resolution.
+    /// Set the `OpenCode` API catalog for dynamic provider/model resolution.
     ///
     /// This enables resolution of `opencode/provider/model` agent references.
     pub fn set_opencode_catalog(&mut self, catalog: ApiCatalog) {
@@ -79,6 +83,10 @@ impl AgentRegistry {
     ///
     /// # Test-Utils Only
     ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
+    ///
     /// This function is only available when the `test-utils` feature is enabled.
     #[cfg(feature = "test-utils")]
     #[must_use]
@@ -86,13 +94,14 @@ impl AgentRegistry {
         Self::new().expect("Built-in agents should always be valid")
     }
 
-    /// Resolve an agent's configuration, including on-the-fly CCS and OpenCode references.
+    /// Resolve an agent's configuration, including on-the-fly CCS and `OpenCode` references.
     ///
     /// CCS supports direct execution via `ccs/<alias>` even when the alias isn't
     /// pre-registered in config; those are resolved lazily here.
     ///
-    /// OpenCode supports dynamic provider/model via `opencode/provider/model` syntax;
+    /// `OpenCode` supports dynamic provider/model via `opencode/provider/model` syntax;
     /// those are validated against the API catalog and resolved lazily here.
+    #[must_use] 
     pub fn resolve_config(&self, name: &str) -> Option<AgentConfig> {
         self.agents
             .get(name)
@@ -120,6 +129,7 @@ impl AgentRegistry {
     /// assert_eq!(registry.display_name("ccs/glm"), "ccs-glm");
     /// assert_eq!(registry.display_name("claude"), "claude");
     /// ```
+    #[must_use] 
     pub fn display_name(&self, name: &str) -> String {
         self.resolve_config(name)
             .and_then(|config| config.display_name)
@@ -159,6 +169,7 @@ impl AgentRegistry {
     /// assert_eq!(registry.resolve_from_logfile_name("opencode-anthropic-claude-sonnet-4"),
     ///            Some("opencode/anthropic/claude-sonnet-4".to_string()));
     /// ```
+    #[must_use] 
     pub fn resolve_from_logfile_name(&self, logfile_name: &str) -> Option<String> {
         // First check if the name is exactly a registry name (no sanitization was needed)
         if self.agents.contains_key(logfile_name) {
@@ -176,7 +187,7 @@ impl AgentRegistry {
         // Try to resolve dynamically for unregistered agents
         // CCS pattern: "ccs-alias" → "ccs/alias"
         if let Some(alias) = logfile_name.strip_prefix("ccs-") {
-            let registry_name = format!("ccs/{}", alias);
+            let registry_name = format!("ccs/{alias}");
             // CCS agents can be resolved dynamically even if not pre-registered
             return Some(registry_name);
         }
@@ -191,7 +202,7 @@ impl AgentRegistry {
             if let Some(first_hyphen) = rest.find('-') {
                 let provider = &rest[..first_hyphen];
                 let model = &rest[first_hyphen + 1..];
-                let registry_name = format!("opencode/{}/{}", provider, model);
+                let registry_name = format!("opencode/{provider}/{model}");
                 return Some(registry_name);
             }
         }
@@ -209,6 +220,7 @@ impl AgentRegistry {
     /// - Exact matches: Returns the name as-is
     ///
     /// Returns `None` if the name cannot be resolved to any known agent.
+    #[must_use] 
     pub fn resolve_fuzzy(&self, name: &str) -> Option<String> {
         // First check if it's an exact match
         if self.agents.contains_key(name) {
@@ -308,28 +320,33 @@ impl AgentRegistry {
     }
 
     /// List all registered agents.
+    #[must_use] 
     pub fn list(&self) -> Vec<(&str, &AgentConfig)> {
         self.agents.iter().map(|(k, v)| (k.as_str(), v)).collect()
     }
 
     /// Get command for developer role.
+    #[must_use] 
     pub fn developer_cmd(&self, agent_name: &str) -> Option<String> {
         self.resolve_config(agent_name)
             .map(|c| c.build_cmd(true, true, true))
     }
 
     /// Get command for reviewer role.
+    #[must_use] 
     pub fn reviewer_cmd(&self, agent_name: &str) -> Option<String> {
         self.resolve_config(agent_name)
             .map(|c| c.build_cmd(true, true, false))
     }
 
     /// Get the fallback configuration.
+    #[must_use] 
     pub const fn fallback_config(&self) -> &FallbackConfig {
         &self.fallback
     }
 
     /// Get the retry timer provider.
+    #[must_use] 
     pub fn retry_timer(&self) -> Arc<dyn RetryTimerProvider> {
         Arc::clone(&self.retry_timer)
     }
@@ -359,6 +376,10 @@ impl AgentRegistry {
     }
 
     /// Validate that agent chains are configured for both roles.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn validate_agent_chains(&self) -> Result<(), String> {
         let has_developer = self.fallback.has_fallbacks(AgentRole::Developer);
         let has_reviewer = self.fallback.has_fallbacks(AgentRole::Reviewer);
@@ -403,6 +424,7 @@ impl AgentRegistry {
     }
 
     /// Check if an agent is available (command exists and is executable).
+    #[must_use] 
     pub fn is_agent_available(&self, name: &str) -> bool {
         if let Some(config) = self.resolve_config(name) {
             let Ok(parts) = crate::common::split_command(&config.cmd) else {

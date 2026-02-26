@@ -8,7 +8,7 @@
 //!
 //! Multiple safety layers ensure PROMPT.md is restored to writable state:
 //!
-//! 1. **Reducer-driven (normal path)**: Effect::RestorePromptPermissions during
+//! 1. **Reducer-driven (normal path)**: `Effect::RestorePromptPermissions` during
 //!    Finalizing phase or on interrupt (Ctrl+C or programmatic). Note: On interrupt,
 //!    restoration is attempted unconditionally regardless of `restore_needed` state,
 //!    since prior crashed runs may have left PROMPT.md read-only.
@@ -29,26 +29,26 @@ use serde::{Deserialize, Serialize};
 /// # State Transitions
 ///
 /// 1. **Startup**: `locked=false, restore_needed=false, restored=false`
-/// 2. **After LockPromptPermissions effect**: `locked=true, restore_needed=true`
-/// 3. **After RestorePromptPermissions effect**: `locked=false, restore_needed=false, restored=true`
+/// 2. **After `LockPromptPermissions` effect**: `locked=true, restore_needed=true`
+/// 3. **After `RestorePromptPermissions` effect**: `locked=false, restore_needed=false, restored=true`
 ///
 /// # Resume Safety
 ///
 /// All fields are checkpointed. On resume:
-/// - If locked but not restored, orchestration will derive RestorePromptPermissions
+/// - If locked but not restored, orchestration will derive `RestorePromptPermissions`
 /// - If already restored, no further action needed
 ///
 /// This state is serialized in `PipelineCheckpoint.prompt_permissions` to ensure
 /// pending restores are honored after resume.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
 pub struct PromptPermissionsState {
-    /// True if LockPromptPermissions effect has been attempted.
+    /// True if `LockPromptPermissions` effect has been attempted.
     pub locked: bool,
 
     /// True if restoration is needed (set when lock is attempted, even if it fails).
     pub restore_needed: bool,
 
-    /// True if RestorePromptPermissions effect has completed.
+    /// True if `RestorePromptPermissions` effect has completed.
     pub restored: bool,
 
     /// Warning message from last permission operation (for observability).

@@ -1,4 +1,4 @@
-//! Shared quick_xml helper utilities for XSD validation.
+//! Shared `quick_xml` helper utilities for XSD validation.
 //!
 //! This module provides common parsing functions used across all XSD validators
 //! to ensure consistent XML handling with proper whitespace management.
@@ -14,7 +14,7 @@
 //!
 //! Required validation flow for ALL validators:
 //! 1. `check_for_illegal_xml_characters()` - MUST be called first
-//! 2. `create_reader()` - creates quick_xml reader
+//! 2. `create_reader()` - creates `quick_xml` reader
 //! 3. XSD validation - validates structure and content
 //!
 //! ## XSD Retry Integration

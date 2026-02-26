@@ -61,7 +61,8 @@ impl IssuesElements {
     ///
     /// This is true when the issues list is empty and a "no issues found" message exists.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.issues.is_empty() && self.no_issues_found.is_some()
     }
 
@@ -69,7 +70,8 @@ impl IssuesElements {
     ///
     /// This is the count of issues in the issues list (does not include "no issues found").
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn issue_count(&self) -> usize {
+    #[must_use]
+    pub const fn issue_count(&self) -> usize {
         self.issues.len()
     }
 }

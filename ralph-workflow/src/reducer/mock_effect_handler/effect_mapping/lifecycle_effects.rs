@@ -6,35 +6,35 @@
 //! ## Lifecycle Effects
 //!
 //! ### Agent Management
-//! - **InitializeAgentChain** - Set up agent chain for a new phase
-//! - **BackoffWait** - Wait before retrying after agent failure
-//! - **ReportAgentChainExhausted** - Report when all agents in chain have failed
+//! - **`InitializeAgentChain`** - Set up agent chain for a new phase
+//! - **`BackoffWait`** - Wait before retrying after agent failure
+//! - **`ReportAgentChainExhausted`** - Report when all agents in chain have failed
 //!
 //! ### Checkpointing
-//! - **SaveCheckpoint** - Save pipeline state for resume capability
+//! - **`SaveCheckpoint`** - Save pipeline state for resume capability
 //!
 //! ### Continuation (Development Phase)
-//! - **WriteContinuationContext** - Save context for continuing partial work
-//! - **CleanupContinuationContext** - Clean continuation context after completion
+//! - **`WriteContinuationContext`** - Save context for continuing partial work
+//! - **`CleanupContinuationContext`** - Clean continuation context after completion
 //!
 //! ### Finalization
-//! - **ValidateFinalState** - Validate pipeline completed successfully
-//! - **CleanupContext** - Clean up temporary files
-//! - **LockPromptPermissions** - Lock PROMPT.md with read-only permissions at startup
-//! - **RestorePromptPermissions** - Restore file permissions changed during execution
-//! - **EnsureGitignoreEntries** - Ensure required gitignore entries exist
+//! - **`ValidateFinalState`** - Validate pipeline completed successfully
+//! - **`CleanupContext`** - Clean up temporary files
+//! - **`LockPromptPermissions`** - Lock PROMPT.md with read-only permissions at startup
+//! - **`RestorePromptPermissions`** - Restore file permissions changed during execution
+//! - **`EnsureGitignoreEntries`** - Ensure required gitignore entries exist
 //!
 //! ### Error Recovery
-//! - **TriggerDevFixFlow** - Trigger manual intervention workflow (panics in mock)
-//! - **EmitCompletionMarkerAndTerminate** - Emit completion marker for external monitoring
-//! - **TriggerLoopRecovery** - Recover from detected infinite loops
+//! - **`TriggerDevFixFlow`** - Trigger manual intervention workflow (panics in mock)
+//! - **`EmitCompletionMarkerAndTerminate`** - Emit completion marker for external monitoring
+//! - **`TriggerLoopRecovery`** - Recover from detected infinite loops
 //!
 //! ## Mock Behavior
 //!
-//! - **SaveCheckpoint** automatically emits phase completion events when appropriate
-//! - **InitializeAgentChain** emits phase transition UI events
-//! - **TriggerDevFixFlow** panics (requires real workspace access)
-//! - **ReportAgentChainExhausted** panics (should not occur in normal test flow)
+//! - **`SaveCheckpoint`** automatically emits phase completion events when appropriate
+//! - **`InitializeAgentChain`** emits phase transition UI events
+//! - **`TriggerDevFixFlow`** panics (requires real workspace access)
+//! - **`ReportAgentChainExhausted`** panics (should not occur in normal test flow)
 
 use crate::reducer::effect::Effect;
 use crate::reducer::event::{AwaitingDevFixEvent, CheckpointTrigger, PipelineEvent, PipelinePhase};
@@ -48,7 +48,7 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for lifecycle effects without
     /// performing real I/O or system operations.
     pub(super) fn handle_lifecycle_effect(
-        &mut self,
+        &self,
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>, Vec<PipelineEvent>)> {
         match effect {
@@ -60,7 +60,7 @@ impl MockEffectHandler {
             } => {
                 let ui = vec![UIEvent::AgentActivity {
                     agent: agent.clone(),
-                    message: format!("Completed {} task", role),
+                    message: format!("Completed {role} task"),
                 }];
                 Some((
                     PipelineEvent::agent_invocation_succeeded(role, agent),
@@ -116,8 +116,7 @@ impl MockEffectHandler {
 
             Effect::ReportAgentChainExhausted { role, phase, cycle } => {
                 panic!(
-                    "MockEffectHandler received ReportAgentChainExhausted effect: role={:?}, phase={:?}, cycle={}",
-                    role, phase, cycle
+                    "MockEffectHandler received ReportAgentChainExhausted effect: role={role:?}, phase={phase:?}, cycle={cycle}"
                 )
             }
 
@@ -229,7 +228,7 @@ impl MockEffectHandler {
                 loop_count,
             } => Some((
                 PipelineEvent::LoopRecoveryTriggered {
-                    detected_loop: detected_loop.clone(),
+                    detected_loop,
                     loop_count,
                 },
                 vec![],
@@ -319,8 +318,7 @@ impl MockEffectHandler {
                         // doesn't return Result). Call the EffectHandler::execute() path to simulate
                         // failures for this effect.
                         panic!(
-                            "MockEffectHandler cannot simulate pre-termination snapshot error via execute_mock (kind={:?}); use execute() instead",
-                            kind
+                            "MockEffectHandler cannot simulate pre-termination snapshot error via execute_mock (kind={kind:?}); use execute() instead"
                         )
                     }
                 }

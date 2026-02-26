@@ -91,7 +91,7 @@ fn print_review_guidelines(
 /// Create the phase context with a modified config (for resume restoration).
 ///
 /// When resuming from a checkpoint, this function enforces the configured
-/// execution_history_limit by using `clone_bounded()` to drop oldest entries
+/// `execution_history_limit` by using `clone_bounded()` to drop oldest entries
 /// beyond the limit. This prevents legacy checkpoints with oversized history
 /// from reintroducing unbounded memory growth.
 fn create_phase_context_with_config<'ctx>(
@@ -110,9 +110,7 @@ fn create_phase_context_with_config<'ctx>(
     let (execution_history, prompt_history) = if let Some(checkpoint) = resume_checkpoint {
         let exec_history = checkpoint
             .execution_history
-            .as_ref()
-            .map(|h| h.clone_bounded(config.execution_history_limit))
-            .unwrap_or_else(crate::checkpoint::execution_history::ExecutionHistory::new);
+            .as_ref().map_or_else(crate::checkpoint::execution_history::ExecutionHistory::new, |h| h.clone_bounded(config.execution_history_limit));
         let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
         (exec_history, prompt_hist)
     } else {
@@ -322,7 +320,7 @@ pub fn handle_rebase_only(
     }
 }
 
-fn should_write_complete_checkpoint(final_phase: crate::reducer::event::PipelinePhase) -> bool {
+const fn should_write_complete_checkpoint(final_phase: crate::reducer::event::PipelinePhase) -> bool {
     matches!(final_phase, crate::reducer::event::PipelinePhase::Complete)
 }
 

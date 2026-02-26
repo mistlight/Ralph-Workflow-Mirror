@@ -21,6 +21,10 @@ use crate::logger::Colors;
 /// # Returns
 ///
 /// Returns `Ok(true)` if validation succeeded, or an error if validation failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_check_config_with<R: ConfigEnvironment>(
     colors: Colors,
     env: &R,
@@ -104,7 +108,7 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
             return Err(anyhow::anyhow!("Configuration validation failed"));
         }
         Err(ConfigLoadWithValidationError::Io(e)) => {
-            return Err(anyhow::anyhow!("Failed to read config file: {}", e));
+            return Err(anyhow::anyhow!("Failed to read config file: {e}"));
         }
     };
 
@@ -112,7 +116,7 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
     if !warnings.is_empty() {
         println!("{}Warnings:{}", colors.yellow(), colors.reset());
         for warning in &warnings {
-            println!("  {}", warning);
+            println!("  {warning}");
         }
         println!();
     }
@@ -169,7 +173,7 @@ pub fn handle_check_config_with<R: ConfigEnvironment>(
         if let Some(unified) = merged_unified {
             let toml_str = toml::to_string_pretty(&unified)
                 .unwrap_or_else(|_| "Error serializing config".to_string());
-            println!("{}", toml_str);
+            println!("{toml_str}");
         }
     }
 
@@ -184,7 +188,7 @@ fn print_config_error(colors: Colors, error: &ConfigValidationError) {
     match error {
         ConfigValidationError::TomlSyntax { error, .. } => {
             println!("  {}TOML syntax error:{}", colors.red(), colors.reset());
-            println!("    {}", error);
+            println!("    {error}");
         }
         ConfigValidationError::UnknownKey {
             key, suggestion, ..
@@ -206,7 +210,7 @@ fn print_config_error(colors: Colors, error: &ConfigValidationError) {
                 key,
                 colors.reset()
             );
-            println!("    {}", message);
+            println!("    {message}");
         }
     }
 }
@@ -214,6 +218,10 @@ fn print_config_error(colors: Colors, error: &ConfigValidationError) {
 /// Handle the `--check-config` flag using the default environment.
 ///
 /// Convenience wrapper that uses [`RealConfigEnvironment`] internally.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_check_config(colors: Colors, verbose: bool) -> anyhow::Result<bool> {
     handle_check_config_with(colors, &RealConfigEnvironment, verbose)
 }

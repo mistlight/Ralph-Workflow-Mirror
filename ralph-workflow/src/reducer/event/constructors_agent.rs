@@ -2,18 +2,21 @@
 
 impl PipelineEvent {
     // Agent constructors
-    /// Create an AgentInvocationStarted event.
-    pub fn agent_invocation_started(role: AgentRole, agent: String, model: Option<String>) -> Self {
+    /// Create an `AgentInvocationStarted` event.
+    #[must_use] 
+    pub const fn agent_invocation_started(role: AgentRole, agent: String, model: Option<String>) -> Self {
         Self::Agent(AgentEvent::InvocationStarted { role, agent, model })
     }
 
-    /// Create an AgentInvocationSucceeded event.
-    pub fn agent_invocation_succeeded(role: AgentRole, agent: String) -> Self {
+    /// Create an `AgentInvocationSucceeded` event.
+    #[must_use] 
+    pub const fn agent_invocation_succeeded(role: AgentRole, agent: String) -> Self {
         Self::Agent(AgentEvent::InvocationSucceeded { role, agent })
     }
 
-    /// Create an AgentInvocationFailed event.
-    pub fn agent_invocation_failed(
+    /// Create an `AgentInvocationFailed` event.
+    #[must_use] 
+    pub const fn agent_invocation_failed(
         role: AgentRole,
         agent: String,
         exit_code: i32,
@@ -29,8 +32,9 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentFallbackTriggered event.
-    pub fn agent_fallback_triggered(role: AgentRole, from_agent: String, to_agent: String) -> Self {
+    /// Create an `AgentFallbackTriggered` event.
+    #[must_use] 
+    pub const fn agent_fallback_triggered(role: AgentRole, from_agent: String, to_agent: String) -> Self {
         Self::Agent(AgentEvent::FallbackTriggered {
             role,
             from_agent,
@@ -38,8 +42,9 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentModelFallbackTriggered event.
-    pub fn agent_model_fallback_triggered(
+    /// Create an `AgentModelFallbackTriggered` event.
+    #[must_use] 
+    pub const fn agent_model_fallback_triggered(
         role: AgentRole,
         agent: String,
         from_model: String,
@@ -53,18 +58,21 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentRetryCycleStarted event.
-    pub fn agent_retry_cycle_started(role: AgentRole, cycle: u32) -> Self {
+    /// Create an `AgentRetryCycleStarted` event.
+    #[must_use] 
+    pub const fn agent_retry_cycle_started(role: AgentRole, cycle: u32) -> Self {
         Self::Agent(AgentEvent::RetryCycleStarted { role, cycle })
     }
 
-    /// Create an AgentChainExhausted event.
-    pub fn agent_chain_exhausted(role: AgentRole) -> Self {
+    /// Create an `AgentChainExhausted` event.
+    #[must_use] 
+    pub const fn agent_chain_exhausted(role: AgentRole) -> Self {
         Self::Agent(AgentEvent::ChainExhausted { role })
     }
 
-    /// Create an AgentChainInitialized event.
-    pub fn agent_chain_initialized(
+    /// Create an `AgentChainInitialized` event.
+    #[must_use] 
+    pub const fn agent_chain_initialized(
         role: AgentRole,
         agents: Vec<String>,
         max_cycles: u32,
@@ -82,8 +90,9 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentRateLimited event.
-    pub fn agent_rate_limited(
+    /// Create an `AgentRateLimited` event.
+    #[must_use] 
+    pub const fn agent_rate_limited(
         role: AgentRole,
         agent: String,
         prompt_context: Option<String>,
@@ -95,18 +104,21 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentAuthFailed event.
-    pub fn agent_auth_failed(role: AgentRole, agent: String) -> Self {
+    /// Create an `AgentAuthFailed` event.
+    #[must_use] 
+    pub const fn agent_auth_failed(role: AgentRole, agent: String) -> Self {
         Self::Agent(AgentEvent::AuthFailed { role, agent })
     }
 
-    /// Create an AgentTimedOut event.
-    pub fn agent_timed_out(role: AgentRole, agent: String) -> Self {
+    /// Create an `AgentTimedOut` event.
+    #[must_use] 
+    pub const fn agent_timed_out(role: AgentRole, agent: String) -> Self {
         Self::Agent(AgentEvent::TimedOut { role, agent })
     }
 
-    /// Create an AgentSessionEstablished event.
-    pub fn agent_session_established(role: AgentRole, agent: String, session_id: String) -> Self {
+    /// Create an `AgentSessionEstablished` event.
+    #[must_use] 
+    pub const fn agent_session_established(role: AgentRole, agent: String, session_id: String) -> Self {
         Self::Agent(AgentEvent::SessionEstablished {
             role,
             agent,
@@ -114,8 +126,9 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentXsdValidationFailed event.
-    pub fn agent_xsd_validation_failed(
+    /// Create an `AgentXsdValidationFailed` event.
+    #[must_use] 
+    pub const fn agent_xsd_validation_failed(
         role: AgentRole,
         artifact: crate::reducer::state::ArtifactType,
         error: String,
@@ -129,8 +142,9 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentTemplateVariablesInvalid event.
-    pub fn agent_template_variables_invalid(
+    /// Create an `AgentTemplateVariablesInvalid` event.
+    #[must_use] 
+    pub const fn agent_template_variables_invalid(
         role: AgentRole,
         template_name: String,
         missing_variables: Vec<String>,

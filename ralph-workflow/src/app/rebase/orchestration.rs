@@ -457,8 +457,7 @@ fn read_repo_head_or_unknown(workspace: &dyn Workspace) -> String {
             .head()
             .ok()
             .and_then(|head| head.peel_to_commit().ok())
-            .map(|commit| commit.id().to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
+            .map_or_else(|| "unknown".to_string(), |commit| commit.id().to_string()),
         Err(_) => "unknown".to_string(),
     }
 }

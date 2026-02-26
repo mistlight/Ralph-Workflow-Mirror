@@ -3,7 +3,7 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for development results.
 //!
-//! Uses quick_xml for robust XML parsing with proper whitespace handling.
+//! Uses `quick_xml` for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::xml_helpers::{
     create_reader, duplicate_element_error, format_content_preview, malformed_xml_error,
@@ -15,10 +15,10 @@ use quick_xml::events::Event;
 use std::borrow::Cow;
 
 /// Example of a valid development result XML for error messages.
-const EXAMPLE_DEVELOPMENT_RESULT_XML: &str = r#"<ralph-development-result>
+const EXAMPLE_DEVELOPMENT_RESULT_XML: &str = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented the feature with tests</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
 /// Valid status values for development results.
 const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
@@ -26,7 +26,7 @@ const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
 /// Validate development result XML content against the XSD schema.
 ///
 /// This function validates that the XML content conforms to the expected
-/// development result format defined in development_result.xsd:
+/// development result format defined in `development_result.xsd`:
 ///
 /// ```xml
 /// <ralph-development-result>
@@ -45,6 +45,10 @@ const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
 ///
 /// * `Ok(DevelopmentResultElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_development_result_xml(
     xml_content: &str,
 ) -> Result<DevelopmentResultElements, XsdValidationError> {
@@ -69,7 +73,7 @@ pub fn validate_development_result_xml(
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-development-result".to_string(),
                     expected: "<ralph-development-result> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-development-result> as the root element.".to_string(),
                     example: Some(EXAMPLE_DEVELOPMENT_RESULT_XML.into()),
                 });

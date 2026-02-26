@@ -29,6 +29,7 @@ use std::path::Path;
 /// let prefix = Path::new(".agent/logs/planning_1");
 /// assert_eq!(extract_agent_name_from_logfile(log_file, prefix), Some("ccs-glm".to_string()));
 /// ```
+#[must_use]
 pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Option<String> {
     let filename = log_file.file_name()?.to_str()?;
     let prefix_filename = log_prefix.file_name()?.to_str()?;

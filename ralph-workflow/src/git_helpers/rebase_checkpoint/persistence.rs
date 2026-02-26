@@ -115,6 +115,7 @@ pub fn clear_rebase_checkpoint() -> io::Result<()> {
 /// Check if a rebase checkpoint exists.
 ///
 /// Returns `true` if a checkpoint file exists, `false` otherwise.
+#[must_use]
 pub fn rebase_checkpoint_exists() -> bool {
     Path::new(&rebase_checkpoint_path()).exists()
 }
@@ -161,8 +162,7 @@ fn validate_checkpoint_impl(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
-                    "Resolved file '{}' not found in conflicted files list",
-                    resolved
+                    "Resolved file '{resolved}' not found in conflicted files list"
                 ),
             ));
         }
@@ -238,7 +238,7 @@ fn restore_from_backup() -> io::Result<Option<RebaseCheckpoint>> {
 ///
 /// This is the architecture-conformant version that uses the Workspace trait
 /// instead of direct filesystem access, allowing for proper testing with
-/// MemoryWorkspace.
+/// `MemoryWorkspace`.
 ///
 /// Writes the checkpoint atomically by writing to a temp file first,
 /// then renaming to the final path.
@@ -301,7 +301,7 @@ pub fn save_rebase_checkpoint_with_workspace(
 ///
 /// This is the architecture-conformant version that uses the Workspace trait
 /// instead of direct filesystem access, allowing for proper testing with
-/// MemoryWorkspace.
+/// `MemoryWorkspace`.
 ///
 /// # Arguments
 ///
@@ -312,6 +312,10 @@ pub fn save_rebase_checkpoint_with_workspace(
 /// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
 /// `Ok(None)` if no checkpoint file exists, or an error if the file
 /// exists but cannot be parsed and no valid backup exists.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_rebase_checkpoint_with_workspace(
     workspace: &dyn Workspace,
 ) -> io::Result<Option<RebaseCheckpoint>> {
@@ -344,7 +348,7 @@ pub fn load_rebase_checkpoint_with_workspace(
 ///
 /// This is the architecture-conformant version that uses the Workspace trait
 /// instead of direct filesystem access, allowing for proper testing with
-/// MemoryWorkspace.
+/// `MemoryWorkspace`.
 ///
 /// # Arguments
 ///

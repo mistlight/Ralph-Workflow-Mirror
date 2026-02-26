@@ -5,16 +5,16 @@
 //!
 //! ## Planning Phase Flow
 //!
-//! 1. **InitializeAgentChain** - Set up the agent chain for planning
-//! 2. **PreparePlanningPrompt** - Generate the planning prompt
-//! 3. **MaterializePlanningInputs** - Prepare inputs for the planning agent
-//! 4. **CleanupPlanningXml** - Clean any existing XML from previous attempts
-//! 5. **InvokePlanningAgent** - Execute the planning agent
-//! 6. **ExtractPlanningXml** - Extract XML from agent output
-//! 7. **ValidatePlanningXml** - Validate XML against XSD schema
-//! 8. **WritePlanningMarkdown** - Convert XML to markdown for reference
-//! 9. **ArchivePlanningXml** - Archive the XML for audit trail
-//! 10. **ApplyPlanningOutcome** - Apply the plan to state and transition to Development
+//! 1. **`InitializeAgentChain`** - Set up the agent chain for planning
+//! 2. **`PreparePlanningPrompt`** - Generate the planning prompt
+//! 3. **`MaterializePlanningInputs`** - Prepare inputs for the planning agent
+//! 4. **`CleanupPlanningXml`** - Clean any existing XML from previous attempts
+//! 5. **`InvokePlanningAgent`** - Execute the planning agent
+//! 6. **`ExtractPlanningXml`** - Extract XML from agent output
+//! 7. **`ValidatePlanningXml`** - Validate XML against XSD schema
+//! 8. **`WritePlanningMarkdown`** - Convert XML to markdown for reference
+//! 9. **`ArchivePlanningXml`** - Archive the XML for audit trail
+//! 10. **`ApplyPlanningOutcome`** - Apply the plan to state and transition to Development
 //!
 //! ## Mock Behavior
 //!
@@ -38,7 +38,7 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for each planning effect without
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_planning_effect(
-        &mut self,
+        &self,
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
         match effect {

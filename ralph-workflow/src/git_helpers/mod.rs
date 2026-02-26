@@ -20,8 +20,9 @@
 
 use std::io;
 
-/// Convert git2 errors to std::io errors for consistent error handling.
+/// Convert git2 errors to `std::io` errors for consistent error handling.
 #[cfg(any(test, feature = "test-utils"))]
+#[must_use]
 pub fn git2_to_io_error(err: &git2::Error) -> io::Error {
     git2_to_io_error_impl(err)
 }

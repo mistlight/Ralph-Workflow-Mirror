@@ -59,7 +59,7 @@ fn test_prepare_fix_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         cloud_config: &cloud_config,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             same_agent_retry_count: 1,
             same_agent_retry_reason: Some(SameAgentRetryReason::Other),

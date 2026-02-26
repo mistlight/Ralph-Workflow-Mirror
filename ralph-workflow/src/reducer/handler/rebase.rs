@@ -6,7 +6,7 @@ use anyhow::Result;
 
 impl MainEffectHandler {
     pub(super) fn run_rebase(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         phase: RebasePhase,
         target_branch: String,
@@ -33,25 +33,30 @@ impl MainEffectHandler {
             Ok(_) => {
                 let conflicted_files = get_conflicted_files().unwrap_or_default();
 
-                if !conflicted_files.is_empty() {
-                    let files = conflicted_files.into_iter().map(|s| s.into()).collect();
-                    Ok(EffectResult::event(
-                        PipelineEvent::rebase_conflict_detected(files),
-                    ))
-                } else {
+                if conflicted_files.is_empty() {
                     let new_head = match git2::Repository::open(ctx.repo_root) {
                         Ok(repo) => repo
                             .head()
                             .ok()
                             .and_then(|head| head.peel_to_commit().ok())
-                            .map(|commit| commit.id().to_string())
-                            .unwrap_or_else(|| "unknown".to_string()),
+                            .map_or_else(
+                                || "unknown".to_string(),
+                                |commit| commit.id().to_string(),
+                            ),
                         Err(_) => "unknown".to_string(),
                     };
 
                     Ok(EffectResult::event(PipelineEvent::rebase_succeeded(
                         phase, new_head,
                     )))
+                } else {
+                    let files = conflicted_files
+                        .into_iter()
+                        .map(std::convert::Into::into)
+                        .collect();
+                    Ok(EffectResult::event(
+                        PipelineEvent::rebase_conflict_detected(files),
+                    ))
                 }
             }
             Err(e) => Ok(EffectResult::event(PipelineEvent::rebase_failed(
@@ -62,19 +67,19 @@ impl MainEffectHandler {
     }
 
     pub(super) fn resolve_rebase_conflicts(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         strategy: ConflictStrategy,
     ) -> Result<EffectResult> {
         use crate::git_helpers::{abort_rebase, continue_rebase, get_conflicted_files};
 
         match strategy {
             ConflictStrategy::Continue => match continue_rebase(ctx.executor) {
-                Ok(_) => {
+                Ok(()) => {
                     let files = get_conflicted_files()
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|s| s.into())
+                        .map(std::convert::Into::into)
                         .collect();
 
                     Ok(EffectResult::event(
@@ -87,14 +92,13 @@ impl MainEffectHandler {
                 ))),
             },
             ConflictStrategy::Abort => match abort_rebase(ctx.executor) {
-                Ok(_) => {
+                Ok(()) => {
                     let restored_to = match git2::Repository::open(ctx.repo_root) {
                         Ok(repo) => repo
                             .head()
                             .ok()
                             .and_then(|head| head.peel_to_commit().ok())
-                            .map(|commit| commit.id().to_string())
-                            .unwrap_or_else(|| "HEAD".to_string()),
+                            .map_or_else(|| "HEAD".to_string(), |commit| commit.id().to_string()),
                         Err(_) => "HEAD".to_string(),
                     };
 

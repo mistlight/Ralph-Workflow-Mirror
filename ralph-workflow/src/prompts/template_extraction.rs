@@ -9,6 +9,7 @@ use super::template_types::{TemplateMetadata, VariableInfo};
 ///
 /// Returns a list of all `{{VARIABLE}}` references found in the template,
 /// including their line numbers and default values if present.
+#[must_use]
 pub fn extract_variables(content: &str) -> Vec<VariableInfo> {
     let mut variables = Vec::new();
     let bytes = content.as_bytes();
@@ -106,6 +107,7 @@ pub fn extract_variables(content: &str) -> Vec<VariableInfo> {
 /// Extract all partial references from template content.
 ///
 /// Returns a list of all `{{> partial}}` references found in the template.
+#[must_use]
 pub fn extract_partials(content: &str) -> Vec<String> {
     let mut partials = Vec::new();
     let bytes = content.as_bytes();
@@ -166,6 +168,7 @@ pub fn extract_partials(content: &str) -> Vec<String> {
 /// {# Version: 1.0 #}
 /// {# VARIABLES: VAR1, VAR2 #}
 /// ```
+#[must_use]
 pub fn extract_metadata(content: &str) -> TemplateMetadata {
     let mut version = None;
     let mut purpose = None;

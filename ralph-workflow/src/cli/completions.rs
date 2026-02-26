@@ -17,6 +17,7 @@ use clap::CommandFactory;
 /// # Returns
 ///
 /// Returns `true` if the flag was handled (program should exit after).
+#[must_use]
 pub fn handle_generate_completion(shell: Shell) -> bool {
     let mut stdout = std::io::stdout();
     let shell_name = shell.name();

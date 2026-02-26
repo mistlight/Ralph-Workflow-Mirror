@@ -104,7 +104,7 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
                 );
                 ctx.last_rendered_content
                     .borrow_mut()
-                    .insert(key, sanitized.clone());
+                    .insert(key, sanitized);
                 rendered
             } else {
                 // Subsequent delta: emit ONLY new suffix
@@ -243,7 +243,7 @@ pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>
                 );
                 ctx.last_rendered_content
                     .borrow_mut()
-                    .insert(key, sanitized.clone());
+                    .insert(key, sanitized);
                 rendered
             } else {
                 // Subsequent delta: emit ONLY new suffix
