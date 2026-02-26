@@ -136,14 +136,13 @@ pub(super) fn run_with_agent_spawn(
     let monitor_should_stop_clone = Arc::clone(&monitor_should_stop);
     let activity_timestamp_clone = activity_timestamp.clone();
 
-    // Cancel stdout parsing as soon as idle-timeout enforcement begins, or when the
-    // user presses Ctrl+C. This allows the main thread to regain control promptly
-    // even if stdout never reaches EOF (e.g., inherited FDs kept open by descendant
-    // processes, or the agent is mid-response when interrupted).
+    // Cancel stdout parsing when the user presses Ctrl+C. Idle-timeout-driven
+    // cancellation is set by the monitor only after timeout enforcement actually
+    // begins (MonitorResult::TimedOut), so file-activity gating stays consistent
+    // between timeout decisions and stdout draining behavior.
     {
         let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
         let should_stop_for_thread = Arc::clone(&monitor_should_stop);
-        let activity_for_thread = activity_timestamp.clone();
         std::thread::spawn(move || {
             use std::sync::atomic::Ordering;
             let poll = std::time::Duration::from_millis(50);
@@ -155,13 +154,6 @@ pub(super) fn run_with_agent_spawn(
                 // loop returns and the main thread can check the interrupt flag.
                 // Do NOT consume the flag here — the event loop needs it.
                 if crate::interrupt::is_user_interrupt_requested() {
-                    stdout_cancel_for_thread.store(true, Ordering::Release);
-                    return;
-                }
-                if crate::pipeline::idle_timeout::is_idle_timeout_exceeded(
-                    &activity_for_thread,
-                    IDLE_TIMEOUT_SECS,
-                ) {
                     stdout_cancel_for_thread.store(true, Ordering::Release);
                     return;
                 }

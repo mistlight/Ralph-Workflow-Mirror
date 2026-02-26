@@ -303,7 +303,11 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                     );
                 }
                 Err(e) => {
-                    eprintln!("Warning: file activity check failed: {}", e);
+                    eprintln!(
+                        "Warning: file activity check failed (treating as indeterminate, skipping timeout enforcement this cycle): {}",
+                        e
+                    );
+                    continue;
                 }
             }
         }

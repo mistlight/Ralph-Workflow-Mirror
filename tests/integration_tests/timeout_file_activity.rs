@@ -206,14 +206,6 @@ fn no_output_and_no_ai_files_times_out() {
     });
 }
 
-fn touch_activity(timestamp: &ralph_workflow::pipeline::idle_timeout::SharedActivityTimestamp) {
-    use std::sync::atomic::Ordering;
-    let now = std::time::Instant::now()
-        .duration_since(std::time::Instant::now() - std::time::Duration::from_secs(1000000))
-        .as_secs();
-    timestamp.store(now, Ordering::Release);
-}
-
 #[test]
 fn continuous_file_updates_prevent_timeout_over_extended_period() {
     with_default_timeout(|| {
@@ -309,7 +301,7 @@ fn mixed_output_and_file_activity_prevents_timeout() {
                 thread::sleep(Duration::from_millis(200));
                 if i % 2 == 0 {
                     // Even iterations: touch output timestamp
-                    touch_activity(&timestamp_for_updates);
+                    ralph_workflow::pipeline::idle_timeout::touch_activity(&timestamp_for_updates);
                 } else {
                     // Odd iterations: update file
                     workspace_for_updates

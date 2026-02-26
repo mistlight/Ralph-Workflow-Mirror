@@ -260,6 +260,67 @@ fn monitor_file_activity_with_old_files_times_out() {
 }
 
 #[test]
+fn monitor_does_not_timeout_on_file_activity_check_error() {
+    // Setup: .agent exists as a file (not directory), causing read_dir(.agent) to error.
+    // The monitor should treat this as indeterminate activity and skip timeout kill for
+    // that cycle, rather than failing closed.
+    let timestamp = new_activity_timestamp();
+    timestamp.store(0, Ordering::Release);
+
+    let should_stop = Arc::new(AtomicBool::new(false));
+    let should_stop_clone = Arc::clone(&should_stop);
+
+    // .agent path intentionally created as a FILE so read_dir(".agent") errors.
+    let workspace = MemoryWorkspace::new_test().with_file(".agent", "not a directory");
+    let workspace_arc: Arc<dyn crate::workspace::Workspace> = Arc::new(workspace);
+
+    let file_activity_config = Some(FileActivityConfig {
+        tracker: new_file_activity_tracker(),
+        workspace: Arc::clone(&workspace_arc),
+    });
+
+    let (mock_child, _controller) = MockAgentChild::new_running(0);
+    let child = Arc::new(Mutex::new(Box::new(mock_child) as Box<dyn AgentChild>));
+
+    let executor_impl = Arc::new(MockProcessExecutor::new());
+    let executor_dyn: Arc<dyn crate::executor::ProcessExecutor> = executor_impl.clone();
+
+    let config = MonitorConfig {
+        timeout_secs: 0,
+        check_interval: Duration::from_millis(10),
+        kill_config: DEFAULT_KILL_CONFIG,
+    };
+
+    let handle = thread::spawn(move || {
+        monitor_idle_timeout_with_interval_and_kill_config(
+            timestamp,
+            file_activity_config,
+            child,
+            should_stop_clone,
+            executor_dyn,
+            config,
+        )
+    });
+
+    // Give the monitor time to attempt at least one idle check cycle.
+    thread::sleep(Duration::from_millis(100));
+    should_stop.store(true, Ordering::Release);
+
+    let result = handle.join().expect("Monitor thread panicked");
+
+    assert_eq!(
+        result,
+        MonitorResult::ProcessCompleted,
+        "monitor should not force timeout when file activity check errors"
+    );
+
+    assert!(
+        executor_impl.execute_calls_for("kill").is_empty(),
+        "monitor should not send kill signals when file activity check errors"
+    );
+}
+
+#[test]
 fn monitor_without_file_activity_config_works() {
     // Ensure backward compatibility: monitor works without file activity config
     let timestamp = new_activity_timestamp();
