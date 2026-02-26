@@ -42,9 +42,11 @@ pub fn format_xml_for_display(xml_content: &str) -> String {
     }
 
     // Try to parse and pretty-print the XML
-    match pretty_print_xml(xml_content) {
-        Ok(pretty) if !pretty.is_empty() => pretty,
-        _ => xml_content.to_string(),
+    let pretty = pretty_print_xml(xml_content);
+    if pretty.is_empty() {
+        xml_content.to_string()
+    } else {
+        pretty
     }
 }
 
@@ -52,7 +54,7 @@ pub fn format_xml_for_display(xml_content: &str) -> String {
 ///
 /// This is a simple XML pretty-printer that adds indentation
 /// based on tag nesting level.
-fn pretty_print_xml(xml_content: &str) -> Result<String, String> {
+fn pretty_print_xml(xml_content: &str) -> String {
     let mut result = String::new();
     let mut indent: usize = 0;
     let mut in_tag = false;
@@ -179,7 +181,7 @@ fn pretty_print_xml(xml_content: &str) -> Result<String, String> {
         i += 1;
     }
 
-    Ok(result)
+    result
 }
 
 #[cfg(test)]

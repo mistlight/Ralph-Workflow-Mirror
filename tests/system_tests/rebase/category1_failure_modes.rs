@@ -115,16 +115,10 @@ fn rebase_with_dirty_working_tree_fails() {
                             || err.description().contains("changes")
                     );
                 }
-                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) => {
-                    // Git may have used autostash, which is acceptable
+                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) | Ok(RebaseResult::Conflicts(_)) | Err(_) => {
+                    // All outcomes acceptable - git may autostash, conflict, or error
                 }
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // Conflicts are acceptable if git tried to proceed
                 }
-                Err(_) => {
-                    // Error result is also acceptable
-                }
-            }
         });
     });
 }
@@ -174,16 +168,10 @@ fn rebase_with_staged_changes_fails() {
                             || err.description().contains("changes")
                     );
                 }
-                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) => {
-                    // Git may have used autostash, which is acceptable
+                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) | Ok(RebaseResult::Conflicts(_)) | Err(_) => {
+                    // All outcomes acceptable - git may autostash, conflict, or error
                 }
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // Conflicts are acceptable if git tried to proceed
                 }
-                Err(_) => {
-                    // Error result is also acceptable
-                }
-            }
         });
     });
 }
@@ -242,17 +230,8 @@ fn rebase_detects_merge_in_progress() {
             // The system should detect this and handle appropriately
             // Git may actually proceed since we're rebasing onto the current branch
             match result {
-                Err(_) => {
-                    // Error is expected - can't rebase during merge
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake merge state
-                }
                 _ => {
-                    // Other results are also acceptable
+                    // All outcomes acceptable - can't reliably rebase during merge
                 }
             }
         });

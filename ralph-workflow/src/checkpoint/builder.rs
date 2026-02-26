@@ -190,7 +190,7 @@ impl CheckpointBuilder {
     /// Capture CLI arguments from a Config.
     #[must_use]
     pub fn capture_cli_args(mut self, config: &Config) -> Self {
-        let review_depth_str = review_depth_to_string(config.review_depth);
+        let review_depth_str = Some(review_depth_to_string(config.review_depth));
         let snapshot = crate::checkpoint::state::CliArgsSnapshotBuilder::new(
             config.developer_iters,
             config.reviewer_reviews,
@@ -472,12 +472,12 @@ impl CheckpointBuilder {
 }
 
 /// Convert `ReviewDepth` to a string representation.
-fn review_depth_to_string(depth: ReviewDepth) -> Option<String> {
+fn review_depth_to_string(depth: ReviewDepth) -> String {
     match depth {
-        ReviewDepth::Standard => Some("standard".to_string()),
-        ReviewDepth::Comprehensive => Some("comprehensive".to_string()),
-        ReviewDepth::Security => Some("security".to_string()),
-        ReviewDepth::Incremental => Some("incremental".to_string()),
+        ReviewDepth::Standard => "standard".to_string(),
+        ReviewDepth::Comprehensive => "comprehensive".to_string(),
+        ReviewDepth::Security => "security".to_string(),
+        ReviewDepth::Incremental => "incremental".to_string(),
     }
 }
 
