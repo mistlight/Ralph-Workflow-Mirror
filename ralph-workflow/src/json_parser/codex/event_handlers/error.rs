@@ -1,6 +1,6 @@
 /// Handle `Error` event.
 pub fn handle_error(
-    ctx: &EventHandlerContext,
+    ctx: &EventHandlerContext<'_>,
     message: Option<String>,
     error: Option<String>,
 ) -> String {

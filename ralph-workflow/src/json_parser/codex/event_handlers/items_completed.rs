@@ -59,7 +59,7 @@
 /// 3. **Layer 3 (Flush):** This handler emits accumulated content ONCE at completion
 ///
 /// See file-level documentation for details.
-pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
+pub fn handle_agent_message_completed(ctx: &EventHandlerContext<'_>, text: Option<&String>) -> String {
     let (is_duplicate, was_streaming, metrics, streamed_agent_msg) = {
         let session = ctx.streaming_session.borrow();
         let is_duplicate = session
@@ -189,7 +189,7 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 ///
 /// ## Regression Test
 /// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
-pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
+pub fn handle_reasoning_completed(ctx: &EventHandlerContext<'_>, text: Option<&String>) -> String {
     let full_reasoning = ctx
         .reasoning_accumulator
         .borrow()
@@ -341,7 +341,7 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
 }
 
 /// Handle `ItemCompleted` event for `command_execution` type.
-pub fn handle_command_execution_completed(ctx: &EventHandlerContext) -> String {
+pub fn handle_command_execution_completed(ctx: &EventHandlerContext<'_>) -> String {
     match ctx.terminal_mode {
         TerminalMode::Full | TerminalMode::Basic => format!(
             "{}[{}]{} {}{} Command done{}\n",
@@ -357,7 +357,7 @@ pub fn handle_command_execution_completed(ctx: &EventHandlerContext) -> String {
 }
 
 /// Handle `ItemCompleted` event for `file_change`/`file_write` types.
-pub fn handle_file_write_completed(ctx: &EventHandlerContext, path: Option<String>) -> String {
+pub fn handle_file_write_completed(ctx: &EventHandlerContext<'_>, path: Option<String>) -> String {
     let path = path.unwrap_or_else(|| "unknown".to_string());
     match ctx.terminal_mode {
         TerminalMode::Full | TerminalMode::Basic => format!(
@@ -374,7 +374,7 @@ pub fn handle_file_write_completed(ctx: &EventHandlerContext, path: Option<Strin
 }
 
 /// Handle `ItemCompleted` event for `file_read` type.
-pub fn handle_file_read_completed(ctx: &EventHandlerContext, path: Option<String>) -> String {
+pub fn handle_file_read_completed(ctx: &EventHandlerContext<'_>, path: Option<String>) -> String {
     if ctx.verbosity.is_verbose() {
         let path = path.unwrap_or_else(|| "unknown".to_string());
         format!(
@@ -393,7 +393,7 @@ pub fn handle_file_read_completed(ctx: &EventHandlerContext, path: Option<String
 }
 
 /// Handle `ItemCompleted` event for `mcp_tool_call`/`mcp` types.
-pub fn handle_mcp_tool_completed(ctx: &EventHandlerContext, tool_name: Option<String>) -> String {
+pub fn handle_mcp_tool_completed(ctx: &EventHandlerContext<'_>, tool_name: Option<String>) -> String {
     let tool_name = tool_name.unwrap_or_else(|| "tool".to_string());
     match ctx.terminal_mode {
         TerminalMode::Full | TerminalMode::Basic => format!(
@@ -411,7 +411,7 @@ pub fn handle_mcp_tool_completed(ctx: &EventHandlerContext, tool_name: Option<St
 }
 
 /// Handle `ItemCompleted` event for `web_search` type.
-pub fn handle_web_search_completed(ctx: &EventHandlerContext) -> String {
+pub fn handle_web_search_completed(ctx: &EventHandlerContext<'_>) -> String {
     match ctx.terminal_mode {
         TerminalMode::Full | TerminalMode::Basic => format!(
             "{}[{}]{} {}{} Search completed{}\n",
@@ -427,7 +427,7 @@ pub fn handle_web_search_completed(ctx: &EventHandlerContext) -> String {
 }
 
 /// Handle `ItemCompleted` event for `plan_update` type.
-pub fn handle_plan_update_completed(ctx: &EventHandlerContext, plan: Option<&String>) -> String {
+pub fn handle_plan_update_completed(ctx: &EventHandlerContext<'_>, plan: Option<&String>) -> String {
     if ctx.verbosity.is_verbose() {
         let limit = ctx.verbosity.truncate_limit("text");
         plan.map_or_else(

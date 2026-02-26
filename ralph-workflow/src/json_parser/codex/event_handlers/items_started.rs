@@ -68,7 +68,7 @@
 /// by the parser layer to prevent spam in logs and CI output.
 ///
 /// See file-level documentation for details.
-pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
+pub fn handle_agent_message_started(ctx: &EventHandlerContext<'_>, text: Option<&String>) -> String {
     if let Some(text) = text {
         let mut session = ctx.streaming_session.borrow_mut();
         session.on_text_delta_key("agent_msg", text);
@@ -184,7 +184,7 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
 ///
 /// ## Regression Test
 /// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
-pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
+pub fn handle_reasoning_started(ctx: &EventHandlerContext<'_>, text: Option<&String>) -> String {
     if let Some(text) = text {
         // Codex sends FULL accumulated content in each item.started event (snapshot-style),
         // not incremental deltas like Claude. We need to compute the incremental delta here.
@@ -298,7 +298,7 @@ pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>
 
 /// Handle `ItemStarted` event for `command_execution` type.
 pub fn handle_command_execution_started(
-    ctx: &EventHandlerContext,
+    ctx: &EventHandlerContext<'_>,
     command: Option<String>,
 ) -> String {
     let cmd = command.unwrap_or_default();
@@ -319,7 +319,7 @@ pub fn handle_command_execution_started(
 
 /// Handle `ItemStarted` event for `file_read`/`file_write` types.
 pub fn handle_file_io_started(
-    ctx: &EventHandlerContext,
+    ctx: &EventHandlerContext<'_>,
     path: Option<String>,
     action: &str,
 ) -> String {
@@ -338,7 +338,7 @@ pub fn handle_file_io_started(
 
 /// Handle `ItemStarted` event for `mcp_tool_call`/`mcp` types.
 pub fn handle_mcp_tool_started(
-    ctx: &EventHandlerContext,
+    ctx: &EventHandlerContext<'_>,
     tool_name: Option<&String>,
     arguments: Option<&serde_json::Value>,
 ) -> String {
@@ -391,7 +391,7 @@ pub fn handle_mcp_tool_started(
 }
 
 /// Handle `ItemStarted` event for `web_search` type.
-pub fn handle_web_search_started(ctx: &EventHandlerContext, query: Option<&String>) -> String {
+pub fn handle_web_search_started(ctx: &EventHandlerContext<'_>, query: Option<&String>) -> String {
     let default = String::new();
     let query = query.unwrap_or(&default);
     let limit = ctx.verbosity.truncate_limit("command");
@@ -410,7 +410,7 @@ pub fn handle_web_search_started(ctx: &EventHandlerContext, query: Option<&Strin
 }
 
 /// Handle `ItemStarted` event for `plan_update` type.
-pub fn handle_plan_update_started(ctx: &EventHandlerContext) -> String {
+pub fn handle_plan_update_started(ctx: &EventHandlerContext<'_>) -> String {
     format!(
         "{}[{}]{} {}Updating plan...{}\n",
         ctx.colors.dim(),
@@ -423,7 +423,7 @@ pub fn handle_plan_update_started(ctx: &EventHandlerContext) -> String {
 
 /// Handle `ItemStarted` event for unknown/other types.
 pub fn handle_unknown_item_started(
-    ctx: &EventHandlerContext,
+    ctx: &EventHandlerContext<'_>,
     item_type: Option<String>,
     path: Option<String>,
 ) -> String {

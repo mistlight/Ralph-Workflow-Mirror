@@ -15,10 +15,10 @@ use quick_xml::events::Event;
 use std::borrow::Cow;
 
 /// Example of a valid development result XML for error messages.
-const EXAMPLE_DEVELOPMENT_RESULT_XML: &str = r#"<ralph-development-result>
+const EXAMPLE_DEVELOPMENT_RESULT_XML: &str = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented the feature with tests</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
 /// Valid status values for development results.
 const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];

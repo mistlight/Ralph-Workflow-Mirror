@@ -1212,3 +1212,151 @@ fn test_missing_max_dev_continuations_prevents_infinite_loop() {
         );
     });
 }
+
+/// Regression test for infinite continuation loop across agent fallback (wt-39 v2).
+///
+/// # Bug Description
+///
+/// When continuation budget is exhausted but agents remain available, the system
+/// switches to the next agent and stays in Development phase with reset continuation
+/// state (continuation_attempt=0). If status remains non-Complete, this creates an
+/// infinite loop pattern: attempt 1→2→exhaust→switch agent→restart→attempt 1→2→exhaust...
+///
+/// # Reproduction from Logs
+///
+/// The user's logs show:
+/// - attempt 1 (Partial) → attempt 2 (Failed) → cleanup → attempt 1 (Partial) → ...
+/// - All within iteration 0, never advancing to iteration 1
+/// - Agent chain has multiple agents, so exhaustion isn't detected
+///
+/// # Expected Behavior
+///
+/// After continuation budget exhaustion with non-Complete status, the system should:
+/// 1. Complete the current iteration (even with incomplete work)
+/// 2. Advance to the next iteration if dev_iters remain
+/// 3. Transition to AwaitingDevFix if both continuations AND iterations are exhausted
+///
+/// The system MUST NOT restart the continuation cycle with a fresh agent within the same iteration.
+#[test]
+fn test_continuation_budget_exhaustion_completes_iteration() {
+    with_default_timeout(|| {
+        // Set up state with default continuation limit (max_continue_count = 3)
+        // and multiple agents in the chain
+        use ralph_workflow::agents::fallback::AgentRole;
+        use ralph_workflow::reducer::state::AgentChainState;
+        let agent_chain = AgentChainState::initial().with_agents(
+            vec![
+                "agent1".to_string(),
+                "agent2".to_string(),
+                "agent3".to_string(),
+            ],
+            vec![vec![], vec![], vec![]],
+            AgentRole::Developer,
+        );
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state.agent_chain = agent_chain;
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Track cycle restarts to detect the infinite loop pattern
+        let mut cycle_count = 0;
+        const MAX_CYCLES: usize = 5;
+
+        for cycle in 0..MAX_CYCLES {
+            // Simulate attempt 0 (initial): Partial status
+            state.development_validated_outcome = Some(
+                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                    iteration: 0,
+                    status: DevelopmentStatus::Partial,
+                    summary: format!("Partial work cycle {} attempt 0", cycle),
+                    files_changed: None,
+                    next_steps: Some("Continue".to_string()),
+                },
+            );
+            state = reduce(
+                state,
+                PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+            );
+
+            // Should trigger continuation: attempt 0 → 1
+            assert_eq!(
+                state.continuation.continuation_attempt, 1,
+                "After attempt 0, should be at attempt 1"
+            );
+
+            // Simulate attempt 1: Partial status
+            state.development_validated_outcome = Some(
+                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                    iteration: 0,
+                    status: DevelopmentStatus::Partial,
+                    summary: format!("Partial work cycle {} attempt 1", cycle),
+                    files_changed: None,
+                    next_steps: Some("Continue".to_string()),
+                },
+            );
+            state = reduce(
+                state,
+                PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+            );
+
+            // Should trigger continuation: attempt 1 → 2
+            assert_eq!(
+                state.continuation.continuation_attempt, 2,
+                "After attempt 1, should be at attempt 2"
+            );
+
+            // Simulate attempt 2: Partial status (will exhaust budget)
+            state.development_validated_outcome = Some(
+                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                    iteration: 0,
+                    status: DevelopmentStatus::Partial,
+                    summary: format!("Partial work cycle {} attempt 2", cycle),
+                    files_changed: None,
+                    next_steps: Some("Continue".to_string()),
+                },
+            );
+            state = reduce(
+                state,
+                PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+            );
+
+            // After attempt 2, budget should be exhausted (attempt 2 + 1 = 3 >= max_continue_count 3)
+            // The system should either:
+            // (a) Complete iteration 0 and transition to CommitMessage (or another phase), OR
+            // (b) Transition to AwaitingDevFix if agents exhausted
+            //
+            // The system MUST NOT restart continuation at attempt 1 within iteration 0 in Development phase.
+
+            cycle_count += 1;
+
+            // If we changed phase away from Development, the fix is working - break out
+            if state.phase != ralph_workflow::reducer::event::PipelinePhase::Development {
+                break;
+            }
+
+            // If we're still in Development but iteration advanced, that's also acceptable
+            if state.iteration > 0 {
+                break;
+            }
+
+            // BUG: Still in Development phase, iteration 0, with reset continuation counter
+            if state.continuation.continuation_attempt == 0 && state.iteration == 0 {
+                panic!(
+                    "INFINITE LOOP BUG: After continuation budget exhaustion at cycle {}, \
+                     continuation_attempt reset to 0 but still in Development phase iteration 0. \
+                     Expected iteration to advance or phase to change. \
+                     This reproduces the log pattern: 1→2→cleanup→1→2→cleanup...",
+                    cycle_count
+                );
+            }
+        }
+
+        // Verify we either advanced iteration or changed phase (not stuck in iteration 0)
+        assert!(
+            state.iteration > 0
+                || state.phase != ralph_workflow::reducer::event::PipelinePhase::Development,
+            "After continuation budget exhaustion, should either advance iteration or change phase, \
+             not restart continuation cycle"
+        );
+    });
+}

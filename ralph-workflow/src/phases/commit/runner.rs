@@ -275,7 +275,7 @@ pub fn run_commit_attempt(
 pub fn generate_commit_message(
     diff: &str,
     registry: &AgentRegistry,
-    runtime: &mut PipelineRuntime,
+    runtime: &mut PipelineRuntime<'_>,
     commit_agent: &str,
     template_context: &TemplateContext,
     workspace: &dyn Workspace,
@@ -396,7 +396,7 @@ pub fn generate_commit_message(
 pub fn generate_commit_message_with_chain(
     diff: &str,
     registry: &AgentRegistry,
-    runtime: &mut PipelineRuntime,
+    runtime: &mut PipelineRuntime<'_>,
     agents: &[String],
     template_context: &TemplateContext,
     workspace: &dyn Workspace,

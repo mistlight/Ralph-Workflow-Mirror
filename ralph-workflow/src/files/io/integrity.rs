@@ -197,7 +197,7 @@ pub fn check_and_cleanup_xml_before_retry_with_workspace(
     logger: &crate::logger::Logger,
 ) -> io::Result<()> {
     match check_xml_file_writable_with_workspace(workspace, xml_path, false) {
-        Ok(true) | Ok(false) => Ok(()),
+        Ok(true | false) => Ok(()),
         Err(e) => {
             logger.warn(&format!(
                 "XML file {} error: {}. Attempting cleanup...",

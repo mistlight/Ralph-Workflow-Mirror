@@ -44,23 +44,27 @@ fn test_continuation_exhaustion_triggers_agent_fallback() {
             ),
         );
 
-        // Then: Pipeline should switch to fallback agent and stay in Development phase
+        // UPDATED (wt-39 fix): After continuation budget exhaustion, the system now completes
+        // the iteration and transitions to CommitMessage instead of staying in Development to
+        // try the fallback agent. This prevents the infinite loop bug where the system would
+        // cycle through all agents indefinitely within the same iteration.
+        //
+        // The new behavior: one continuation budget per iteration, complete the iteration
+        // after exhaustion regardless of remaining agents.
         assert_eq!(
-            new_state.agent_chain.current_agent_index, 1,
-            "Should switch to fallback agent"
+            new_state.agent_chain.current_agent_index, 0,
+            "Agent chain should be reset after iteration completion"
         );
         assert_eq!(
             new_state.phase,
-            ralph_workflow::reducer::event::PipelinePhase::Development,
-            "Should remain in Development phase to try fallback agent"
+            ralph_workflow::reducer::event::PipelinePhase::CommitMessage,
+            "Should complete iteration and transition to CommitMessage after budget exhaustion"
         );
 
-        // And: The orchestration should clean up continuation context before preparing context
-        let effect = determine_next_effect(&new_state);
-        assert!(
-            matches!(effect, Effect::CleanupContinuationContext),
-            "Should clean up continuation context before preparing for new agent; got {:?}",
-            effect
+        // And: The continuation state should be reset
+        assert_eq!(
+            new_state.continuation.continuation_attempt, 0,
+            "Continuation attempt should be reset after iteration completion"
         );
     });
 }
@@ -81,27 +85,14 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
         state.agent_chain = agent_chain;
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Development;
 
-        // When: Both agents exhaust their continuation budget
-        state = reduce(
-            state,
-            PipelineEvent::development_continuation_budget_exhausted(
-                0,
-                3,
-                DevelopmentStatus::Failed,
-            ),
-        );
-        assert_eq!(state.agent_chain.current_agent_index, 1); // agent-b
-
-        // Clean up context before next agent
-        state = reduce(
-            state,
-            PipelineEvent::development_continuation_context_cleaned(),
-        );
-
-        // When: Second budget exhaustion with Failed status
-        // At this point, agent chain wraps to agent-a with retry_cycle=1, making it exhausted.
-        // CRITICAL: With the non-terminating pipeline fix, budget exhaustion with Failed status
-        // AND exhausted agent chain transitions directly to AwaitingDevFix (not Development).
+        // UPDATED (wt-39 fix): After continuation budget exhaustion, the system now completes
+        // the iteration instead of trying more agents. This test originally verified that
+        // after trying all agents, the system would transition to AwaitingDevFix. With the
+        // fix, the FIRST budget exhaustion completes the iteration, so we never get to the
+        // "all agents exhausted" state within a single iteration.
+        //
+        // The new behavior: complete iteration after budget exhaustion, preventing infinite
+        // agent fallback cycles within the same iteration.
         state = reduce(
             state,
             PipelineEvent::development_continuation_budget_exhausted(
@@ -111,23 +102,23 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
             ),
         );
 
-        // Then: Should transition to AwaitingDevFix (new behavior)
+        // After budget exhaustion, iteration completes and transitions to CommitMessage
         assert_eq!(
             state.phase,
-            PipelinePhase::AwaitingDevFix,
-            "Should transition to AwaitingDevFix when all agents exhausted with Failed status"
+            PipelinePhase::CommitMessage,
+            "Should complete iteration and transition to CommitMessage after budget exhaustion"
         );
         assert_eq!(
-            state.previous_phase,
-            Some(PipelinePhase::Development),
-            "Should preserve previous phase"
+            state.agent_chain.current_agent_index, 0,
+            "Agent chain should be reset after iteration completion"
         );
 
-        // And: Orchestration should trigger dev-fix flow
+        // Orchestration should proceed with commit flow (not dev-fix in this scenario)
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::TriggerDevFixFlow { .. }),
-            "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
+            matches!(effect, Effect::CheckCommitDiff)
+                || matches!(effect, Effect::CleanupContinuationContext),
+            "Should proceed with commit flow after iteration completion; got {:?}",
             effect
         );
     });
@@ -371,13 +362,17 @@ fn test_budget_exhausted_with_completed_status_proceeds_to_commit() {
             ),
         );
 
-        // Then: Should stay in Development (agent fallback logic)
-        // Because Completed status means work is done, budget exhaustion shouldn't
-        // trigger failure path even if agents are exhausted
+        // UPDATED (wt-39 fix): After continuation budget exhaustion, the system now completes
+        // the iteration regardless of status. With Completed status, the iteration completes
+        // successfully and transitions to CommitMessage. This is consistent behavior: budget
+        // exhaustion always completes the iteration.
+        //
+        // Note: In practice, Completed status would trigger ContinuationSucceeded or
+        // IterationCompleted before reaching budget exhaustion, so this scenario is theoretical.
         assert_eq!(
             new_state.phase,
-            PipelinePhase::Development,
-            "Should stay in Development when budget exhausted with Completed status"
+            PipelinePhase::CommitMessage,
+            "Should complete iteration and transition to CommitMessage after budget exhaustion, even with Completed status"
         );
     });
 }

@@ -14,10 +14,10 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 use quick_xml::events::Event;
 
 /// Example of a valid fix result XML for error messages.
-const EXAMPLE_FIX_RESULT_XML: &str = r#"<ralph-fix-result>
+const EXAMPLE_FIX_RESULT_XML: &str = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>Fixed all 3 issues found during review</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
 /// Valid status values for fix results.
 const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_issues_found"];

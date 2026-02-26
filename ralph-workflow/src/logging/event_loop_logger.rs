@@ -116,7 +116,7 @@ impl EventLoopLogger {
     ///
     /// Callers who want visibility into logging failures should check the return value
     /// and log to the pipeline logger if desired.
-    pub fn log_effect(&mut self, params: LogEffectParams) -> Result<(), std::io::Error> {
+    pub fn log_effect(&mut self, params: LogEffectParams<'_>) -> Result<(), std::io::Error> {
         let ts = Utc::now().to_rfc3339();
 
         // Format extra events (if any)

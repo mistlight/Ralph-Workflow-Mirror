@@ -247,18 +247,21 @@ fn test_continuation_budget_exhausted_switches_to_next_agent() {
         state,
         PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Partial),
     );
+    // UPDATED: After fix for wt-39, continuation budget exhaustion now completes the iteration
+    // and transitions to CommitMessage (or next phase) rather than staying in Development.
+    // This prevents the infinite loop where the system would restart continuation with a new agent.
     assert_eq!(
         new_state.phase,
-        PipelinePhase::Development,
-        "Should stay in Development phase to try next agent"
+        PipelinePhase::CommitMessage,
+        "Should complete iteration and transition to CommitMessage after budget exhaustion"
     );
     assert_eq!(
-        new_state.agent_chain.current_agent_index, 1,
-        "Should switch to next agent when continuation budget exhausted"
+        new_state.agent_chain.current_agent_index, 0,
+        "Agent chain should be reset after iteration completion"
     );
     assert_eq!(
         new_state.continuation.continuation_attempt, 0,
-        "Should reset continuation attempt for new agent"
+        "Should reset continuation attempt after iteration completion"
     );
 }
 
@@ -309,8 +312,6 @@ fn test_continuation_budget_exhausted_preserves_iteration() {
 #[test]
 fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
     use crate::agents::AgentRole;
-    use crate::reducer::effect::Effect;
-    use crate::reducer::orchestration::determine_next_effect;
     use crate::reducer::state::{AgentChainState, DevelopmentStatus};
 
     let agent_chain = AgentChainState::initial()
@@ -328,51 +329,35 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
     state.prompt_permissions.locked = true;
     state.prompt_permissions.restore_needed = true;
 
-    // Exhaust continuation for agent-a
-    state = reduce(
-        state,
-        PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
-    );
-    assert_eq!(state.agent_chain.current_agent_index, 1); // Now on agent-b
-
-    // Clean up context before next agent
-    state = reduce(
-        state,
-        PipelineEvent::development_continuation_context_cleaned(),
-    );
-
-    // Exhaust continuation for agent-b (last agent) with Failed status
-    // CRITICAL: Since all agents are exhausted AND last status is Failed,
-    // the reducer now transitions directly to AwaitingDevFix instead of
-    // just switching agents. This ensures the pipeline NEVER exits early
-    // due to budget exhaustion - it always continues through dev-fix flow.
+    // UPDATED (wt-39 fix): After continuation budget exhaustion, the system now completes
+    // the iteration and transitions to CommitMessage rather than staying in Development
+    // to try more agents within the same iteration. This prevents the infinite loop where
+    // continuation would restart after cycling through all agents.
+    //
+    // The new behavior establishes a clear contract: one continuation budget per iteration.
+    // If work is incomplete after exhausting the budget, the iteration completes and either:
+    // 1. Advances to next iteration (where different agents can be tried), OR
+    // 2. Transitions to next pipeline phase
+    //
+    // This ensures bounded execution per iteration and prevents unbounded agent fallback cycles.
     state = reduce(
         state,
         PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
     );
 
-    // Should transition to AwaitingDevFix (new behavior for non-terminating pipeline)
+    // After budget exhaustion, iteration completes and transitions to CommitMessage
     assert_eq!(
         state.phase,
-        PipelinePhase::AwaitingDevFix,
-        "Should transition to AwaitingDevFix when all agents exhausted with Failed status"
+        PipelinePhase::CommitMessage,
+        "Should complete iteration and transition to CommitMessage after continuation budget exhaustion"
     );
     assert_eq!(
-        state.previous_phase,
-        Some(PipelinePhase::Development),
-        "Should preserve previous phase"
+        state.agent_chain.current_agent_index, 0,
+        "Agent chain should be reset to first agent after iteration completion"
     );
-    assert!(
-        !state.dev_fix_triggered,
-        "dev_fix_triggered should be false so TriggerDevFixFlow executes"
-    );
-
-    // Now orchestration should trigger dev-fix flow
-    let effect = determine_next_effect(&state);
-    assert!(
-        matches!(effect, Effect::TriggerDevFixFlow { .. }),
-        "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
-        effect
+    assert_eq!(
+        state.continuation.continuation_attempt, 0,
+        "Continuation attempt should be reset after iteration completion"
     );
 }
 

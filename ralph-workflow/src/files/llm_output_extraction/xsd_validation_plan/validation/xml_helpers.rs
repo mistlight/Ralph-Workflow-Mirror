@@ -1,7 +1,7 @@
 // XML parsing helpers (get_attributes, read_text_until_end, skip_to_end, read_inner_xml)
 
 /// Extract attributes from a quick-xml BytesStart
-fn get_attributes(e: &quick_xml::events::BytesStart) -> HashMap<String, String> {
+fn get_attributes(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, String> {
     let mut attrs = HashMap::new();
     for attr in e.attributes().flatten() {
         if let (Ok(key), Ok(value)) = (

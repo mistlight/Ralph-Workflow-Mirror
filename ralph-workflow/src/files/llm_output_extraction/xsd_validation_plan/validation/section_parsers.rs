@@ -81,7 +81,7 @@ fn parse_inline_elements(content: &str) -> Vec<InlineElement> {
             Ok(Event::Text(e)) => {
                 current_text.push_str(&e.unescape().unwrap_or_default());
             }
-            Ok(Event::End(_)) | Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Ok(_) => {}
             Err(_) => break,
         }

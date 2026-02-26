@@ -1,5 +1,5 @@
 /// Handle `ThreadStarted` event.
-pub fn handle_thread_started(ctx: &EventHandlerContext, thread_id: Option<String>) -> String {
+pub fn handle_thread_started(ctx: &EventHandlerContext<'_>, thread_id: Option<String>) -> String {
     let tid = thread_id.unwrap_or_else(|| "unknown".to_string());
 
     // Thread start indicates a new logical stream in Codex; reset any append-only tracking
@@ -23,7 +23,7 @@ pub fn handle_thread_started(ctx: &EventHandlerContext, thread_id: Option<String
 }
 
 /// Handle `TurnStarted` event.
-pub fn handle_turn_started(ctx: &EventHandlerContext, turn_id: String) -> String {
+pub fn handle_turn_started(ctx: &EventHandlerContext<'_>, turn_id: String) -> String {
     ctx.streaming_session.borrow_mut().on_message_start();
     ctx.reasoning_accumulator.borrow_mut().clear();
 
@@ -46,7 +46,7 @@ pub fn handle_turn_started(ctx: &EventHandlerContext, turn_id: String) -> String
 }
 
 /// Handle `TurnCompleted` event.
-pub fn handle_turn_completed(ctx: &EventHandlerContext, usage: Option<CodexUsage>) -> String {
+pub fn handle_turn_completed(ctx: &EventHandlerContext<'_>, usage: Option<CodexUsage>) -> String {
     let was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
     let (input, output) = usage.map_or((0, 0), |u| {
         (u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
@@ -73,7 +73,7 @@ pub fn handle_turn_completed(ctx: &EventHandlerContext, usage: Option<CodexUsage
 }
 
 /// Handle `TurnFailed` event.
-pub fn handle_turn_failed(ctx: &EventHandlerContext, error: Option<String>) -> String {
+pub fn handle_turn_failed(ctx: &EventHandlerContext<'_>, error: Option<String>) -> String {
     let was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
     let completion = if was_in_block {
         TextDeltaRenderer::render_completion(ctx.terminal_mode)

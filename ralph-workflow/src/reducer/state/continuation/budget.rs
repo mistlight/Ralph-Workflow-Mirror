@@ -96,6 +96,16 @@ impl ContinuationState {
     /// - Attempts 0, 1, 2 are allowed (3 total)
     /// - Attempt 3+ triggers exhaustion
     ///
+    /// # Exhaustion Behavior
+    ///
+    /// When continuation budget is exhausted (`ContinuationBudgetExhausted` event):
+    /// - If all agents exhausted AND status is Failed/Partial → transition to AwaitingDevFix
+    /// - Otherwise → complete current iteration (via IterationCompleted) and advance to next iteration
+    ///
+    /// This ensures bounded execution: the system never restarts the continuation cycle
+    /// with a fresh agent within the same iteration, preventing infinite loops when work
+    /// remains incomplete despite exhausting the continuation budget.
+    ///
     /// # Naming Note
     ///
     /// The field is named `max_continue_count` rather than `max_total_attempts` because
