@@ -52,10 +52,7 @@ pub(super) fn wait_for_completion_and_collect_stderr(
         stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
         runtime: &PipelineRuntime<'_>,
     ) -> String {
-        let finished = match stderr_join_handle.as_ref() {
-            Some(h) => h.is_finished(),
-            None => false,
-        };
+        let finished = stderr_join_handle.as_ref().is_some_and(|h| h.is_finished());
         if !finished {
             return String::new();
         }

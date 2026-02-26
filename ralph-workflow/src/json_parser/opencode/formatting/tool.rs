@@ -282,11 +282,12 @@ impl OpenCodeParser {
             }
             "todowrite" | "todoread" => {
                 // Show count of todos if available
-                if let Some(todos) = obj.get("todos").and_then(|v| v.as_array()) {
-                    format!("{} items", todos.len())
-                } else {
-                    format_tool_input(input)
-                }
+                obj.get("todos")
+                    .and_then(|v| v.as_array())
+                    .map_or_else(
+                        || format_tool_input(input),
+                        |todos| format!("{} items", todos.len())
+                    )
             }
             _ => {
                 // Fallback to generic formatting
