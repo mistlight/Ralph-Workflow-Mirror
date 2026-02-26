@@ -240,6 +240,9 @@ impl OpenCodeParser {
     ) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
+        const MAX_XML_SEARCH_BYTES: usize = 512 * 1024;
+        const MAX_XML_BYTES: usize = 128 * 1024;
+
         let c = &self.colors;
         let monitor = HealthMonitor::new("OpenCode");
         // Accumulate log content in memory, write to workspace at the end
@@ -370,8 +373,6 @@ impl OpenCodeParser {
         //
         // SECURITY: Bound the amount of accumulated text we scan and the size of the extracted
         // XML we write. This prevents pathological model output from causing unbounded memory/IO.
-        const MAX_XML_SEARCH_BYTES: usize = 512 * 1024;
-        const MAX_XML_BYTES: usize = 128 * 1024;
         if let Some(accumulated) = self
             .streaming_session
             .borrow()

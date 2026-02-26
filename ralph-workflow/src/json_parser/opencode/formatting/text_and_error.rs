@@ -23,7 +23,6 @@ impl OpenCodeParser {
                 // contract once the preview stops being a prefix of prior output.
                 let preview = accumulated_text;
 
-                use crate::json_parser::terminal::TerminalMode;
                 let terminal_mode = *self.terminal_mode.borrow();
 
                 // Append-only streaming: emit prefix once, then only the new suffix.
