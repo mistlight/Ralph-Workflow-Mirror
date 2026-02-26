@@ -14,7 +14,7 @@ use std::fmt::Write;
 use std::sync::LazyLock;
 
 /// Render review issues XML with semantic formatting.
-pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: Option<&XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with pass context
@@ -67,7 +67,7 @@ struct ParsedIssue {
     description: String,
 }
 
-fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputContext>) -> String {
+fn render_issues_grouped_by_file(issues: &[String], context: Option<&XmlOutputContext>) -> String {
     let parsed: Vec<ParsedIssue> = issues.iter().map(|i| parse_issue(i)).collect();
     let mut grouped: BTreeMap<String, Vec<ParsedIssue>> = BTreeMap::new();
 
@@ -120,7 +120,7 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
     output
 }
 
-fn snippet_from_context(issue: &ParsedIssue, context: &Option<XmlOutputContext>) -> Option<String> {
+fn snippet_from_context(issue: &ParsedIssue, context: Option<&XmlOutputContext>) -> Option<String> {
     let ctx = context.as_ref()?;
     let file = issue.file.as_ref()?;
     let start = issue.line_start?;
@@ -293,7 +293,7 @@ mod tests {
             pass: Some(1),
             snippets: Vec::new(),
         });
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(output.contains("Review Pass 1"), "Should show pass number");
         assert!(output.contains("2 issue"), "Should show issue count");
@@ -320,7 +320,7 @@ let x = foo().unwrap();
 <ralph-issue>General suggestion with no file</ralph-issue>
 </ralph-issues>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(
             output.contains("📄 src/main.rs") && output.contains("📄 src/lib.rs"),
@@ -358,7 +358,7 @@ let x = foo().unwrap();
             }],
         });
 
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(
             output.contains("let clearer"),
@@ -372,7 +372,7 @@ let x = foo().unwrap();
 <ralph-no-issues-found>The code looks good, no issues detected</ralph-no-issues-found>
 </ralph-issues>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("✅"), "Should show approval emoji");
         assert!(
@@ -384,7 +384,7 @@ let x = foo().unwrap();
     #[test]
     fn test_render_issues_malformed_fallback() {
         let bad_xml = "random text";
-        let output = render(bad_xml, &None);
+        let output = render(bad_xml, None);
 
         assert!(output.contains("⚠️"), "Should show warning");
     }
@@ -416,7 +416,7 @@ let x = foo().unwrap();
 <ralph-no-issues-found>All code looks great!</ralph-no-issues-found>
 </ralph-issues>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
         assert!(output.contains("🎉"), "Should celebrate approval");
         assert!(
             output.contains("Code Approved"),
@@ -441,7 +441,7 @@ let x = foo().unwrap();
             }],
         });
 
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(
             output.contains("fn example()"),

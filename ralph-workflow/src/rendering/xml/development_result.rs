@@ -15,7 +15,7 @@ use crate::reducer::ui_event::XmlOutputContext;
 use std::fmt::Write;
 
 /// Render development result XML with semantic formatting.
-pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: Option<&XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with optional iteration context
@@ -119,7 +119,7 @@ mod tests {
 src/lib.rs</ralph-files-changed>
 </ralph-development-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("✅"), "Should have completed emoji");
         assert!(
@@ -154,7 +154,7 @@ new file mode 100644
 </ralph-files-changed>
 </ralph-development-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(
             output.contains("Modified 2 file") || output.contains("2 file"),
@@ -182,7 +182,7 @@ new file mode 100644
 <ralph-next-steps>Continue with implementation</ralph-next-steps>
 </ralph-development-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("🔄"), "Should have partial emoji");
         assert!(
@@ -203,7 +203,7 @@ new file mode 100644
             pass: None,
             snippets: Vec::new(),
         });
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(
             output.contains("Development Iteration 2"),
@@ -214,7 +214,7 @@ new file mode 100644
     #[test]
     fn test_render_development_result_malformed_fallback() {
         let bad_xml = "not valid xml at all";
-        let output = render(bad_xml, &None);
+        let output = render(bad_xml, None);
 
         assert!(output.contains("⚠️"), "Should show warning");
         assert!(
@@ -232,7 +232,7 @@ Second line of summary
 Third line of summary</ralph-summary>
 </ralph-development-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
         assert!(
             output.contains("First line"),
             "Should show first line of summary"
@@ -257,7 +257,7 @@ src/existing.rs
 src/old.rs (deleted)</ralph-files-changed>
 </ralph-development-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
         assert!(
             output.contains("src/new_file.rs") && output.contains("Action: created"),
             "Should show created action for new file"

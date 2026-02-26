@@ -11,7 +11,7 @@ use crate::reducer::ui_event::XmlOutputContext;
 use std::fmt::Write;
 
 /// Render fix result XML with semantic formatting.
-pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: Option<&XmlOutputContext>) -> String {
     let mut output = String::new();
 
     if let Some(ctx) = output_context {
@@ -64,7 +64,7 @@ mod tests {
             pass: Some(2),
             snippets: Vec::new(),
         });
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(output.contains("Fix Pass 2"), "Should show pass number");
         assert!(output.contains("✅"), "Should show success emoji");
@@ -89,7 +89,7 @@ deleted file mode 100644
 </ralph-summary>
 </ralph-fix-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(
             output.contains("src/a.rs"),
@@ -111,7 +111,7 @@ deleted file mode 100644
 <ralph-status>issues_remain</ralph-status>
 </ralph-fix-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("🔄"), "Should show partial emoji");
         assert!(
@@ -126,7 +126,7 @@ deleted file mode 100644
 <ralph-status>no_issues_found</ralph-status>
 </ralph-fix-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("✨"), "Should show sparkle emoji");
     }

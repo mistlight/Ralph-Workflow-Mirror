@@ -150,7 +150,7 @@ fn get_baseline_summary_impl(
     let is_stale = commits_since > 10;
 
     // Get diff statistics
-    let diff_stats = get_diff_stats(repo, &baseline_oid)?;
+    let diff_stats = get_diff_stats(repo, baseline_oid.as_ref())?;
 
     Ok(BaselineSummary {
         baseline_oid,
@@ -176,7 +176,7 @@ fn count_lines_in_blob(content: &[u8]) -> usize {
 }
 
 /// Get diff statistics for changes since the baseline.
-fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io::Result<DiffStats> {
+fn get_diff_stats(repo: &git2::Repository, baseline_oid: Option<&String>) -> io::Result<DiffStats> {
     let baseline_tree = match baseline_oid {
         Some(oid) => {
             let oid = git2::Oid::from_str(oid).map_err(|_| {
