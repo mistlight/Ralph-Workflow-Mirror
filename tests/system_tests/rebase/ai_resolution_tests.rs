@@ -416,7 +416,7 @@ fn test_rebase_no_common_ancestor() {
 
             // Try to rebase onto a nonexistent branch
             let executor = mock_executor_for_git_success();
-            let _result = rebase_onto("nonexistent-branch", executor.as_ref());
+            let result = rebase_onto("nonexistent-branch", executor.as_ref());
 
             // Should fail or return NoOp
             match result {
@@ -660,7 +660,7 @@ fn test_conflict_resolution_continues_without_json() {
 
             // Try to rebase feature onto main - should get conflicts
             let executor = mock_executor_for_git_success();
-            let _result = rebase_onto(&default_branch, executor.as_ref());
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {

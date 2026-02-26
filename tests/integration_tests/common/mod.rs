@@ -217,11 +217,11 @@ pub fn run_ralph_cli_with_handler(
     handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(std::string::ToString::to_string));
+    let mut arg_vec: Vec<String> = vec!["ralph".to_string()];
+    arg_vec.extend(args.iter().map(std::string::ToString::to_string));
 
     // Parse args using clap directly
-    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&arg_vec) {
         Ok(args) => args,
         Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
             return Ok(());
@@ -322,11 +322,11 @@ pub fn run_ralph_cli_with_handlers(
     effect_handler: &mut ralph_workflow::reducer::mock_effect_handler::MockEffectHandler,
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(std::string::ToString::to_string));
+    let mut arg_vec: Vec<String> = vec!["ralph".to_string()];
+    arg_vec.extend(args.iter().map(std::string::ToString::to_string));
 
     // Parse args using clap directly
-    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&arg_vec) {
         Ok(args) => args,
         Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
             return Ok(());
@@ -415,11 +415,11 @@ pub fn run_ralph_cli_with_env(
     config_env: &ralph_workflow::config::MemoryConfigEnvironment,
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(std::string::ToString::to_string));
+    let mut arg_vec: Vec<String> = vec!["ralph".to_string()];
+    arg_vec.extend(args.iter().map(std::string::ToString::to_string));
 
     // Parse args using clap directly
-    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&arg_vec) {
         Ok(args) => args,
         Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
             return Ok(());

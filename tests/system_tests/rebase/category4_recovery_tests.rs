@@ -174,17 +174,17 @@ fn rebase_detects_stale_lock_files() {
 /// This verifies that when .git/rebase-apply directory contains corrupted state,
 /// the system handles cleanup gracefully.
 #[test]
-fn rebase_detects_corrupted_reapply_directory() {
+fn rebase_detects_corrupted_reapplydirectory() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
 
             // Create a corrupted .git/rebase-apply directory
-            let rebase_dir = dir.path().join(".git").join("rebase-apply");
-            fs::create_dir_all(&rebase_dir).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-apply");
+            fs::create_dir_all(&rebasedir).unwrap();
 
             // Write some corrupted state
-            fs::write(rebase_dir.join("orig-head"), "invalid\0content").unwrap();
+            fs::write(rebasedir.join("orig-head"), "invalid\0content").unwrap();
 
             // Cleanup function should handle corrupted state
             let result = ralph_workflow::git_helpers::cleanup_stale_rebase_state();
@@ -198,18 +198,18 @@ fn rebase_detects_corrupted_reapply_directory() {
 /// This verifies that when .git/rebase-merge directory contains corrupted state,
 /// the system handles cleanup gracefully.
 #[test]
-fn rebase_detects_corrupted_rebase_merge_directory() {
+fn rebase_detects_corrupted_rebase_mergedirectory() {
     with_default_timeout(|| {
-        with_temp_cwd(|_dir| {
-            let _repo = init_repo_with_initial_commit(_dir);
+        with_temp_cwd(|dir| {
+            let _repo = init_repo_with_initial_commit(dir);
 
             // Create a corrupted .git/rebase-merge directory
-            let rebase_dir = _dir.path().join(".git").join("rebase-merge");
-            fs::create_dir_all(&rebase_dir).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-merge");
+            fs::create_dir_all(&rebasedir).unwrap();
 
             // Write some corrupted state files
-            fs::write(rebase_dir.join("head-name"), "refs/heads/\0feature").unwrap();
-            fs::write(rebase_dir.join("onto"), "not-a-valid-oid").unwrap();
+            fs::write(rebasedir.join("head-name"), "refs/heads/\0feature").unwrap();
+            fs::write(rebasedir.join("onto"), "not-a-valid-oid").unwrap();
 
             // Cleanup function should handle corrupted state
             let result = ralph_workflow::git_helpers::cleanup_stale_rebase_state();
@@ -231,11 +231,11 @@ fn rebase_handles_missing_orig_head() {
             let executor = mock_executor_for_git_success();
 
             // Create .git/rebase-apply directory without ORIG_HEAD
-            let rebase_dir = dir.path().join(".git").join("rebase-apply");
-            fs::create_dir_all(&rebase_dir).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-apply");
+            fs::create_dir_all(&rebasedir).unwrap();
 
             // Create some files but not ORIG_HEAD
-            fs::write(rebase_dir.join("head-name"), "refs/heads/feature\n").unwrap();
+            fs::write(rebasedir.join("head-name"), "refs/heads/feature\n").unwrap();
 
             // System should handle missing ORIG_HEAD gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
@@ -323,10 +323,10 @@ fn rebase_handles_orphaned_temp_files() {
             let _repo = init_repo_with_initial_commit(dir);
 
             // Create orphaned temporary merge files
-            let git_dir = dir.path().join(".git");
-            fs::write(git_dir.join("MERGE_HEAD"), "abc123\n").unwrap();
-            fs::write(git_dir.join("MERGE_MSG"), "Merge message\n").unwrap();
-            fs::write(git_dir.join("COMMIT_EDITMSG"), "Commit message\n").unwrap();
+            let gitdir = dir.path().join(".git");
+            fs::write(gitdir.join("MERGE_HEAD"), "abc123\n").unwrap();
+            fs::write(gitdir.join("MERGE_MSG"), "Merge message\n").unwrap();
+            fs::write(gitdir.join("COMMIT_EDITMSG"), "Commit message\n").unwrap();
 
             // Cleanup should handle orphaned files
             let result = ralph_workflow::git_helpers::cleanup_stale_rebase_state();
@@ -354,8 +354,8 @@ fn rebase_handles_reflog_disabled() {
             let executor = mock_executor_for_git_success();
 
             // Disable reflog
-            let git_dir = dir.path().join(".git");
-            fs::create_dir_all(git_dir.join("refs").join("heads")).unwrap();
+            let gitdir = dir.path().join(".git");
+            fs::create_dir_all(gitdir.join("refs").join("heads")).unwrap();
 
             // System should still work without reflog
             let result = rebase_onto("main", executor.as_ref());
@@ -377,12 +377,12 @@ fn rebase_detects_sparse_checkout_conflicts() {
             let executor = mock_executor_for_git_success();
 
             // Configure sparse checkout
-            let git_dir = dir.path().join(".git");
-            let info_dir = git_dir.join("info");
-            fs::create_dir_all(&info_dir).unwrap();
+            let gitdir = dir.path().join(".git");
+            let infodir = gitdir.join("info");
+            fs::create_dir_all(&infodir).unwrap();
 
             // Create sparse checkout config
-            fs::write(info_dir.join("sparse-checkout"), "*.rs\n").unwrap();
+            fs::write(infodir.join("sparse-checkout"), "*.rs\n").unwrap();
             // Enable sparse checkout (requires core.sparseCheckout config)
             let mut cfg = repo.config().expect("open config");
             cfg.set_bool("core.sparseCheckout", true)
@@ -417,9 +417,9 @@ fn rebase_detects_detached_head_after_interruption() {
             repo.checkout_head(None).unwrap();
 
             // Simulate interrupted rebase state
-            let rebase_dir = dir.path().join(".git").join("rebase-merge");
-            fs::create_dir_all(&rebase_dir).unwrap();
-            fs::write(rebase_dir.join("onto"), head_commit.id().to_string()).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-merge");
+            fs::create_dir_all(&rebasedir).unwrap();
+            fs::write(rebasedir.join("onto"), head_commit.id().to_string()).unwrap();
 
             // System should handle detached HEAD with rebase state
             let result = rebase_onto(&default_branch, executor.as_ref());

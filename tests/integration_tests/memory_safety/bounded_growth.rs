@@ -186,28 +186,28 @@ fn test_checkpoint_size_remains_reasonable_with_bounded_history() {
 
         // Serialize to JSON (checkpoint format)
         let json = serde_json::to_string(&state).expect("Serialization should succeed");
-        let size_kb = json.len() / 1024;
-        let size_mb = size_kb / 1024;
+        let kilobytes = json.len() / 1024;
+        let megabytes = kilobytes / 1024;
 
         println!(
             "Checkpoint size with {} entries: {} KB ({} MB)",
             state.execution_history.len(),
-            size_kb,
-            size_mb
+            kilobytes,
+            megabytes
         );
 
         // With bounded history (1000 entries), checkpoint should be < 1 MB
         // Before bounding: 2000 entries → ~750 KB
         // After bounding: 1000 entries → ~375 KB
         assert!(
-            size_mb < 1,
-            "Checkpoint size should be < 1 MB with bounded history, got {size_mb} MB"
+            megabytes < 1,
+            "Checkpoint size should be < 1 MB with bounded history, got {megabytes} MB"
         );
 
         // More specific: with 1000 entries, should be around 375-400 KB
         assert!(
-            size_kb < 500,
-            "Checkpoint size should be < 500 KB with 1000 entries, got {size_kb} KB"
+            kilobytes < 500,
+            "Checkpoint size should be < 500 KB with 1000 entries, got {kilobytes} KB"
         );
     });
 }
@@ -328,16 +328,16 @@ fn test_execution_history_bounded_with_10000_iterations() {
 
         // Verify no memory leak: size remains constant
         let json = serde_json::to_string(&state).expect("Serialization should succeed");
-        let size_kb = json.len() / 1024;
+        let kilobytes = json.len() / 1024;
 
         println!(
-            "Checkpoint size after 10,000 iterations (bounded to 1000): {size_kb} KB"
+            "Checkpoint size after 10,000 iterations (bounded to 1000): {kilobytes} KB"
         );
 
         // Size should be reasonable (< 500 KB) with bounded history
         assert!(
-            size_kb < 500,
-            "Checkpoint size should be < 500 KB with bounded history, got {size_kb} KB"
+            kilobytes < 500,
+            "Checkpoint size should be < 500 KB with bounded history, got {kilobytes} KB"
         );
     });
 }
@@ -363,10 +363,10 @@ fn test_checkpoint_size_remains_stable_with_bounded_history() {
             }
 
             let json = serde_json::to_string(&state).expect("Serialization should succeed");
-            let size_kb = json.len() / 1024;
-            checkpoint_sizes.push((end, size_kb));
+            let kilobytes = json.len() / 1024;
+            checkpoint_sizes.push((end, kilobytes));
 
-            println!("After {end} iterations: {size_kb} KB");
+            println!("After {end} iterations: {kilobytes} KB");
         }
 
         // After first 1000 iterations, size should be established

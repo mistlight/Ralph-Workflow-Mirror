@@ -260,13 +260,13 @@ fn test_resume_binds_execution_history_and_completion_checkpoint_uses_updated_hi
 
         let mut effect_handler = AppendHistoryHandler::new(ReducerPipelineState::initial(0, 0));
 
-        let argv: Vec<String> = vec!["ralph".to_string(), "--resume".to_string()];
-        let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
-            Ok(args) => args,
+        let arg_vec: Vec<String> = vec!["ralph".to_string(), "--resume".to_string()];
+        let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&arg_vec) {
+            Ok(parsed_args) => parsed_args,
             Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
                 return;
             }
-            Err(e) => panic!("failed to parse args: {e}"),
+            Err(e) => panic!("failed to parse parsed_args: {e}"),
         };
 
         let cwd = app_handler.get_cwd();

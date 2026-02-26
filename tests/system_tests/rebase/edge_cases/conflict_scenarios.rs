@@ -328,8 +328,8 @@ fn detect_concurrent_rebase_locking() {
         };
 
         with_temp_cwd(|dir| {
-            let _repo = init_repo_with_initial_commit(dir);
-            let default_branch = get_default_branch_name(&_repo);
+            let repo = init_repo_with_initial_commit(dir);
+            let default_branch = get_default_branch_name(&repo);
             let executor = mock_executor_for_git_success();
 
             // Skip if on main/master (can't rebase onto self)

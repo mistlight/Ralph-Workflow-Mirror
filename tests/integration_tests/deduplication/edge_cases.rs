@@ -392,16 +392,16 @@ fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
 
         // Each block should appear only once (or very few times for in-place updates)
         // The bug causes duplication because the hash comparison fails
-        let block_0_count = vterm_ref.count_visible_pattern("Block 0");
+        let first_block_count = vterm_ref.count_visible_pattern("Block 0");
         let block_1_count = vterm_ref.count_visible_pattern("Block 1");
         let block_2_count = vterm_ref.count_visible_pattern("Block 2");
-        let block_10_count = vterm_ref.count_visible_pattern("Block 10");
+        let tenth_block_count = vterm_ref.count_visible_pattern("Block 10");
 
         // Each block should appear at most 2 times (once for streaming, once for in-place update)
         // The bug causes 3+ appearances when lexicographic sort breaks deduplication
         assert!(
-            block_0_count <= 2,
-            "GLM BUG: 'Block 0' appears {block_0_count} times (expected <= 2). Lexicographic sort bug causes duplication. Output: {visible}"
+            first_block_count <= 2,
+            "GLM BUG: 'Block 0' appears {first_block_count} times (expected <= 2). Lexicographic sort bug causes duplication. Output: {visible}"
         );
         assert!(
             block_1_count <= 2,
@@ -412,8 +412,8 @@ fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
             "GLM BUG: 'Block 2' appears {block_2_count} times (expected <= 2). Output: {visible}"
         );
         assert!(
-            block_10_count <= 2,
-            "GLM BUG: 'Block 10' appears {block_10_count} times (expected <= 2). Output: {visible}"
+            tenth_block_count <= 2,
+            "GLM BUG: 'Block 10' appears {tenth_block_count} times (expected <= 2). Output: {visible}"
         );
 
         // Verify no duplicate lines overall

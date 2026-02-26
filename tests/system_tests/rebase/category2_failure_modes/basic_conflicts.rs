@@ -546,6 +546,7 @@ fn rebase_detects_no_conflicts_in_clean_file() {
 fn rebase_handles_autostash_with_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::abort_rebase;
+        use ralph_workflow::git_helpers::rebase_onto;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -590,7 +591,6 @@ fn rebase_handles_autostash_with_conflicts() {
             // The uncommitted changes are now in the working tree
 
             // Try to rebase with autostash - stashed changes may conflict when reapplied
-            use ralph_workflow::git_helpers::rebase_onto;
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Git may handle this various ways:
