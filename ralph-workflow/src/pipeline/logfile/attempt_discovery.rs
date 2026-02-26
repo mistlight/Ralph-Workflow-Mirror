@@ -55,10 +55,7 @@ pub fn next_logfile_attempt_index(
                 continue;
             }
             if let Ok(n) = attempt_digits.parse::<u32>() {
-                max_attempt = Some(match max_attempt {
-                    Some(prev) => prev.max(n),
-                    None => n,
-                });
+                max_attempt = Some(max_attempt.map_or(n, |prev| prev.max(n)));
             }
         }
     }
@@ -123,10 +120,7 @@ pub fn next_simplified_logfile_attempt_index(
                 continue;
             }
             if let Ok(n) = attempt_digits.parse::<u32>() {
-                max_attempt = Some(match max_attempt {
-                    Some(prev) => prev.max(n),
-                    None => n,
-                });
+                max_attempt = Some(max_attempt.map_or(n, |prev| prev.max(n)));
             }
         }
     }
@@ -134,9 +128,5 @@ pub fn next_simplified_logfile_attempt_index(
     // If base file exists but no _aN files exist, return 1 (first retry)
     // If _aN files exist, return max(attempt) + 1
     // If neither exist, return 0 (first attempt)
-    if let Some(max) = max_attempt {
-        max.saturating_add(1)
-    } else {
-        u32::from(base_file_exists)
-    }
+    max_attempt.map_or(u32::from(base_file_exists), |max| max.saturating_add(1))
 }
