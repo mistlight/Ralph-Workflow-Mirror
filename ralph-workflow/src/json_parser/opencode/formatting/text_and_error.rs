@@ -104,27 +104,28 @@ impl OpenCodeParser {
         let error_msg = event.error.as_ref().map_or_else(
             || {
                 // Fallback: try to extract from raw JSON
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw_line) {
-                    json.get("error")
-                        .and_then(|e| {
-                            // Try data.message first (as in run.ts)
-                            e.get("data")
-                                .and_then(|d| d.get("message"))
-                                .and_then(|m| m.as_str())
-                                .map(String::from)
-                                // Then try direct message
-                                .or_else(|| {
-                                    e.get("message").and_then(|m| m.as_str()).map(String::from)
-                                })
-                                // Then try name
-                                .or_else(|| {
-                                    e.get("name").and_then(|n| n.as_str()).map(String::from)
-                                })
-                        })
-                        .unwrap_or_else(|| "Unknown error".to_string())
-                } else {
-                    "Unknown error".to_string()
-                }
+                serde_json::from_str::<serde_json::Value>(raw_line).map_or_else(
+                    |_| "Unknown error".to_string(),
+                    |json| {
+                        json.get("error")
+                            .and_then(|e| {
+                                // Try data.message first (as in run.ts)
+                                e.get("data")
+                                    .and_then(|d| d.get("message"))
+                                    .and_then(|m| m.as_str())
+                                    .map(String::from)
+                                    // Then try direct message
+                                    .or_else(|| {
+                                        e.get("message").and_then(|m| m.as_str()).map(String::from)
+                                    })
+                                    // Then try name
+                                    .or_else(|| {
+                                        e.get("name").and_then(|n| n.as_str()).map(String::from)
+                                    })
+                            })
+                            .unwrap_or_else(|| "Unknown error".to_string())
+                    },
+                )
             },
             |err| {
                 // Try data.message first (as in run.ts)
