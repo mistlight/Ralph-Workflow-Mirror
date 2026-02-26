@@ -615,31 +615,17 @@ fn test_continuation_stops_with_unwrap_or_default() {
     });
 }
 
-/// NEW REGRESSION TEST: Infinite loop bug - OutcomeApplied exhausts too early.
+/// Regression test: Verify OutcomeApplied exhausts at the correct boundary.
 ///
-/// CRITICAL BUG REPRODUCTION: With max_continue_count = 3, attempts 0, 1, 2 should
-/// be allowed (3 total attempts), and attempt 3 should be exhausted (3 >= 3).
+/// With max_continue_count = 3, attempts 0, 1, 2 should be allowed (3 total).
+/// OutcomeApplied at attempt 2 with Partial status should exhaust the budget
+/// (because attempt 2 + 1 = 3 would reach max_continue_count).
 ///
-/// The bug is in iteration_reducer.rs lines 156 and 170-172:
-/// ```rust
-/// let max_continuations = continuation_state.max_continue_count.saturating_sub(1); // Line 156 - BUG!
-/// ...
-/// } else if continuation_state.continuation_attempt > max_continuations
-///     || continuation_state.continuation_attempt + 1 > max_continuations
-/// {
-/// ```
+/// BEFORE FIX: Current code allowed attempt 2 to continue to attempt 3,
+/// then exhausted at attempt 3, allowing 4 total attempts (bug).
 ///
-/// This causes exhaustion to trigger at attempt 2 instead of attempt 3:
-/// - max_continue_count = 3
-/// - max_continuations = 3 - 1 = 2
-/// - At attempt 2: `2 > 2` false, `2 + 1 > 2` true → exhausts (WRONG!)
-///
-/// Expected: Attempts 0, 1, 2 allowed; attempt 3 exhausts (when >= 3)
-/// Actual: Attempts 0, 1 allowed; attempt 2 exhausts (wrong boundary)
-///
-/// This test simulates the OutcomeApplied event handler flow directly to verify
-/// the bug exists. After fixing, the reducer should allow attempt 2 to continue
-/// and only exhaust at attempt 3.
+/// AFTER FIX: OutcomeApplied at attempt 2 correctly exhausts without
+/// triggering attempt 3, allowing exactly 3 attempts as configured.
 #[test]
 fn test_outcome_applied_exhausts_too_early() {
     with_default_timeout(|| {
@@ -659,12 +645,11 @@ fn test_outcome_applied_exhausts_too_early() {
             },
         );
 
-        // Apply outcome at attempt 0 - should trigger continuation
+        // Apply outcome at attempt 0 - should trigger continuation to attempt 1
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
         );
-        // After ContinuationTriggered, we're at attempt 1
         assert_eq!(state.continuation.continuation_attempt, 1);
 
         // Simulate attempt 1 completing with Partial outcome
@@ -678,12 +663,11 @@ fn test_outcome_applied_exhausts_too_early() {
             },
         );
 
-        // Apply outcome at attempt 1 - should trigger continuation
+        // Apply outcome at attempt 1 - should trigger continuation to attempt 2
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
         );
-        // After ContinuationTriggered, we're at attempt 2
         assert_eq!(state.continuation.continuation_attempt, 2);
 
         // Simulate attempt 2 completing with Partial outcome
@@ -697,21 +681,224 @@ fn test_outcome_applied_exhausts_too_early() {
             },
         );
 
-        // Apply outcome at attempt 2 - BUG: current code exhausts here
-        // Expected: should trigger continuation to attempt 3
-        // Actual: triggers ContinuationBudgetExhausted (wrong!)
+        // Apply outcome at attempt 2 - SHOULD exhaust budget (not continue to attempt 3)
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
         );
 
-        // CRITICAL ASSERTION: After OutcomeApplied at attempt 2, we should be at attempt 3,
-        // NOT have exhausted the budget yet.
-        // Current buggy behavior: continuation_attempt reset to 0 (budget exhausted too early)
-        // Expected behavior: continuation_attempt = 3 (one more attempt allowed)
+        // FIXED: budget exhausts at attempt 2 (resets to 0 after agent switch)
         assert_eq!(
-            state.continuation.continuation_attempt, 3,
-            "BUG: OutcomeApplied at attempt 2 should continue to attempt 3, not exhaust budget"
+            state.continuation.continuation_attempt, 0,
+            "OutcomeApplied at attempt 2 should exhaust budget and reset counter (agent switch)"
+        );
+        assert!(
+            !state.continuation.is_continuation(),
+            "After exhaustion, is_continuation() should be false"
+        );
+    });
+}
+
+/// NEW REGRESSION TEST: Verify OutcomeApplied checks exhaustion BEFORE triggering continuation.
+///
+/// CRITICAL: With max_continue_count = 3, attempts 0, 1, 2 should be allowed (3 total).
+/// When OutcomeApplied fires at attempt 2 with Partial status:
+/// - continuation_attempt = 2
+/// - continuation_attempt + 1 = 3 (would reach max_continue_count)
+/// - Should emit ContinuationBudgetExhausted, NOT ContinuationTriggered
+///
+/// This is the core bug: current code triggers continuation first (incrementing to 3),
+/// then checks exhaustion on the NEXT OutcomeApplied, allowing attempt 3 to run.
+#[test]
+fn test_outcome_applied_exhausts_at_correct_boundary() {
+    with_default_timeout(|| {
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Attempt 0 (initial) completes with Partial
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "partial work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 1);
+
+        // Attempt 1 completes with Partial
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "more partial work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 2);
+
+        // Attempt 2 completes with Partial
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "still more partial work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+
+        // CRITICAL ASSERTION: OutcomeApplied at attempt 2 should exhaust budget
+        // because continuation_attempt + 1 (2 + 1 = 3) would reach max_continue_count (3).
+        // Current buggy behavior: triggers continuation to attempt 3
+        // Expected behavior: emits ContinuationBudgetExhausted, which resets counter and switches agent
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+
+        // After fix: budget should be exhausted, counter reset to 0 (agent switch happened)
+        // The critical check is that we did NOT increment to 3 before exhausting.
+        // ContinuationBudgetExhausted resets continuation_attempt to 0 as part of agent switch.
+        assert_eq!(
+            state.continuation.continuation_attempt, 0,
+            "After budget exhaustion, continuation_attempt should be reset to 0 (agent switched)"
+        );
+        // Verify that budget exhaustion did occur (not another continuation)
+        assert!(
+            !state.continuation.is_continuation(),
+            "After budget exhaustion and agent switch, is_continuation() should be false"
+        );
+    });
+}
+
+/// Integration test: Verify default max_dev_continuations prevents infinite loops.
+///
+/// This test simulates the production scenario where max_dev_continuations is missing
+/// from config, and every attempt returns Partial status. The system MUST stop after
+/// exactly 3 attempts (the default), not continue indefinitely.
+///
+/// Reproduces the infinite loop bug from the user report.
+#[test]
+fn test_default_continuation_limit_prevents_infinite_loop() {
+    with_default_timeout(|| {
+        // Simulate config with default: max_dev_continuations = 2 → max_continue_count = 3
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Simulate a scenario where EVERY attempt returns Partial
+        // (mimicking the infinite loop from the bug report where status never reaches Complete)
+
+        // Attempt 0: Partial
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "Verification found only a subset implemented".to_string(),
+                files_changed: Some(
+                    ["src/file1.rs", "src/file2.rs"]
+                        .into_iter()
+                        .map(String::from)
+                        .collect(),
+                ),
+                next_steps: Some("Complete missing plan domains".to_string()),
+            },
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        assert_eq!(
+            state.continuation.continuation_attempt, 1,
+            "After attempt 0 with Partial, should continue to attempt 1"
+        );
+        assert!(!state.continuation.continuations_exhausted());
+
+        // Attempt 1: Partial again
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "Most implementation slices present but not complete".to_string(),
+                files_changed: Some(
+                    ["src/file3.rs", "src/file4.rs"]
+                        .into_iter()
+                        .map(String::from)
+                        .collect(),
+                ),
+                next_steps: Some("Add explicit parity map artifact".to_string()),
+            },
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        assert_eq!(
+            state.continuation.continuation_attempt, 2,
+            "After attempt 1 with Partial, should continue to attempt 2"
+        );
+        assert!(!state.continuation.continuations_exhausted());
+
+        // Attempt 2: Partial yet again
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "Still not fully satisfied".to_string(),
+                files_changed: Some(["src/file5.rs"].into_iter().map(String::from).collect()),
+                next_steps: Some("Provide explicit evidence".to_string()),
+            },
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+
+        // CRITICAL: After attempt 2 with Partial, budget MUST be exhausted
+        // (continuation_attempt resets to 0 after agent switch)
+        assert_eq!(
+            state.continuation.continuation_attempt, 0,
+            "CRITICAL: After attempt 2, budget should be exhausted and counter reset (agent switch). \
+             Without the fix, this would continue indefinitely."
+        );
+        assert!(
+            !state.continuation.is_continuation(),
+            "After exhaustion, is_continuation() should be false (agent switched). \
+             This is the core fix that prevents the infinite loop bug."
+        );
+
+        // Verify that the next OutcomeApplied would NOT trigger another continuation
+        // (because we've switched agents and reset the continuation state)
+        state.development_validated_outcome = Some(
+            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "New agent attempt".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+        );
+        // After switching agents, we start counting attempts again from 0
+        // This first attempt on the new agent should continue normally
+        assert_eq!(
+            state.continuation.continuation_attempt, 1,
+            "After agent switch, new agent's attempts start from 0, first continuation goes to 1"
         );
     });
 }

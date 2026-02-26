@@ -40,10 +40,17 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
         "BUG: max_same_agent_retries is None when it should always have a value from config loading."
     );
 
-    // CRITICAL: Apply unconditional default of 2 (3 total attempts) when None.
-    // This ensures bounded continuation even if Config was constructed without
-    // going through config_from_unified() (e.g., Config::default(), tests).
-    // This is a SAFETY MECHANISM that prevents infinite continuation loops.
+    // CRITICAL SAFETY MECHANISM: Apply unconditional default of 2 (3 total attempts) when None.
+    // This ensures bounded continuation even if Config was constructed without going through
+    // config_from_unified() (e.g., Config::default(), tests). This is the PRIMARY DEFENSE
+    // against infinite continuation loops when max_dev_continuations is missing.
+    //
+    // With max_dev_continuations = 2:
+    // - max_continue_count = 1 + 2 = 3
+    // - Attempts 0, 1, 2 are allowed (3 total)
+    // - Attempt 3+ is exhausted
+    //
+    // This unwrap_or(2) is what prevents the infinite loop bug reported in the user's scenario.
     let max_dev_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
     let max_continue_count = 1 + max_dev_continuations;
 

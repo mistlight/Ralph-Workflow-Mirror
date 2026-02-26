@@ -166,13 +166,20 @@ pub(super) fn reduce_iteration_event(
                         output_valid: true,
                     }
                 }
-            } else if continuation_state.continuation_attempt
+            } else if continuation_state.continuation_attempt + 1
                 >= continuation_state.max_continue_count
             {
+                // CRITICAL FIX: Check if the NEXT attempt would reach/exceed the limit.
+                // With max_continue_count = 3:
+                // - At attempt 2: continuation_attempt + 1 = 3 >= 3 → exhaust (correct)
+                // - At attempt 1: continuation_attempt + 1 = 2 < 3 → continue (correct)
+                // - At attempt 0: continuation_attempt + 1 = 1 < 3 → continue (correct)
+                //
+                // This prevents the off-by-one bug where ContinuationTriggered increments
+                // the counter before checking exhaustion, allowing one extra attempt.
                 DevelopmentEvent::ContinuationBudgetExhausted {
                     iteration,
-                    // `continuation_attempt` is 0-based with 0 = initial attempt.
-                    // For the event payload, report total attempts including the initial run.
+                    // Report total attempts INCLUDING the current attempt that just completed.
                     total_attempts: continuation_state.continuation_attempt + 1,
                     last_status: outcome.status,
                 }
