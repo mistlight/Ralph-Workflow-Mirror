@@ -152,14 +152,16 @@ fn print_config_info(
         config_path
             .strip_prefix(workspace.root())
             .ok()
-            .map(|relative| {
-                if workspace.exists(relative) {
-                    "yes".to_string()
-                } else {
-                    "no".to_string()
-                }
-            })
-            .unwrap_or_else(|| "unknown (outside workspace)".to_string())
+            .map_or_else(
+                || "unknown (outside workspace)".to_string(),
+                |relative| {
+                    if workspace.exists(relative) {
+                        "yes".to_string()
+                    } else {
+                        "no".to_string()
+                    }
+                },
+            )
     } else if workspace.exists(config_path) {
         "yes".to_string()
     } else {

@@ -177,8 +177,7 @@ impl MainEffectHandler {
                     return Err(ErrorEvent::FixContinuationNotSupported.into());
                 }
             };
-        let mut rendered_log = None;
-        if should_validate && !was_replayed {
+        let rendered_log = if should_validate && !was_replayed {
             // Re-generate to get the log for validation
             // Only validate freshly generated prompts, not replayed ones
             let rendered = if matches!(prompt_mode, PromptMode::XsdRetry) {
@@ -219,8 +218,10 @@ impl MainEffectHandler {
                 ));
                 return Ok(result);
             }
-            rendered_log = Some(rendered.log);
-        }
+            Some(rendered.log)
+        } else {
+            None
+        };
 
         if !was_replayed {
             ctx.capture_prompt(&prompt_key, &fix_prompt);
