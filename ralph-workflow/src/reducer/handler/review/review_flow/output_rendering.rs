@@ -50,33 +50,22 @@ fn extract_issue_snippets(
     let gh_location_re = issue_gh_location_regex();
 
     for issue in issues {
-        let (file, line_start, line_end) = if let Some(cap) = location_re.captures(issue) {
-            let file = cap
-                .name("file")
-                .map(|m| m.as_str().trim().replace('\\', "/"));
-            let start = cap
-                .name("start")
-                .and_then(|m| m.as_str().parse::<u32>().ok());
-            let end = cap
-                .name("end")
-                .and_then(|m| m.as_str().parse::<u32>().ok())
-                .or(start);
-            (file, start, end)
-        } else if let Some(cap) = gh_location_re.captures(issue) {
-            let file = cap
-                .name("file")
-                .map(|m| m.as_str().trim().replace('\\', "/"));
-            let start = cap
-                .name("start")
-                .and_then(|m| m.as_str().parse::<u32>().ok());
-            let end = cap
-                .name("end")
-                .and_then(|m| m.as_str().parse::<u32>().ok())
-                .or(start);
-            (file, start, end)
-        } else {
-            (None, None, None)
-        };
+        let (file, line_start, line_end) = location_re
+            .captures(issue)
+            .or_else(|| gh_location_re.captures(issue))
+            .map_or((None, None, None), |cap| {
+                let file = cap
+                    .name("file")
+                    .map(|m| m.as_str().trim().replace('\\', "/"));
+                let start = cap
+                    .name("start")
+                    .and_then(|m| m.as_str().parse::<u32>().ok());
+                let end = cap
+                    .name("end")
+                    .and_then(|m| m.as_str().parse::<u32>().ok())
+                    .or(start);
+                (file, start, end)
+            });
 
         let Some(file) =
             file.and_then(|f| normalize_issue_file_path_to_workspace_relative(&f, workspace))
