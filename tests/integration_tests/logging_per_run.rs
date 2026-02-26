@@ -514,7 +514,6 @@ fn test_resume_logging_continuity_impl() -> Result<()> {
     let first_event_loop_log = app_handler
         .get_file(&first_run_dir.join("event_loop.log"))
         .expect("event_loop.log should exist after first run");
-    let first_event_loop_log_lines: Vec<_> = first_event_loop_log.lines().collect();
 
     // Manually create a checkpoint for the resume test
     // (The mock pipeline completes too quickly to save a checkpoint through normal flow)
@@ -623,10 +622,9 @@ fn test_resume_logging_continuity_impl() -> Result<()> {
     let resumed_event_loop_log = app_handler
         .get_file(&first_run_dir.join("event_loop.log"))
         .expect("event_loop.log should still exist after resume");
-    let resumed_event_loop_log_lines: Vec<_> = resumed_event_loop_log.lines().collect();
 
     assert!(
-        resumed_event_loop_log_lines.len() >= first_event_loop_log_lines.len(),
+        resumed_event_loop_log.lines().count() >= first_event_loop_log.lines().count(),
         "event_loop.log should be appended to, not overwritten"
     );
 

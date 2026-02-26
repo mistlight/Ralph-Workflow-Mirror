@@ -46,8 +46,8 @@ fn test_workspace_arc_count_stable() {
         let initial_count = Arc::strong_count(&workspace);
 
         // Perform operations that might create Arc clones
-        let _clone1 = workspace.clone();
-        let _clone2 = workspace.clone();
+        let clone1 = workspace.clone();
+        let clone2 = workspace.clone();
 
         let cloned_count = Arc::strong_count(&workspace);
         assert_eq!(
@@ -57,8 +57,8 @@ fn test_workspace_arc_count_stable() {
         );
 
         // Drop clones
-        drop(_clone1);
-        drop(_clone2);
+        drop(clone1);
+        drop(clone2);
 
         let final_count = Arc::strong_count(&workspace);
         assert_eq!(

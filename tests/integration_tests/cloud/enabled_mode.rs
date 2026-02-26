@@ -9,7 +9,7 @@
 //! All tests use `MockCloudReporter` to avoid real HTTP calls.
 
 use ralph_workflow::cloud::{CloudReporter, MockCloudReporter, ProgressEventType, ProgressUpdate};
-use ralph_workflow::config::CloudConfig;
+use ralph_workflow::config::{CloudConfig, GitRemoteConfig};
 use ralph_workflow::reducer::effect::{Effect, EffectHandler, EffectResult};
 use ralph_workflow::reducer::event::{LifecycleEvent, PipelineEvent, PipelinePhase};
 use ralph_workflow::reducer::state::PipelineState;
@@ -390,7 +390,7 @@ fn test_cloud_mode_enabled_reports_progress_updates_from_ui_events() {
             run_id: Some("run_123".to_string()),
             heartbeat_interval_secs: 30,
             graceful_degradation: true,
-            git_remote: Default::default(),
+            git_remote: GitRemoteConfig::default(),
         };
         let reporter = MockCloudReporter::new();
 
