@@ -172,7 +172,7 @@ fn count_lines_in_blob(content: &[u8]) -> usize {
     // Count newlines and add 1 to get the line count
     // This matches the previous behavior and ensures that even files
     // without trailing newlines are counted correctly
-    content.iter().filter(|&&c| c == b'\n').count() + 1
+    content.iter().copied().filter(|&c| c == b'\n').count() + 1
 }
 
 /// Get diff statistics for changes since the baseline.

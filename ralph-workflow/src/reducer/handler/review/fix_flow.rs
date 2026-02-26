@@ -96,8 +96,6 @@ impl MainEffectHandler {
         } else {
             String::new()
         };
-        if is_xsd_retry {
-        }
         let mut xsd_error_for_validation: Option<String> = None;
         let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =
             match prompt_mode {
