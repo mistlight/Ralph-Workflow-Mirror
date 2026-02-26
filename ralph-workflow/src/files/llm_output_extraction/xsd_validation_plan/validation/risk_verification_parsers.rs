@@ -71,9 +71,8 @@ fn parse_risk_pair(
                 }
             },
             Ok(Event::End(e)) if e.name().as_ref() == b"risk-pair" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -170,9 +169,8 @@ fn parse_single_verification(
                 }
             },
             Ok(Event::End(e)) if e.name().as_ref() == b"verification" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }

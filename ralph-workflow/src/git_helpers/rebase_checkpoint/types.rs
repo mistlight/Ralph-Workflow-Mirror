@@ -43,11 +43,9 @@ impl RebasePhase {
     pub const fn max_recovery_attempts(&self) -> u32 {
         match self {
             Self::ConflictResolutionInProgress => 5,
-            Self::ConflictDetected => 3,
-            Self::RebaseInProgress => 2,
-            Self::CompletingRebase => 2,
+            Self::ConflictDetected | _ => 3,
+            Self::RebaseInProgress | Self::CompletingRebase => 2,
             Self::PreRebaseCheck => 1,
-            _ => 3,
         }
     }
 }

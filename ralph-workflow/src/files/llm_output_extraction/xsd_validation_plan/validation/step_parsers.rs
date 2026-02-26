@@ -241,9 +241,8 @@ fn parse_target_files(reader: &mut Reader<&[u8]>) -> Result<Vec<TargetFile>, Xsd
                 // No need to skip - self-closing tag has no end
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"target-files" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -358,9 +357,8 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
                 });
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"primary-files" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -406,9 +404,8 @@ fn parse_reference_files(
                 files.push(ReferenceFile { path, purpose });
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"reference-files" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }

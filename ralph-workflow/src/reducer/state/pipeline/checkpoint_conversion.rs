@@ -227,14 +227,14 @@ impl From<PipelineCheckpoint> for PipelineState {
 
 const fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
     match phase {
-        CheckpointPhase::Rebase => PipelinePhase::Planning,
-        CheckpointPhase::Planning => PipelinePhase::Planning,
+        CheckpointPhase::Rebase | CheckpointPhase::Planning | CheckpointPhase::PreRebase => {
+            PipelinePhase::Planning
+        }
         CheckpointPhase::Development => PipelinePhase::Development,
         CheckpointPhase::Review => PipelinePhase::Review,
         CheckpointPhase::CommitMessage => PipelinePhase::CommitMessage,
         CheckpointPhase::FinalValidation => PipelinePhase::FinalValidation,
         CheckpointPhase::Complete => PipelinePhase::Complete,
-        CheckpointPhase::PreRebase => PipelinePhase::Planning,
         CheckpointPhase::PreRebaseConflict => PipelinePhase::Planning,
         CheckpointPhase::PostRebase => PipelinePhase::CommitMessage,
         CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
@@ -246,20 +246,15 @@ const fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
 fn map_checkpoint_rebase_state(rebase_state: &CheckpointRebaseState) -> RebaseState {
     match rebase_state {
         CheckpointRebaseState::NotStarted => RebaseState::NotStarted,
-        CheckpointRebaseState::PreRebaseInProgress { upstream_branch } => RebaseState::InProgress {
-            original_head: "HEAD".to_string(),
-            target_branch: upstream_branch.clone(),
-        },
-        CheckpointRebaseState::PreRebaseCompleted { commit_oid } => RebaseState::Completed {
-            new_head: commit_oid.clone(),
-        },
-        CheckpointRebaseState::PostRebaseInProgress { upstream_branch } => {
+        CheckpointRebaseState::PreRebaseInProgress { upstream_branch }
+        | CheckpointRebaseState::PostRebaseInProgress { upstream_branch } => {
             RebaseState::InProgress {
                 original_head: "HEAD".to_string(),
                 target_branch: upstream_branch.clone(),
             }
         }
-        CheckpointRebaseState::PostRebaseCompleted { commit_oid } => RebaseState::Completed {
+        CheckpointRebaseState::PreRebaseCompleted { commit_oid }
+        | CheckpointRebaseState::PostRebaseCompleted { commit_oid } => RebaseState::Completed {
             new_head: commit_oid.clone(),
         },
         CheckpointRebaseState::HasConflicts { files } => RebaseState::Conflicted {

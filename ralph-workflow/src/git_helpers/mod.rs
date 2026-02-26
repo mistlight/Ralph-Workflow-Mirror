@@ -35,13 +35,11 @@ pub(crate) fn git2_to_io_error(err: &git2::Error) -> io::Error {
 fn git2_to_io_error_impl(err: &git2::Error) -> io::Error {
     // Fall back to mapping git2 error codes to a best-effort io::ErrorKind.
     let kind = match err.code() {
-        git2::ErrorCode::NotFound => io::ErrorKind::NotFound,
+        git2::ErrorCode::NotFound | git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
         git2::ErrorCode::Exists => io::ErrorKind::AlreadyExists,
-        git2::ErrorCode::Auth => io::ErrorKind::PermissionDenied,
-        git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
+        git2::ErrorCode::Auth | git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
         git2::ErrorCode::Invalid => io::ErrorKind::InvalidInput,
         git2::ErrorCode::Eof => io::ErrorKind::UnexpectedEof,
-        git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
         _ => io::ErrorKind::Other,
     };
 
