@@ -99,10 +99,10 @@ impl MainEffectHandler {
                 .workspace
                 .remove_if_exists(Path::new(COMMIT_XSD_ERROR_PATH));
         }
-        let event = match message {
-            Some(msg) => PipelineEvent::commit_xml_validated(msg, attempt),
-            None => PipelineEvent::commit_xml_validation_failed(detail, attempt),
-        };
+        let event = message.map_or(
+            PipelineEvent::commit_xml_validation_failed(detail, attempt),
+            |msg| PipelineEvent::commit_xml_validated(msg, attempt)
+        );
 
         Ok(EffectResult::with_ui(
             event,

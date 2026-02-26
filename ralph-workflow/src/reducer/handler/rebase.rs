@@ -34,17 +34,17 @@ impl MainEffectHandler {
                 let conflicted_files = get_conflicted_files().unwrap_or_default();
 
                 if conflicted_files.is_empty() {
-                    let new_head = match git2::Repository::open(ctx.repo_root) {
-                        Ok(repo) => repo
+                    let new_head = git2::Repository::open(ctx.repo_root).map_or_else(
+                        |_| "unknown".to_string(),
+                        |repo| repo
                             .head()
                             .ok()
                             .and_then(|head| head.peel_to_commit().ok())
                             .map_or_else(
                                 || "unknown".to_string(),
                                 |commit| commit.id().to_string(),
-                            ),
-                        Err(_) => "unknown".to_string(),
-                    };
+                            )
+                    );
 
                     Ok(EffectResult::event(PipelineEvent::rebase_succeeded(
                         phase, new_head,

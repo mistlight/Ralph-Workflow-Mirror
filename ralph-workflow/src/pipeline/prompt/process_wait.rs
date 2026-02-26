@@ -22,10 +22,7 @@ pub(super) fn wait_for_completion_and_collect_stderr(
     fn try_take_monitor_result(
         monitor_handle: &mut Option<std::thread::JoinHandle<MonitorResult>>,
     ) -> Result<Option<MonitorResult>, String> {
-        let finished = match monitor_handle.as_ref() {
-            Some(h) => h.is_finished(),
-            None => false,
-        };
+        let finished = monitor_handle.as_ref().map_or(false, |h| h.is_finished());
         if !finished {
             return Ok(None);
         }
