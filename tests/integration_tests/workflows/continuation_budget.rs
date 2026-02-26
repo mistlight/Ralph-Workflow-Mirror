@@ -124,13 +124,11 @@ fn test_continuation_state_resets_across_iterations() {
 }
 
 #[test]
-fn test_continuation_budget_exhaustion_switches_agent() {
+fn test_continuation_budget_exhaustion_completes_iteration_and_resets_continuation() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 2, 2); // max_continue_count = 2
         let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
-
-        let initial_agent_index = state.agent_chain.current_agent_index;
 
         // Trigger 2 continuations (reach budget)
         for _ in 1..=2 {
@@ -156,13 +154,16 @@ fn test_continuation_budget_exhaustion_switches_agent() {
             }),
         );
 
-        // Agent should have switched (or retry cycle incremented if chain exhausted)
-        let agent_switched = state.agent_chain.current_agent_index != initial_agent_index
-            || state.agent_chain.retry_cycle > 0;
-        assert!(agent_switched);
+        // New reducer semantics: exhaustion completes the iteration and transitions to commit flow.
+        assert_eq!(
+            state.phase,
+            ralph_workflow::reducer::event::PipelinePhase::CommitMessage
+        );
 
-        // Continuation state should be reset
+        // Continuation state should be reset for the next iteration.
         assert_eq!(state.continuation.continuation_attempt, 0);
+        assert!(!state.continuation.is_continuation());
+        assert!(state.continuation.context_cleanup_pending);
     });
 }
 

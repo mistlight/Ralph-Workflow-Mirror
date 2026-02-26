@@ -56,14 +56,15 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
     let max_dev_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
     let max_continue_count = 1 + max_dev_continuations;
 
-    // SAFETY ASSERTION: Verify default was applied correctly
-    // This catches config loading bugs where the default might not propagate
-    debug_assert!(
-        max_continue_count >= 3,
-        "BUG: max_continue_count must be at least 3 (1 initial + 2 default continuations). \
-         Got: {}. This indicates the unwrap_or(2) fallback failed.",
-        max_continue_count
-    );
+    // SAFETY ASSERTION: when max_dev_continuations is absent, unwrap_or(2)
+    // must produce the default total-attempts cap of 3.
+    if ctx.config.max_dev_continuations.is_none() {
+        debug_assert_eq!(
+            max_continue_count, 3,
+            "BUG: missing max_dev_continuations must default to 3 total attempts. Got: {}",
+            max_continue_count
+        );
+    }
 
     let continuation = ContinuationState::with_limits(
         ctx.config.max_xsd_retries.unwrap_or(10),

@@ -396,6 +396,69 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
 }
 
 #[test]
+fn test_create_initial_state_with_config_allows_explicit_low_continuation_limits() {
+    let cloud_config = crate::config::types::CloudConfig::disabled();
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::Timer;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
+
+    for (max_dev_continuations, expected_max_continue_count) in [(0, 1), (1, 2)] {
+        let config = Config {
+            max_dev_continuations: Some(max_dev_continuations),
+            max_xsd_retries: Some(10),
+            ..Config::default()
+        };
+
+        let ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
+            run_log_context: &run_log_context,
+            cloud_reporter: None,
+            cloud_config: &cloud_config,
+        };
+
+        let state = create_initial_state_with_config(&ctx);
+        assert_eq!(
+            state.continuation.max_continue_count, expected_max_continue_count,
+            "explicit max_dev_continuations={} should map to max_continue_count={}",
+            max_dev_continuations, expected_max_continue_count
+        );
+    }
+}
+
+#[test]
 fn test_create_initial_state_with_config_injects_cloud_state() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
