@@ -179,10 +179,8 @@ fn test_tool_input_chunked_deltas_no_spam() {
             let chunk_str = std::str::from_utf8(chunk).unwrap();
             // Escape for JSON
             let escaped = chunk_str.replace('\\', "\\\\").replace('"', "\\\"");
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":"{escaped}"}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":"{escaped}"}}}}}}"#).unwrap();
         }
 
         stream.push_str(

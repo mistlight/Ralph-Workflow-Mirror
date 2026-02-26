@@ -172,10 +172,8 @@ fn test_ccs_glm_architecture_verification_none_mode() {
 "#,
         );
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":1}}
@@ -188,10 +186,8 @@ fn test_ccs_glm_architecture_verification_none_mode() {
 "#,
         );
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"c{i} "}}}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"c{i} "}}}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":2}}
@@ -264,10 +260,8 @@ fn test_ccs_glm_architecture_verification_basic_mode() {
         );
 
         for i in 0..200 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -316,10 +310,8 @@ fn test_ccs_codex_architecture_verification_none_mode() {
 
         // 150 reasoning deltas
         for i in 0..150 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -328,10 +320,8 @@ fn test_ccs_codex_architecture_verification_none_mode() {
 
         // 150 agent_message deltas
         for i in 0..150 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{i} "}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}
@@ -390,10 +380,8 @@ fn test_ccs_codex_architecture_verification_basic_mode() {
         let mut stream = String::new();
 
         for i in 0..200 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{i} "}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}

@@ -101,10 +101,8 @@ fn test_ccs_codex_basic_mode_500_reasoning_deltas_must_produce_one_line() {
         let mut stream = String::new();
 
         for i in 0..500 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#).unwrap();
         }
 
         stream.push_str(

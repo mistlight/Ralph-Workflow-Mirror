@@ -127,10 +127,8 @@ fn test_ccs_glm_text_delta_spam_reproduction_basic_mode() {
         );
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -184,10 +182,8 @@ fn test_ccs_glm_thinking_delta_spam_reproduction_none_mode() {
 
         // 100 thinking deltas
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -236,10 +232,8 @@ fn test_ccs_glm_thinking_delta_spam_reproduction_basic_mode() {
         );
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -293,10 +287,8 @@ fn test_ccs_glm_tool_input_delta_spam_reproduction_none_mode() {
 
         // 50 tool input deltas (simulating partial JSON chunks)
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{i} "}}}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{i} "}}}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -345,10 +337,8 @@ fn test_ccs_glm_tool_input_delta_spam_reproduction_basic_mode() {
         );
 
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{i} "}}}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{i} "}}}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -402,10 +392,8 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
 
         // Block 0: 50 text deltas
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"b0w{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"b0w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -416,10 +404,8 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
 
         // Block 1: 50 text deltas
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"b1w{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"b1w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -430,10 +416,8 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
 
         // Block 2: 50 text deltas
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"b2w{i} "}}}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"b2w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -499,10 +483,8 @@ fn test_ccs_glm_mode_consistency_same_stream_none_vs_basic() {
             );
 
             for i in 0..100 {
-                stream.push_str(&format!(
-                    r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}
-"#
-                ));
+                writeln!(stream, 
+                    r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#).unwrap();
             }
 
             stream.push_str(
@@ -555,10 +537,8 @@ fn test_ccs_codex_agent_message_delta_spam_reproduction_none_mode() {
 
         // 100 agent message deltas
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{i} "}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -602,10 +582,8 @@ fn test_ccs_codex_agent_message_delta_spam_reproduction_basic_mode() {
         let mut stream = String::new();
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{i} "}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -654,10 +632,8 @@ fn test_ccs_codex_reasoning_delta_spam_reproduction_none_mode() {
 
         // 100 reasoning deltas
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{i} "}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -701,10 +677,8 @@ fn test_ccs_codex_reasoning_delta_spam_reproduction_basic_mode() {
         let mut stream = String::new();
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{i} "}}}}
-"#
-            ));
+            writeln!(stream, 
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{i} "}}}}"#).unwrap();
         }
 
         stream.push_str(
