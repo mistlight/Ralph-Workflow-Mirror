@@ -198,7 +198,7 @@ fn setup_interrupt_context_for_pipeline(
 /// This function should be called after each major phase to keep the
 /// interrupt context up-to-date with the latest execution history.
 fn update_interrupt_context_from_phase(
-    phase_ctx: &crate::phases::PhaseContext,
+    phase_ctx: &crate::phases::PhaseContext<'_>,
     phase: PipelinePhase,
     total_iterations: u32,
     total_reviewer_passes: u32,

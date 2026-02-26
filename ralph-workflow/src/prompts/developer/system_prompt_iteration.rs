@@ -569,6 +569,14 @@ pub fn prompt_developer_iteration_continuation_xml(
         continuation_state.continuation_attempt.to_string(),
     );
     variables.insert(
+        "CONTINUATION_PROGRESS",
+        format!(
+            "continuation {} of {}",
+            continuation_state.continuation_attempt,
+            continuation_state.max_continue_count
+        ),
+    );
+    variables.insert(
         "DEVELOPMENT_RESULT_XML_PATH",
         workspace.absolute_str(".agent/tmp/development_result.xml"),
     );
@@ -668,6 +676,14 @@ pub fn prompt_developer_iteration_continuation_xml_with_log(
     variables.insert(
         "CONTINUATION_ATTEMPT",
         continuation_state.continuation_attempt.to_string(),
+    );
+    variables.insert(
+        "CONTINUATION_PROGRESS",
+        format!(
+            "continuation {} of {}",
+            continuation_state.continuation_attempt,
+            continuation_state.max_continue_count
+        ),
     );
     variables.insert(
         "DEVELOPMENT_RESULT_XML_PATH",

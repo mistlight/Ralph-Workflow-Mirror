@@ -59,7 +59,7 @@ pub fn init_git_repo(dir: &TempDir) -> Repository {
     .expect("write .gitignore");
     fs::write(
         dir.path().join("PROMPT.md"),
-        r#"# Test Requirements
+        r"# Test Requirements
 
 ## Goal
 
@@ -69,7 +69,7 @@ Test the Ralph workflow integration.
 
 - Tests pass successfully
 - No validation errors occur
-"#,
+",
     )
     .expect("write PROMPT.md");
     fs::create_dir_all(dir.path().join(".agent")).expect("create .agent");
@@ -226,7 +226,7 @@ pub fn git_commit_all(repo: &Repository, message: &str) -> Oid {
 /// - If branch cannot be found
 /// - If checkout operations fail
 pub fn git_switch(repo: &Repository, branch_name: &str) {
-    let branch_ref = format!("refs/heads/{}", branch_name);
+    let branch_ref = format!("refs/heads/{branch_name}");
     let obj = repo
         .revparse_single(&branch_ref)
         .expect("find branch for checkout");
@@ -261,7 +261,7 @@ pub fn git_switch(repo: &Repository, branch_name: &str) {
 /// - If git operations fail
 pub fn git_switch_force(repo: &Repository, branch_name: &str) {
     // Use git2 checkout with force option (built-in, no separate commands)
-    let branch_ref = format!("refs/heads/{}", branch_name);
+    let branch_ref = format!("refs/heads/{branch_name}");
     let obj = repo
         .revparse_single(&branch_ref)
         .expect("find branch for checkout");

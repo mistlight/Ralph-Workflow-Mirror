@@ -17,6 +17,33 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
     // Config semantics: max_dev_continuations counts continuation attempts *beyond*
     // the initial attempt. ContinuationState::max_continue_count semantics are
     // "maximum total attempts including initial".
+
+    // CRITICAL: max_dev_continuations should always be Some() when loaded via config_from_unified().
+    // The serde defaults in UnifiedConfig ensure these fields are never missing.
+    // The unwrap_or() here is a defensive fallback for edge cases:
+    // - Config::default() or Config::test_default()
+    // - Direct Config construction in tests without going through config_from_unified()
+    //
+    // In debug builds, we assert that the value is Some() to catch config loading bugs early.
+    debug_assert!(
+        ctx.config.max_dev_continuations.is_some(),
+        "BUG: max_dev_continuations is None when it should always have a value from config loading. \
+         This indicates config_from_unified() did not properly set the field, or Config was \
+         constructed directly without defaults."
+    );
+    debug_assert!(
+        ctx.config.max_xsd_retries.is_some(),
+        "BUG: max_xsd_retries is None when it should always have a value from config loading."
+    );
+    debug_assert!(
+        ctx.config.max_same_agent_retries.is_some(),
+        "BUG: max_same_agent_retries is None when it should always have a value from config loading."
+    );
+
+    // CRITICAL: Apply unconditional default of 2 (3 total attempts) when None.
+    // This ensures bounded continuation even if Config was constructed without
+    // going through config_from_unified() (e.g., Config::default(), tests).
+    // This is a SAFETY MECHANISM that prevents infinite continuation loops.
     let max_dev_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
     let max_continue_count = 1 + max_dev_continuations;
 

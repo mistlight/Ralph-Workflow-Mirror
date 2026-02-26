@@ -12,10 +12,10 @@ pub(super) fn generate_mock_agent_output(parser_type: JsonParserType, command: &
         // was materialized (rather than a stale continuation prompt).
         "ANALYSIS TASK\nYou are an independent, objective code analysis agent."
     } else {
-        r#"<ralph-commit>
+        r"<ralph-commit>
  <ralph-subject>test: commit message</ralph-subject>
  <ralph-body>Test commit message for integration tests.</ralph-body>
- </ralph-commit>"#
+ </ralph-commit>"
     };
 
     fn line(value: serde_json::Value) -> String {

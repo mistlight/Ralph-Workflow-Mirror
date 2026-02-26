@@ -113,10 +113,23 @@ pub struct GeneralConfig {
     ///
     /// Higher values allow more attempts to complete complex tasks within a single plan.
     ///
-    /// Semantics: this value counts *continuation attempts* (fresh sessions) beyond the initial
-    /// attempt. Total valid attempts per iteration is `1 + max_dev_continuations`.
+    /// # Semantics
     ///
-    /// Default: 2 continuations (initial attempt + 2 continuations = 3 total attempts per iteration).
+    /// This value counts *continuation attempts* beyond the initial attempt.
+    /// Total valid attempts per iteration is `1 + max_dev_continuations`.
+    ///
+    /// - `0` = no continuations (1 total attempt)
+    /// - `2` = two continuations (3 total attempts)
+    ///
+    /// # Default Behavior
+    ///
+    /// When omitted from config file, serde applies `default_max_dev_continuations() -> 2`.
+    /// This ensures dev loop always has a bounded continuation count, preventing infinite loops.
+    ///
+    /// The value is wrapped in `Some()` during conversion to `Config`, so
+    /// `Config::max_dev_continuations` is never `None` when loaded via `config_from_unified()`.
+    ///
+    /// Default: 2 continuations (3 total attempts per iteration).
     #[serde(default = "default_max_dev_continuations")]
     pub max_dev_continuations: u32,
     /// Maximum XSD retry attempts when agent output fails XML validation.

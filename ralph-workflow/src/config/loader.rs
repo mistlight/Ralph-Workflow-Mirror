@@ -357,12 +357,15 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
     let general = &unified.general;
     // max_dev_continuations of 0 is valid and means "no continuations" (total attempts = 1).
     // Any non-negative value is accepted; max_dev_continuations comes from a u32 so can't be negative.
+    // When omitted from config file, serde applies default_max_dev_continuations() -> 2.
     let max_dev_continuations = general.max_dev_continuations;
     // max_xsd_retries of 0 is valid and means "disable XSD retries" (immediate agent fallback).
     // Any non-negative value is accepted; max_xsd_retries comes from a u32 so can't be negative.
+    // When omitted from config file, serde applies default_max_xsd_retries() -> 10.
     let max_xsd_retries = general.max_xsd_retries;
     // max_same_agent_retries of 0 is valid and means "disable same-agent retries"
     // (immediate fallback to next agent on timeout/internal error).
+    // When omitted from config file, serde applies default_max_same_agent_retries() -> 2.
     let max_same_agent_retries = general.max_same_agent_retries;
 
     let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
@@ -411,6 +414,9 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         git_user_email: general.git_user_email.clone(),
         show_streaming_metrics: false, // Default to false; can be enabled via CLI flag or config file
         review_format_retries: 5,      // Default to 5 retries for format correction
+        // CRITICAL: Always wrap in Some(). The serde default ensures these fields are never
+        // missing from UnifiedConfig, so Config always has a value. The Option<u32> type in
+        // Config is for backward compatibility with direct Config construction (e.g., tests).
         max_dev_continuations: Some(max_dev_continuations),
         max_xsd_retries: Some(max_xsd_retries),
         max_same_agent_retries: Some(max_same_agent_retries),

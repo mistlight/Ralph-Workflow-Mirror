@@ -363,3 +363,74 @@ developer_iters = 10
 
     std::env::remove_var("RALPH_DEVELOPER_ITERS");
 }
+
+/// Regression test for infinite continuation loop bug (wt-39).
+///
+/// CRITICAL: This test verifies that default_config() always sets max_dev_continuations
+/// to Some(2), ensuring bounded continuation even when config files are missing.
+///
+/// Without this default, the system could allow infinite continuation loops when
+/// max_dev_continuations is omitted from config files.
+#[test]
+fn test_default_config_sets_continuation_limits() {
+    let config = default_config();
+
+    // CRITICAL: default_config() MUST set max_dev_continuations to Some(2)
+    assert_eq!(
+        config.max_dev_continuations,
+        Some(2),
+        "default_config() must set max_dev_continuations to Some(2) to prevent infinite continuation loops"
+    );
+
+    // Also verify other limits are set
+    assert_eq!(
+        config.max_xsd_retries,
+        Some(10),
+        "default_config() must set max_xsd_retries to Some(10)"
+    );
+    assert_eq!(
+        config.max_same_agent_retries,
+        Some(2),
+        "default_config() must set max_same_agent_retries to Some(2)"
+    );
+}
+
+/// Regression test for infinite continuation loop bug (wt-39).
+///
+/// CRITICAL: This test verifies that when max_dev_continuations is omitted from
+/// a config file, the serde default is applied correctly.
+///
+/// When the key is missing, UnifiedConfig should apply default_max_dev_continuations() = 2,
+/// which then gets wrapped in Some() when converting to Config.
+#[test]
+#[serial]
+fn test_missing_max_dev_continuations_key_applies_serde_default() {
+    // Config file with max_dev_continuations omitted
+    let toml_str = r#"
+[general]
+verbosity = 2
+developer_iters = 5
+review_depth = "standard"
+"#;
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_file("/test/config/ralph-workflow.toml", toml_str);
+
+    let Ok((config, _unified, warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
+
+    // CRITICAL: When key is missing, serde should apply default_max_dev_continuations() = 2
+    assert_eq!(
+        config.max_dev_continuations,
+        Some(2),
+        "Missing max_dev_continuations key must default to Some(2) via serde default"
+    );
+
+    assert!(
+        warnings.is_empty(),
+        "Should not warn about missing max_dev_continuations (serde default applies): {:?}",
+        warnings
+    );
+}

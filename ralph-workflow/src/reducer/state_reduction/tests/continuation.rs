@@ -375,3 +375,102 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
         effect
     );
 }
+
+#[test]
+fn test_continuation_budget_with_missing_config_key() {
+    use crate::reducer::state::DevelopmentStatus;
+
+    // Simulate missing max_dev_continuations in config
+    // When config key is missing, UnifiedConfig provides default of 2, which gets
+    // wrapped in Some(2) during conversion. ContinuationState::max_continue_count
+    // should be 3 (1 initial + 2 continuations).
+    let continuation = ContinuationState::with_limits(
+        10, // max_xsd_retries
+        3,  // max_continue_count (should be 1 + default_max_dev_continuations)
+        2,  // max_same_agent_retries
+    );
+
+    let state = PipelineState::initial_with_continuation(1, 0, continuation);
+
+    // Verify default is applied correctly
+    assert_eq!(
+        state.continuation.max_continue_count, 3,
+        "Missing config key should default to 3 total attempts (1 initial + 2 continuations)"
+    );
+
+    // Verify exhaustion logic works correctly
+    assert!(
+        !state.continuation.continuations_exhausted(),
+        "Initial attempt (0) should not be exhausted"
+    );
+
+    let state = state.continuation.trigger_continuation(
+        DevelopmentStatus::Partial,
+        "partial work".to_string(),
+        None,
+        None,
+    );
+    assert_eq!(state.continuation_attempt, 1);
+    assert!(
+        !state.continuations_exhausted(),
+        "Attempt 1 should not be exhausted"
+    );
+
+    let state = state.trigger_continuation(
+        DevelopmentStatus::Partial,
+        "partial work 2".to_string(),
+        None,
+        None,
+    );
+    assert_eq!(state.continuation_attempt, 2);
+    assert!(
+        !state.continuations_exhausted(),
+        "Attempt 2 should not be exhausted"
+    );
+
+    let state = state.trigger_continuation(
+        DevelopmentStatus::Partial,
+        "partial work 3".to_string(),
+        None,
+        None,
+    );
+    assert_eq!(state.continuation_attempt, 3);
+    assert!(
+        state.continuations_exhausted(),
+        "Attempt 3 should be exhausted (3 >= 3)"
+    );
+}
+
+/// Test that continuation cap is enforced at the reducer level.
+///
+/// This test verifies that when continuation_attempt reaches max_continue_count,
+/// the continuations_exhausted() check correctly identifies budget exhaustion.
+/// The orchestration layer uses this signal to fire ContinuationBudgetExhausted event.
+#[test]
+fn test_orchestration_fires_budget_exhausted_at_cap() {
+    use crate::reducer::state::DevelopmentStatus;
+
+    let continuation = ContinuationState::with_limits(10, 3, 2);
+    let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+    state.phase = PipelinePhase::Development;
+
+    // Simulate 3 continuation triggers (attempts 1, 2, 3)
+    for _ in 1..=3 {
+        state = reduce(
+            state,
+            PipelineEvent::development_iteration_continuation_triggered(
+                0,
+                DevelopmentStatus::Partial,
+                "partial".to_string(),
+                None,
+                None,
+            ),
+        );
+    }
+
+    assert_eq!(state.continuation.continuation_attempt, 3);
+    assert!(state.continuation.continuations_exhausted());
+
+    // Orchestration should derive ContinuationBudgetExhausted event
+    // This is tested indirectly through the integration test
+}

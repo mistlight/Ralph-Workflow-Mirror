@@ -582,12 +582,16 @@ fn test_continuation_prompt_contains_expected_elements() {
         "Prompt should include previous summary"
     );
     assert!(
-        !prompt.contains("src/lib.rs") && !prompt.contains("Next steps from previous attempt"),
-        "Prompt should keep continuation context minimal"
+        prompt.contains("src/lib.rs") && prompt.contains("src/main.rs"),
+        "Prompt should include changed files when provided"
     );
     assert!(
-        prompt.contains("#1"),
-        "Prompt should include continuation attempt number"
+        prompt.contains("Add tests for the new functionality"),
+        "Prompt should include next steps when provided"
+    );
+    assert!(
+        prompt.contains("continuation 1 of"),
+        "Prompt should include continuation progress label"
     );
     assert!(
         !prompt.contains("ANALYSIS AGENT ROLE"),

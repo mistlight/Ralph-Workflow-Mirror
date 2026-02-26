@@ -245,7 +245,6 @@ pub struct Config {
     /// retry up to this many times with a format correction prompt. Default: 5.
     pub(crate) review_format_retries: u32,
     /// Maximum continuation attempts when developer returns "partial" or "failed".
-    /// Higher values allow more attempts to complete complex tasks within a single plan.
     ///
     /// # Semantics
     ///
@@ -254,6 +253,19 @@ pub struct Config {
     ///
     /// - `0` = no continuations (1 total attempt)
     /// - `2` = two continuations (3 total attempts)
+    ///
+    /// # Default Behavior
+    ///
+    /// **CRITICAL:** The system ALWAYS applies a default of 2 (3 total attempts) when this
+    /// field is None. The Option wrapper exists ONLY for backward compatibility with direct
+    /// Config construction (Config::default(), Config::test_default()).
+    ///
+    /// When loaded via config_from_unified():
+    /// - UnifiedConfig::general.max_dev_continuations has serde default of 2
+    /// - Converted to Some(2) in Config
+    /// - Applied unconditionally in create_initial_state_with_config()
+    ///
+    /// This ensures dev loop is ALWAYS bounded, preventing infinite continuation cycles.
     ///
     /// Default: 2 continuations (3 total attempts per iteration).
     pub max_dev_continuations: Option<u32>,

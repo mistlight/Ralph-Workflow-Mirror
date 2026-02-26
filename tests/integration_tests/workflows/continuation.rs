@@ -276,8 +276,8 @@ fn test_continuation_prompt_includes_previous_context() {
 
         // Verify the prompt contains key elements
         assert!(
-            prompt.contains("CONTINUATION MODE"),
-            "Prompt should indicate continuation mode"
+            prompt.contains("CONTINUATION CONTEXT"),
+            "Prompt should indicate continuation context section"
         );
         assert!(
             prompt.contains("partial"),
@@ -296,8 +296,8 @@ fn test_continuation_prompt_includes_previous_context() {
             "Prompt should include next steps"
         );
         assert!(
-            prompt.contains("#1"),
-            "Prompt should include continuation attempt number"
+            prompt.contains("continuation 1 of"),
+            "Prompt should include continuation progress label"
         );
     });
 }
@@ -324,18 +324,20 @@ fn test_continuation_prompt_references_original_files() {
             &workspace,
         );
 
-        // Verify references to original files
+        // Verify the prompt includes original request and plan sections
         assert!(
-            prompt.contains("PROMPT.md"),
-            "Prompt should reference PROMPT.md"
+            prompt.contains("ORIGINAL REQUEST"),
+            "Prompt should include original request section"
         );
         assert!(
-            prompt.contains("PLAN.md"),
-            "Prompt should reference PLAN.md"
+            prompt.contains("IMPLEMENTATION PLAN"),
+            "Prompt should include implementation plan section"
         );
         assert!(
-            prompt.contains("do NOT modify") || prompt.contains("DO NOT MODIFY"),
-            "Prompt should warn against modifying original files"
+            prompt.contains("do NOT modify")
+                || prompt.contains("DO NOT MODIFY")
+                || prompt.contains("Do NOT"),
+            "Prompt should warn against modifying files or creating status files"
         );
     });
 }

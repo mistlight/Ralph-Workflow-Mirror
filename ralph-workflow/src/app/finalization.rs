@@ -37,7 +37,7 @@ pub struct FinalizeContext<'a> {
 /// * `ctx` - Finalization context with logger, config, timer, and workspace
 /// * `final_state` - Final pipeline state from reducer (source of truth for metrics)
 pub fn finalize_pipeline(
-    agent_phase_guard: &mut AgentPhaseGuard,
+    agent_phase_guard: &mut AgentPhaseGuard<'_>,
     ctx: FinalizeContext<'_>,
     final_state: &PipelineState,
     prompt_monitor: Option<PromptMonitor>,

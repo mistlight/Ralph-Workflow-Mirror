@@ -38,9 +38,20 @@ COMMUNICATION BOUNDARY (CRITICAL):
 CONTINUATION CONTEXT
 ═══════════════════════════════════════════════════════════════════════════════
 
-Continuation attempt #{{CONTINUATION_ATTEMPT}}
-Previous status: {{PREVIOUS_STATUS}}
-Previous summary: {{PREVIOUS_SUMMARY}}
+This is {{CONTINUATION_PROGRESS}}. The previous attempt returned status "{{PREVIOUS_STATUS}}".
+
+Previous attempt summary:
+{{PREVIOUS_SUMMARY}}
+
+{% if PREVIOUS_FILES_CHANGED %}
+Files changed in previous attempt:
+{{PREVIOUS_FILES_CHANGED}}
+{% endif %}
+
+{% if PREVIOUS_NEXT_STEPS %}
+Recommended next steps from previous attempt:
+{{PREVIOUS_NEXT_STEPS}}
+{% endif %}
 
 ═══════════════════════════════════════════════════════════════════════════════
 ORIGINAL REQUEST
