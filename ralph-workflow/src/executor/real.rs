@@ -34,7 +34,7 @@ fn ensure_nonblocking_or_terminate(
     fn terminate_child_best_effort(child: &mut std::process::Child) {
         use std::time::{Duration, Instant};
 
-        let pid = child.id().min(i32::MAX as u32) as i32;
+        let pid = child.id().min(i32::MAX as u32).cast_signed();
 
         // Prefer killing the process group first (agent is in its own pgid).
         unsafe {

@@ -14,8 +14,7 @@ pub enum CommitMessageOutcome {
 #[derive(Debug)]
 pub struct CommitMessageResult {
     pub outcome: CommitMessageOutcome,
-    /// Path to the agent log file for debugging (currently unused)
-    pub _log_path: String,
+
     /// Prompts that were generated during this commit generation (key -> prompt)
     pub generated_prompts: HashMap<String, String>,
 }
@@ -372,7 +371,6 @@ pub fn generate_commit_message<S: std::hash::BuildHasher + Default>(
             archive_xml_file_with_workspace(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
             return Ok(CommitMessageResult {
                 outcome: CommitMessageOutcome::Skipped { reason },
-                _log_path: String::new(),
                 generated_prompts,
             });
         }
@@ -382,7 +380,6 @@ pub fn generate_commit_message<S: std::hash::BuildHasher + Default>(
 
     Ok(CommitMessageResult {
         outcome: CommitMessageOutcome::Message(result.into_message()),
-        _log_path: String::new(),
         generated_prompts,
     })
 }
@@ -522,7 +519,6 @@ pub fn generate_commit_message_with_chain<S: std::hash::BuildHasher + Default>(
                 );
                 return Ok(CommitMessageResult {
                     outcome: CommitMessageOutcome::Message(extracted.into_message()),
-                    _log_path: String::new(),
                     generated_prompts,
                 });
             }
@@ -533,7 +529,6 @@ pub fn generate_commit_message_with_chain<S: std::hash::BuildHasher + Default>(
                 );
                 return Ok(CommitMessageResult {
                     outcome: CommitMessageOutcome::Skipped { reason },
-                    _log_path: String::new(),
                     generated_prompts,
                 });
             }

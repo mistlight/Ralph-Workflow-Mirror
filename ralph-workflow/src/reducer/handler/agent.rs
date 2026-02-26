@@ -155,8 +155,8 @@ impl MainEffectHandler {
                 "# Resume: true (Original Run ID: {})\n",
                 ctx.run_context
                     .parent_run_id
-                    .as_ref()
-                    .unwrap_or(&"(unknown)".to_string())
+                    .as_deref()
+                    .unwrap_or("(unknown)")
             )
         } else {
             "# Resume: false\n".to_string()
