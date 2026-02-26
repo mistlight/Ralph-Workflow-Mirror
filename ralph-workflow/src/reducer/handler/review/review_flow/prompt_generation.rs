@@ -74,11 +74,8 @@ impl MainEffectHandler {
 
         let mut ignore_sources_owned: Vec<String> = Vec::new();
         let (plan_inline, diff_inline) = if matches!(prompt_mode, PromptMode::Normal) {
-            let inputs = match materialized_inputs {
-                Some(inputs) => inputs,
-                None => {
-                    return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
-                }
+            let Some(inputs) = materialized_inputs else {
+                return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
             };
             let plan_inline = match &inputs.plan.representation {
                 PromptInputRepresentation::Inline => {
@@ -269,11 +266,8 @@ impl MainEffectHandler {
                     crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
                         continuation_state,
                     );
-                let inputs = match materialized_inputs {
-                    Some(inputs) => inputs,
-                    None => {
-                        return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
-                    }
+                let Some(inputs) = materialized_inputs else {
+                    return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
                 };
                 let plan_ref = match &inputs.plan.representation {
                     PromptInputRepresentation::Inline => {
@@ -375,11 +369,8 @@ impl MainEffectHandler {
                 )
             }
             PromptMode::Normal => {
-                let inputs = match materialized_inputs {
-                    Some(inputs) => inputs,
-                    None => {
-                        return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
-                    }
+                let Some(inputs) = materialized_inputs else {
+                    return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
                 };
                 let prompt_key = format!("review_{pass}");
                 let plan_ref = match &inputs.plan.representation {

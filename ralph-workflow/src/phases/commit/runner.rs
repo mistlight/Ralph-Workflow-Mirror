@@ -459,7 +459,7 @@ pub fn generate_commit_message_with_chain<S: std::hash::BuildHasher + Default>(
             generated_prompts.insert(prompt_key.clone(), prompt.clone());
         }
 
-        let agent_config = if let Some(config) = registry.resolve_config(commit_agent) { config } else {
+        let Some(agent_config) = registry.resolve_config(commit_agent) else {
             last_error = Some(anyhow::anyhow!("Agent not found: {commit_agent}"));
             continue;
         };

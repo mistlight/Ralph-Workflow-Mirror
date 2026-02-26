@@ -39,18 +39,14 @@ impl MainEffectHandler {
         ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let plan_xml = match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {
-            Ok(s) => s,
-            Err(_) => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::planning_output_validation_failed(
-                        iteration,
+        let Ok(plan_xml) = ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) else {
+            return Ok(EffectResult::event(
+                PipelineEvent::planning_output_validation_failed(
+                    iteration,
                         self.state.continuation.invalid_output_attempts,
                     ),
                 ));
-            }
-        };
-
+            };
         match validate_plan_xml(&plan_xml) {
             Ok(elements) => {
                 let markdown = format_plan_as_markdown(&elements);

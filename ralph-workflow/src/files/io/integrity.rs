@@ -65,9 +65,8 @@ pub fn verify_file_not_corrupted_with_workspace(
     }
 
     // Check if valid UTF-8
-    let text = match String::from_utf8(content) {
-        Ok(s) => s,
-        Err(_) => return Ok(false),
+    let Ok(text) = String::from_utf8(content) else {
+        return Ok(false);
     };
 
     // Null bytes are a simple indicator of binary corruption.

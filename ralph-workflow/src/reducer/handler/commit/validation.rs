@@ -56,9 +56,7 @@ impl MainEffectHandler {
         let attempt = current_commit_attempt(&self.state.commit);
         let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
 
-        let xml_content = if let Ok(s) = ctx.workspace.read(commit_xml) {
-            s
-        } else {
+        let Ok(xml_content) = ctx.workspace.read(commit_xml) else {
             let reason =
                 "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml";
             let event = PipelineEvent::commit_xml_validation_failed(reason.to_string(), attempt);

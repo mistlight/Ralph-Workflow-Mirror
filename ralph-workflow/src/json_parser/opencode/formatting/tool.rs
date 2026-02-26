@@ -206,9 +206,8 @@ impl OpenCodeParser {
         tool_name: &str,
         input: &serde_json::Value,
     ) -> String {
-        let obj = match input.as_object() {
-            Some(o) => o,
-            None => return format_tool_input(input),
+        let Some(obj) = input.as_object() else {
+            return format_tool_input(input);
         };
 
         match tool_name {

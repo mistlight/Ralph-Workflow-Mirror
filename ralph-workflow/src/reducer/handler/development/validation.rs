@@ -105,19 +105,16 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::validate_development_result_xml;
 
-        let xml = match ctx
+        let Ok(xml) = ctx
             .workspace
             .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-        {
-            Ok(s) => s,
-            Err(_) => {
+        else {
                 return Ok(EffectResult::event(
                     PipelineEvent::development_output_validation_failed(
                         iteration,
                         self.state.continuation.invalid_output_attempts,
                     ),
                 ));
-            }
         };
 
         match validate_development_result_xml(&xml) {

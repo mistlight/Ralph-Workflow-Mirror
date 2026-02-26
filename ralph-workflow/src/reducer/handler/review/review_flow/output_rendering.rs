@@ -91,9 +91,8 @@ fn extract_issue_snippets(
             continue;
         }
 
-        let content = match workspace.read(Path::new(&file)) {
-            Ok(content) => content,
-            Err(_) => continue,
+        let Ok(content) = workspace.read(Path::new(&file)) else {
+            continue;
         };
 
         if let Some(snippet) = extract_snippet_lines(&content, start, end) {

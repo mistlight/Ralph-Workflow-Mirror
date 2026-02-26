@@ -73,9 +73,7 @@ impl MainEffectHandler {
         ctx: &PhaseContext<'_>,
         attempt: u32,
     ) -> Result<EffectResult> {
-        let diff = if let Ok(diff) = ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
-            diff
-        } else {
+        let Ok(diff) = ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) else {
             ctx.logger.warn(
                     "Missing commit diff at .agent/tmp/commit_diff.txt; invalidating diff-prepared state to recompute",
                 );
