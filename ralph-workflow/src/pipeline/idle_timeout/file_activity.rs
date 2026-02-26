@@ -86,17 +86,11 @@ impl FileActivityTracker {
             let age = now.duration_since(mtime).unwrap_or(Duration::MAX);
             let path_buf = path.to_path_buf();
 
-            // Check if file was modified since last check
-            let is_new_modification = self
-                .last_seen
-                .get(&path_buf)
-                .is_none_or(|&last| mtime > last);
-
             // Update tracking map
             self.last_seen.insert(path_buf, mtime);
 
-            // Recent modification detected
-            if is_new_modification && age < threshold {
+            // Recent activity detected
+            if age < threshold {
                 return Ok(true);
             }
         }
@@ -124,14 +118,9 @@ impl FileActivityTracker {
                     let age = now.duration_since(mtime).unwrap_or(Duration::MAX);
                     let path_buf = path.to_path_buf();
 
-                    let is_new_modification = self
-                        .last_seen
-                        .get(&path_buf)
-                        .is_none_or(|&last| mtime > last);
-
                     self.last_seen.insert(path_buf, mtime);
 
-                    if is_new_modification && age < threshold {
+                    if age < threshold {
                         return Ok(true);
                     }
                 }

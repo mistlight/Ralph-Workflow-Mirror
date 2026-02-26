@@ -166,11 +166,11 @@ fn test_tracks_modification_state_across_calls() {
         "First check should detect new file"
     );
 
-    // Second check without modification should not detect activity
-    // (file hasn't changed, so is_new_modification will be false)
+    // Second check should still detect activity because the file is still
+    // within the recency window, even if it has not changed since last check.
     assert!(
-        !tracker.check_for_recent_activity(&ws, 300).unwrap(),
-        "Second check without modification should not detect activity"
+        tracker.check_for_recent_activity(&ws, 300).unwrap(),
+        "Second check should still detect recent activity"
     );
 }
 

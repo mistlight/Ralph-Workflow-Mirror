@@ -62,8 +62,33 @@ pub enum MonitorResult {
     TimedOut { escalated: bool },
 }
 
-/// Default check interval for the idle monitor (1 second).
-const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+/// Default check interval for the idle monitor (30 seconds).
+const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(30);
+
+fn sleep_until_next_check_or_stop(
+    should_stop: &std::sync::atomic::AtomicBool,
+    check_interval: Duration,
+) -> bool {
+    use std::cmp;
+    use std::sync::atomic::Ordering;
+
+    let poll_interval = cmp::min(check_interval, Duration::from_millis(100));
+    let deadline = std::time::Instant::now() + check_interval;
+
+    loop {
+        if should_stop.load(Ordering::Acquire) {
+            return true;
+        }
+
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return false;
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
+        std::thread::sleep(cmp::min(poll_interval, remaining));
+    }
+}
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
 pub fn monitor_idle_timeout(
@@ -140,7 +165,11 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             return MonitorResult::ProcessCompleted;
         }
 
-        std::thread::sleep(check_interval);
+        if timeout_triggered.is_none()
+            && sleep_until_next_check_or_stop(should_stop.as_ref(), check_interval)
+        {
+            return MonitorResult::ProcessCompleted;
+        }
 
         if let Some(mut state) = timeout_triggered.take() {
             let status = {

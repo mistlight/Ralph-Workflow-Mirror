@@ -242,6 +242,44 @@ The following files remain in their original locations (not under the run log di
 
 **Rationale**: These files are correctness-critical artifacts used by the reducer/orchestrator, not observability logs. They must remain in stable, well-known locations for the pipeline to function correctly.
 
+## Idle Timeout Activity Detection
+
+Idle-timeout decisions use a **dual-signal** model to avoid false timeout classification for active runs:
+
+1. **Output activity**: recent stdout/stderr updates from the agent process
+2. **AI file activity**: recent updates to meaningful AI artifacts under `.agent/`
+
+A run is only treated as idle when **both** signals are stale for the timeout window.
+
+### Recency Window and Cadence
+
+- Idle timeout window: **300 seconds**
+- Default monitor cadence: **30 seconds**
+- Cadence is configurable via monitor config for test and runtime tuning. Lower-frequency checks can be used during low-activity periods as long as the 300-second idle semantics remain correct.
+
+### Qualifying File Activity
+
+The timeout monitor treats recent updates to these AI-generated artifacts as progress:
+
+- `.agent/PLAN.md`
+- `.agent/ISSUES.md`
+- `.agent/STATUS.md`
+- `.agent/NOTES.md`
+- `.agent/commit-message.txt`
+- `.agent/tmp/*.xml`
+
+### Non-Qualifying File Activity
+
+The monitor explicitly excludes operational noise so timeout signals stay trustworthy:
+
+- Log churn (for example `*.log`)
+- `.agent/checkpoint.json`
+- `.agent/start_commit`
+- `.agent/review_baseline.txt`
+- Temporary/editor artifacts (`*.tmp`, `*.swp`, `*~`, `*.bak`)
+
+This ensures that log-only writes and routine system touches do not keep stalled runs marked as active.
+
 ## Architecture Integration
 
 ### Reducer/Effect Boundary
