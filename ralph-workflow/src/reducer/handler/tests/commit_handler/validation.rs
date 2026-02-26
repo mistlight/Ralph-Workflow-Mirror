@@ -32,7 +32,7 @@ fn validate_commit_xml_emits_ui_xml_output_even_when_xml_file_missing() {
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -53,7 +53,7 @@ fn validate_commit_xml_emits_ui_xml_output_even_when_xml_file_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));

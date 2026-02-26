@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let invalid_xml = "<ralph-development-result><ralph-status>completed</ralph-status>";
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
@@ -44,7 +44,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -70,7 +70,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
 
 #[test]
 fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_DEVELOPMENT_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
@@ -112,7 +112,7 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -159,7 +159,7 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
 
 #[test]
 fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_DEVELOPMENT_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
@@ -201,7 +201,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -255,7 +255,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
 
 #[test]
 fn test_prepare_development_prompt_continuation_emits_template_rendered() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
@@ -292,7 +292,7 @@ fn test_prepare_development_prompt_continuation_emits_template_rendered() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -320,7 +320,7 @@ fn test_prepare_development_prompt_continuation_emits_template_rendered() {
 
 #[test]
 fn test_prepare_development_prompt_continuation_replay_skips_template_rendered() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut prompt_history = HashMap::new();
     prompt_history.insert(
         "development_0_continuation_1".to_string(),
@@ -363,7 +363,7 @@ fn test_prepare_development_prompt_continuation_replay_skips_template_rendered()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -391,7 +391,7 @@ fn test_prepare_development_prompt_continuation_replay_skips_template_rendered()
 
 #[test]
 fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_output() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
 
@@ -434,7 +434,7 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -454,7 +454,7 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
 
 #[test]
 fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
 
@@ -497,7 +497,7 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

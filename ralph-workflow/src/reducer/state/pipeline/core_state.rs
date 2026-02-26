@@ -388,7 +388,7 @@ pub struct PipelineState {
     /// This is a checkpoint-safe view (no secrets) derived from runtime cloud config.
     /// When enabled=false, all cloud-specific effects are skipped.
     #[serde(default)]
-    pub cloud_config: crate::config::CloudStateConfig,
+    pub cloud: crate::config::CloudStateConfig,
 
     /// Commit SHA pending push (cloud mode only, None in CLI mode).
     ///
@@ -581,7 +581,7 @@ impl PipelineState {
             termination_resume_phase: None,
             pre_termination_commit_checked: false,
             // Cloud mode fields (all default/disabled)
-            cloud_config: crate::config::CloudStateConfig::disabled(),
+            cloud: crate::config::CloudStateConfig::disabled(),
             pending_push_commit: None,
             git_auth_configured: false,
             pr_created: false,

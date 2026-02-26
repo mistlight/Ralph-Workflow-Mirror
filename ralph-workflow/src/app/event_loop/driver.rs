@@ -269,11 +269,11 @@ where
         if let Some(reporter) = ctx.cloud_reporter {
             for ui_event in &ui_events {
                 if let Some(update) =
-                    ui_event_to_progress_update(ui_event, &state, ctx.cloud_config)
+                    ui_event_to_progress_update(ui_event, &state, ctx.cloud)
                 {
                     if let Err(e) = reporter.report_progress(&update) {
                         let error = safe_cloud_error_string(&e);
-                        if !ctx.cloud_config.graceful_degradation {
+                        if !ctx.cloud.graceful_degradation {
                             return Err(anyhow::anyhow!("Cloud progress report failed: {error}"));
                         }
                         ctx.logger
@@ -466,7 +466,7 @@ pub(super) fn log_effect_execution(
 fn ui_event_to_progress_update(
     ui_event: &crate::reducer::ui_event::UIEvent,
     state: &PipelineState,
-    cloud_config: &crate::config::CloudConfig,
+    cloud: &crate::config::CloudConfig,
 ) -> Option<crate::cloud::types::ProgressUpdate> {
     use crate::cloud::types::{ProgressEventType, ProgressUpdate};
     use crate::reducer::ui_event::UIEvent;
@@ -483,7 +483,7 @@ fn ui_event_to_progress_update(
         nonzero(total).map(|t| (current_zero_based.saturating_add(1)).min(t))
     }
 
-    let _run_id = cloud_config.run_id.clone()?;
+    let _run_id = cloud.run_id.clone()?;
 
     let mut iteration = one_based(state.iteration, state.total_iterations);
     let mut total_iterations = nonzero(state.total_iterations);
@@ -623,7 +623,7 @@ mod progress_mapping_tests {
     use crate::reducer::state::PipelineState;
     use crate::reducer::ui_event::UIEvent;
 
-    fn cloud_config_for_test() -> CloudConfig {
+    fn cloud_for_test() -> CloudConfig {
         CloudConfig {
             enabled: true,
             api_url: Some("https://api.example.com".to_string()),
@@ -646,7 +646,7 @@ mod progress_mapping_tests {
 
     #[test]
     fn iteration_progress_maps_to_iteration_progress_event_type() {
-        let cloud = cloud_config_for_test();
+        let cloud = cloud_for_test();
         let mut state = PipelineState::initial(10, 0);
         state.phase = PipelinePhase::Development;
         state.iteration = 99;
@@ -671,7 +671,7 @@ mod progress_mapping_tests {
 
     #[test]
     fn review_progress_maps_to_review_progress_event_type() {
-        let cloud = cloud_config_for_test();
+        let cloud = cloud_for_test();
         let mut state = PipelineState::initial(10, 0);
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 99;
@@ -693,7 +693,7 @@ mod progress_mapping_tests {
 
     #[test]
     fn push_failed_maps_to_push_failed_event_type() {
-        let cloud = cloud_config_for_test();
+        let cloud = cloud_for_test();
         let mut state = PipelineState::initial(1, 0);
         state.phase = PipelinePhase::CommitMessage;
 
@@ -720,7 +720,7 @@ mod progress_mapping_tests {
 
     #[test]
     fn phase_transition_uses_one_based_iteration_and_review_pass() {
-        let cloud = cloud_config_for_test();
+        let cloud = cloud_for_test();
         let mut state = PipelineState::initial(5, 3);
         state.phase = PipelinePhase::Planning;
         state.iteration = 0;
@@ -742,7 +742,7 @@ mod progress_mapping_tests {
 
     #[test]
     fn agent_activity_is_not_forwarded_verbatim_to_cloud_progress() {
-        let cloud = cloud_config_for_test();
+        let cloud = cloud_for_test();
         let mut state = PipelineState::initial(1, 0);
         state.phase = PipelinePhase::Development;
 

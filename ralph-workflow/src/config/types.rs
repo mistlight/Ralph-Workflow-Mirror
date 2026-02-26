@@ -292,7 +292,7 @@ pub struct Config {
     /// Prevents unbounded memory growth by dropping oldest entries when limit is reached.
     pub execution_history_limit: usize,
     /// Cloud runtime configuration (internal).
-    pub(crate) cloud_config: CloudConfig,
+    pub(crate) cloud: CloudConfig,
 }
 
 /// Cloud runtime configuration (internal).
@@ -720,7 +720,7 @@ impl Config {
             max_xsd_retries: Some(10),
             max_same_agent_retries: Some(2),
             execution_history_limit: 1000,
-            cloud_config: CloudConfig::disabled(),
+            cloud: CloudConfig::disabled(),
         }
     }
 
@@ -788,13 +788,13 @@ impl Default for Config {
 }
 
 #[cfg(test)]
-mod cloud_config_tests {
+mod cloud_tests {
     use super::*;
     use serial_test::serial;
 
     #[test]
     #[serial]
-    fn test_cloud_config_disabled_by_default() {
+    fn test_cloud_disabled_by_default() {
         std::env::remove_var("RALPH_CLOUD_MODE");
         let config = CloudConfig::from_env();
         assert!(!config.enabled);
@@ -802,7 +802,7 @@ mod cloud_config_tests {
 
     #[test]
     #[serial]
-    fn test_cloud_config_enabled_with_env_var() {
+    fn test_cloud_enabled_with_env_var() {
         std::env::set_var("RALPH_CLOUD_MODE", "true");
         std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com");
         std::env::set_var("RALPH_CLOUD_API_TOKEN", "secret");
@@ -821,7 +821,7 @@ mod cloud_config_tests {
 
     #[test]
     #[serial]
-    fn test_cloud_config_validation_requires_fields() {
+    fn test_cloud_validation_requires_fields() {
         let config = CloudConfig {
             enabled: true,
             api_url: None,
@@ -854,7 +854,7 @@ mod cloud_config_tests {
     }
 
     #[test]
-    fn test_cloud_config_disabled_validation_passes() {
+    fn test_cloud_disabled_validation_passes() {
         let config = CloudConfig::disabled();
         assert!(
             config.validate().is_ok(),
@@ -863,7 +863,7 @@ mod cloud_config_tests {
     }
 
     #[test]
-    fn test_cloud_config_validation_rejects_non_https_api_url() {
+    fn test_cloud_validation_rejects_non_https_api_url() {
         let config = CloudConfig {
             enabled: true,
             api_url: Some("http://api.example.com".to_string()),
@@ -880,7 +880,7 @@ mod cloud_config_tests {
     }
 
     #[test]
-    fn test_cloud_config_validation_requires_git_token_for_token_auth() {
+    fn test_cloud_validation_requires_git_token_for_token_auth() {
         let config = CloudConfig {
             enabled: true,
             api_url: Some("https://api.example.com".to_string()),

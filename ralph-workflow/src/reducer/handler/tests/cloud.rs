@@ -26,15 +26,15 @@ struct Fixture {
     timer: Timer,
     repo_root: PathBuf,
     run_log_context: crate::logging::RunLogContext,
-    cloud_config: CloudConfig,
+    cloud: CloudConfig,
 }
 
 impl Fixture {
-    fn new(cloud_config: CloudConfig) -> Self {
-        Self::new_with_executor(cloud_config, Arc::new(MockProcessExecutor::new()))
+    fn new(cloud: CloudConfig) -> Self {
+        Self::new_with_executor(cloud, Arc::new(MockProcessExecutor::new()))
     }
 
-    fn new_with_executor(cloud_config: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
+    fn new_with_executor(cloud: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
         let workspace = MemoryWorkspace::new_test();
         let workspace_arc = Arc::new(workspace.clone()) as Arc<dyn crate::workspace::Workspace>;
         let colors = Colors { enabled: false };
@@ -57,7 +57,7 @@ impl Fixture {
             timer,
             repo_root,
             run_log_context,
-            cloud_config,
+            cloud,
         }
     }
 
@@ -82,14 +82,14 @@ impl Fixture {
             workspace_arc: Arc::clone(&self.workspace_arc),
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
-            cloud_config: &self.cloud_config,
+            cloud: &self.cloud,
         }
     }
 }
 
 #[test]
 fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -111,7 +111,7 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud_config);
+    let mut fixture = Fixture::new(cloud);
     let mut ctx = fixture.ctx();
     let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
@@ -148,7 +148,7 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
 
 #[test]
 fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -169,7 +169,7 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud_config);
+    let mut fixture = Fixture::new(cloud);
     let mut ctx = fixture.ctx();
     let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
@@ -194,7 +194,7 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
 
 #[test]
 fn test_push_to_remote_emits_ui_event_on_success() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -213,7 +213,7 @@ fn test_push_to_remote_emits_ui_event_on_success() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud_config);
+    let mut fixture = Fixture::new(cloud);
     let mut ctx = fixture.ctx();
     let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 
@@ -242,7 +242,7 @@ fn test_push_to_remote_emits_ui_event_on_success() {
 
 #[test]
 fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -265,7 +265,7 @@ fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
         "git",
         "HTTP 401: Bearer SECRET_TOKEN https://user:pass@example.com?access_token=abc",
     ));
-    let mut fixture = Fixture::new_with_executor(cloud_config, executor);
+    let mut fixture = Fixture::new_with_executor(cloud, executor);
     let mut ctx = fixture.ctx();
     let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
 

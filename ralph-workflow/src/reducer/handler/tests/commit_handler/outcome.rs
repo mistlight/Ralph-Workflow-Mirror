@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error_event() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -52,7 +52,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

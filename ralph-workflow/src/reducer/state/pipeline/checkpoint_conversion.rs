@@ -45,7 +45,7 @@ impl PipelineState {
 
         let cloud_state = checkpoint.cloud_state.take();
         let (
-            cloud_config,
+            cloud,
             pending_push_commit,
             git_auth_configured,
             pr_created,
@@ -75,7 +75,7 @@ impl PipelineState {
                 // Note: git auth configuration can be re-run safely; however, restoring
                 // `git_auth_configured=true` for SSH key paths would skip the env-var
                 // setup in a new process. Reset it in that case.
-                let git_auth_configured = match &cs.cloud_config.git_remote.auth_method {
+                let git_auth_configured = match &cs.cloud.git_remote.auth_method {
                     crate::config::GitAuthStateMethod::SshKey { key_path } if key_path.is_some() => {
                         false
                     }
@@ -83,7 +83,7 @@ impl PipelineState {
                 };
 
                 (
-                    cs.cloud_config.clone(),
+                    cs.cloud.clone(),
                     cs.pending_push_commit.clone(),
                     git_auth_configured,
                     cs.pr_created,
@@ -192,7 +192,7 @@ impl PipelineState {
             termination_resume_phase: None,
             pre_termination_commit_checked: false,
             // Cloud mode fields (checkpoint-safe, credential-free)
-            cloud_config,
+            cloud,
             pending_push_commit,
             git_auth_configured,
             pr_created,
@@ -502,7 +502,7 @@ mod tests {
             .expect("checkpoint should build");
 
         checkpoint.cloud_state = Some(CloudCheckpointState {
-            cloud_config: CloudStateConfig {
+            cloud: CloudStateConfig {
                 enabled: true,
                 api_url: Some("https://api.example.com".to_string()),
                 run_id: Some("run_123".to_string()),
@@ -533,7 +533,7 @@ mod tests {
 
         let state = PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, 1000);
 
-        assert!(state.cloud_config.enabled);
+        assert!(state.cloud.enabled);
         assert_eq!(state.pending_push_commit.as_deref(), Some("abc123"));
         assert!(state.git_auth_configured);
         assert!(state.pr_created);

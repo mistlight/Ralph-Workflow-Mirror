@@ -9,7 +9,7 @@ use super::*;
 
 #[test]
 fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -45,7 +45,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -61,7 +61,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
@@ -102,7 +102,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -127,7 +127,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
 
 #[test]
 fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
     let colors = Colors { enabled: false };
@@ -166,7 +166,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

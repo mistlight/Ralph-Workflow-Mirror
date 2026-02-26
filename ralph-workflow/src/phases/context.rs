@@ -106,7 +106,7 @@ pub struct PhaseContext<'a> {
     ///
     /// When cloud mode is disabled (enabled=false), all cloud-specific
     /// logic is skipped throughout the pipeline.
-    pub cloud_config: &'a crate::config::types::CloudConfig,
+    pub cloud: &'a crate::config::types::CloudConfig,
 }
 
 impl PhaseContext<'_> {
@@ -258,7 +258,7 @@ mod tests {
             workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
-            cloud_config: &crate::config::types::CloudConfig::disabled(),
+            cloud: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -303,7 +303,7 @@ mod tests {
             workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
-            cloud_config: &crate::config::types::CloudConfig::disabled(),
+            cloud: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -340,7 +340,7 @@ mod tests {
             workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
-            cloud_config: &crate::config::types::CloudConfig::disabled(),
+            cloud: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);

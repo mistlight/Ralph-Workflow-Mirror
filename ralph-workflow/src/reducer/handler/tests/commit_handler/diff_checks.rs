@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_check_commit_diff_emits_prepared_event() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::prompt_inputs::sha256_hex_str;
 
     let workspace = MemoryWorkspace::new_test();
@@ -55,7 +55,7 @@ fn test_check_commit_diff_emits_prepared_event() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -79,7 +79,7 @@ fn test_check_commit_diff_emits_prepared_event() {
 
 #[test]
 fn test_check_commit_diff_emits_failed_event_on_error() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -116,7 +116,7 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -172,7 +172,7 @@ fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
     std::env::set_current_dir(std::env::temp_dir()).unwrap();
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -193,7 +193,7 @@ fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

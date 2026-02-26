@@ -10,7 +10,7 @@ use super::*;
 
 #[test]
 fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
     let colors = Colors { enabled: false };
@@ -29,7 +29,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -50,7 +50,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -88,7 +88,7 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 
 #[test]
 fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuation_prompt() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -107,7 +107,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -128,7 +128,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -184,7 +184,7 @@ RETRY PROMPT MARKER"
 
 #[test]
 fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_prompt() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -203,7 +203,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -224,7 +224,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -261,7 +261,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
 
 #[test]
 fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRole;
     use crate::executor::AgentCommandResult;
 
@@ -282,7 +282,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -303,7 +303,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -341,7 +341,7 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
 
 #[test]
 fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::state_reduction::reduce;
 
     let workspace =
@@ -362,7 +362,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -383,7 +383,7 @@ fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() 
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let session_id = "session-123".to_string();
@@ -445,7 +445,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -466,7 +466,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -517,7 +517,7 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
 
 #[test]
 fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_attempt_context() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
     let colors = Colors { enabled: false };
@@ -536,7 +536,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -557,7 +557,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));

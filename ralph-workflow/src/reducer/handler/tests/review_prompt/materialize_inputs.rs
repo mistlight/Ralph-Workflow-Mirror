@@ -235,7 +235,7 @@ impl Workspace for ReadFailingWorkspace {
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -275,7 +275,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -306,7 +306,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
 
 #[test]
 fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Intentionally do not create `.agent/` up-front. Some workspace implementations
     // do not auto-create parent directories on write.
     let inner = MemoryWorkspace::new_test();
@@ -347,7 +347,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -363,7 +363,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -408,7 +408,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -433,7 +433,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -479,7 +479,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -504,7 +504,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -547,7 +547,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -572,7 +572,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -612,7 +612,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -643,7 +643,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
 
 #[test]
 fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp");
@@ -680,7 +680,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -702,7 +702,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
 
 #[test]
 fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let large_diff = "d".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 1);
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -743,7 +743,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));

@@ -33,7 +33,7 @@ fn test_pipeline_state_serialization_does_not_include_cloud_secrets() {
             remote_name: "origin".to_string(),
         },
     };
-    state.cloud_config = CloudStateConfig::from(&runtime);
+    state.cloud = CloudStateConfig::from(&runtime);
 
     let json = serde_json::to_string(&state).expect("state serialization should succeed");
     assert!(

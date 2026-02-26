@@ -186,7 +186,7 @@ fn test_step_type_defaults_to_file_change() {
     assert!(result.is_ok(), "Error: {:?}", result.err());
     let plan = result.unwrap();
     // Default type should be FileChange
-    assert_eq!(plan.steps[0].step_type, StepType::FileChange);
+    assert_eq!(plan.steps[0].kind, StepType::FileChange);
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn test_step_all_types_valid() {
             type_str,
             result.err()
         );
-        assert_eq!(result.unwrap().steps[0].step_type, expected_type);
+        assert_eq!(result.unwrap().steps[0].kind, expected_type);
     }
 }
 

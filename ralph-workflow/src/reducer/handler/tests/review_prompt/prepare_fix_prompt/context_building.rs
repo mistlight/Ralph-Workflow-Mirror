@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -54,7 +54,7 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -78,7 +78,7 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
 
 #[test]
 fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "<issues/>\n");
@@ -115,7 +115,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -134,7 +134,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
 
 #[test]
 fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n");
@@ -171,7 +171,7 @@ fn test_prepare_fix_prompt_embeds_sentinel_when_issues_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));

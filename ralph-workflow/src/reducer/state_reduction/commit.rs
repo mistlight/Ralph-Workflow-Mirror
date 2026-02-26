@@ -180,7 +180,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             };
 
             // Cloud mode: mark commit as pending push
-            let pending_push = if state.cloud_config.enabled {
+            let pending_push = if state.cloud.enabled {
                 Some(hash.clone())
             } else {
                 None

@@ -37,7 +37,7 @@ pub fn validate_model_flag(model_flag: &str) -> Vec<String> {
     }
 
     // Warn about providers requiring cloud configuration
-    if provider_type.requires_cloud_config() {
+    if provider_type.requires_cloud() {
         warnings.push(format!(
             "{} provider requires cloud configuration. {}",
             provider_type.name(),

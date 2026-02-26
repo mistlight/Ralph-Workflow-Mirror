@@ -348,11 +348,11 @@ pub fn load_config_from_path_with_env(
     let config = apply_env_overrides(config, &mut warnings);
 
     // Step 6: Validate cloud configuration (fail-fast)
-    if let Err(e) = config.cloud_config.validate() {
+    if let Err(e) = config.cloud.validate() {
         return Err(ConfigLoadWithValidationError::ValidationErrors(vec![
             ConfigValidationError::InvalidValue {
                 file: PathBuf::from("<environment>"),
-                key: "cloud_config".to_string(),
+                key: "cloud".to_string(),
                 message: e,
             },
         ]));
@@ -432,7 +432,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         max_xsd_retries: Some(max_xsd_retries),
         max_same_agent_retries: Some(max_same_agent_retries),
         execution_history_limit: general.execution_history_limit,
-        cloud_config: super::types::CloudConfig::from_env(),
+        cloud: super::types::CloudConfig::from_env(),
     }
 }
 
@@ -481,7 +481,7 @@ pub(super) fn default_config() -> Config {
         max_xsd_retries: Some(10), // Default to 10 retries before agent fallback
         max_same_agent_retries: Some(2), // Default to 2 failures (initial + 1 retry) before agent fallback
         execution_history_limit: 1000,   // Default to 1000 entries (ring buffer)
-        cloud_config: super::types::CloudConfig::from_env(),
+        cloud: super::types::CloudConfig::from_env(),
     }
 }
 

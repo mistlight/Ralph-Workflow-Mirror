@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -58,7 +58,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));

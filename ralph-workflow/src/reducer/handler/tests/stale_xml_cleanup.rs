@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/planning_prompt.txt", "prompt")
         .with_file(xml_paths::PLAN_XML, "<ralph-plan>old</ralph-plan>");
@@ -56,7 +56,7 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -69,7 +69,7 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
 
 #[test]
 fn test_cleanup_planning_xml_clears_stale_plan_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(xml_paths::PLAN_XML, "<ralph-plan>old</ralph-plan>");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
@@ -105,7 +105,7 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -118,7 +118,7 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
 
 #[test]
 fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/development_prompt.txt", "prompt")
         .with_file(
@@ -158,7 +158,7 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -171,7 +171,7 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
 
 #[test]
 fn test_cleanup_development_xml_clears_stale_dev_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(
         xml_paths::DEVELOPMENT_RESULT_XML,
         "<ralph-development>old</ralph-development>",
@@ -209,7 +209,7 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -222,7 +222,7 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
 
 #[test]
 fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/review_prompt.txt", "prompt")
         .with_file(xml_paths::ISSUES_XML, "<ralph-issues>old</ralph-issues>");
@@ -259,7 +259,7 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -272,7 +272,7 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
 
 #[test]
 fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(xml_paths::ISSUES_XML, "<ralph-issues>old</ralph-issues>");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
@@ -308,7 +308,7 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -321,7 +321,7 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
 
 #[test]
 fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/fix_prompt.txt", "prompt")
         .with_file(
@@ -361,7 +361,7 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -374,7 +374,7 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
 
 #[test]
 fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(
         xml_paths::FIX_RESULT_XML,
         "<ralph-fix-result>old</ralph-fix-result>",
@@ -412,7 +412,7 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
@@ -425,7 +425,7 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
 
 #[test]
 fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_prompt.txt", "prompt")
         .with_file(
@@ -465,7 +465,7 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let mut handler = MainEffectHandler::new(PipelineState {
         agent_chain: AgentChainState::initial().with_agents(
@@ -485,7 +485,7 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
 
 #[test]
 fn test_cleanup_commit_xml_clears_stale_commit_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(
         xml_paths::COMMIT_MESSAGE_XML,
         "<ralph-commit>old</ralph-commit>",
@@ -523,7 +523,7 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 

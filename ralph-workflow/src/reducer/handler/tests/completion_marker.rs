@@ -213,7 +213,7 @@ impl Workspace for FailingMarkerWorkspace {
     }
 
     fn set_writable(&self, relative: &Path) -> io::Result<()> {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         self.inner.set_writable(relative)
     }
 }
@@ -236,7 +236,7 @@ struct ContextParams<'a> {
 
 fn build_context<'a>(
     params: ContextParams<'a>,
-    cloud_config: &'a crate::config::types::CloudConfig,
+    cloud: &'a crate::config::types::CloudConfig,
 ) -> PhaseContext<'a> {
     PhaseContext {
         config: params.config,
@@ -258,13 +258,13 @@ fn build_context<'a>(
         workspace_arc: Arc::clone(params.workspace_arc),
         run_log_context: params.run_log_context,
         cloud_reporter: None,
-        cloud_config,
+        cloud,
     }
 }
 
 #[test]
 fn emit_completion_marker_creates_tmp_dir_before_write() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -291,7 +291,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
             timer: &mut timer,
             run_log_context: &run_log_context,
         },
-        &cloud_config,
+        &cloud,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -319,7 +319,7 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
 
 #[test]
 fn emit_completion_marker_with_write_failure_emits_event() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -346,7 +346,7 @@ fn emit_completion_marker_with_write_failure_emits_event() {
             timer: &mut timer,
             run_log_context: &run_log_context,
         },
-        &cloud_config,
+        &cloud,
     );
 
     let state = PipelineState::initial(1, 0);
@@ -377,7 +377,7 @@ fn emit_completion_marker_with_write_failure_emits_event() {
 
 #[test]
 fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -404,7 +404,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
             timer: &mut timer,
             run_log_context: &run_log_context,
         },
-        &cloud_config,
+        &cloud,
     );
     ctx.developer_agent = "missing-agent";
 
@@ -458,7 +458,7 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
 
 #[test]
 fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_agent() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -488,7 +488,7 @@ fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_age
             timer: &mut timer,
             run_log_context: &run_log_context,
         },
-        &cloud_config,
+        &cloud,
     );
     ctx.developer_agent = "claude";
 
@@ -627,7 +627,7 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
     let executor = std::sync::Arc::new(MockProcessExecutor::new());
     let executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
 
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace_arc = std::sync::Arc::clone(&workspace) as std::sync::Arc<dyn Workspace>;
     let mut ctx = PhaseContext {
         config: &config,
@@ -649,7 +649,7 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
         workspace_arc,
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut state = PipelineState::initial(1, 0);

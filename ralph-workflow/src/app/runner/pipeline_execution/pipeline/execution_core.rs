@@ -152,11 +152,11 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
 
     // Cloud mode git defaults must be resolved from repo reality.
     // In particular, push/PR head branches must be explicit branch names.
-    if config.cloud_config.enabled {
+    if config.cloud.enabled {
         resolve_cloud_git_defaults(&mut config, ctx)?;
         // Fail-fast if config is still invalid after resolving defaults.
         config
-            .cloud_config
+            .cloud
             .validate()
             .map_err(|e| anyhow::anyhow!("Cloud config validation failed: {e}"))?;
     }
@@ -245,17 +245,17 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     println!();
 
     // Initialize cloud reporter if cloud mode is enabled
-    let cloud_reporter: Arc<dyn CloudReporter> = if config.cloud_config.enabled {
-        Arc::new(HttpCloudReporter::new(config.cloud_config.clone()))
+    let cloud_reporter: Arc<dyn CloudReporter> = if config.cloud.enabled {
+        Arc::new(HttpCloudReporter::new(config.cloud.clone()))
     } else {
         Arc::new(NoopCloudReporter)
     };
 
     // Start heartbeat if cloud mode enabled
-    let _heartbeat_guard = if config.cloud_config.enabled {
+    let _heartbeat_guard = if config.cloud.enabled {
         Some(HeartbeatGuard::start(
             Arc::clone(&cloud_reporter),
-            Duration::from_secs(u64::from(config.cloud_config.heartbeat_interval_secs)),
+            Duration::from_secs(u64::from(config.cloud.heartbeat_interval_secs)),
         ))
     } else {
         None
@@ -468,7 +468,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
 
         if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let mut checkpoint = checkpoint;
-            if loop_result.final_state.cloud_config.enabled {
+            if loop_result.final_state.cloud.enabled {
                 checkpoint.cloud_state = Some(
                     crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(
                         &loop_result.final_state,
@@ -481,12 +481,12 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
 
     // Cloud completion reporting - notify orchestrator of final result
     // This is done after checkpoint saving to ensure all state is persisted first
-    if config.cloud_config.enabled {
+    if config.cloud.enabled {
         let result_payload = build_cloud_completion_payload(&loop_result, &timer);
 
         if let Err(e) = cloud_reporter.report_completion(&result_payload) {
             let error = crate::cloud::redaction::redact_secrets(&e.to_string());
-            if !config.cloud_config.graceful_degradation {
+            if !config.cloud.graceful_degradation {
                 return Err(anyhow::anyhow!("Cloud completion report failed: {error}"));
             }
             ctx.logger
@@ -607,7 +607,7 @@ fn resolve_cloud_git_defaults(
     ctx: &PipelineContext,
 ) -> anyhow::Result<()> {
     // Default push branch to the current branch name (safe, non-secret).
-    if config.cloud_config.git_remote.push_branch.is_none() {
+    if config.cloud.git_remote.push_branch.is_none() {
         let output = ctx.executor.execute(
             "git",
             &["rev-parse", "--abbrev-ref", "HEAD"],
@@ -627,12 +627,12 @@ fn resolve_cloud_git_defaults(
                 "Cloud mode requires a branch name for pushing/PRs. Current ref is detached (HEAD). Set RALPH_GIT_PUSH_BRANCH explicitly."
             ));
         }
-        config.cloud_config.git_remote.push_branch = Some(branch.to_string());
+        config.cloud.git_remote.push_branch = Some(branch.to_string());
     }
 
     // Defensive: reject literal HEAD even if explicitly set.
     if config
-        .cloud_config
+        .cloud
         .git_remote
         .push_branch
         .as_deref()

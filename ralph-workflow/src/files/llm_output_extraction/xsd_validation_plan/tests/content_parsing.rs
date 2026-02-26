@@ -268,15 +268,15 @@ pub client_id: String,
     // Steps checks
     assert_eq!(plan.steps.len(), 3);
     assert_eq!(plan.steps[0].number, 1);
-    assert_eq!(plan.steps[0].step_type, StepType::FileChange);
+    assert_eq!(plan.steps[0].kind, StepType::FileChange);
     assert_eq!(plan.steps[0].target_files.len(), 2);
 
     assert_eq!(plan.steps[1].number, 2);
-    assert_eq!(plan.steps[1].step_type, StepType::Research);
+    assert_eq!(plan.steps[1].kind, StepType::Research);
     assert_eq!(plan.steps[1].depends_on, vec![1]);
 
     assert_eq!(plan.steps[2].number, 3);
-    assert_eq!(plan.steps[2].step_type, StepType::Action);
+    assert_eq!(plan.steps[2].kind, StepType::Action);
     assert_eq!(plan.steps[2].depends_on, vec![1]);
 
     // Critical files checks

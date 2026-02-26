@@ -107,7 +107,7 @@ fn save_checkpoint_from_state(state: &PipelineState, ctx: &PhaseContext<'_>) -> 
         checkpoint.failed_phase_for_recovery = state.failed_phase_for_recovery;
         checkpoint.interrupted_by_user = state.interrupted_by_user;
 
-        if state.cloud_config.enabled {
+        if state.cloud.enabled {
             checkpoint.cloud_state =
                 Some(crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(state));
         }

@@ -186,7 +186,7 @@ pub struct TargetFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
     pub number: u32,
-    pub step_type: StepType,
+    pub kind: StepType,
     pub priority: Option<Priority>,
     pub title: String,
     pub target_files: Vec<TargetFile>,

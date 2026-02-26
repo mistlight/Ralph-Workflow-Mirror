@@ -622,10 +622,10 @@ pub enum Effect {
     /// credentials for all subsequent push operations. It configures git based on
     /// the authentication method specified in cloud configuration.
     ///
-    /// Only emitted when `cloud_config.enabled` is true.
+    /// Only emitted when `cloud.enabled` is true.
     ConfigureGitAuth {
         /// Serialized authentication method for logging/debugging.
-        /// The actual auth config comes from `cloud_config` in `PhaseContext`.
+        /// The actual auth config comes from `cloud` in `PhaseContext`.
         auth_method: String,
     },
 
@@ -636,7 +636,7 @@ pub enum Effect {
     ///
     /// This ensures incremental progress is visible on the remote and survives pipeline failures.
     ///
-    /// Only emitted when `cloud_config.enabled` is true and a pending push exists in state.
+    /// Only emitted when `cloud.enabled` is true and a pending push exists in state.
     PushToRemote {
         /// Remote name (e.g., "origin")
         remote: String,
@@ -656,7 +656,7 @@ pub enum Effect {
     ///
     /// Uses platform-specific CLI tools (gh for GitHub, glab for GitLab).
     ///
-    /// Only emitted when `cloud_config.enabled` and `cloud_config.git_remote.create_pr` are true.
+    /// Only emitted when `cloud.enabled` and `cloud.git_remote.create_pr` are true.
     CreatePullRequest {
         /// Target branch for the PR
         base_branch: String,

@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
 
@@ -65,7 +65,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -106,7 +106,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
 
 #[test]
 fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
 
@@ -150,7 +150,7 @@ fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -184,7 +184,7 @@ fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
 
 #[test]
 fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -232,7 +232,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -252,7 +252,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
 
 #[test]
 fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -291,7 +291,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -315,7 +315,7 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
 
 #[test]
 fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -361,7 +361,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -391,7 +391,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
 
 #[test]
 fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -429,7 +429,7 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -456,7 +456,7 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
 
 #[test]
 fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -501,7 +501,7 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -526,7 +526,7 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -565,7 +565,7 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -589,7 +589,7 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -629,7 +629,7 @@ fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState {
@@ -670,7 +670,7 @@ fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
 
 #[test]
 fn test_prepare_fix_prompt_uses_prompt_history_replay() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -711,7 +711,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -727,7 +727,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
 
 #[test]
 fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
     assert!(
         template.contains(
@@ -739,7 +739,7 @@ fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
 
 #[test]
 fn test_fix_mode_xsd_retry_template_lists_fix_result_status_values() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
     assert!(
         template.contains("all_issues_addressed")

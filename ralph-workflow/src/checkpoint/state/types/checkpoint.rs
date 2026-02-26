@@ -302,7 +302,7 @@ impl PipelineCheckpoint {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CloudCheckpointState {
     #[serde(default)]
-    pub cloud_config: crate::config::CloudStateConfig,
+    pub cloud: crate::config::CloudStateConfig,
     #[serde(default)]
     pub pending_push_commit: Option<String>,
     #[serde(default)]
@@ -329,7 +329,7 @@ impl CloudCheckpointState {
     #[must_use] 
     pub fn from_pipeline_state(state: &crate::reducer::state::PipelineState) -> Self {
         Self {
-            cloud_config: state.cloud_config.clone(),
+            cloud: state.cloud.clone(),
             pending_push_commit: state.pending_push_commit.clone(),
             git_auth_configured: state.git_auth_configured,
             pr_created: state.pr_created,

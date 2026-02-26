@@ -140,12 +140,12 @@ fn create_phase_context_with_config<'ctx>(
         workspace: &*ctx.workspace,
         workspace_arc: std::sync::Arc::clone(&ctx.workspace),
         run_log_context: &ctx.run_log_context,
-        cloud_reporter: if config.cloud_config.enabled {
+        cloud_reporter: if config.cloud.enabled {
             Some(cloud_reporter)
         } else {
             None
         },
-        cloud_config: &config.cloud_config,
+        cloud: &config.cloud,
     }
 }
 

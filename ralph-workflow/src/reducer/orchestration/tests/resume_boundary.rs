@@ -96,7 +96,7 @@ fn create_resume_state(
             max_review_passes: total_reviewer_passes,
             ..Default::default()
         },
-        cloud_config: crate::config::CloudStateConfig::disabled(),
+        cloud: crate::config::CloudStateConfig::disabled(),
         pending_push_commit: None,
         git_auth_configured: false,
         pr_created: false,

@@ -114,7 +114,7 @@ impl MainEffectHandler {
         // - credential-helper: via per-command credential.helper override
         let mut argv: Vec<String> = Vec::new();
 
-        match &ctx.cloud_config.git_remote.auth_method {
+        match &ctx.cloud.git_remote.auth_method {
             crate::config::types::GitAuthMethod::SshKey { .. } => {}
             crate::config::types::GitAuthMethod::Token { .. } => {
                 // This helper is executed by git via `sh -c` (leading '!').

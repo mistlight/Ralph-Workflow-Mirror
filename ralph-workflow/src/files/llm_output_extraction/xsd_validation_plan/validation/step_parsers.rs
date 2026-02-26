@@ -68,7 +68,7 @@ fn parse_single_step(
             example: None,
         })?;
 
-    let step_type = attrs
+    let kind = attrs
         .get("type")
         .and_then(|s| StepType::from_str(s))
         .unwrap_or_default();
@@ -146,7 +146,7 @@ fn parse_single_step(
     })?;
 
     // Validate file-change steps have target-files
-    if step_type == StepType::FileChange && target_files.is_empty() {
+    if kind == StepType::FileChange && target_files.is_empty() {
         return Err(XsdValidationError {
             error_type: XsdErrorType::MissingRequiredElement,
             element_path: format!("step[{number}]/target-files"),
@@ -169,7 +169,7 @@ fn parse_single_step(
 
     Ok(Step {
         number,
-        step_type,
+        kind,
         priority,
         title,
         target_files,

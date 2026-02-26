@@ -277,7 +277,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         workspace_arc: std::sync::Arc::clone(&workspace_arc),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &config.cloud_config,
+        cloud: &config.cloud,
     };
 
     let ctx = ConflictResolutionContext {

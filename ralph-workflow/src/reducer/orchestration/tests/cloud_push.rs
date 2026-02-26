@@ -10,7 +10,7 @@ use super::*;
 use crate::config::{CloudStateConfig, GitAuthStateMethod, GitRemoteStateConfig};
 
 fn create_cloud_enabled_state() -> PipelineState {
-    let cloud_config = CloudStateConfig {
+    let cloud = CloudStateConfig {
         enabled: true,
         api_url: Some("https://api.test.com".to_string()),
         run_id: Some("run_123".to_string()),
@@ -29,7 +29,7 @@ fn create_cloud_enabled_state() -> PipelineState {
     };
 
     let mut state = create_test_state();
-    state.cloud_config = cloud_config;
+    state.cloud = cloud;
     state
 }
 
@@ -37,7 +37,7 @@ fn create_cloud_enabled_state() -> PipelineState {
 fn test_cloud_disabled_no_push_effects() {
     // When cloud mode is disabled, no push effects should be emitted
     let mut state = create_test_state();
-    state.cloud_config = CloudStateConfig::disabled();
+    state.cloud = CloudStateConfig::disabled();
     state.pending_push_commit = Some("abc123".to_string());
     state.git_auth_configured = false;
 
@@ -123,8 +123,8 @@ fn test_cloud_enabled_no_pending_push_no_effects() {
 fn test_cloud_enabled_create_pr_in_finalizing() {
     // When in Finalizing phase with create_pr enabled, emit CreatePullRequest
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.create_pr = true;
-    state.cloud_config.git_remote.pr_base_branch = Some("main".to_string());
+    state.cloud.git_remote.create_pr = true;
+    state.cloud.git_remote.pr_base_branch = Some("main".to_string());
     state.phase = PipelinePhase::Finalizing;
     state.pr_created = false;
     state.pending_push_commit = None; // No pending push
@@ -156,11 +156,11 @@ fn test_cloud_enabled_create_pr_in_finalizing() {
 fn test_cloud_enabled_create_pr_renders_title_and_body_templates() {
     // PR title/body templates should be rendered (not passed through verbatim)
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.create_pr = true;
-    state.cloud_config.git_remote.pr_base_branch = Some("main".to_string());
-    state.cloud_config.git_remote.pr_title_template =
+    state.cloud.git_remote.create_pr = true;
+    state.cloud.git_remote.pr_base_branch = Some("main".to_string());
+    state.cloud.git_remote.pr_title_template =
         Some("Ralph changes for {run_id}".to_string());
-    state.cloud_config.git_remote.pr_body_template = Some("Summary: {prompt_summary}".to_string());
+    state.cloud.git_remote.pr_body_template = Some("Summary: {prompt_summary}".to_string());
     state.phase = PipelinePhase::Finalizing;
     state.pr_created = false;
     state.pending_push_commit = None;
@@ -183,7 +183,7 @@ fn test_cloud_enabled_create_pr_renders_title_and_body_templates() {
 fn test_cloud_enabled_pr_already_created_no_effect() {
     // When PR already created, don't emit CreatePullRequest again
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.create_pr = true;
+    state.cloud.git_remote.create_pr = true;
     state.phase = PipelinePhase::Finalizing;
     state.pr_created = true;
     state.pending_push_commit = None;
@@ -201,7 +201,7 @@ fn test_cloud_enabled_create_pr_is_blocked_when_commits_failed_to_push() {
     // PR creation should not be attempted when there are known unpushed commits.
     // Instead, surface a clear terminal failure so cloud orchestration can react.
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.create_pr = true;
+    state.cloud.git_remote.create_pr = true;
     state.phase = PipelinePhase::Finalizing;
     state.pr_created = false;
     state.pending_push_commit = None;
@@ -235,7 +235,7 @@ fn test_cloud_enabled_create_pr_is_blocked_when_commits_failed_to_push() {
 fn test_cloud_enabled_token_auth_format() {
     // Test token auth formatting in ConfigureGitAuth effect
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.auth_method = GitAuthStateMethod::Token {
+    state.cloud.git_remote.auth_method = GitAuthStateMethod::Token {
         username: "oauth2".to_string(),
     };
     state.pending_push_commit = Some("abc123".to_string());
@@ -255,7 +255,7 @@ fn test_cloud_enabled_token_auth_format() {
 fn test_cloud_enabled_credential_helper_format() {
     // Test credential helper formatting
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.auth_method = GitAuthStateMethod::CredentialHelper {
+    state.cloud.git_remote.auth_method = GitAuthStateMethod::CredentialHelper {
         helper: "gcloud".to_string(),
     };
     state.pending_push_commit = Some("abc123".to_string());
@@ -278,7 +278,7 @@ fn test_cloud_enabled_credential_helper_format() {
 fn test_cloud_enabled_force_push_when_configured() {
     // Test that force push flag is respected
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.force_push = true;
+    state.cloud.git_remote.force_push = true;
     state.pending_push_commit = Some("abc123".to_string());
     state.git_auth_configured = true;
 
@@ -339,7 +339,7 @@ fn test_cloud_push_does_not_block_other_priorities() {
 fn test_cloud_pr_only_in_finalizing_phase() {
     // PR creation should only happen in Finalizing phase
     let mut state = create_cloud_enabled_state();
-    state.cloud_config.git_remote.create_pr = true;
+    state.cloud.git_remote.create_pr = true;
     state.phase = PipelinePhase::Development; // Not Finalizing
     state.pr_created = false;
     state.pending_push_commit = None;

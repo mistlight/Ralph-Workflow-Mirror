@@ -24,7 +24,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -63,7 +63,7 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -94,7 +94,7 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
 
 #[test]
 fn test_prepare_review_prompt_emits_template_rendered_on_validation_failure() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("review_xml.txt");
     fs::write(
@@ -142,7 +142,7 @@ fn test_prepare_review_prompt_emits_template_rendered_on_validation_failure() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -183,7 +183,7 @@ fn test_prepare_review_prompt_emits_template_rendered_on_validation_failure() {
 
 #[test]
 fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "{{MISSING}}\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -221,7 +221,7 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -241,7 +241,7 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
 
 #[test]
 fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -283,7 +283,7 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {

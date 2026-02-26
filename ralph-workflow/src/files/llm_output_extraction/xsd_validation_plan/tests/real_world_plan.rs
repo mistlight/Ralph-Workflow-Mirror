@@ -81,7 +81,7 @@ fn test_comprehensive_real_world_plan() {
     // Step 1: CLI reference - file-change with high priority
     let step1 = &plan.steps[0];
     assert_eq!(step1.number, 1);
-    assert_eq!(step1.step_type, StepType::FileChange);
+    assert_eq!(step1.kind, StepType::FileChange);
     assert_eq!(step1.priority, Some(Priority::High));
     assert!(step1.title.contains("CLI reference"));
     assert_eq!(step1.target_files.len(), 1);
@@ -117,7 +117,7 @@ fn test_comprehensive_real_world_plan() {
     // Step 2: Configuration schema - depends on step 1, has code blocks
     let step2 = &plan.steps[1];
     assert_eq!(step2.number, 2);
-    assert_eq!(step2.step_type, StepType::FileChange);
+    assert_eq!(step2.kind, StepType::FileChange);
     assert_eq!(step2.priority, Some(Priority::High));
     assert_eq!(step2.depends_on, vec![1]);
 

@@ -39,7 +39,7 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
     result.push_str("## Implementation Steps\n\n");
     for step in &elements.steps {
         // Step header
-        let step_type_str = match step.step_type {
+        let step_type_str = match step.kind {
             crate::files::llm_output_extraction::xsd_validation_plan::StepType::FileChange => {
                 "file-change"
             }

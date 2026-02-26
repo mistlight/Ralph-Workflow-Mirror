@@ -18,7 +18,7 @@ mod tests {
 
     #[test]
     fn test_truncate_diff_if_large() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let large_diff = "diff --git a/src/main.rs b/src/main.rs\n".repeat(1000);
         let truncated = truncate_diff_if_large(&large_diff, 10_000);
 
@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn test_truncate_diff_no_truncation_needed() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let small_diff = "diff --git a/src/main.rs b/src/main.rs\n+change\n";
         let truncated = truncate_diff_if_large(small_diff, 10_000);
 
@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn test_truncate_diff_preserves_structure() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+change1\n\
             diff --git a/src/lib.rs b/src/lib.rs\n+change2\n";
         let truncated = truncate_diff_if_large(diff, 10_000);
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn test_truncate_diff_very_small_limit() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let large_diff = "diff --git a/src/main.rs b/src/main.rs\n".repeat(100);
         let truncated = truncate_diff_if_large(&large_diff, 50);
 
@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_truncate_keeps_high_priority_files() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let diff = "diff --git a/README.md b/README.md\n\
             +doc change\n\
             diff --git a/src/main.rs b/src/main.rs\n\
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_truncate_lines_to_fit() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let lines = vec![
             "line1".to_string(),
             "line2".to_string(),
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_extract_commit_message_from_file_reads_primary_xml() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let workspace = MemoryWorkspace::new_test().with_file(
             ".agent/tmp/commit_message.xml",
             "<ralph-commit><ralph-subject>feat: add</ralph-subject></ralph-commit>",
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_extract_commit_message_from_file_ignores_processed_archive() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let workspace = MemoryWorkspace::new_test().with_file(
             ".agent/tmp/commit_message.xml.processed",
             "<ralph-commit><ralph-subject>feat: add</ralph-subject></ralph-commit>",
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_run_commit_attempt_uses_unique_logfile_with_attempt_suffix() {
-        let cloud_config = crate::config::types::CloudConfig::disabled();
+        let cloud = crate::config::types::CloudConfig::disabled();
         let workspace = MemoryWorkspace::new_test().with_file(
             xml_paths::COMMIT_MESSAGE_XML,
             "<ralph-commit><ralph-subject>feat: x</ralph-subject></ralph-commit>",
@@ -170,7 +170,7 @@ mod tests {
             workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud,
         };
 
         let _ = run_commit_attempt(&mut ctx, 2, "diff --git a/a b/a\n+change\n", "claude")
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_run_commit_attempt_logs_diff_truncated_when_model_safe_diff_contains_marker() {
-        let cloud_config = crate::config::types::CloudConfig::disabled();
+        let cloud = crate::config::types::CloudConfig::disabled();
         let workspace = MemoryWorkspace::new_test().with_file(
             xml_paths::COMMIT_MESSAGE_XML,
             "<ralph-commit><ralph-subject>feat: x</ralph-subject></ralph-commit>",
@@ -230,7 +230,7 @@ mod tests {
             workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud,
         };
 
         let model_safe_diff = "diff --git a/a b/a\n+change\n\n[Truncated: 1 of 2 files shown]\n";
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_run_commit_attempt_errors_on_missing_template_variables() {
-        let cloud_config = crate::config::types::CloudConfig::disabled();
+        let cloud = crate::config::types::CloudConfig::disabled();
         let tempdir = tempdir().expect("create temp dir");
         let template_path = tempdir.path().join("commit_message_xml.txt");
         fs::write(
@@ -303,7 +303,7 @@ mod tests {
             workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud,
         };
 
         let err = run_commit_attempt(&mut ctx, 1, "diff --git a/a b/a\n+change\n", "claude")
@@ -406,14 +406,14 @@ mod tests {
 
     #[test]
     fn test_effective_budget_defaults_to_200kb_for_unknown() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let agents = vec!["unknown-agent".to_string()];
         assert_eq!(effective_model_budget_bytes(&agents), MAX_SAFE_PROMPT_SIZE);
     }
 
     #[test]
     fn test_effective_budget_empty_chain_returns_default() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let agents: Vec<String> = vec![];
         assert_eq!(effective_model_budget_bytes(&agents), MAX_SAFE_PROMPT_SIZE);
     }
@@ -432,7 +432,7 @@ mod tests {
     // Tests for truncate_diff_to_model_budget determinism
     #[test]
     fn test_truncation_is_deterministic() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(300_000));
         let budget = 100_000u64;
 
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_truncation_within_budget_returns_unchanged() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let diff = "diff --git a/a b/a\n+small change\n";
         let budget = 100_000u64;
 
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn test_truncation_returns_truncated_flag_when_over_budget() {
-        let _cloud_config = crate::config::types::CloudConfig::disabled();
+        let _cloud = crate::config::types::CloudConfig::disabled();
         let diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(50_000));
         let budget = 10_000u64;
 
@@ -657,7 +657,7 @@ mod tests {
 
         let repo_root = PathBuf::from("/mock/repo");
         let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-        let cloud_config = crate::config::types::CloudConfig::disabled();
+        let cloud = crate::config::types::CloudConfig::disabled();
         let mut ctx = PhaseContext {
             config: &config,
             registry: &registry,
@@ -678,7 +678,7 @@ mod tests {
             workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud,
         };
 
         let result = run_commit_attempt(&mut ctx, 1, "diff --git a/a b/a\n+change\n", "claude")

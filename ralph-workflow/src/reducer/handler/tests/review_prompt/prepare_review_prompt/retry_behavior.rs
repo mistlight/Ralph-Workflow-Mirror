@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_REVIEW_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -62,7 +62,7 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -107,7 +107,7 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
 
 #[test]
 fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_REVIEW_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -148,7 +148,7 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {

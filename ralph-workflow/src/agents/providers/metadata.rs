@@ -173,7 +173,7 @@ impl OpenCodeProviderType {
 
     /// Check if this provider requires special cloud configuration.
     #[must_use]
-    pub const fn requires_cloud_config(self) -> bool {
+    pub const fn requires_cloud(self) -> bool {
         matches!(
             self,
             Self::GoogleVertex
