@@ -288,7 +288,11 @@ impl AgentChainState {
             hasher.update(b"\n");
         }
         let digest = hasher.finalize();
-        digest.iter().map(|b| format!("{b:02x}")).collect()
+        digest.iter().fold(String::new(), |mut s, b| {
+            use std::fmt::Write;
+            write!(&mut s, "{b:02x}").unwrap();
+            s
+        })
     }
 
     #[cfg(test)]
@@ -316,7 +320,11 @@ impl AgentChainState {
             hasher.update(b"\n");
         }
         let digest = hasher.finalize();
-        digest.iter().map(|b| format!("{b:02x}")).collect()
+        digest.iter().fold(String::new(), |mut s, b| {
+            use std::fmt::Write;
+            write!(&mut s, "{b:02x}").unwrap();
+            s
+        })
     }
 
     /// Get the currently selected model for the current agent.
