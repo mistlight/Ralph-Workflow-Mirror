@@ -27,6 +27,8 @@ You are in REVIEW MODE. Your ONLY task is to identify issues - DO NOT modify any
 
 {{> shared/_unattended_mode}}
 
+{{> shared/_no_git_commit}}
+
 ═══════════════════════════════════════════════════════════════════════════════
 CRITICAL CONSTRAINTS
 ═══════════════════════════════════════════════════════════════════════════════

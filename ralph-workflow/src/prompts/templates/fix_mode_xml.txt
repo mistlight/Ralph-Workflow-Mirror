@@ -28,6 +28,8 @@ You are in FIX MODE. Address issues found during review.
 
 {{> shared/_unattended_mode}}
 
+{{> shared/_no_git_commit}}
+
 ═══════════════════════════════════════════════════════════════════════════════
 IMPORTANT: EXECUTION CONTEXT
 ═══════════════════════════════════════════════════════════════════════════════

@@ -19,6 +19,8 @@ Your task is to VERIFY whether the code changes satisfy the PLAN.
 
 {{> shared/_unattended_mode}}
 
+{{> shared/_no_git_commit}}
+
 ───────────────────────────────────────────────────────────────────────────────
 CRITICAL CONSTRAINTS
 ───────────────────────────────────────────────────────────────────────────────

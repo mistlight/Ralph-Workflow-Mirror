@@ -417,4 +417,16 @@ mod tests {
             "commit_xsd_retry should not include stdout suppression wording"
         );
     }
+
+    #[test]
+    fn test_all_templates_include_no_git_commit_partial() {
+        let templates = list_all_templates();
+        for template in templates {
+            assert!(
+                template.content.contains("{{> shared/_no_git_commit}}"),
+                "Template '{}' must include shared/_no_git_commit partial",
+                template.name
+            );
+        }
+    }
 }

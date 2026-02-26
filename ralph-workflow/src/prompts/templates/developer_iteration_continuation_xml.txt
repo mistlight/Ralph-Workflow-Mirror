@@ -14,6 +14,8 @@ You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 
 {{> shared/_unattended_mode}}
 
+{{> shared/_no_git_commit}}
+
 ═══════════════════════════════════════════════════════════════════════════════
 IMPORTANT: EXECUTION CONTEXT
 ═══════════════════════════════════════════════════════════════════════════════

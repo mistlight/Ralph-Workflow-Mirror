@@ -20,6 +20,7 @@
 //! - `shared/_context_section` - PROMPT and PLAN context variables
 //! - `shared/_diff_section` - DIFF display in code block
 //! - `shared/_developer_iteration_guidance` - Shared implementation guidance
+//! - `shared/_no_git_commit` - Prohibits any git commit operations
 //! - `shared/_output_checklist` - Prioritized checklist output format
 //! - `shared/_safety_no_execute` - No command execution, read-only mode
 //! - `shared/_unattended_mode` - Automated pipeline, no user interaction
@@ -50,6 +51,10 @@ pub fn get_shared_partials() -> HashMap<String, String> {
             include_str!("templates/shared/_developer_iteration_guidance.txt").to_string(),
         ),
         (
+            "shared/_no_git_commit".to_string(),
+            include_str!("templates/shared/_no_git_commit.txt").to_string(),
+        ),
+        (
             "shared/_output_checklist".to_string(),
             include_str!("templates/shared/_output_checklist.txt").to_string(),
         ),
@@ -78,6 +83,7 @@ mod tests {
         assert!(partials.contains_key("shared/_safety_no_execute"));
         assert!(partials.contains_key("shared/_unattended_mode"));
         assert!(partials.contains_key("shared/_developer_iteration_guidance"));
+        assert!(partials.contains_key("shared/_no_git_commit"));
     }
 
     #[test]
@@ -123,5 +129,62 @@ mod tests {
         assert!(guidance.contains("YOUR TASK"));
         assert!(guidance.contains("VERIFICATION AND VALIDATION"));
         assert!(guidance.contains("EXPLORATION AND CONTEXT GATHERING"));
+    }
+
+    #[test]
+    fn test_developer_iteration_guidance_partial_is_concise() {
+        let partials = get_shared_partials();
+        let guidance = partials
+            .get("shared/_developer_iteration_guidance")
+            .expect("developer iteration guidance partial should exist");
+
+        let content_lines = guidance
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with("{#"))
+            .count();
+
+        assert!(
+            content_lines <= 45,
+            "developer iteration guidance should stay concise; got {content_lines} content lines"
+        );
+    }
+
+    #[test]
+    fn test_developer_iteration_guidance_emphasizes_total_completion() {
+        let partials = get_shared_partials();
+        let guidance = partials
+            .get("shared/_developer_iteration_guidance")
+            .expect("developer iteration guidance partial should exist");
+
+        assert!(
+            !guidance.to_lowercase().contains("remaining"),
+            "guidance should avoid 'remaining' wording"
+        );
+        assert!(
+            guidance.contains("Complete ALL") || guidance.contains("complete ALL"),
+            "guidance should explicitly emphasize complete ALL work"
+        );
+        assert!(
+            !guidance.contains("If you can finish"),
+            "guidance should not include conditional completion language"
+        );
+    }
+
+    #[test]
+    fn test_no_git_commit_partial_blocks_mutating_git_commands() {
+        let partials = get_shared_partials();
+        let no_git = partials
+            .get("shared/_no_git_commit")
+            .expect("no git commit partial should exist");
+
+        assert!(
+            no_git.contains("Do NOT run any git command")
+                || no_git.contains("Do NOT run ANY git command"),
+            "partial should block all git commands by default"
+        );
+        assert!(
+            no_git.contains("read-only") && no_git.contains("lookup"),
+            "partial should allow only read-only lookup git commands"
+        );
     }
 }

@@ -51,6 +51,8 @@
 
 {{> shared/_unattended_mode}}
 
+{{> shared/_no_git_commit}}
+
 You are a commit message generation expert. Analyze the following git diff and generate a high-quality Conventional Commits message.
 
 DIFF:
