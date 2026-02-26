@@ -217,7 +217,7 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
             let result = streamed_thinking.map_or_else(
                 || {
                     completion_text.map_or_else(
-                        || String::new(),
+                        String::new,
                         |text| {
                             let sanitized = sanitize_for_display(text);
                             if sanitized.is_empty() {
@@ -268,7 +268,7 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
             let rendered = streamed_thinking.map_or_else(
                 || {
                     completion_text.map_or_else(
-                        || String::new(),
+                        String::new,
                         |text| {
                             if ctx.verbosity.is_verbose() {
                                 let limit = ctx.verbosity.truncate_limit("text");
