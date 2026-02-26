@@ -98,7 +98,7 @@ impl MainEffectHandler {
         };
         if is_xsd_retry {
         }
-        let mut _xsd_error_for_validation: Option<String> = None;
+        let mut xsd_error_for_validation: Option<String> = None;
         let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =
             match prompt_mode {
                 PromptMode::XsdRetry => {
@@ -111,7 +111,7 @@ impl MainEffectHandler {
                         .last_fix_xsd_error
                         .as_deref()
                         .unwrap_or("XML output failed validation. Provide valid XML output.");
-                    _xsd_error_for_validation = Some(xsd_error.to_string());
+                    xsd_error_for_validation = Some(xsd_error.to_string());
                     let (prompt, was_replayed) =
                         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
                             prompt_fix_xsd_retry_with_context(
@@ -184,7 +184,7 @@ impl MainEffectHandler {
             // Re-generate to get the log for validation
             // Only validate freshly generated prompts, not replayed ones
             let rendered = if matches!(prompt_mode, PromptMode::XsdRetry) {
-                let xsd_error = _xsd_error_for_validation
+                let xsd_error = xsd_error_for_validation
                     .as_deref()
                     .unwrap_or("XML output failed validation. Provide valid XML output.");
                 crate::prompts::review::prompt_fix_xsd_retry_with_log(

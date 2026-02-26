@@ -33,7 +33,7 @@ use std::time::Instant;
 /// * `j` - The cycle number (used for logging and prompt keys)
 /// * `_reviewer_context` - Context level for the fix prompt (currently unused)
 /// * `_resume_context` - Optional resume context for checkpoint replay
-/// * `_agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
+/// * `agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
 ///
 /// # Returns
 ///
@@ -54,9 +54,9 @@ pub fn run_fix_pass(
     j: u32,
     _reviewer_context: ContextLevel,
     _resume_context: Option<&ResumeContext>,
-    _agent: Option<&str>,
+    agent: Option<&str>,
 ) -> anyhow::Result<FixPassResult> {
-    let active_agent = _agent.unwrap_or(ctx.reviewer_agent);
+    let active_agent = agent.unwrap_or(ctx.reviewer_agent);
     let fix_start_time = Instant::now();
 
     update_status_with_workspace(ctx.workspace, "Applying fixes", ctx.config.isolation_mode)?;

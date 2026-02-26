@@ -29,7 +29,7 @@ use std::time::Instant;
 /// * `j` - The cycle number (used for logging and prompt keys)
 /// * `review_label` - Human-readable label for this review pass
 /// * `_review_prompt` - Unused (kept for API compatibility)
-/// * `_agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
+/// * `agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
 ///
 /// # Returns
 ///
@@ -50,9 +50,9 @@ pub fn run_review_pass(
     j: u32,
     review_label: &str,
     _review_prompt: &str, // Unused - we build XML prompt internally
-    _agent: Option<&str>,
+    agent: Option<&str>,
 ) -> anyhow::Result<ReviewPassResult> {
-    let active_agent = _agent.unwrap_or(ctx.reviewer_agent);
+    let active_agent = agent.unwrap_or(ctx.reviewer_agent);
     let issues_path = Path::new(".agent/ISSUES.md");
 
     let plan_content = ctx
