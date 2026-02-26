@@ -185,7 +185,22 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
 /// ## Regression Test
 /// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
 pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
-    if let Some(text) = text {
+    text.map_or_else(
+        || {
+            if ctx.verbosity.is_verbose() {
+                format!(
+                    "{}[{}]{} {}Reasoning...{}\n",
+                    ctx.colors.dim(),
+                    ctx.display_name,
+                    ctx.colors.reset(),
+                    ctx.colors.cyan(),
+                    ctx.colors.reset()
+                )
+            } else {
+                String::new()
+            }
+        },
+        |text| {
         // Codex sends FULL accumulated content in each item.started event (snapshot-style),
         // not incremental deltas like Claude. We need to compute the incremental delta here.
         let (incremental_delta, accumulated) = {
@@ -282,18 +297,8 @@ pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>
             // Basic/None mode: suppress per-delta output
             String::new()
         }
-    } else if ctx.verbosity.is_verbose() {
-        format!(
-            "{}[{}]{} {}Reasoning...{}\n",
-            ctx.colors.dim(),
-            ctx.display_name,
-            ctx.colors.reset(),
-            ctx.colors.cyan(),
-            ctx.colors.reset()
-        )
-    } else {
-        String::new()
-    }
+        },
+    )
 }
 
 /// Handle `ItemStarted` event for `command_execution` type.
