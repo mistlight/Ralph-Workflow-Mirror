@@ -127,11 +127,10 @@ pub fn get_stored_or_generate_prompt<F, S: std::hash::BuildHasher>(
 where
     F: FnOnce() -> String,
 {
-    if let Some(stored_prompt) = prompt_history.get(prompt_key) {
-        (stored_prompt.clone(), true)
-    } else {
-        (generator(), false)
-    }
+    prompt_history.get(prompt_key).map_or_else(
+        || (generator(), false),
+        |stored_prompt| (stored_prompt.clone(), true)
+    )
 }
 
 #[cfg(test)]

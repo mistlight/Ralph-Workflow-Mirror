@@ -38,8 +38,7 @@ pub(super) fn terminate_child_best_effort(
                     return true;
                 }
                 let now = Instant::now();
-                let should_resend = last_kill_sent_at.map_or(
-                    true,
+                let should_resend = last_kill_sent_at.is_none_or(
                     |t| now.duration_since(t) >= kill_config.sigkill_resend_interval()
                 );
 
