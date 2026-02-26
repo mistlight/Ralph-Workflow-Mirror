@@ -225,8 +225,7 @@ fn parse_list(reader: &mut Reader<&[u8]>, list_type: ListType) -> Result<List, X
                                 let nested_type =
                                     match attrs.get("type").map_or("", std::string::String::as_str) {
                                         "ordered" => ListType::Ordered,
-                                        "unordered" => ListType::Unordered,
-                                        _ => ListType::Unordered, // Default to unordered for unknown types
+                                        "unordered" | _ => ListType::Unordered, // Default for unordered or unknown
                                     };
                                 nested =
                                     Some(Box::new(parse_list(&mut inner_reader, nested_type)?));
