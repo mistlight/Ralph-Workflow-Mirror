@@ -18,11 +18,7 @@ fn handle_template_list_impl(colors: Colors, include_deprecated: bool) {
                 return true;
             }
             // Check if this is a deprecated template by looking at the catalog
-            if let Some(meta) = template_catalog::get_template_metadata(name) {
-                !meta.deprecated
-            } else {
-                true
-            }
+            template_catalog::get_template_metadata(name).is_none_or(|meta| !meta.deprecated)
         })
         .map(|(name, (content, desc))| {
             // For deprecated templates, use their content which points to consolidated versions
@@ -45,11 +41,7 @@ fn handle_template_list_impl(colors: Colors, include_deprecated: bool) {
         items
     } {
         // Show deprecated marker in the list
-        let is_deprecated = if let Some(meta) = template_catalog::get_template_metadata(name) {
-            meta.deprecated
-        } else {
-            false
-        };
+        let is_deprecated = template_catalog::get_template_metadata(name).is_some_and(|meta| meta.deprecated);
 
         let deprecated_marker = if is_deprecated {
             format!("{} [DEPRECATED]{}", colors.yellow(), colors.reset())
@@ -74,11 +66,7 @@ fn handle_template_list_impl(colors: Colors, include_deprecated: bool) {
         let deprecated_count = filtered_templates
             .iter()
             .filter(|(name, _, _)| {
-                if let Some(meta) = template_catalog::get_template_metadata(name) {
-                    meta.deprecated
-                } else {
-                    false
-                }
+                template_catalog::get_template_metadata(name).is_some_and(|meta| meta.deprecated)
             })
             .count();
 

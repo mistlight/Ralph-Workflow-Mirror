@@ -99,17 +99,17 @@ impl ClaudeParser {
                     // This is important because Claude events can have either 'error' (string)
                     // or 'errors' (array of strings), and we need to check both.
                     let has_errors_with_content =
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                            // Check for 'errors' array with at least one non-empty string
-                            json.get("errors")
-                                .and_then(|v| v.as_array())
-                                .is_some_and(|arr| {
-                                    arr.iter()
-                                        .any(|e| e.as_str().is_some_and(|s| !s.trim().is_empty()))
-                                })
-                        } else {
-                            false
-                        };
+                        serde_json::from_str::<serde_json::Value>(trimmed).is_ok_and(
+                            |json| {
+                                // Check for 'errors' array with at least one non-empty string
+                                json.get("errors")
+                                    .and_then(|v| v.as_array())
+                                    .is_some_and(|arr| {
+                                        arr.iter()
+                                            .any(|e| e.as_str().is_some_and(|s| !s.trim().is_empty()))
+                                    })
+                            }
+                        );
 
                     if let Ok(ClaudeEvent::Result {
                         subtype,

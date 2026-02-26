@@ -398,16 +398,17 @@ impl CheckpointBuilder {
             calculate_file_checksum_with_workspace(ws, std::path::Path::new("PROMPT.md"))
         });
 
-        let (config_path, config_checksum) = if let Some(path) = self.config_path {
-            let path_string = path.to_string_lossy().to_string();
-            let checksum = workspace.and_then(|ws| {
-                let relative = path.strip_prefix(ws.root()).ok().unwrap_or(&path);
-                calculate_file_checksum_with_workspace(ws, relative)
-            });
-            (Some(path_string), checksum)
-        } else {
-            (None, None)
-        };
+        let (config_path, config_checksum) = self.config_path.map_or(
+            (None, None),
+            |path| {
+                let path_string = path.to_string_lossy().to_string();
+                let checksum = workspace.and_then(|ws| {
+                    let relative = path.strip_prefix(ws.root()).ok().unwrap_or(&path);
+                    calculate_file_checksum_with_workspace(ws, relative)
+                });
+                (Some(path_string), checksum)
+            }
+        );
 
         let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase,

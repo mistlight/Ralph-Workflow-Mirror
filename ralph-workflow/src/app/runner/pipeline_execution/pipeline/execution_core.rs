@@ -110,19 +110,19 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
     // Create run context - either new or from checkpoint
-    let run_context = if let Some(ref checkpoint) = resume_checkpoint {
-        use crate::checkpoint::RunContext;
-        RunContext::from_checkpoint(checkpoint)
-    } else {
-        use crate::checkpoint::RunContext;
-        RunContext::new()
-    };
+    use crate::checkpoint::RunContext;
+    let run_context = resume_checkpoint.as_ref().map_or_else(
+        || RunContext::new(),
+        |checkpoint| RunContext::from_checkpoint(checkpoint)
+    );
 
     // Apply checkpoint configuration restoration if resuming
-    let mut config = if let Some(ref checkpoint) = resume_checkpoint {
-        use crate::checkpoint::apply_checkpoint_to_config;
-        let mut restored_config = ctx.config.clone();
-        apply_checkpoint_to_config(&mut restored_config, checkpoint);
+    let mut config = resume_checkpoint.as_ref().map_or_else(
+        || ctx.config.clone(),
+        |checkpoint| {
+            use crate::checkpoint::apply_checkpoint_to_config;
+            let mut restored_config = ctx.config.clone();
+            apply_checkpoint_to_config(&mut restored_config, checkpoint);
         ctx.logger.info("Restored configuration from checkpoint:");
         if checkpoint.cli_args.developer_iters > 0 {
             ctx.logger.info(&format!(
@@ -136,10 +136,8 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
                 checkpoint.cli_args.reviewer_reviews
             ));
         }
-        restored_config
-    } else {
-        ctx.config.clone()
-    };
+        restored_config        }
+    );
 
     // Restore environment variables from checkpoint if resuming
     if let Some(ref checkpoint) = resume_checkpoint {

@@ -104,17 +104,15 @@ pub fn handle_resume_with_validation(
             check_rebase_state_on_resume(&checkpoint, logger);
 
             // Perform file system state validation
-            let validation_outcome = if let Some(file_system_state) = &checkpoint.file_system_state
-            {
-                validate_file_system_state(
+            let validation_outcome = checkpoint.file_system_state.as_ref().map_or(
+                ValidationOutcome::Passed,
+                |file_system_state| validate_file_system_state(
                     file_system_state,
                     logger,
                     args.recovery.recovery_strategy.into(),
                     workspace,
                 )
-            } else {
-                ValidationOutcome::Passed
-            };
+            );
 
             if let ValidationOutcome::Failed(reason) = validation_outcome {
                 return Err(anyhow::anyhow!(
