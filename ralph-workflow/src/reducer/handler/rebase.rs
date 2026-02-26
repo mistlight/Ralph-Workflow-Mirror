@@ -93,14 +93,14 @@ impl MainEffectHandler {
             },
             ConflictStrategy::Abort => match abort_rebase(ctx.executor) {
                 Ok(()) => {
-                    let restored_to = match git2::Repository::open(ctx.repo_root) {
-                        Ok(repo) => repo
+                    let restored_to = git2::Repository::open(ctx.repo_root).map_or_else(
+                        |_| "HEAD".to_string(),
+                        |repo| repo
                             .head()
                             .ok()
                             .and_then(|head| head.peel_to_commit().ok())
-                            .map_or_else(|| "HEAD".to_string(), |commit| commit.id().to_string()),
-                        Err(_) => "HEAD".to_string(),
-                    };
+                            .map_or_else(|| "HEAD".to_string(), |commit| commit.id().to_string())
+                    );
 
                     Ok(EffectResult::event(PipelineEvent::rebase_aborted(
                         RebasePhase::PostReview,

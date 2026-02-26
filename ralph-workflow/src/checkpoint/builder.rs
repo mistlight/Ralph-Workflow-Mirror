@@ -457,13 +457,12 @@ impl CheckpointBuilder {
         // Use workspace-based capture when workspace is available (pipeline code),
         // fall back to CWD-based capture when not (CLI layer code).
         let executor_ref = self.executor.as_ref().map(std::convert::AsRef::as_ref);
-        checkpoint.file_system_state = if let Some(ws) = workspace {
-            executor_ref.map(|executor| FileSystemState::capture_with_workspace(ws, executor))
-        } else {
-            Some(FileSystemState::capture_with_optional_executor_impl(
+        checkpoint.file_system_state = workspace.map_or_else(
+            || Some(FileSystemState::capture_with_optional_executor_impl(
                 executor_ref,
-            ))
-        };
+            )),
+            |ws| executor_ref.map(|executor| FileSystemState::capture_with_workspace(ws, executor))
+        );
 
         // Capture and populate environment snapshot
         checkpoint.env_snapshot =

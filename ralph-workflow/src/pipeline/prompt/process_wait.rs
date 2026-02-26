@@ -57,18 +57,16 @@ pub(super) fn wait_for_completion_and_collect_stderr(
             return String::new();
         }
 
-        match stderr_join_handle.take() {
-            Some(handle) => match handle.join() {
-                Ok(result) => result.unwrap_or_else(|e| {
+        stderr_join_handle.take().map_or(String::new(), |handle| {
+            handle.join().map_or(String::new(), |result| {
+                result.unwrap_or_else(|e| {
                     runtime
                         .logger
                         .warn(&format!("Stderr collection failed after timeout: {e}"));
                     String::new()
-                }),
-                Err(_) => String::new(),
-            },
-            None => String::new(),
-        }
+                })
+            })
+        })
     }
 
     let check_interval = Duration::from_millis(100);
