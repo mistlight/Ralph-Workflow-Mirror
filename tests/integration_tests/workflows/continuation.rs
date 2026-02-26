@@ -184,10 +184,11 @@ fn test_continuation_state_new() {
     });
 }
 
-/// Test ContinuationState::trigger_continuation() increments attempt count.
+/// Test ContinuationState::trigger_continuation() increments attempt count and defensive check.
 #[test]
 fn test_continuation_state_trigger_increments_attempt() {
     with_default_timeout(|| {
+        // ContinuationState::new() uses default max_continue_count = 3
         let state = ContinuationState::new();
         let state =
             state.trigger_continuation(DevelopmentStatus::Partial, "First".to_string(), None, None);
@@ -201,9 +202,17 @@ fn test_continuation_state_trigger_increments_attempt() {
         );
         assert_eq!(state.continuation_attempt, 2);
 
+        // Third call hits defensive check (next_attempt = 3 >= max_continue_count = 3)
         let state =
             state.trigger_continuation(DevelopmentStatus::Partial, "Third".to_string(), None, None);
-        assert_eq!(state.continuation_attempt, 3);
+        assert_eq!(
+            state.continuation_attempt, 2,
+            "defensive check should prevent increment to 3"
+        );
+        assert!(
+            !state.continue_pending,
+            "defensive check should clear continue_pending"
+        );
     });
 }
 

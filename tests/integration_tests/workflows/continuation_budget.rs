@@ -30,8 +30,8 @@ fn test_dev_continuation_budget_enforced() {
 
         // Attempt 0 (initial) - already happened, continuation_attempt = 0
 
-        // Trigger continuation 3 times (attempts 1, 2, 3)
-        for attempt in 1..=3 {
+        // Trigger continuation 2 times (attempts 1, 2)
+        for attempt in 1..=2 {
             state = reduce(
                 state,
                 PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
@@ -45,9 +45,28 @@ fn test_dev_continuation_budget_enforced() {
             assert_eq!(state.continuation.continuation_attempt, attempt);
         }
 
-        // After 3 continuation attempts (continuation_attempt = 3),
-        // which >= max_continue_count (3), continuations are exhausted
-        assert!(state.continuation.continuations_exhausted());
+        // Attempt to trigger third continuation (would be attempt 3, but defensive check prevents it)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "Attempt 3".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        // AFTER FIX: trigger_continuation defensive check prevents increment to 3, counter stays at 2
+        assert_eq!(
+            state.continuation.continuation_attempt, 2,
+            "Defensive check should prevent increment past attempt 2"
+        );
+
+        // continuations_exhausted() returns false (2 < 3), but the system won't schedule another
+        // continuation because the defensive check cleared continue_pending flag.
+        // In normal flow, OutcomeApplied detects exhaustion via (attempt + 1 >= max) check.
+        assert!(!state.continuation.continuations_exhausted());
+        assert!(!state.continuation.continue_pending);
     });
 }
 
@@ -345,8 +364,8 @@ fn test_continuation_exhaustion_matches_metrics() {
         let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
-        // Exhaust continuations (3 attempts total: 0, 1, 2)
-        for i in 1..=3 {
+        // Trigger 2 continuations (attempts 1, 2)
+        for i in 1..=2 {
             state = reduce(
                 state,
                 PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
@@ -359,14 +378,28 @@ fn test_continuation_exhaustion_matches_metrics() {
             );
         }
 
-        // At exhaustion: both state and metrics should agree
-        assert!(
-            state.continuation.continuations_exhausted(),
-            "ContinuationState should report exhaustion"
+        // Attempt third continuation (defensive check prevents increment)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "attempt 3".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
         );
-        assert!(
-            state.metrics.dev_continuation_attempt >= state.metrics.max_dev_continuation_count,
-            "Metrics should show continuation_attempt >= max_dev_continuation_count"
+
+        // AFTER FIX: Counter stays at 2, exhaustion is detected by OutcomeApplied's (attempt + 1 >= max) check
+        // continuations_exhausted() returns false because counter didn't reach max_continue_count
+        assert_eq!(state.continuation.continuation_attempt, 2);
+        assert!(!state.continuation.continuations_exhausted());
+        // But the defensive check cleared continue_pending to prevent further scheduling
+        assert!(!state.continuation.continue_pending);
+        // Metrics should match state
+        assert_eq!(
+            state.metrics.dev_continuation_attempt,
+            state.continuation.continuation_attempt
         );
     });
 }
@@ -428,22 +461,25 @@ fn test_missing_max_dev_continuations_applies_default() {
         assert_eq!(state.continuation.continuation_attempt, 2);
         assert!(!state.continuation.continuations_exhausted());
 
-        // Third continuation (attempt 3) - should exhaust budget
+        // Attempt third continuation (would be attempt 3, but defensive check prevents it)
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                 iteration: 0,
                 status: DevelopmentStatus::Partial,
-                summary: "partial work 3".to_string(),
+                summary: "partial work 3 attempt".to_string(),
                 files_changed: None,
                 next_steps: None,
             }),
         );
-        assert_eq!(state.continuation.continuation_attempt, 3);
-        assert!(
-            state.continuation.continuations_exhausted(),
-            "Attempt 3 should be exhausted (3 >= 3)"
+        // AFTER FIX: trigger_continuation defensive check prevents increment to 3
+        assert_eq!(
+            state.continuation.continuation_attempt, 2,
+            "Defensive check should prevent increment to 3"
         );
+        // continuations_exhausted() returns false (2 < 3), but continue_pending is cleared
+        assert!(!state.continuation.continuations_exhausted());
+        assert!(!state.continuation.continue_pending);
     });
 }
 
@@ -502,31 +538,31 @@ fn test_missing_config_key_caps_continuations_at_three() {
         assert_eq!(state.continuation.continuation_attempt, 2);
         assert!(!state.continuation.continuations_exhausted());
 
-        // Continuation 3 (continuation_attempt = 3) - MUST exhaust budget
+        // Attempt third continuation (defensive check prevents increment)
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                 iteration: 0,
                 status: DevelopmentStatus::Partial,
-                summary: "continuation 3".to_string(),
+                summary: "continuation 3 attempt".to_string(),
                 files_changed: None,
                 next_steps: None,
             }),
         );
+        // AFTER FIX: trigger_continuation defensive check prevents increment to 3
         assert_eq!(
-            state.continuation.continuation_attempt, 3,
-            "Should be at continuation attempt 3"
+            state.continuation.continuation_attempt, 2,
+            "Defensive check should prevent increment to 3. \
+             Without the fix, this would increment to 3, allowing an extra attempt."
         );
-        assert!(
-            state.continuation.continuations_exhausted(),
-            "Budget MUST be exhausted at attempt 3 (3 >= 3). \
-             Without unwrap_or(2) fallback, this would fail and allow indefinite continuations."
-        );
+        // continuations_exhausted() returns false (2 < 3), but the system won't continue
+        // because defensive check cleared continue_pending and OutcomeApplied will detect
+        // exhaustion via (attempt + 1 >= max) check.
+        assert!(!state.continuation.continuations_exhausted());
+        assert!(!state.continuation.continue_pending);
 
-        // Verify that ContinuationBudgetExhausted would be triggered
-        // (This is tested through orchestration, but we verify the state here)
+        // Verify the default was correctly applied
         assert_eq!(state.continuation.max_continue_count, 3);
-        assert!(state.continuation.continuation_attempt >= state.continuation.max_continue_count);
     });
 }
 
@@ -591,27 +627,31 @@ fn test_continuation_stops_with_unwrap_or_default() {
         assert_eq!(state.continuation.continuation_attempt, 2);
         assert!(!state.continuation.continuations_exhausted());
 
-        // Continuation 3 (attempt 3) - MUST exhaust budget
+        // Attempt third continuation (defensive check prevents increment)
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                 iteration: 0,
                 status: DevelopmentStatus::Partial,
-                summary: "continuation 3".to_string(),
+                summary: "continuation 3 attempt".to_string(),
                 files_changed: None,
                 next_steps: None,
             }),
         );
-        assert_eq!(state.continuation.continuation_attempt, 3);
-        assert!(
-            state.continuation.continuations_exhausted(),
-            "CRITICAL: Continuation MUST stop at attempt 3 (3 >= 3). \
-             Without unwrap_or(2) in create_initial_state_with_config, this would allow infinite continuation."
+        // AFTER FIX: trigger_continuation defensive check prevents increment to 3
+        assert_eq!(
+            state.continuation.continuation_attempt, 2,
+            "CRITICAL: Defensive check prevents increment to 3. Counter stays at 2. \
+             Without the fix, this would increment to 3, allowing an extra attempt and potentially infinite loops."
         );
+        // continuations_exhausted() returns false (2 < 3), but the defensive check cleared
+        // continue_pending to prevent scheduling. OutcomeApplied detects exhaustion via (attempt + 1 >= max).
+        assert!(!state.continuation.continuations_exhausted());
+        assert!(!state.continuation.continue_pending);
 
-        // Verify progress metrics
+        // Verify progress metrics match the corrected state
         assert_eq!(state.metrics.max_dev_continuation_count, 3);
-        assert_eq!(state.metrics.dev_continuation_attempt, 3);
+        assert_eq!(state.metrics.dev_continuation_attempt, 2);
     });
 }
 
@@ -949,7 +989,7 @@ fn test_continuation_attempt_numbering_and_boundary() {
         assert_eq!(state.continuation.continuation_attempt, 2);
         assert!(!state.continuation.continuations_exhausted());
 
-        // Third continuation trigger (attempt 3) - should be EXHAUSTED
+        // Third continuation trigger (attempt 3) - trigger_continuation defensive check applies
         state = reduce(
             state,
             PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
@@ -960,10 +1000,121 @@ fn test_continuation_attempt_numbering_and_boundary() {
                 next_steps: None,
             }),
         );
-        assert_eq!(state.continuation.continuation_attempt, 3);
+        // AFTER FIX: trigger_continuation checks boundary before incrementing.
+        // At attempt 2, next_attempt = 3, which >= 3, so counter stays at 2 (does not increment).
+        // This test is artificial - in normal flow, OutcomeApplied checks (attempt + 1 >= max)
+        // and emits BudgetExhausted instead of ContinuationTriggered.
+        // But the defensive check should still work as a safety net.
+        assert_eq!(
+            state.continuation.continuation_attempt, 2,
+            "trigger_continuation defensive check should prevent increment to 3"
+        );
+        // continuations_exhausted() returns false (2 < 3) because counter didn't increment.
+        // The actual exhaustion detection happens in OutcomeApplied via (attempt + 1 >= max).
         assert!(
-            state.continuation.continuations_exhausted(),
-            "Attempt 3 should be exhausted (3 >= 3)"
+            !state.continuation.continuations_exhausted(),
+            "Counter at 2 means continuations_exhausted() (2 >= 3) returns false"
+        );
+    });
+}
+
+/// Regression test: Verify trigger_continuation defensive check doesn't increment counter.
+///
+/// CRITICAL BUG: trigger_continuation sets continuation_attempt = next_attempt EVEN when
+/// the defensive check triggers (line 128 in budget.rs). This allows the counter to reach
+/// the boundary value (3) instead of staying below it (2).
+///
+/// BEFORE FIX: At attempt 2, next_attempt = 3, check `3 >= 3` is true, BUT line 128 still
+/// executes `self.continuation_attempt = 3` before returning. The counter reaches 3, which
+/// is AT the boundary, not over it. continuations_exhausted() returns true (3 >= 3), but
+/// the counter shouldn't have reached 3 in the first place.
+///
+/// AFTER FIX: At attempt 2, next_attempt = 3, check `3 >= 3` is true, counter stays at 2,
+/// method returns without updating the counter. This prevents the off-by-one bug.
+///
+/// This test directly simulates the scenario where trigger_continuation's defensive check
+/// is reached (which shouldn't happen in normal flow, but this tests the safety mechanism).
+#[test]
+fn test_trigger_continuation_defensive_check_prevents_counter_increment() {
+    with_default_timeout(|| {
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Manually trigger continuations to test trigger_continuation's defensive check.
+        // In normal flow, OutcomeApplied would prevent this by emitting BudgetExhausted.
+        // But the defensive check should still work if somehow reached.
+
+        // Continuation 1 (attempt 0 -> 1)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "continuation 1".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 1);
+        assert!(!state.continuation.continuations_exhausted());
+
+        // Continuation 2 (attempt 1 -> 2)
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "continuation 2".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        assert_eq!(state.continuation.continuation_attempt, 2);
+        assert!(!state.continuation.continuations_exhausted());
+
+        // Attempt continuation 3 (attempt 2 -> should stay at 2, not go to 3)
+        // The defensive check in trigger_continuation should prevent the increment.
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "continuation 3 attempt".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+
+        // CRITICAL ASSERTION: trigger_continuation defensive check must NOT increment counter.
+        // BEFORE FIX: continuation_attempt would be 3 (line 128 sets it before returning)
+        // AFTER FIX: continuation_attempt should stay at 2 (defensive check returns early)
+        assert_eq!(
+            state.continuation.continuation_attempt, 2,
+            "BUG: trigger_continuation defensive check at budget.rs:128 increments counter to 3 \
+             before returning. This is the off-by-one bug. The counter should stay at 2 when the \
+             defensive check triggers (next_attempt = 3 >= max_continue_count = 3)."
+        );
+
+        // NOTE: continuations_exhausted() returns false (2 < 3) because counter stayed at 2.
+        // The exhaustion is detected by OutcomeApplied checking (continuation_attempt + 1 >= max),
+        // which correctly identifies that the NEXT attempt would exceed the budget.
+        // The defensive check in trigger_continuation is a safety net that prevents scheduling
+        // when somehow reached, but doesn't mark the state as exhausted via the counter.
+        assert!(
+            !state.continuation.continuations_exhausted(),
+            "Counter is at 2, so continuations_exhausted() (2 >= 3) returns false. \
+             Exhaustion is detected by OutcomeApplied checking (2 + 1 >= 3), not by the counter."
+        );
+
+        // Verify pending flags were cleared by defensive check
+        assert!(
+            !state.continuation.continue_pending,
+            "Defensive check should clear continue_pending"
+        );
+        assert!(
+            !state.continuation.context_write_pending,
+            "Defensive check should clear context_write_pending"
         );
     });
 }

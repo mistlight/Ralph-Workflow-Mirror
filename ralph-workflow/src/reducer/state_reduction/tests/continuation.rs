@@ -428,24 +428,32 @@ fn test_continuation_budget_with_missing_config_key() {
         "Attempt 2 should not be exhausted"
     );
 
+    // Third trigger_continuation hits the defensive check (next_attempt = 3 >= 3)
     let state = state.trigger_continuation(
         DevelopmentStatus::Partial,
-        "partial work 3".to_string(),
+        "partial work 3 attempt".to_string(),
         None,
         None,
     );
-    assert_eq!(state.continuation_attempt, 3);
+    assert_eq!(
+        state.continuation_attempt, 2,
+        "defensive check should prevent increment to 3"
+    );
     assert!(
-        state.continuations_exhausted(),
-        "Attempt 3 should be exhausted (3 >= 3)"
+        !state.continuations_exhausted(),
+        "counter at 2, so 2 < 3 is true (not exhausted by counter check)"
+    );
+    assert!(
+        !state.continue_pending,
+        "defensive check should clear continue_pending"
     );
 }
 
 /// Test that continuation cap is enforced at the reducer level.
 ///
-/// This test verifies that when continuation_attempt reaches max_continue_count,
-/// the continuations_exhausted() check correctly identifies budget exhaustion.
-/// The orchestration layer uses this signal to fire ContinuationBudgetExhausted event.
+/// This test verifies that when the defensive check in trigger_continuation fires,
+/// the counter does not increment and continue_pending is cleared.
+/// The orchestration layer detects exhaustion via OutcomeApplied's (attempt + 1 >= max) check.
 #[test]
 fn test_orchestration_fires_budget_exhausted_at_cap() {
     use crate::reducer::state::DevelopmentStatus;
@@ -454,8 +462,8 @@ fn test_orchestration_fires_budget_exhausted_at_cap() {
     let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
     state.phase = PipelinePhase::Development;
 
-    // Simulate 3 continuation triggers (attempts 1, 2, 3)
-    for _ in 1..=3 {
+    // Simulate 2 continuation triggers (attempts 1, 2)
+    for _ in 1..=2 {
         state = reduce(
             state,
             PipelineEvent::development_iteration_continuation_triggered(
@@ -468,9 +476,35 @@ fn test_orchestration_fires_budget_exhausted_at_cap() {
         );
     }
 
-    assert_eq!(state.continuation.continuation_attempt, 3);
-    assert!(state.continuation.continuations_exhausted());
+    assert_eq!(state.continuation.continuation_attempt, 2);
+    assert!(!state.continuation.continuations_exhausted());
 
-    // Orchestration should derive ContinuationBudgetExhausted event
-    // This is tested indirectly through the integration test
+    // Attempt third continuation (defensive check prevents increment)
+    state = reduce(
+        state,
+        PipelineEvent::development_iteration_continuation_triggered(
+            0,
+            DevelopmentStatus::Partial,
+            "partial attempt 3".to_string(),
+            None,
+            None,
+        ),
+    );
+
+    assert_eq!(
+        state.continuation.continuation_attempt, 2,
+        "defensive check should prevent increment to 3"
+    );
+    assert!(
+        !state.continuation.continuations_exhausted(),
+        "counter at 2, so 2 < 3 is true"
+    );
+    assert!(
+        !state.continuation.continue_pending,
+        "defensive check should clear continue_pending"
+    );
+
+    // In normal flow, OutcomeApplied would check (continuation_attempt + 1 >= max_continue_count)
+    // which is (2 + 1 >= 3) = true, and emit ContinuationBudgetExhausted instead of
+    // ContinuationTriggered, preventing the defensive check from ever being reached.
 }

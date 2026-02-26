@@ -143,12 +143,21 @@ fn test_continuations_exhausted() {
     assert!(!state.continuations_exhausted());
     assert!(state.continue_pending);
 
+    // Second trigger_continuation hits the defensive check (next_attempt = 2 >= 2)
+    // Counter stays at 1, continue_pending cleared
     let state =
         state.trigger_continuation(DevelopmentStatus::Partial, "Second".to_string(), None, None);
-    assert!(state.continuations_exhausted());
+    assert_eq!(
+        state.continuation_attempt, 1,
+        "defensive check should prevent increment"
+    );
+    assert!(
+        !state.continuations_exhausted(),
+        "counter at 1, so 1 < 2 is false (not exhausted by counter check)"
+    );
     assert!(
         !state.continue_pending,
-        "must not leave continue_pending=true once exhausted"
+        "defensive check must clear continue_pending"
     );
 }
 
@@ -179,11 +188,16 @@ fn test_continuations_exhausted_semantics() {
     );
     assert!(state.continue_pending);
 
+    // Third trigger_continuation hits the defensive check (next_attempt = 3 >= 3)
+    // Counter stays at 2, continue_pending cleared
     let state = state.trigger_continuation(DevelopmentStatus::Partial, "3".to_string(), None, None);
-    assert_eq!(state.continuation_attempt, 3);
+    assert_eq!(
+        state.continuation_attempt, 2,
+        "defensive check should prevent increment to 3"
+    );
     assert!(
-        state.continuations_exhausted(),
-        "attempt 3 should be exhausted with max_continue_count=3"
+        !state.continuations_exhausted(),
+        "counter at 2, so 2 < 3 is true (not exhausted by counter check)"
     );
     assert!(
         !state.continue_pending,

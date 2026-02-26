@@ -21,15 +21,25 @@ pub(super) fn reduce_continuation_event(
             next_steps,
         } => {
             // Trigger continuation with context from the previous attempt
-            // Increment continuation attempt counter
+            let old_attempt = state.continuation.continuation_attempt;
+            let new_continuation =
+                state
+                    .continuation
+                    .trigger_continuation(status, summary, files_changed, next_steps);
+            let new_attempt = new_continuation.continuation_attempt;
+
+            // Only increment metrics if the continuation counter actually incremented.
+            // The defensive check in trigger_continuation may prevent the increment when
+            // at the budget boundary, in which case metrics should also not increment.
+            let metrics = if new_attempt > old_attempt {
+                state.metrics.increment_dev_continuation_attempt()
+            } else {
+                state.metrics
+            };
+
             PipelineState {
                 iteration,
-                continuation: state.continuation.trigger_continuation(
-                    status,
-                    summary,
-                    files_changed,
-                    next_steps,
-                ),
+                continuation: new_continuation,
                 development_context_prepared_iteration: None,
                 development_prompt_prepared_iteration: None,
                 development_xml_cleaned_iteration: None,
@@ -41,7 +51,7 @@ pub(super) fn reduce_continuation_event(
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
-                metrics: state.metrics.increment_dev_continuation_attempt(),
+                metrics,
                 ..state
             }
         }
