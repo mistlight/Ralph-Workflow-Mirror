@@ -112,8 +112,8 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     // Create run context - either new or from checkpoint
     use crate::checkpoint::RunContext;
     let run_context = resume_checkpoint.as_ref().map_or_else(
-        || RunContext::new(),
-        |checkpoint| RunContext::from_checkpoint(checkpoint)
+        RunContext::new,
+        RunContext::from_checkpoint
     );
 
     // Apply checkpoint configuration restoration if resuming
