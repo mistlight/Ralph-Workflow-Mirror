@@ -1,8 +1,8 @@
 //! Tests that agent fallback decisions are ONLY made by the reducer.
 //!
 //! These tests verify that:
-//! 1. Agent chain initialization happens via Effect::InitializeAgentChain
-//! 2. Agent fallback happens via reducer events (AgentEvent::InvocationFailed, etc.)
+//! 1. Agent chain initialization happens via `Effect::InitializeAgentChain`
+//! 2. Agent fallback happens via reducer events (`AgentEvent::InvocationFailed`, etc.)
 //! 3. Orchestration correctly detects empty agent chains and emits initialization effects
 //!
 //! # Integration Test Style Guide
@@ -19,10 +19,10 @@ use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 
-/// Test that Development phase with empty agent chain emits InitializeAgentChain effect.
+/// Test that Development phase with empty agent chain emits `InitializeAgentChain` effect.
 ///
 /// When the Development phase starts with an empty agent chain,
-/// orchestration MUST return InitializeAgentChain effect, not PrepareDevelopmentContext.
+/// orchestration MUST return `InitializeAgentChain` effect, not `PrepareDevelopmentContext`.
 #[test]
 fn test_development_phase_with_empty_chain_emits_initialize_effect() {
     with_default_timeout(|| {
@@ -40,16 +40,15 @@ fn test_development_phase_with_empty_chain_emits_initialize_effect() {
                     role: AgentRole::Developer
                 }
             ),
-            "Development with empty chain must emit InitializeAgentChain, got {:?}",
-            effect
+            "Development with empty chain must emit InitializeAgentChain, got {effect:?}"
         );
     });
 }
 
-/// Test that Planning phase with empty agent chain emits InitializeAgentChain effect.
+/// Test that Planning phase with empty agent chain emits `InitializeAgentChain` effect.
 ///
 /// When the Planning phase starts with an empty agent chain,
-/// orchestration MUST return InitializeAgentChain effect, not PreparePlanningPrompt.
+/// orchestration MUST return `InitializeAgentChain` effect, not `PreparePlanningPrompt`.
 #[test]
 fn test_planning_phase_with_empty_chain_emits_initialize_effect() {
     with_default_timeout(|| {
@@ -67,16 +66,15 @@ fn test_planning_phase_with_empty_chain_emits_initialize_effect() {
                     role: AgentRole::Developer
                 }
             ),
-            "Planning with empty chain must emit InitializeAgentChain, got {:?}",
-            effect
+            "Planning with empty chain must emit InitializeAgentChain, got {effect:?}"
         );
     });
 }
 
-/// Test that Review phase with empty agent chain emits InitializeAgentChain effect.
+/// Test that Review phase with empty agent chain emits `InitializeAgentChain` effect.
 ///
 /// When the Review phase starts with an empty agent chain,
-/// orchestration MUST return InitializeAgentChain effect for Reviewer role.
+/// orchestration MUST return `InitializeAgentChain` effect for Reviewer role.
 #[test]
 fn test_review_phase_with_empty_chain_emits_initialize_effect() {
     with_default_timeout(|| {
@@ -94,8 +92,7 @@ fn test_review_phase_with_empty_chain_emits_initialize_effect() {
                     role: AgentRole::Reviewer
                 }
             ),
-            "Review with empty chain must emit InitializeAgentChain for Reviewer, got {:?}",
-            effect
+            "Review with empty chain must emit InitializeAgentChain for Reviewer, got {effect:?}"
         );
     });
 }
@@ -103,7 +100,7 @@ fn test_review_phase_with_empty_chain_emits_initialize_effect() {
 /// Test that auth failure triggers reducer-managed agent fallback.
 ///
 /// When agent auth fails, the reducer (not phase code) decides fallback by
-/// processing AgentEvent::InvocationFailed with retriable=false.
+/// processing `AgentEvent::InvocationFailed` with retriable=false.
 #[test]
 fn test_auth_failure_triggers_reducer_fallback() {
     with_default_timeout(|| {
@@ -180,9 +177,9 @@ fn test_agent_chain_clears_on_dev_to_review_transition() {
     });
 }
 
-/// Test that orchestration returns PrepareDevelopmentContext only when chain is initialized.
+/// Test that orchestration returns `PrepareDevelopmentContext` only when chain is initialized.
 ///
-/// Must NOT return PrepareDevelopmentContext when chain is empty.
+/// Must NOT return `PrepareDevelopmentContext` when chain is empty.
 #[test]
 fn test_orchestration_requires_initialized_chain_for_development() {
     with_default_timeout(|| {
@@ -215,8 +212,7 @@ fn test_orchestration_requires_initialized_chain_for_development() {
         let effect_initialized = determine_next_effect(&state_initialized);
         assert!(
             matches!(effect_initialized, Effect::PrepareDevelopmentContext { .. }),
-            "Should start development chain when initialized, got {:?}",
-            effect_initialized
+            "Should start development chain when initialized, got {effect_initialized:?}"
         );
     });
 }
@@ -256,15 +252,14 @@ fn test_orchestration_requires_initialized_chain_for_review() {
         let effect_initialized = determine_next_effect(&state_initialized);
         assert!(
             matches!(effect_initialized, Effect::PrepareReviewContext { pass: 0 }),
-            "Should begin review chain when chain is initialized, got {:?}",
-            effect_initialized
+            "Should begin review chain when chain is initialized, got {effect_initialized:?}"
         );
     });
 }
 
-/// Test that ChainInitialized event correctly sets up the agent chain.
+/// Test that `ChainInitialized` event correctly sets up the agent chain.
 ///
-/// When AgentChainInitialized event is processed, the state should have
+/// When `AgentChainInitialized` event is processed, the state should have
 /// the agent chain populated with the provided agents.
 #[test]
 fn test_chain_initialized_event_populates_state() {
@@ -282,7 +277,7 @@ fn test_chain_initialized_event_populates_state() {
             state,
             PipelineEvent::agent_chain_initialized(
                 AgentRole::Developer,
-                EXPECTED_AGENTS.iter().map(|s| s.to_string()).collect(),
+                EXPECTED_AGENTS.iter().map(std::string::ToString::to_string).collect(),
                 3,
                 1000,
                 2.0,
@@ -476,8 +471,7 @@ fn test_exhausted_chain_triggers_checkpoint() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::ReportAgentChainExhausted { .. }),
-            "Exhausted chain should report exhaustion, got {:?}",
-            effect
+            "Exhausted chain should report exhaustion, got {effect:?}"
         );
     });
 }

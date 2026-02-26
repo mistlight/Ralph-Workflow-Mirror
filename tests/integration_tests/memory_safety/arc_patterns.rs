@@ -2,7 +2,7 @@
 //!
 //! These tests verify that Arc usage patterns in the codebase do not create
 //! circular references that would prevent memory from being freed. They test
-//! observable behavior (Arc strong_count behavior) rather than internal
+//! observable behavior (Arc `strong_count` behavior) rather than internal
 //! implementation details.
 //!
 //! # Integration Test Style Guide
@@ -11,7 +11,7 @@
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! This module tests observable behavior:
-//! - Arc strong_count remains stable (no unexpected growth)
+//! - Arc `strong_count` remains stable (no unexpected growth)
 //! - Arc cleanup after pipeline completion
 //! - No circular references in typical usage patterns
 
@@ -28,14 +28,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Standard PROMPT.md content for Arc pattern tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test Arc patterns.
 
 ## Acceptance
 
 - No circular references
-"#;
+";
 
 #[test]
 fn test_workspace_arc_count_stable() {
@@ -156,7 +156,7 @@ fn test_workspace_arc_cleanup_after_multiple_operations() {
         // Perform multiple operations that might clone Arc
         for i in 0..10 {
             let ws_clone = workspace.clone();
-            let _ = ws_clone.write(std::path::Path::new(&format!("file{}.txt", i)), "content");
+            let _ = ws_clone.write(std::path::Path::new(&format!("file{i}.txt")), "content");
         }
 
         // After operations complete, count should return to initial

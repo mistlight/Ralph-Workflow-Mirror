@@ -291,7 +291,7 @@ fn test_gemini_parser_log_file_flushed() {
         let log_path = Path::new("/test/logs/gemini_flush.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
             .with_log_file_for_test(log_path.to_str().unwrap());
 
@@ -310,7 +310,7 @@ fn test_gemini_parser_log_file_flushed() {
 
         let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
-            log_content.contains(r#"session_id"#),
+            log_content.contains(r"session_id"),
             "Log should be readable immediately after parsing (sync_all worked)"
         );
     });
@@ -349,8 +349,7 @@ fn test_gemini_parser_consecutive_duplicates_filtered() {
         // Due to delta streaming, we expect a reasonable number but not quadruple
         assert!(
             hello_count <= 3,
-            "Consecutive duplicates should be filtered. Got {} occurrences",
-            hello_count
+            "Consecutive duplicates should be filtered. Got {hello_count} occurrences"
         );
     });
 }
@@ -435,7 +434,7 @@ fn test_gemini_parser_log_contains_events() {
         let log_path = Path::new("/test/logs/gemini_events.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
             .with_log_file_for_test(log_path.to_str().unwrap());
 
@@ -475,7 +474,7 @@ fn test_gemini_parser_multiple_turns() {
         let log_path = Path::new("/test/logs/gemini_multi.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
             .with_log_file_for_test(log_path.to_str().unwrap());
 
@@ -549,7 +548,7 @@ fn test_gemini_parser_truncated_stream() {
         let log_path = Path::new("/test/logs/gemini_truncated.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
             .with_log_file_for_test(log_path.to_str().unwrap());
 
@@ -614,8 +613,7 @@ fn test_gemini_parser_snapshot_as_delta_glitch() {
         // Verify no duplicate consecutive lines
         assert!(
             !test_printer.borrow().has_duplicate_consecutive_lines(),
-            "Snapshot glitch should not cause duplicate consecutive lines. Output: {}",
-            output
+            "Snapshot glitch should not cause duplicate consecutive lines. Output: {output}"
         );
     });
 }

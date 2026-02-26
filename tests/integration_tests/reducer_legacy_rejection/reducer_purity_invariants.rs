@@ -22,7 +22,7 @@ use crate::test_timeout::with_default_timeout;
 
 /// Test that state transitions are purely driven by events through the reducer.
 ///
-/// This verifies that phase transitions happen via the reduce() function,
+/// This verifies that phase transitions happen via the `reduce()` function,
 /// not through any direct state mutation.
 #[test]
 fn test_state_transitions_via_reducer_only() {
@@ -104,7 +104,7 @@ fn test_state_transitions_via_reducer_only() {
 
 /// Test that effect determination is based solely on reducer state.
 ///
-/// The determine_next_effect() function should be a pure function of state,
+/// The `determine_next_effect()` function should be a pure function of state,
 /// not reading any external configuration or files.
 #[test]
 fn test_effects_determined_from_state_only() {
@@ -125,8 +125,7 @@ fn test_effects_determined_from_state_only() {
                     role: AgentRole::Developer
                 }
             ),
-            "Effect should be determined purely from state: {:?}",
-            effect
+            "Effect should be determined purely from state: {effect:?}"
         );
 
         // State with agents but no gitignore ensured -> ensure gitignore
@@ -141,8 +140,7 @@ fn test_effects_determined_from_state_only() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::EnsureGitignoreEntries),
-            "Should ensure gitignore before cleanup: {:?}",
-            effect
+            "Should ensure gitignore before cleanup: {effect:?}"
         );
 
         // State with gitignore ensured but no context cleaned -> clean context
@@ -157,8 +155,7 @@ fn test_effects_determined_from_state_only() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::CleanupContext),
-            "Should clean context before planning: {:?}",
-            effect
+            "Should clean context before planning: {effect:?}"
         );
 
         // State ready for planning
@@ -173,8 +170,7 @@ fn test_effects_determined_from_state_only() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::MaterializePlanningInputs { .. }),
-            "Should materialize planning inputs when state is ready: {:?}",
-            effect
+            "Should materialize planning inputs when state is ready: {effect:?}"
         );
 
         // Development phase
@@ -189,15 +185,14 @@ fn test_effects_determined_from_state_only() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-            "Should start development chain from state: {:?}",
-            effect
+            "Should start development chain from state: {effect:?}"
         );
     });
 }
 
 /// Test that agent selection comes from reducer state, not config lookups.
 ///
-/// The agent_chain in PipelineState should be the single source of truth
+/// The `agent_chain` in `PipelineState` should be the single source of truth
 /// for which agent to use next.
 #[test]
 fn test_agent_selection_from_reducer_state() {
@@ -222,8 +217,7 @@ fn test_agent_selection_from_reducer_state() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::PrepareDevelopmentContext { iteration: 1 }),
-            "Expected PrepareDevelopmentContext, got {:?}",
-            effect
+            "Expected PrepareDevelopmentContext, got {effect:?}"
         );
 
         // Verify agent chain has our custom agent as current
@@ -263,8 +257,7 @@ fn test_completion_from_state_not_files() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
-            "Complete phase first checks for uncommitted changes: {:?}",
-            effect
+            "Complete phase first checks for uncommitted changes: {effect:?}"
         );
 
         // After safety check passes
@@ -278,8 +271,7 @@ fn test_completion_from_state_not_files() {
                     trigger: CheckpointTrigger::PhaseTransition
                 }
             ),
-            "Should save checkpoint on complete based on state.phase, not file checks: {:?}",
-            effect
+            "Should save checkpoint on complete based on state.phase, not file checks: {effect:?}"
         );
     });
 }
@@ -832,18 +824,15 @@ fn test_effect_determination_is_pure_function_of_state() {
         // All calls should produce the same effect (purity)
         assert!(
             matches!(&effect1, Effect::PrepareDevelopmentContext { iteration: 1 }),
-            "First call: {:?}",
-            effect1
+            "First call: {effect1:?}"
         );
         assert!(
             matches!(&effect2, Effect::PrepareDevelopmentContext { iteration: 1 }),
-            "Second call: {:?}",
-            effect2
+            "Second call: {effect2:?}"
         );
         assert!(
             matches!(&effect3, Effect::PrepareDevelopmentContext { iteration: 1 }),
-            "Third call: {:?}",
-            effect3
+            "Third call: {effect3:?}"
         );
     });
 }

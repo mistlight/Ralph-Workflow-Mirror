@@ -125,7 +125,7 @@ static TIMEOUT_CLEANUPS: OnceLock<Mutex<Vec<TimeoutCleanup>>> = OnceLock::new();
 /// intended for emergency cleanup like killing child processes.
 pub fn register_timeout_cleanup(cleanup: TimeoutCleanup) {
     let cleanups = TIMEOUT_CLEANUPS.get_or_init(|| Mutex::new(Vec::new()));
-    let mut guard = cleanups.lock().unwrap_or_else(|p| p.into_inner());
+    let mut guard = cleanups.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     guard.push(cleanup);
 }
 
@@ -133,7 +133,7 @@ fn run_timeout_cleanups() {
     let Some(cleanups) = TIMEOUT_CLEANUPS.get() else {
         return;
     };
-    let mut guard = cleanups.lock().unwrap_or_else(|p| p.into_inner());
+    let mut guard = cleanups.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for cleanup in guard.drain(..) {
         cleanup();
     }
@@ -143,7 +143,7 @@ fn clear_timeout_cleanups() {
     let Some(cleanups) = TIMEOUT_CLEANUPS.get() else {
         return;
     };
-    let mut guard = cleanups.lock().unwrap_or_else(|p| p.into_inner());
+    let mut guard = cleanups.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     guard.clear();
 }
 

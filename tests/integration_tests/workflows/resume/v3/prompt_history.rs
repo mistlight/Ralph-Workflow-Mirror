@@ -139,9 +139,9 @@ fn ralph_resume_replays_prompts_deterministically() {
     });
 }
 
-/// Test that checkpoints missing prompt_md_checksum are rejected as legacy.
+/// Test that checkpoints missing `prompt_md_checksum` are rejected as legacy.
 ///
-/// Legacy checkpoints (missing required fields like prompt_md_checksum) are no
+/// Legacy checkpoints (missing required fields like `prompt_md_checksum`) are no
 /// longer supported. Users must delete the checkpoint and restart the pipeline.
 #[test]
 fn ralph_v3_rejects_legacy_checkpoint_missing_prompt_md_checksum() {
@@ -172,8 +172,7 @@ fn ralph_v3_rejects_legacy_checkpoint_missing_prompt_md_checksum() {
             error_msg.contains("Legacy checkpoints are not supported")
                 || error_msg.contains("checkpoint")
                 || error_msg.contains("validation"),
-            "Error message should mention legacy checkpoint rejection: {}",
-            error_msg
+            "Error message should mention legacy checkpoint rejection: {error_msg}"
         );
     });
 }

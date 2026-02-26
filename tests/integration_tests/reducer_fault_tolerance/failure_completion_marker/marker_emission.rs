@@ -3,7 +3,7 @@
 //! Verifies completion marker semantics for failure handling.
 //!
 //! Completion markers are written only when the pipeline is actually terminating
-//! (Effect::EmitCompletionMarkerAndTerminate), not when entering recovery.
+//! (`Effect::EmitCompletionMarkerAndTerminate`), not when entering recovery.
 
 use super::common::{FailingWorkspace, Fixture};
 use crate::common::with_locked_prompt_permissions;
@@ -50,8 +50,7 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         // Then: Effect should be TriggerDevFixFlow
         assert!(
             matches!(effect, Effect::TriggerDevFixFlow { .. }),
-            "Expected TriggerDevFixFlow, got {:?}",
-            effect
+            "Expected TriggerDevFixFlow, got {effect:?}"
         );
 
         // TriggerDevFixFlow must NOT write the completion marker.
@@ -63,7 +62,7 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         // Dev-fix remediation must run under the configured developer agent.
         // Ensure the fixture context points at a registry-known agent.
         ctx.developer_agent = "claude";
-        let mut handler = MockEffectHandler::new(new_state.clone());
+        let mut handler = MockEffectHandler::new(new_state);
 
         let _result = handler
             .execute(effect, &mut ctx)
@@ -109,7 +108,7 @@ fn test_failed_status_dispatches_dev_fix_agent_without_emitting_completion_marke
             AgentRole::Developer,
         );
 
-        let mut handler = MainEffectHandler::new(state.clone());
+        let mut handler = MainEffectHandler::new(state);
 
         // Execute a single TriggerDevFixFlow effect (do not run full event loop).
         // The recovery loop is non-terminating by default, so driving the full loop

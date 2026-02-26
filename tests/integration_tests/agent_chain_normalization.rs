@@ -28,7 +28,7 @@ fn test_agent_chain_initialization() {
     });
 }
 
-/// Test that XSD retry preserves last_session_id for same agent.
+/// Test that XSD retry preserves `last_session_id` for same agent.
 #[test]
 fn test_xsd_retry_preserves_session() {
     with_default_timeout(|| {
@@ -80,7 +80,7 @@ fn test_checkpoint_replay_consistency() {
 
         // Effects should be identical (determinism)
         assert_eq!(
-            format!("{:?}", effect1),
+            format!("{effect1:?}"),
             format!("{:?}", effect2),
             "Checkpoint replay should produce identical next effect"
         );

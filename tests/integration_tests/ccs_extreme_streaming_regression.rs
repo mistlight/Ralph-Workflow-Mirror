@@ -20,6 +20,7 @@ use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
 use std::io::BufReader;
 use std::rc::Rc;
+use std::fmt::Write;
 
 /// Generate a stream with N deltas for a single content block.
 fn generate_text_delta_stream(n: usize, _agent_type: &str) -> String {
@@ -35,10 +36,9 @@ fn generate_text_delta_stream(n: usize, _agent_type: &str) -> String {
 
     // Many text deltas
     for i in 0..n {
-        stream.push_str(&format!(
-            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{} "}}}}}}"#,
-            i
-        ));
+        write!(stream, 
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#
+        ).unwrap();
         stream.push('\n');
     }
 
@@ -63,16 +63,14 @@ fn generate_thinking_delta_stream(n: usize, thinking_type: &str) -> String {
 
     // Thinking block start
     stream.push_str(&format!(
-        r#"{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"{}","{}":""}}}}}}"#,
-        thinking_type, thinking_type
+        r#"{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"{thinking_type}","{thinking_type}":""}}}}}}"#
     ));
     stream.push('\n');
 
     // Many thinking deltas
     for i in 0..n {
         stream.push_str(&format!(
-            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"{}_delta","{}":"thought{} "}}}}}}"#,
-            thinking_type, thinking_type, i
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"{thinking_type}_delta","{thinking_type}":"thought{i} "}}}}}}"#
         ));
         stream.push('\n');
     }
@@ -105,8 +103,7 @@ fn generate_codex_reasoning_stream(n: usize) -> String {
     // Many deltas
     for i in 0..n {
         stream.push_str(&format!(
-            r#"{{"type":"event","event":"item.content.delta","item_id":"r1","item_type":"reasoning","delta":"reason{} "}}"#,
-            i
+            r#"{{"type":"event","event":"item.content.delta","item_id":"r1","item_type":"reasoning","delta":"reason{i} "}}"#
         ));
         stream.push('\n');
     }
@@ -157,8 +154,7 @@ fn test_ccs_glm_extreme_text_deltas_500_chunks_none_mode() {
         // Verify content is accumulated and present
         assert!(
             output.contains("word0") && output.contains("word499"),
-            "Expected accumulated content to contain first and last words. Output:\n{}",
-            output
+            "Expected accumulated content to contain first and last words. Output:\n{output}"
         );
     });
 }
@@ -223,8 +219,7 @@ fn test_ccs_glm_extreme_thinking_deltas_500_chunks_none_mode() {
         // Verify thinking content is present
         assert!(
             output.contains("thought0") && output.contains("thought499"),
-            "Expected accumulated thinking content. Output:\n{}",
-            output
+            "Expected accumulated thinking content. Output:\n{output}"
         );
     });
 }
@@ -289,8 +284,7 @@ fn test_ccs_codex_extreme_reasoning_deltas_500_chunks_none_mode() {
         // Verify reasoning content is present
         assert!(
             output.contains("reason0") && output.contains("reason499"),
-            "Expected accumulated reasoning content. Output:\n{}",
-            output
+            "Expected accumulated reasoning content. Output:\n{output}"
         );
     });
 }
@@ -340,8 +334,7 @@ fn test_ccs_glm_multi_turn_extreme_streaming() {
         for turn in 0..3 {
             // Message start
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg{}","content":[]}}}}}}"#,
-                turn
+                r#"{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg{turn}","content":[]}}}}}}"#
             ));
             stream.push('\n');
 
@@ -351,8 +344,7 @@ fn test_ccs_glm_multi_turn_extreme_streaming() {
 
             for i in 0..200 {
                 stream.push_str(&format!(
-                    r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"turn{}word{} "}}}}}}"#,
-                    turn, i
+                    r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"turn{turn}word{i} "}}}}}}"#
                 ));
                 stream.push('\n');
             }
@@ -385,8 +377,7 @@ fn test_ccs_glm_multi_turn_extreme_streaming() {
         // Verify all turns are present
         assert!(
             output.contains("turn0word0") && output.contains("turn2word199"),
-            "Expected all turn content to be present. Output:\n{}",
-            output
+            "Expected all turn content to be present. Output:\n{output}"
         );
     });
 }
@@ -409,22 +400,19 @@ fn test_ccs_codex_multi_item_extreme_streaming() {
 
         for item in 0..3 {
             stream.push_str(&format!(
-                r#"{{"type":"event","event":"item.started","item_type":"reasoning","item_id":"r{}"}}"#,
-                item
+                r#"{{"type":"event","event":"item.started","item_type":"reasoning","item_id":"r{item}"}}"#
             ));
             stream.push('\n');
 
             for i in 0..200 {
                 stream.push_str(&format!(
-                    r#"{{"type":"event","event":"item.content.delta","item_id":"r{}","item_type":"reasoning","delta":"item{}reason{} "}}"#,
-                    item, item, i
+                    r#"{{"type":"event","event":"item.content.delta","item_id":"r{item}","item_type":"reasoning","delta":"item{item}reason{i} "}}"#
                 ));
                 stream.push('\n');
             }
 
             stream.push_str(&format!(
-                r#"{{"type":"event","event":"item.completed","item_type":"reasoning","item_id":"r{}"}}"#,
-                item
+                r#"{{"type":"event","event":"item.completed","item_type":"reasoning","item_id":"r{item}"}}"#
             ));
             stream.push('\n');
         }
@@ -451,8 +439,7 @@ fn test_ccs_codex_multi_item_extreme_streaming() {
         // Verify all items are present
         assert!(
             output.contains("item0reason0") && output.contains("item2reason199"),
-            "Expected all item content to be present. Output:\n{}",
-            output
+            "Expected all item content to be present. Output:\n{output}"
         );
     });
 }

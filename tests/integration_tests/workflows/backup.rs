@@ -7,7 +7,7 @@
 //! 4. Backup rotation maintains multiple backup versions
 //! 5. Periodic restoration works during pipeline execution
 //!
-//! These tests use MockAppEffectHandler for in-memory testing instead of
+//! These tests use `MockAppEffectHandler` for in-memory testing instead of
 //! real filesystem operations, making tests faster and more deterministic.
 //!
 //! # Integration Test Style Guide
@@ -35,14 +35,14 @@ use crate::common::{
 use crate::test_timeout::{with_default_timeout, with_timeout};
 
 /// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test the Ralph workflow integration
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Test that a backup is created at pipeline start.
 ///
@@ -218,7 +218,7 @@ fn periodic_restoration_works_during_pipeline() {
 ///
 /// Uses a 30-second timeout because this test runs ralph 3 times sequentially.
 ///
-/// Note: Permission verification (read-only) belongs in system_tests/ as it
+/// Note: Permission verification (read-only) belongs in `system_tests`/ as it
 /// requires real filesystem operations.
 #[test]
 fn backup_rotation_maintains_multiple_backups() {

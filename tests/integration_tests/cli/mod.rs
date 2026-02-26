@@ -10,7 +10,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (exit codes, effect capture)
@@ -26,14 +26,14 @@ use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for tests that need it.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 // ============================================================================
 // Version and Help Commands

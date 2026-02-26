@@ -44,8 +44,7 @@ fn recovery_level_1_retry_same_operation() {
                     role: AgentRole::Developer
                 } | Effect::PrepareDevelopmentContext { .. }
             ),
-            "Level 1 recovery should retry same operation, got {:?}",
-            effect
+            "Level 1 recovery should retry same operation, got {effect:?}"
         );
     });
 }
@@ -94,20 +93,18 @@ fn recovery_does_not_derive_termination_effect_after_many_attempts() {
                 summary: None,
             });
             state = reduce(state, event);
-            assert_eq!(state.phase, PipelinePhase::AwaitingDevFix, "attempt {}", i);
+            assert_eq!(state.phase, PipelinePhase::AwaitingDevFix, "attempt {i}");
 
             let effect = determine_next_effect(&state);
             assert!(
                 !matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
-                "attempt {} should not derive termination effect, got {:?}",
-                i,
-                effect
+                "attempt {i} should not derive termination effect, got {effect:?}"
             );
         }
     });
 }
 
-/// Regression: DevFixCompleted must not terminate immediately.
+/// Regression: `DevFixCompleted` must not terminate immediately.
 #[test]
 fn dev_fix_completed_does_not_terminate() {
     with_default_timeout(|| {
@@ -148,13 +145,11 @@ fn recovery_never_derives_termination_effect() {
             });
             state = reduce(state, event);
 
-            assert_eq!(state.phase, PipelinePhase::AwaitingDevFix, "Attempt {}", i);
+            assert_eq!(state.phase, PipelinePhase::AwaitingDevFix, "Attempt {i}");
             let effect = determine_next_effect(&state);
             assert!(
                 !matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
-                "Attempt {} should not derive termination effect, got {:?}",
-                i,
-                effect
+                "Attempt {i} should not derive termination effect, got {effect:?}"
             );
         }
     });
@@ -202,8 +197,7 @@ fn orchestration_does_not_emit_completion_based_on_attempts() {
         let effect = determine_next_effect(&state);
         assert!(
             !matches!(effect, Effect::EmitCompletionMarkerAndTerminate { .. }),
-            "should not emit completion marker based on attempts, got {:?}",
-            effect
+            "should not emit completion marker based on attempts, got {effect:?}"
         );
     });
 }

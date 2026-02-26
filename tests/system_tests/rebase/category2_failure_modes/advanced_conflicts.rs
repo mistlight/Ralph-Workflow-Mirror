@@ -141,7 +141,7 @@ fn rebase_handles_directory_file_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // On default: modify path.txt
@@ -305,7 +305,7 @@ fn rebase_handles_symlink_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // On default: modify the file
@@ -389,7 +389,7 @@ fn rebase_handles_line_ending_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Modify with LF on default
@@ -469,7 +469,7 @@ fn rebase_handles_whitespace_only_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Modify with leading whitespace

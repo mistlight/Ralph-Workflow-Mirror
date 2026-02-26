@@ -37,7 +37,7 @@ fn test_dev_continuation_budget_enforced() {
                 PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("Attempt {}", attempt),
+                    summary: format!("Attempt {attempt}"),
                     files_changed: None,
                     next_steps: None,
                 }),
@@ -66,7 +66,7 @@ fn test_fix_continuation_budget_enforced() {
                 PipelineEvent::Review(ReviewEvent::FixContinuationTriggered {
                     pass: 0,
                     status: FixStatus::IssuesRemain,
-                    summary: Some(format!("Fix continuation {}", i)),
+                    summary: Some(format!("Fix continuation {i}")),
                 }),
             );
             assert_eq!(state.continuation.fix_continuation_attempt, i);
@@ -242,7 +242,7 @@ fn test_continuation_metrics_track_correctly() {
 // Step 18: Verify metrics match continuation state
 // ============================================================================
 
-/// Test that dev_continuation_attempt metric stays in sync with ContinuationState.
+/// Test that `dev_continuation_attempt` metric stays in sync with `ContinuationState`.
 ///
 /// CRITICAL: Metrics must be consistent with the source-of-truth continuation state.
 #[test]
@@ -292,7 +292,7 @@ fn test_dev_continuation_metrics_match_state() {
     });
 }
 
-/// Test that fix_continuation_attempt metric stays in sync with ContinuationState.
+/// Test that `fix_continuation_attempt` metric stays in sync with `ContinuationState`.
 #[test]
 fn test_fix_continuation_metrics_match_state() {
     with_default_timeout(|| {
@@ -352,7 +352,7 @@ fn test_continuation_exhaustion_matches_metrics() {
                 PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("attempt {}", i),
+                    summary: format!("attempt {i}"),
                     files_changed: None,
                     next_steps: None,
                 }),
@@ -371,10 +371,10 @@ fn test_continuation_exhaustion_matches_metrics() {
     });
 }
 
-/// Test that missing max_dev_continuations config key applies default value.
+/// Test that missing `max_dev_continuations` config key applies default value.
 ///
-/// This test verifies that when max_dev_continuations is omitted from the config file,
-/// the system applies the serde default of 2, resulting in max_continue_count of 3
+/// This test verifies that when `max_dev_continuations` is omitted from the config file,
+/// the system applies the serde default of 2, resulting in `max_continue_count` of 3
 /// (1 initial + 2 continuations).
 #[test]
 fn test_missing_max_dev_continuations_applies_default() {
@@ -447,13 +447,13 @@ fn test_missing_max_dev_continuations_applies_default() {
     });
 }
 
-/// Test that continuation budget is properly capped at 3 when max_dev_continuations could be None.
+/// Test that continuation budget is properly capped at 3 when `max_dev_continuations` could be None.
 ///
-/// This regression test verifies that even when Config.max_dev_continuations is None
-/// (e.g., from Config::default() or Config::test_default()), the system enforces
-/// the unwrap_or(2) fallback, resulting in a cap of 3 total attempts.
+/// This regression test verifies that even when `Config.max_dev_continuations` is None
+/// (e.g., from `Config::default()` or `Config::test_default()`), the system enforces
+/// the `unwrap_or(2)` fallback, resulting in a cap of 3 total attempts.
 ///
-/// Without the unwrap_or(2) defensive fallback in create_initial_state_with_config(),
+/// Without the `unwrap_or(2)` defensive fallback in `create_initial_state_with_config()`,
 /// this test would fail by allowing indefinite continuations.
 #[test]
 fn test_missing_config_key_caps_continuations_at_three() {
@@ -530,11 +530,11 @@ fn test_missing_config_key_caps_continuations_at_three() {
     });
 }
 
-/// NEW REGRESSION TEST: Test continuation behavior with default limit from unwrap_or(2).
+/// NEW REGRESSION TEST: Test continuation behavior with default limit from `unwrap_or(2)`.
 ///
 /// CRITICAL: This test verifies the infinite loop bug is prevented.
-/// The event_loop config loader applies unwrap_or(2) when max_dev_continuations is None,
-/// resulting in max_continue_count = 3 (1 initial + 2 continuations).
+/// The `event_loop` config loader applies `unwrap_or(2)` when `max_dev_continuations` is None,
+/// resulting in `max_continue_count` = 3 (1 initial + 2 continuations).
 ///
 /// This test simulates the expected state after that default application and verifies
 /// continuation stops at attempt 3, preventing infinite continuation loops.
@@ -615,12 +615,12 @@ fn test_continuation_stops_with_unwrap_or_default() {
     });
 }
 
-/// NEW REGRESSION TEST: Infinite loop bug - OutcomeApplied exhausts too early.
+/// NEW REGRESSION TEST: Infinite loop bug - `OutcomeApplied` exhausts too early.
 ///
-/// CRITICAL BUG REPRODUCTION: With max_continue_count = 3, attempts 0, 1, 2 should
+/// CRITICAL BUG REPRODUCTION: With `max_continue_count` = 3, attempts 0, 1, 2 should
 /// be allowed (3 total attempts), and attempt 3 should be exhausted (3 >= 3).
 ///
-/// The bug is in iteration_reducer.rs lines 156 and 170-172:
+/// The bug is in `iteration_reducer.rs` lines 156 and 170-172:
 /// ```rust
 /// let max_continuations = continuation_state.max_continue_count.saturating_sub(1); // Line 156 - BUG!
 /// ...
@@ -630,14 +630,14 @@ fn test_continuation_stops_with_unwrap_or_default() {
 /// ```
 ///
 /// This causes exhaustion to trigger at attempt 2 instead of attempt 3:
-/// - max_continue_count = 3
-/// - max_continuations = 3 - 1 = 2
+/// - `max_continue_count` = 3
+/// - `max_continuations` = 3 - 1 = 2
 /// - At attempt 2: `2 > 2` false, `2 + 1 > 2` true → exhausts (WRONG!)
 ///
 /// Expected: Attempts 0, 1, 2 allowed; attempt 3 exhausts (when >= 3)
 /// Actual: Attempts 0, 1 allowed; attempt 2 exhausts (wrong boundary)
 ///
-/// This test simulates the OutcomeApplied event handler flow directly to verify
+/// This test simulates the `OutcomeApplied` event handler flow directly to verify
 /// the bug exists. After fixing, the reducer should allow attempt 2 to continue
 /// and only exhaust at attempt 3.
 #[test]
@@ -718,7 +718,7 @@ fn test_outcome_applied_exhausts_too_early() {
 
 /// Test that continuation attempts are numbered correctly and exhaustion happens at the right boundary.
 ///
-/// With max_continue_count = 3:
+/// With `max_continue_count` = 3:
 /// - Attempt 0 (initial): NOT exhausted (0 < 3)
 /// - Attempt 1 (first continuation): NOT exhausted (1 < 3)
 /// - Attempt 2 (second continuation): NOT exhausted (2 < 3)

@@ -1,24 +1,24 @@
 //! Integration tests for agent spawn error handling.
 //!
 //! These tests verify that the pipeline properly handles error conditions
-//! when spawning agent processes, using MockProcessExecutor to simulate
+//! when spawning agent processes, using `MockProcessExecutor` to simulate
 //! failures without actually spawning real processes.
 //!
 //! # Integration Test Style Guide Compliance
 //!
 //! This module follows the integration test style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**:
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**:
 //!
-//! - **No process spawning:** Uses MockProcessExecutor instead of spawning actual processes
+//! - **No process spawning:** Uses `MockProcessExecutor` instead of spawning actual processes
 //! - **Behavior-based testing:** Tests observable behavior (error types, messages)
-//! - **Architectural boundary mocking:** Mocks ProcessExecutor trait (external process boundary)
+//! - **Architectural boundary mocking:** Mocks `ProcessExecutor` trait (external process boundary)
 //!
 //! # Key Principles
 //!
 //! These tests verify that error conditions during process spawn are handled
-//! correctly by the ProcessExecutor trait implementation. The deleted production
-//! code tests (test_spawn_agent_process_command_not_found and
-//! test_spawn_agent_process_converts_all_errors_to_command_result) violated
+//! correctly by the `ProcessExecutor` trait implementation. The deleted production
+//! code tests (`test_spawn_agent_process_command_not_found` and
+//! `test_spawn_agent_process_converts_all_errors_to_command_result`) violated
 //! the style guide by actually spawning processes to test behavior.
 
 use crate::test_timeout::with_default_timeout;
@@ -27,10 +27,10 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-/// Test that NotFound errors are properly returned by ProcessExecutor.
+/// Test that `NotFound` errors are properly returned by `ProcessExecutor`.
 ///
 /// This verifies that when a command cannot be found (simulated by
-/// MockProcessExecutor), the ProcessExecutor trait returns an appropriate
+/// `MockProcessExecutor`), the `ProcessExecutor` trait returns an appropriate
 /// error rather than panicking.
 #[test]
 fn test_process_executor_returns_not_found_error() {
@@ -60,7 +60,7 @@ fn test_process_executor_returns_not_found_error() {
     });
 }
 
-/// Test that InvalidInput errors are properly returned for invalid commands.
+/// Test that `InvalidInput` errors are properly returned for invalid commands.
 ///
 /// This verifies that invalid commands (like empty strings) are handled
 /// gracefully with appropriate error types.
@@ -86,10 +86,10 @@ fn test_process_executor_returns_invalid_input_for_empty_command() {
     });
 }
 
-/// Test that PermissionDenied errors are properly returned.
+/// Test that `PermissionDenied` errors are properly returned.
 ///
 /// This verifies that when a command cannot be executed due to permissions,
-/// the ProcessExecutor returns an appropriate error.
+/// the `ProcessExecutor` returns an appropriate error.
 #[test]
 fn test_process_executor_returns_permission_denied_error() {
     with_default_timeout(|| {
@@ -115,8 +115,8 @@ fn test_process_executor_returns_permission_denied_error() {
 /// Test the distinction between spawn failures and execution failures.
 ///
 /// This verifies that:
-/// - Spawn failures (command not found) return io::Error from execute()
-/// - Execution failures (command ran but failed) return Ok() with non-zero exit status
+/// - Spawn failures (command not found) return `io::Error` from `execute()`
+/// - Execution failures (command ran but failed) return `Ok()` with non-zero exit status
 #[test]
 fn test_spawn_failure_vs_execution_failure() {
     with_default_timeout(|| {
@@ -161,7 +161,7 @@ fn test_spawn_failure_vs_execution_failure() {
     });
 }
 
-/// Test that ArgumentListTooLong errors are properly returned.
+/// Test that `ArgumentListTooLong` errors are properly returned.
 ///
 /// This verifies that when a prompt exceeds OS argument limits,
 /// the error is properly reported.
@@ -190,9 +190,9 @@ fn test_process_executor_returns_argument_list_too_long_error() {
     });
 }
 
-/// Test MockProcessExecutor successful execution.
+/// Test `MockProcessExecutor` successful execution.
 ///
-/// This verifies that MockProcessExecutor correctly returns successful outputs.
+/// This verifies that `MockProcessExecutor` correctly returns successful outputs.
 #[test]
 fn test_mock_executor_returns_success() {
     with_default_timeout(|| {

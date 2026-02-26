@@ -60,7 +60,7 @@ fn rebase_with_line_ending_conflict_resolves() {
 
             // Go back to main and modify the same file with LF
             let default_branch = get_default_branch_name(&repo);
-            let default_ref = format!("refs/heads/{}", default_branch);
+            let default_ref = format!("refs/heads/{default_branch}");
             repo.set_head(&default_ref).unwrap();
             repo.checkout_head(None).unwrap();
 
@@ -240,7 +240,7 @@ fn validate_rebase_preconditions_detects_path_length() {
             // Try to create a file in the deep path
             // This will likely fail on Windows but may succeed on Linux
             let file_result = fs::create_dir_all(&long_path)
-                .and_then(|_| fs::write(long_path.join("test.txt"), "content"));
+                .and_then(|()| fs::write(long_path.join("test.txt"), "content"));
 
             if file_result.is_err() {
                 // If we can't create the path due to length limits,
@@ -476,7 +476,7 @@ fn rebase_handles_rename_rename_conflict() {
 
             // Go back to main and rename to a different name
             let default_branch = get_default_branch_name(&repo);
-            let default_ref = format!("refs/heads/{}", default_branch);
+            let default_ref = format!("refs/heads/{default_branch}");
             repo.set_head(&default_ref).unwrap();
             repo.checkout_head(None).unwrap();
 
@@ -543,7 +543,7 @@ fn rebase_handles_directory_file_conflict() {
 
             // Go back to main and create a file named "data"
             let default_branch = get_default_branch_name(&repo);
-            let default_ref = format!("refs/heads/{}", default_branch);
+            let default_ref = format!("refs/heads/{default_branch}");
             repo.set_head(&default_ref).unwrap();
             repo.checkout_head(None).unwrap();
 
@@ -612,7 +612,7 @@ fn rebase_handles_nested_repository() {
 
             // Go back to main
             let default_branch = get_default_branch_name(&repo);
-            let default_ref = format!("refs/heads/{}", default_branch);
+            let default_ref = format!("refs/heads/{default_branch}");
             repo.set_head(&default_ref).unwrap();
             repo.checkout_head(None).unwrap();
 

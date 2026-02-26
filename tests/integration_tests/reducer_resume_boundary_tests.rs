@@ -32,7 +32,7 @@ fn create_minimal_agent_config(name: &str) -> AgentConfigSnapshot {
     }
 }
 
-fn create_minimal_cli_args() -> CliArgsSnapshot {
+const fn create_minimal_cli_args() -> CliArgsSnapshot {
     CliArgsSnapshot {
         developer_iters: 1,
         reviewer_reviews: 1,
@@ -65,16 +65,16 @@ fn create_test_checkpoint(
 }
 
 /// Test that resuming at the final development iteration (iteration=1, total=1)
-/// derives development work effects instead of immediately skipping to SaveCheckpoint.
+/// derives development work effects instead of immediately skipping to `SaveCheckpoint`.
 ///
 /// This test focuses specifically on the FIRST orchestration decision at the boundary.
 /// It does NOT verify full phase continuation through the remaining pipeline.
 ///
-/// Note: total_reviewer_passes=0 means no review phase is configured. With this configuration,
-/// after development completes the pipeline would skip directly to FinalValidation (not Review).
+/// Note: `total_reviewer_passes=0` means no review phase is configured. With this configuration,
+/// after development completes the pipeline would skip directly to `FinalValidation` (not Review).
 /// This test only verifies that development work is derived, not the subsequent phase transitions.
 /// For full phase continuation testing (including Review phase), see
-/// test_resume_at_boundary_continues_through_remaining_phases which uses total_reviewer_passes=1.
+/// `test_resume_at_boundary_continues_through_remaining_phases` which uses `total_reviewer_passes=1`.
 ///
 /// This test MUST FAIL before the fix is implemented.
 #[test]
@@ -94,8 +94,7 @@ fn test_resume_at_final_iteration_should_rerun_development() {
         // (This assertion will FAIL before the fix, proving the bug exists)
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Bug reproduced: orchestration skipped development work and derived SaveCheckpoint at boundary. Effect: {:?}",
-            effect
+            "Bug reproduced: orchestration skipped development work and derived SaveCheckpoint at boundary. Effect: {effect:?}"
         );
 
         // ASSERTION: Should derive development preparation effect
@@ -103,8 +102,7 @@ fn test_resume_at_final_iteration_should_rerun_development() {
             matches!(effect, Effect::PrepareDevelopmentContext { .. })
                 || matches!(effect, Effect::MaterializeDevelopmentInputs { .. })
                 || matches!(effect, Effect::InitializeAgentChain { .. }),
-            "Expected development work effect at boundary (iteration=1, total=1), got {:?}",
-            effect
+            "Expected development work effect at boundary (iteration=1, total=1), got {effect:?}"
         );
     });
 }
@@ -121,8 +119,7 @@ fn test_resume_iteration_0_total_1_should_run() {
         // Should derive development work, not checkpoint
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Should run iteration 0, not skip to checkpoint. Effect: {:?}",
-            effect
+            "Should run iteration 0, not skip to checkpoint. Effect: {effect:?}"
         );
     });
 }
@@ -139,14 +136,13 @@ fn test_resume_mid_development_continues() {
         // Should derive development work at iteration 1
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Should continue development, not checkpoint. Effect: {:?}",
-            effect
+            "Should continue development, not checkpoint. Effect: {effect:?}"
         );
     });
 }
 
-/// Test that resuming at the final review pass (reviewer_pass=2, total=2)
-/// derives review work effects instead of immediately skipping to SaveCheckpoint.
+/// Test that resuming at the final review pass (`reviewer_pass=2`, total=2)
+/// derives review work effects instead of immediately skipping to `SaveCheckpoint`.
 ///
 /// This test MUST FAIL before the fix is implemented.
 #[test]
@@ -161,8 +157,7 @@ fn test_resume_at_final_review_pass_should_rerun_review() {
         // Should NOT be SaveCheckpoint
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Bug reproduced: orchestration skipped review work at boundary. Effect: {:?}",
-            effect
+            "Bug reproduced: orchestration skipped review work at boundary. Effect: {effect:?}"
         );
 
         // Should derive review work effect
@@ -170,13 +165,12 @@ fn test_resume_at_final_review_pass_should_rerun_review() {
             matches!(effect, Effect::PrepareReviewContext { .. })
                 || matches!(effect, Effect::MaterializeReviewInputs { .. })
                 || matches!(effect, Effect::InitializeAgentChain { .. }),
-            "Expected review work effect at boundary (pass=2, total=2), got {:?}",
-            effect
+            "Expected review work effect at boundary (pass=2, total=2), got {effect:?}"
         );
     });
 }
 
-/// Test that resuming at reviewer_pass=0, total=1 runs the pass.
+/// Test that resuming at `reviewer_pass=0`, total=1 runs the pass.
 #[test]
 fn test_resume_reviewer_pass_0_total_1_should_run() {
     with_default_timeout(|| {
@@ -187,8 +181,7 @@ fn test_resume_reviewer_pass_0_total_1_should_run() {
 
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Should run review pass 0, not skip to checkpoint. Effect: {:?}",
-            effect
+            "Should run review pass 0, not skip to checkpoint. Effect: {effect:?}"
         );
     });
 }
@@ -213,8 +206,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         let first_effect = determine_next_effect(&state);
         assert!(
             !matches!(first_effect, Effect::SaveCheckpoint { .. }),
-            "Resume should start development work, not skip to checkpoint. Got: {:?}",
-            first_effect
+            "Resume should start development work, not skip to checkpoint. Got: {first_effect:?}"
         );
 
         // Initialize agent chain (simulates InitializeAgentChain effect completion)
@@ -247,8 +239,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         let after_dev = determine_next_effect(&state);
         assert!(
             matches!(after_dev, Effect::ApplyDevelopmentOutcome { .. }),
-            "Should apply development outcome after iteration completes. Got: {:?}",
-            after_dev
+            "Should apply development outcome after iteration completes. Got: {after_dev:?}"
         );
 
         // Apply the development iteration completed event to transition phases
@@ -290,8 +281,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         );
         assert!(
             !is_exit_checkpoint,
-            "Pipeline should continue work (cleanup or commit), not exit via SaveCheckpoint. Got: {:?}",
-            next_effect
+            "Pipeline should continue work (cleanup or commit), not exit via SaveCheckpoint. Got: {next_effect:?}"
         );
 
         // After development completes, reducer sets context_cleanup_pending=true,
@@ -304,8 +294,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         );
         assert!(
             matches!(next_effect, Effect::CleanupContinuationContext),
-            "After development success, first effect should be CleanupContinuationContext. Got: {:?}",
-            next_effect
+            "After development success, first effect should be CleanupContinuationContext. Got: {next_effect:?}"
         );
 
         // This proves the bug is fixed: after resuming at iteration boundary,

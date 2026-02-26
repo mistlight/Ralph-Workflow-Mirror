@@ -33,14 +33,14 @@ pub struct Fixture {
     pub repo_root: PathBuf,
     pub workspace: Arc<dyn Workspace>,
     pub run_log_context: ralph_workflow::logging::RunLogContext,
-    pub cloud_config: ralph_workflow::config::CloudConfig,
+    pub cloud: ralph_workflow::config::CloudConfig,
 }
 
 impl Fixture {
     /// Creates a new fixture with a memory-backed workspace.
     pub fn new() -> Self {
         let repo_root = PathBuf::from("/test/repo");
-        let workspace: Arc<dyn Workspace> = Arc::new(MemoryWorkspace::new(repo_root.clone()));
+        let workspace: Arc<dyn Workspace> = Arc::new(MemoryWorkspace::new(repo_root));
         Self::with_workspace(workspace)
     }
 
@@ -66,7 +66,7 @@ impl Fixture {
             repo_root,
             workspace,
             run_log_context,
-            cloud_config: ralph_workflow::config::CloudConfig::disabled(),
+            cloud: ralph_workflow::config::CloudConfig::disabled(),
         }
     }
 
@@ -94,7 +94,7 @@ impl Fixture {
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
-            cloud_config: &self.cloud_config,
+            cloud: &self.cloud,
         }
     }
 }
@@ -116,7 +116,7 @@ impl FailingWorkspace {
     ///
     /// * `inner` - The underlying memory workspace
     /// * `fail_marker_write` - If true, writes to `.agent/tmp/completion_marker` will fail
-    pub fn new(inner: MemoryWorkspace, fail_marker_write: bool) -> Self {
+    pub const fn new(inner: MemoryWorkspace, fail_marker_write: bool) -> Self {
         Self {
             inner,
             fail_marker_write,
@@ -224,22 +224,22 @@ impl Workspace for FailingWorkspace {
     }
 }
 
-/// Behavior for SaveCheckpoint effect in mock handler.
+/// Behavior for `SaveCheckpoint` effect in mock handler.
 #[derive(Debug, Clone, Copy)]
 pub enum SaveBehavior {
-    /// SaveCheckpoint succeeds
+    /// `SaveCheckpoint` succeeds
     Ok,
-    /// SaveCheckpoint returns error event
+    /// `SaveCheckpoint` returns error event
     ErrorEvent,
-    /// SaveCheckpoint panics
+    /// `SaveCheckpoint` panics
     Panic,
 }
 
-/// Mock handler that simulates being stuck in AwaitingDevFix phase.
+/// Mock handler that simulates being stuck in `AwaitingDevFix` phase.
 ///
 /// Used to test max iteration handling and forced completion logic.
-/// This handler responds to TriggerDevFixFlow but never advances past
-/// AwaitingDevFix, allowing tests to exercise timeout behavior.
+/// This handler responds to `TriggerDevFixFlow` but never advances past
+/// `AwaitingDevFix`, allowing tests to exercise timeout behavior.
 #[derive(Debug)]
 pub struct StalledAwaitingDevFixHandler {
     pub state: PipelineState,
@@ -253,8 +253,8 @@ impl StalledAwaitingDevFixHandler {
     /// # Arguments
     ///
     /// * `state` - Initial pipeline state
-    /// * `save_behavior` - How SaveCheckpoint effect should behave
-    pub fn new(state: PipelineState, save_behavior: SaveBehavior) -> Self {
+    /// * `save_behavior` - How `SaveCheckpoint` effect should behave
+    pub const fn new(state: PipelineState, save_behavior: SaveBehavior) -> Self {
         Self {
             state,
             save_behavior,
@@ -263,7 +263,7 @@ impl StalledAwaitingDevFixHandler {
     }
 }
 
-impl<'ctx> ralph_workflow::reducer::effect::EffectHandler<'ctx> for StalledAwaitingDevFixHandler {
+impl ralph_workflow::reducer::effect::EffectHandler<'_> for StalledAwaitingDevFixHandler {
     fn execute(
         &mut self,
         effect: Effect,

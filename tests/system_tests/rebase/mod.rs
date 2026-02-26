@@ -49,7 +49,7 @@
 //! - Real file system operations for conflict simulation
 //! - Real rebase/merge operations to test recovery
 //!
-//! See **[SYSTEM_TESTS.md](../SYSTEM_TESTS.md)** for guidelines.
+//! See **[`SYSTEM_TESTS.md`](../SYSTEM_TESTS.md)** for guidelines.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (git state, commit history, working directory)

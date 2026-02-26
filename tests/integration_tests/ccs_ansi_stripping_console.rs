@@ -67,8 +67,7 @@ fn test_append_only_works_when_ansi_stripped() {
         assert_eq!(
             non_empty_lines.len(),
             1,
-            "Should have exactly 1 line of content when ANSI stripped, got: {:?}",
-            non_empty_lines
+            "Should have exactly 1 line of content when ANSI stripped, got: {non_empty_lines:?}"
         );
     });
 }
@@ -101,8 +100,7 @@ fn test_legacy_pattern_fails_when_ansi_stripped() {
         // the literal newlines remain and cause repeated visible prefix lines.
         assert!(
             prefix_lines.len() > 1,
-            "Legacy pattern should create multiple lines when ANSI is stripped and cursor-up is ignored. Lines: {:?}",
-            prefix_lines
+            "Legacy pattern should create multiple lines when ANSI is stripped and cursor-up is ignored. Lines: {prefix_lines:?}"
         );
     });
 }
@@ -161,8 +159,7 @@ fn test_thinking_append_only_works_when_ansi_stripped() {
         assert_eq!(
             non_empty_lines.len(),
             1,
-            "Should have exactly 1 line of thinking content when ANSI stripped, got: {:?}",
-            non_empty_lines
+            "Should have exactly 1 line of thinking content when ANSI stripped, got: {non_empty_lines:?}"
         );
     });
 }
@@ -223,8 +220,7 @@ fn test_multiple_content_blocks_ansi_stripped() {
         assert_eq!(
             non_empty_lines.len(),
             2,
-            "Should have exactly 2 lines (thinking + text) when ANSI stripped, got: {:?}",
-            non_empty_lines
+            "Should have exactly 2 lines (thinking + text) when ANSI stripped, got: {non_empty_lines:?}"
         );
     });
 }

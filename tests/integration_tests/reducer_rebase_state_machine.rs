@@ -1,7 +1,7 @@
 //! Rebase state machine integration tests.
 //!
 //! Tests verify that rebase operations integrate correctly with reducer state machine.
-//! Tests verify actual state changes through event emission and reduce() function.
+//! Tests verify actual state changes through event emission and `reduce()` function.
 //!
 //! # Integration Test Style Guide
 //!

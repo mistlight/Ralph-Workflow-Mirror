@@ -1,6 +1,6 @@
 //! Tests verifying that cloud mode disabled = zero behavior change.
 //!
-//! These tests verify the critical acceptance criterion: when RALPH_CLOUD_MODE
+//! These tests verify the critical acceptance criterion: when `RALPH_CLOUD_MODE`
 //! is unset or false, behavior is IDENTICAL to the CLI before cloud support was added.
 //!
 //! This means:
@@ -118,8 +118,7 @@ fn test_cloud_mode_case_insensitive() {
             let config = CloudConfig::from_env();
             assert!(
                 !config.enabled,
-                "Cloud mode should be disabled for value: {}",
-                value
+                "Cloud mode should be disabled for value: {value}"
             );
         }
 
@@ -204,7 +203,7 @@ fn test_cloud_mode_disabled_does_not_report_progress_even_if_reporter_is_injecte
             state: PipelineState,
         }
 
-        impl<'ctx> EffectHandler<'ctx> for OneShotHandler {
+        impl EffectHandler<'_> for OneShotHandler {
             fn execute(
                 &mut self,
                 _effect: Effect,
@@ -264,7 +263,7 @@ fn test_cloud_mode_disabled_does_not_report_progress_even_if_reporter_is_injecte
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: Some(&reporter),
-            cloud_config: &cloud_config,
+            cloud: &cloud_config,
         };
 
         let initial_state = PipelineState::initial(1, 0);

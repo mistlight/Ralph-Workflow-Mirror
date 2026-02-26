@@ -22,6 +22,7 @@ use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
 use std::io::BufReader;
 use std::rc::Rc;
+use std::fmt::Write;
 
 #[test]
 fn test_empty_and_whitespace_deltas_no_spam() {
@@ -53,9 +54,7 @@ fn test_empty_and_whitespace_deltas_no_spam() {
 
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 prefix with empty/whitespace deltas, found {}. Output:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 prefix with empty/whitespace deltas, found {prefix_count}. Output:\n{output}"
         );
         assert!(
             output.contains("actual content"),
@@ -101,9 +100,7 @@ fn test_rapid_block_transitions_no_cross_contamination() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 4,
-            "Expected <= 4 prefixes, found {}. Output:\n{}",
-            prefix_count,
-            output
+            "Expected <= 4 prefixes, found {prefix_count}. Output:\n{output}"
         );
 
         // Verify all content present
@@ -132,11 +129,9 @@ fn test_single_character_deltas_no_spam() {
 
         let text = "Hello World!";
         for ch in text.chars() {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
-"#,
-                ch
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{ch}"}}}}}}"#
+            ).unwrap();
         }
 
         stream.push_str(
@@ -155,9 +150,7 @@ fn test_single_character_deltas_no_spam() {
         // With 12 single-character deltas, should still only have 1 prefix
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 prefix with 12 single-char deltas, found {}. Output:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 prefix with 12 single-char deltas, found {prefix_count}. Output:\n{output}"
         );
         assert!(output.contains("Hello World!"));
     });
@@ -187,9 +180,8 @@ fn test_tool_input_chunked_deltas_no_spam() {
             // Escape for JSON
             let escaped = chunk_str.replace('\\', "\\\\").replace('"', "\\\"");
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":"{}"}}}}}}
-"#,
-                escaped
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":"{escaped}"}}}}}}
+"#
             ));
         }
 
@@ -209,9 +201,7 @@ fn test_tool_input_chunked_deltas_no_spam() {
         // Should have at most 1 prefix for tool input flush
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 prefix with chunked tool input, found {}. Output:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 prefix with chunked tool input, found {prefix_count}. Output:\n{output}"
         );
     });
 }
@@ -245,9 +235,7 @@ fn test_codex_empty_reasoning_items_no_spam() {
 
         assert!(
             thinking_count <= 1,
-            "Expected <= 1 'Thinking:' with empty reasoning items, found {}. Output:\n{}",
-            thinking_count,
-            output
+            "Expected <= 1 'Thinking:' with empty reasoning items, found {thinking_count}. Output:\n{output}"
         );
         assert!(output.contains("actual reasoning"));
     });
@@ -287,9 +275,7 @@ fn test_codex_rapid_agent_message_transitions_no_spam() {
         // Should have at most 4 prefixes (2 reasoning + 2 agent_message)
         assert!(
             prefix_count <= 4,
-            "Expected <= 4 prefixes with rapid transitions, found {}. Output:\n{}",
-            prefix_count,
-            output
+            "Expected <= 4 prefixes with rapid transitions, found {prefix_count}. Output:\n{output}"
         );
 
         // Verify all content present
@@ -338,9 +324,7 @@ fn test_multi_turn_session_boundary_isolation() {
         // Should have at most 3 prefixes (one per message)
         assert!(
             prefix_count <= 3,
-            "Expected <= 3 prefixes for 3 messages, found {}. Output:\n{}",
-            prefix_count,
-            output
+            "Expected <= 3 prefixes for 3 messages, found {prefix_count}. Output:\n{output}"
         );
 
         // Verify all messages present and isolated

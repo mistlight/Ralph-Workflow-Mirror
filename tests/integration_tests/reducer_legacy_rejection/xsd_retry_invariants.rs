@@ -17,8 +17,8 @@ use crate::test_timeout::with_default_timeout;
 
 /// Test that XSD validation failures are tracked in reducer state.
 ///
-/// This verifies that `invalid_output_attempts` in ContinuationState is incremented
-/// when OutputValidationFailed events are processed, making retry decisions
+/// This verifies that `invalid_output_attempts` in `ContinuationState` is incremented
+/// when `OutputValidationFailed` events are processed, making retry decisions
 /// explicit in state rather than hidden in phase code.
 #[test]
 fn test_xsd_retry_count_in_reducer_state() {

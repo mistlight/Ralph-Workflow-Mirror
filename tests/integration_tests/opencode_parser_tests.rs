@@ -1,6 +1,6 @@
-//! Integration tests for OpenCode parser with log file verification.
+//! Integration tests for `OpenCode` parser with log file verification.
 //!
-//! These tests verify that the OpenCode parser correctly handles streaming events,
+//! These tests verify that the `OpenCode` parser correctly handles streaming events,
 //! produces proper output, and writes events to log files for extraction.
 //!
 //! Uses `MemoryWorkspace` for all file operations - NO real filesystem access.
@@ -29,7 +29,7 @@ fn test_opencode_parser_normal_flow() {
         let log_path = Path::new("/test/logs/opencode_test.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser =
             OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
                 .with_log_file_for_test(log_path.to_str().unwrap());
@@ -88,7 +88,7 @@ fn test_opencode_parser_text_streaming() {
 
 /// Test that non-TTY modes flush accumulated text at completion boundary.
 ///
-/// Regression guard: Basic/None modes suppress per-delta output, so the step_finish
+/// Regression guard: Basic/None modes suppress per-delta output, so the `step_finish`
 /// boundary must flush the accumulated text, otherwise logs/piped output show nothing.
 #[test]
 fn test_opencode_parser_none_mode_flushes_at_step_finish() {
@@ -242,7 +242,7 @@ fn test_opencode_parser_log_file_flushed() {
         let log_path = Path::new("/test/logs/opencode_flush.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser =
             OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
                 .with_log_file_for_test(log_path.to_str().unwrap());
@@ -261,7 +261,7 @@ fn test_opencode_parser_log_file_flushed() {
 
         let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
-            log_content.contains(r#"sessionID"#),
+            log_content.contains(r"sessionID"),
             "Log should be readable immediately after parsing (sync_all worked)"
         );
     });
@@ -302,7 +302,7 @@ fn test_opencode_parser_log_contains_events() {
         let log_path = Path::new("/test/logs/opencode_events.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser =
             OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
                 .with_log_file_for_test(log_path.to_str().unwrap());
@@ -339,7 +339,7 @@ fn test_opencode_parser_multiple_steps() {
         let log_path = Path::new("/test/logs/opencode_multi.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser =
             OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
                 .with_log_file_for_test(log_path.to_str().unwrap());
@@ -401,7 +401,7 @@ fn test_opencode_parser_truncated_stream() {
         let log_path = Path::new("/test/logs/opencode_truncated.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-        let printer: SharedPrinter = test_printer.clone();
+        let printer: SharedPrinter = test_printer;
         let parser =
             OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
                 .with_log_file_for_test(log_path.to_str().unwrap());
@@ -475,8 +475,7 @@ fn test_opencode_parser_consecutive_text_handled() {
         let hello_count = output.matches("Hello").count();
         assert!(
             hello_count <= 4,
-            "Consecutive text events should not cause excessive duplication. Got {} occurrences",
-            hello_count
+            "Consecutive text events should not cause excessive duplication. Got {hello_count} occurrences"
         );
     });
 }

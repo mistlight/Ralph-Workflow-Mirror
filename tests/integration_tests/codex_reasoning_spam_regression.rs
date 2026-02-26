@@ -7,8 +7,8 @@
 //! scenarios), each delta was printed as a fresh line instead of updating in-place,
 //! causing dozens of repeated "[ccs/codex] Thinking:" lines in logs.
 //!
-//! Fix: Align Codex reasoning with Claude's approach using StreamingSession state
-//! tracking and ThinkingDeltaRenderer with proper terminal mode awareness.
+//! Fix: Align Codex reasoning with Claude's approach using `StreamingSession` state
+//! tracking and `ThinkingDeltaRenderer` with proper terminal mode awareness.
 //!
 //! # Integration Test Style Guide
 //!
@@ -51,9 +51,7 @@ fn test_codex_reasoning_no_spam_in_non_tty_basic_mode() {
         let thinking_count = output.matches("[ccs/codex] Thinking:").count();
         assert!(
             thinking_count <= 1,
-            "Expected <= 1 'Thinking:' line in Basic mode, found {}. Output:\n{}",
-            thinking_count,
-            output
+            "Expected <= 1 'Thinking:' line in Basic mode, found {thinking_count}. Output:\n{output}"
         );
 
         // We don't assert the exact reasoning text here; the key regression is that
@@ -87,9 +85,7 @@ fn test_codex_reasoning_no_spam_in_non_tty_none_mode() {
         let thinking_count = output.matches("[ccs/codex] Thinking:").count();
         assert!(
             thinking_count <= 1,
-            "Expected <= 1 'Thinking:' line in None mode, found {}. Output:\n{}",
-            thinking_count,
-            output
+            "Expected <= 1 'Thinking:' line in None mode, found {thinking_count}. Output:\n{output}"
         );
     });
 }
@@ -131,32 +127,27 @@ fn test_codex_reasoning_in_place_updates_in_full_mode() {
         let thinking_count = output.matches("Thinking:").count();
         assert_eq!(
             thinking_count, 1,
-            "Expected 'Thinking:' to appear exactly once in Full mode (append-only pattern). Found {} times. Output:\n{}",
-            thinking_count, output
+            "Expected 'Thinking:' to appear exactly once in Full mode (append-only pattern). Found {thinking_count} times. Output:\n{output}"
         );
 
         // Verify full content is present
         assert!(
             output.contains("First chunk"),
-            "Expected content 'First chunk' to be present. Output:\n{}",
-            output
+            "Expected content 'First chunk' to be present. Output:\n{output}"
         );
         assert!(
             output.contains("second"),
-            "Expected content 'second' to be present. Output:\n{}",
-            output
+            "Expected content 'second' to be present. Output:\n{output}"
         );
         assert!(
             output.contains("third"),
-            "Expected content 'third' to be present. Output:\n{}",
-            output
+            "Expected content 'third' to be present. Output:\n{output}"
         );
 
         // Verify NO cursor-up sequences (append-only doesn't use cursor movement during streaming)
         assert!(
             !output.contains("\x1b[1A"),
-            "Append-only pattern should NOT use cursor-up sequences during streaming. Output:\n{}",
-            output
+            "Append-only pattern should NOT use cursor-up sequences during streaming. Output:\n{output}"
         );
     });
 }
@@ -194,8 +185,7 @@ fn test_codex_reasoning_multiple_turns_no_cross_contamination() {
         let thinking_count = output.matches("[ccs/codex] Thinking:").count();
         assert_eq!(
             thinking_count, 2,
-            "Expected 2 'Thinking:' lines (one per turn), found {}. Output:\n{}",
-            thinking_count, output
+            "Expected 2 'Thinking:' lines (one per turn), found {thinking_count}. Output:\n{output}"
         );
 
         // Verify each turn's reasoning is shown separately

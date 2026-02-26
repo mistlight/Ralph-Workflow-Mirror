@@ -18,10 +18,10 @@ use ralph_workflow::reducer::state_reduction::reduce;
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
-/// Test that AnalysisAgentInvoked event type exists and can be constructed.
+/// Test that `AnalysisAgentInvoked` event type exists and can be constructed.
 ///
 /// This basic test verifies:
-/// 1. The AnalysisAgentInvoked event variant exists
+/// 1. The `AnalysisAgentInvoked` event variant exists
 /// 2. It can be constructed with an iteration number
 #[test]
 fn test_analysis_agent_invoked_event_exists() {
@@ -40,10 +40,10 @@ fn test_analysis_agent_invoked_event_exists() {
     });
 }
 
-/// Test that InvokeAnalysisAgent effect type exists and can be constructed.
+/// Test that `InvokeAnalysisAgent` effect type exists and can be constructed.
 ///
 /// This test verifies:
-/// 1. The InvokeAnalysisAgent effect variant exists
+/// 1. The `InvokeAnalysisAgent` effect variant exists
 /// 2. It can be constructed with an iteration number
 #[test]
 fn test_invoke_analysis_agent_effect_exists() {
@@ -99,8 +99,7 @@ fn test_analysis_runs_after_first_iteration_when_multiple_iterations() {
                     role: AgentRole::Analysis
                 }
             ),
-            "Expected InitializeAgentChain(Analysis) before invoking analysis agent, got {:?}",
-            effect
+            "Expected InitializeAgentChain(Analysis) before invoking analysis agent, got {effect:?}"
         );
     });
 }
@@ -145,9 +144,7 @@ fn test_analysis_runs_after_every_iteration() {
                         role: AgentRole::Analysis
                     }
                 ),
-                "Expected InitializeAgentChain(Analysis) after iteration {}, got {:?}",
-                iter,
-                effect
+                "Expected InitializeAgentChain(Analysis) after iteration {iter}, got {effect:?}"
             );
         }
     });
@@ -171,8 +168,7 @@ fn test_analysis_does_not_run_before_dev_agent_completes() {
         // Then: Should NOT be InvokeAnalysisAgent
         assert!(
             !matches!(effect, Effect::InvokeAnalysisAgent { .. }),
-            "Analysis should not run before dev agent completes, got {:?}",
-            effect
+            "Analysis should not run before dev agent completes, got {effect:?}"
         );
     });
 }
@@ -196,13 +192,12 @@ fn test_analysis_does_not_run_twice_for_same_iteration() {
         // Then: Should NOT be InvokeAnalysisAgent (should move to ExtractDevelopmentXml)
         assert!(
             !matches!(effect, Effect::InvokeAnalysisAgent { .. }),
-            "Analysis should not run twice for iteration 0, got {:?}",
-            effect
+            "Analysis should not run twice for iteration 0, got {effect:?}"
         );
     });
 }
 
-/// Test that AnalysisAgentInvoked event updates state correctly.
+/// Test that `AnalysisAgentInvoked` event updates state correctly.
 ///
 /// Verifies that the reducer properly records when analysis agent is invoked.
 #[test]
@@ -233,7 +228,7 @@ fn test_analysis_agent_invoked_event_updates_state() {
 /// CRITICAL: This verifies the core constraint that -D N means exactly N
 /// planning cycles, regardless of analysis or continuation.
 ///
-/// Only the commit phase (via compute_post_commit_transition) should
+/// Only the commit phase (via `compute_post_commit_transition`) should
 /// increment the iteration counter. Analysis is verification only, NOT
 /// a development iteration.
 #[test]
@@ -267,7 +262,7 @@ fn test_analysis_does_not_increment_iteration_counter() {
 
 /// Test that starting a new continuation attempt resets analysis tracking.
 ///
-/// Regression for a bug where continuation attempts would re-run CleanupDevelopmentXml,
+/// Regression for a bug where continuation attempts would re-run `CleanupDevelopmentXml`,
 /// delete `.agent/tmp/development_result.xml`, and then SKIP analysis because
 /// `analysis_agent_invoked_iteration` was still set. That caused missing XML and
 /// validation failures.
@@ -303,7 +298,7 @@ fn test_continuation_triggered_resets_analysis_invoked_tracking() {
 
 /// Test that XSD retry during Development targets analysis (not dev prompt).
 ///
-/// Regression: XSD retry used to re-run PrepareDevelopmentPrompt, which re-ran the
+/// Regression: XSD retry used to re-run `PrepareDevelopmentPrompt`, which re-ran the
 /// entire dev flow even though the invalid XML is produced by the analysis agent.
 #[test]
 fn test_development_xsd_retry_reinvokes_analysis_agent() {
@@ -330,8 +325,7 @@ fn test_development_xsd_retry_reinvokes_analysis_agent() {
                         role: AgentRole::Analysis
                     }
                 ),
-            "expected XSD retry to initialize analysis chain or invoke analysis agent, got {:?}",
-            effect
+            "expected XSD retry to initialize analysis chain or invoke analysis agent, got {effect:?}"
         );
     });
 }
@@ -344,10 +338,10 @@ fn test_development_xsd_retry_reinvokes_analysis_agent() {
 fn test_analysis_empty_diff_plan_satisfied() {
     with_default_timeout(|| {
         // Given: A completed analysis result where empty diff is expected
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Plan verification complete. No code changes needed as feature already exists.</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // When: Validating the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -376,10 +370,10 @@ fn test_analysis_empty_diff_plan_satisfied() {
 fn test_analysis_empty_diff_plan_requires_changes() {
     with_default_timeout(|| {
         // Given: A failed analysis result where empty diff indicates failure
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>failed</ralph-status>
 <ralph-summary>Development agent failed to execute. Plan requires adding src/feature.rs but no changes were made.</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // When: Validating the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -434,8 +428,7 @@ fn test_analysis_xsd_invalid_triggers_retry() {
         // Then: Should re-invoke analysis agent (not dev agent)
         assert!(
             matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 }),
-            "XSD retry should re-invoke analysis agent, got {:?}",
-            effect
+            "XSD retry should re-invoke analysis agent, got {effect:?}"
         );
     });
 }
@@ -522,8 +515,7 @@ fn test_complete_pipeline_with_analysis_verification() {
                     role: AgentRole::Analysis
                 }
             ),
-            "After dev agent, should initialize analysis chain, got {:?}",
-            effect
+            "After dev agent, should initialize analysis chain, got {effect:?}"
         );
 
         // Step 2b: Simulate chain initialization
@@ -543,8 +535,7 @@ fn test_complete_pipeline_with_analysis_verification() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 }),
-            "After analysis chain init, should invoke analysis agent, got {:?}",
-            effect
+            "After analysis chain init, should invoke analysis agent, got {effect:?}"
         );
 
         // Step 3: Analysis agent completes
@@ -561,8 +552,7 @@ fn test_complete_pipeline_with_analysis_verification() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::ExtractDevelopmentXml { iteration: 0 }),
-            "After analysis, should extract XML, got {:?}",
-            effect
+            "After analysis, should extract XML, got {effect:?}"
         );
 
         // Step 5: XML extraction completes
@@ -578,8 +568,7 @@ fn test_complete_pipeline_with_analysis_verification() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::ValidateDevelopmentXml { iteration: 0 }),
-            "After extraction, should validate XML, got {:?}",
-            effect
+            "After extraction, should validate XML, got {effect:?}"
         );
 
         // Step 7: XML validation completes with success
@@ -605,7 +594,7 @@ fn test_complete_pipeline_with_analysis_verification() {
 
 /// Test that -D 3 produces exactly 3 planning cycles regardless of analysis.
 ///
-/// CRITICAL regression test: Verifies that analysis does NOT consume developer_iters budget.
+/// CRITICAL regression test: Verifies that analysis does NOT consume `developer_iters` budget.
 /// The -D N flag should mean exactly N planning cycles, not N development agent invocations.
 #[test]
 fn test_developer_iters_3_produces_exactly_3_planning_cycles() {

@@ -6,7 +6,7 @@
 //! - Sends heartbeats
 //! - Reports completion
 //!
-//! All tests use MockCloudReporter to avoid real HTTP calls.
+//! All tests use `MockCloudReporter` to avoid real HTTP calls.
 
 use ralph_workflow::cloud::{CloudReporter, MockCloudReporter, ProgressEventType, ProgressUpdate};
 use ralph_workflow::config::CloudConfig;
@@ -216,8 +216,7 @@ fn test_cloud_mode_boolean_parsing() {
             let config = CloudConfig::from_env();
             assert!(
                 config.enabled,
-                "Cloud mode should be enabled for value: {}",
-                value
+                "Cloud mode should be enabled for value: {value}"
             );
         }
 
@@ -345,7 +344,7 @@ fn test_cloud_mode_enabled_reports_progress_updates_from_ui_events() {
             state: PipelineState,
         }
 
-        impl<'ctx> EffectHandler<'ctx> for OneShotHandler {
+        impl EffectHandler<'_> for OneShotHandler {
             fn execute(
                 &mut self,
                 _effect: Effect,
@@ -417,7 +416,7 @@ fn test_cloud_mode_enabled_reports_progress_updates_from_ui_events() {
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: Some(&reporter),
-            cloud_config: &cloud_config,
+            cloud: &cloud_config,
         };
 
         let initial_state = PipelineState::initial(1, 0);

@@ -37,8 +37,7 @@ fn test_streaming_produces_correct_visible_output() {
         // Content should be present
         assert!(
             visible.contains("Hello") && visible.contains("World"),
-            "Should contain 'Hello World'. Got: {}",
-            visible
+            "Should contain 'Hello World'. Got: {visible}"
         );
 
         // No duplicate lines
@@ -77,9 +76,7 @@ fn test_snapshot_glitch_no_visible_duplicates() {
         let count = vterm_ref.count_visible_pattern("The quick brown fox");
         assert!(
             count <= 1,
-            "Snapshot glitch caused duplicate: 'The quick brown fox' appears {} times. Output: {}",
-            count,
-            visible
+            "Snapshot glitch caused duplicate: 'The quick brown fox' appears {count} times. Output: {visible}"
         );
 
         // Final content should include content after the glitch
@@ -117,9 +114,7 @@ fn test_consecutive_identical_deltas_no_duplicates() {
         let count = vterm_ref.count_visible_pattern("repeated content");
         assert!(
         count <= 2,
-        "Consecutive duplicates should be filtered. 'repeated content' appears {} times. Output: {}",
-        count,
-        visible
+        "Consecutive duplicates should be filtered. 'repeated content' appears {count} times. Output: {visible}"
     );
     });
 }

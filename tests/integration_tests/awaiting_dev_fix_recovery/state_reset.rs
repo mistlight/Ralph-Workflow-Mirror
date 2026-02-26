@@ -46,7 +46,7 @@ fn recovery_state_reset_at_each_level() {
         for i in 2..=4 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }
@@ -71,7 +71,7 @@ fn recovery_state_reset_at_each_level() {
         for i in 5..=7 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }
@@ -94,7 +94,7 @@ fn recovery_state_reset_at_each_level() {
         for i in 8..=10 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }
@@ -130,7 +130,7 @@ fn recovery_clears_development_flags() {
         for i in 1..=4 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }
@@ -172,7 +172,7 @@ fn recovery_clears_review_flags() {
         for i in 1..=4 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }
@@ -215,7 +215,7 @@ fn recovery_clears_commit_flags() {
         for i in 1..=4 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }
@@ -250,7 +250,7 @@ fn recovery_iteration_reset_floor_at_zero() {
         for i in 1..=7 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Attempt {}", i)),
+                summary: Some(format!("Attempt {i}")),
             });
             state = reduce(state, event);
         }

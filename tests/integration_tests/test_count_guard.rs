@@ -625,19 +625,18 @@ fn resolve_module_path(module_dir: &str, module_name: &str) -> String {
     let base = if module_dir.is_empty() {
         module_name.to_string()
     } else {
-        format!("{}/{}", module_dir, module_name)
+        format!("{module_dir}/{module_name}")
     };
-    let candidate_file = format!("{}.rs", base);
+    let candidate_file = format!("{base}.rs");
     if source_for_path(&candidate_file).is_some() {
         return candidate_file;
     }
-    let candidate_mod = format!("{}/mod.rs", base);
+    let candidate_mod = format!("{base}/mod.rs");
     if source_for_path(&candidate_mod).is_some() {
         return candidate_mod;
     }
     panic!(
-        "Missing integration test module source for '{}'. Tried '{}' and '{}'",
-        base, candidate_file, candidate_mod
+        "Missing integration test module source for '{base}'. Tried '{candidate_file}' and '{candidate_mod}'"
     );
 }
 
@@ -663,7 +662,7 @@ fn integration_test_sources_have_unique_paths() {
             }
         }
 
-        duplicates.sort();
+        duplicates.sort_unstable();
         duplicates.dedup();
 
         assert!(
@@ -703,7 +702,7 @@ fn count_tests_recursive(
     for module_name in parse_module_declarations(contents) {
         let child_path = resolve_module_path(module_dir, module_name);
         let child_contents = source_for_path(&child_path)
-            .unwrap_or_else(|| panic!("Missing integration test source '{}'", child_path));
+            .unwrap_or_else(|| panic!("Missing integration test source '{child_path}'"));
         let child_dir = module_dir_from_path(&child_path);
         total += count_tests_recursive(&child_path, &child_dir, child_contents, visited);
     }

@@ -77,7 +77,7 @@ fn ralph_v3_file_system_state_detects_changes() {
             "files": {{
                 "PROMPT.md": {{
                     "path": "PROMPT.md",
-                    "checksum": "{}",
+                    "checksum": "{fake_old_checksum}",
                     "size": 100,
                     "content": null,
                     "exists": true
@@ -85,8 +85,7 @@ fn ralph_v3_file_system_state_detects_changes() {
             }},
             "git_head_oid": null,
             "git_branch": null
-        }}"#,
-            fake_old_checksum
+        }}"#
         );
 
         let checkpoint_json = make_checkpoint_with_file_system_state(
@@ -123,21 +122,20 @@ fn ralph_v3_file_system_state_detects_changes() {
             err.contains("File system state")
                 || err.contains("validation failed")
                 || err.contains("changed"),
-            "Error should mention file system state change: {}",
-            err
+            "Error should mention file system state change: {err}"
         );
     });
 }
 
 #[test]
 fn ralph_v3_file_system_state_auto_recovery() {
+    use sha2::{Digest, Sha256};
     with_timeout_ctx(
         |_ctx| {
             // Small PLAN.md content
             let plan_content = "Small plan content";
 
             // Calculate checksum
-            use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(plan_content.as_bytes());
             let checksum = format!("{:x}", hasher.finalize());

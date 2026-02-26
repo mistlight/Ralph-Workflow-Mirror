@@ -14,7 +14,7 @@
 //! When conflicts occur during rebase, the system should:
 //! - Return a Conflicts result with affected file paths
 //! - Leave the repository in a consistent state
-//! - Allow abort_rebase to recover cleanly
+//! - Allow `abort_rebase` to recover cleanly
 
 use std::fs;
 use test_helpers::{commit_all, with_temp_cwd, write_file};
@@ -132,7 +132,7 @@ fn rebase_handles_patch_application_failure() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Modify the same lines differently on the default branch
@@ -173,10 +173,10 @@ fn rebase_handles_patch_application_failure() {
     });
 }
 
-/// Test that empty commits during rebase produce NoOp or Success result.
+/// Test that empty commits during rebase produce `NoOp` or Success result.
 ///
 /// This verifies that when a commit becomes empty after rebase (same changes upstream),
-/// the system skips it with NoOp reason or handles it automatically.
+/// the system skips it with `NoOp` reason or handles it automatically.
 #[test]
 fn rebase_handles_empty_commits() {
     with_default_timeout(|| {
@@ -209,7 +209,7 @@ fn rebase_handles_empty_commits() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Make the SAME change on the default branch
@@ -287,7 +287,7 @@ fn rebase_handles_add_add_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Add the same file with different content on the default branch
@@ -359,7 +359,7 @@ fn rebase_handles_modify_delete_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Delete the file on the default branch
@@ -434,7 +434,7 @@ fn rebase_handles_binary_file_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Modify binary differently on the default branch
@@ -485,28 +485,25 @@ fn rebase_detects_conflict_markers_in_file() {
             let conflict_file = dir.path().join("conflict.txt");
 
             // Write a file with conflict markers
-            let content = r#"some code before
+            let content = r"some code before
 <<<<<<< ours
 our version of code
 =======
 their version of code
 >>>>>>> theirs
-some code after"#;
+some code after";
             fs::write(&conflict_file, content).unwrap();
 
             // Try to extract conflict markers
             let markers = get_conflict_markers_for_file(&conflict_file);
 
-            match markers {
-                Ok(markers_content) => {
-                    // Should contain conflict markers
-                    assert!(markers_content.contains("<<<<<<<"));
-                    assert!(markers_content.contains("======="));
-                    assert!(markers_content.contains(">>>>>>>"));
-                }
-                Err(_) => {
-                    // Error is also acceptable if file reading fails
-                }
+            if let Ok(markers_content) = markers {
+                // Should contain conflict markers
+                assert!(markers_content.contains("<<<<<<<"));
+                assert!(markers_content.contains("======="));
+                assert!(markers_content.contains(">>>>>>>"));
+            } else {
+                // Error is also acceptable if file reading fails
             }
         });
     });
@@ -531,14 +528,11 @@ fn rebase_detects_no_conflicts_in_clean_file() {
             // Try to extract conflict markers
             let markers = get_conflict_markers_for_file(&clean_file);
 
-            match markers {
-                Ok(markers_content) => {
-                    // Should be empty
-                    assert!(markers_content.is_empty());
-                }
-                Err(_) => {
-                    // Error is also acceptable
-                }
+            if let Ok(markers_content) = markers {
+                // Should be empty
+                assert!(markers_content.is_empty());
+            } else {
+                // Error is also acceptable
             }
         });
     });
@@ -580,7 +574,7 @@ fn rebase_handles_autostash_with_conflicts() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             write_file(dir.path().join("shared.txt"), "main branch changes");

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 fn test_jsx_in_diff_no_false_positive() {
     with_default_timeout(|| {
         // This is the actual content from the bug report
-        let diff_content = r#"
+        let diff_content = r"
 + const transformStyle = {
 +   transformStyle: 'preserve-3d',
 +   perspective: '1000px'
@@ -21,7 +21,7 @@ fn test_jsx_in_diff_no_false_positive() {
 +   transform: 'rotateY(45deg)',
 +   style: {{ zIndex: 0 }}
 + };
-"#;
+";
 
         let template_content = "Review the following diff:\n\n{{DIFF}}";
         let template = Template::new(template_content);
@@ -68,14 +68,14 @@ fn test_actual_missing_variable_detected() {
 #[test]
 fn test_multiple_jsx_patterns_in_value() {
     with_default_timeout(|| {
-        let code_content = r#"
+        let code_content = r"
 const Component = () => {
   const style1 = {{ zIndex: 0 }};
   const style2 = {{ opacity: 1 }};
   const style3 = {{ transform: 'scale(1)' }};
   return <div style={{ ...style1, ...style2, ...style3 }} />;
 };
-"#;
+";
 
         let template = Template::new("Code:\n{{CODE}}");
         let variables = HashMap::from([("CODE", code_content.to_string())]);

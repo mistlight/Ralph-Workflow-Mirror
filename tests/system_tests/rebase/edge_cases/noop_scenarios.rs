@@ -1,6 +1,6 @@
-//! # NoOp and Error Scenario Tests
+//! # `NoOp` and Error Scenario Tests
 //!
-//! Tests for scenarios where rebase returns NoOp or error results:
+//! Tests for scenarios where rebase returns `NoOp` or error results:
 //! - Already on main/master branch
 //! - Already up-to-date (no commits to rebase)
 //! - Empty repository (unborn HEAD)
@@ -13,7 +13,7 @@
 //!
 //! These tests verify that the rebase system correctly identifies conditions
 //! where a rebase is not needed or cannot be performed, returning clear
-//! NoOp or Failed results with descriptive reason messages.
+//! `NoOp` or Failed results with descriptive reason messages.
 
 use std::fs;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
@@ -25,10 +25,10 @@ use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
 
 use super::{get_default_branch_name, init_repo_with_initial_commit};
 
-/// Test that rebasing when on main/master branch produces NoOp result.
+/// Test that rebasing when on main/master branch produces `NoOp` result.
 ///
 /// This verifies that when the current branch is main or master, the system
-/// skips rebase and returns NoOp with a clear reason message.
+/// skips rebase and returns `NoOp` with a clear reason message.
 #[test]
 fn rebase_on_main_branch_returns_noop() {
     with_default_timeout(|| {
@@ -68,10 +68,10 @@ fn rebase_on_main_branch_returns_noop() {
     });
 }
 
-/// Test that rebasing an up-to-date branch produces NoOp result.
+/// Test that rebasing an up-to-date branch produces `NoOp` result.
 ///
 /// This verifies that when the current branch has no unique commits,
-/// the system skips rebase and returns NoOp or immediate Success.
+/// the system skips rebase and returns `NoOp` or immediate Success.
 #[test]
 fn rebase_already_uptodate_returns_noop() {
     with_default_timeout(|| {
@@ -112,7 +112,7 @@ fn rebase_already_uptodate_returns_noop() {
     });
 }
 
-/// Test that rebasing an empty repository produces NoOp or Failed result.
+/// Test that rebasing an empty repository produces `NoOp` or Failed result.
 ///
 /// This verifies that when a repository has no commits (unborn HEAD),
 /// the system cannot rebase and returns an appropriate error result.
@@ -152,7 +152,7 @@ fn rebase_empty_repo_returns_noop() {
     });
 }
 
-/// Test that rebasing with unborn HEAD produces NoOp or Failed result.
+/// Test that rebasing with unborn HEAD produces `NoOp` or Failed result.
 ///
 /// This verifies that when HEAD is unborn (no commits yet), the system
 /// detects the empty repository state and returns an appropriate result.
@@ -194,7 +194,7 @@ fn rebase_unborn_head_returns_noop() {
     });
 }
 
-/// Test that rebasing a branch with no unique changes produces NoOp result.
+/// Test that rebasing a branch with no unique changes produces `NoOp` result.
 ///
 /// This verifies that when a feature branch points to the same commit as
 /// the target branch, the system recognizes there are no commits to rebase.
@@ -241,7 +241,7 @@ fn rebase_with_no_changes_returns_noop() {
 /// Test that rebasing on main/master branch skips the rebase operation.
 ///
 /// This verifies that when the current branch is detected as main or master,
-/// the system bypasses the rebase entirely and returns a NoOp result.
+/// the system bypasses the rebase entirely and returns a `NoOp` result.
 #[test]
 fn rebase_skipped_when_branch_is_main() {
     with_default_timeout(|| {
@@ -286,7 +286,7 @@ fn rebase_skipped_when_branch_is_main() {
 /// Test that rebasing onto a nonexistent branch produces a Failed result.
 ///
 /// This verifies that when the target branch does not exist in the repository,
-/// the system returns a Failed result with an InvalidRevision error.
+/// the system returns a Failed result with an `InvalidRevision` error.
 #[test]
 fn rebase_with_nonexistent_upstream_fails() {
     with_default_timeout(|| {
@@ -297,19 +297,16 @@ fn rebase_with_nonexistent_upstream_fails() {
             // Try to rebase onto a branch that doesn't exist
             let result = rebase_onto("completely-nonexistent-branch-xyz", executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::Failed(err)) => {
-                    // Should fail with InvalidRevision
-                    assert!(
-                        err.description().contains("Invalid")
-                            || err.description().contains("revision")
-                            || err.description().contains("not found")
-                            || err.description().contains("does not exist")
-                    );
-                }
-                _ => {
-                    // Other outcomes are acceptable depending on git version
-                }
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Should fail with InvalidRevision
+                assert!(
+                    err.description().contains("Invalid")
+                        || err.description().contains("revision")
+                        || err.description().contains("not found")
+                        || err.description().contains("does not exist")
+                );
+            } else {
+                // Other outcomes are acceptable depending on git version
             }
         });
     });
@@ -317,7 +314,7 @@ fn rebase_with_nonexistent_upstream_fails() {
 
 /// Test that rebase error handling represents shallow clone limitations.
 ///
-/// This verifies that the RebaseErrorKind enum can represent errors that
+/// This verifies that the `RebaseErrorKind` enum can represent errors that
 /// occur when a shallow clone lacks the required history for rebasing.
 #[test]
 fn rebase_detects_shallow_clone_limitations() {
@@ -341,7 +338,7 @@ fn rebase_detects_shallow_clone_limitations() {
     });
 }
 
-/// Test that rebasing with detached HEAD produces NoOp or Success result.
+/// Test that rebasing with detached HEAD produces `NoOp` or Success result.
 ///
 /// This verifies that when HEAD is detached from any branch, the system
 /// handles the state gracefully without crashing or producing unclear errors.
@@ -373,7 +370,7 @@ fn rebase_handles_detached_head() {
 
             // Should handle gracefully - either succeed or fail with clear error
             match result {
-                Ok(RebaseResult::NoOp { .. }) | Ok(RebaseResult::Success) => {
+                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
                     // Acceptable outcomes
                 }
                 Ok(RebaseResult::Failed(err)) => {
@@ -404,19 +401,16 @@ fn rebase_with_ambiguous_revision_fails() {
             // In practice, this depends on the repository state
             let result = rebase_onto("v", executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::Failed(err)) => {
-                    // Should fail with InvalidRevision
-                    assert!(
-                        err.description().contains("Invalid")
-                            || err.description().contains("revision")
-                            || err.description().contains("ambiguous")
-                            || err.description().contains("not found")
-                    );
-                }
-                _ => {
-                    // Other outcomes are acceptable
-                }
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Should fail with InvalidRevision
+                assert!(
+                    err.description().contains("Invalid")
+                        || err.description().contains("revision")
+                        || err.description().contains("ambiguous")
+                        || err.description().contains("not found")
+                );
+            } else {
+                // Other outcomes are acceptable
             }
         });
     });
@@ -436,24 +430,21 @@ fn rebase_validates_branch_name() {
             // Try to rebase with an invalid branch name
             let result = rebase_onto("-invalid-branch-name", executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::Failed(err)) => {
-                    // Should fail with InvalidRevision
-                    assert!(
-                        err.description().contains("Invalid")
-                            || err.description().contains("revision")
-                            || err.description().contains("bad")
-                    );
-                }
-                _ => {
-                    // Other outcomes are acceptable
-                }
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Should fail with InvalidRevision
+                assert!(
+                    err.description().contains("Invalid")
+                        || err.description().contains("revision")
+                        || err.description().contains("bad")
+                );
+            } else {
+                // Other outcomes are acceptable
             }
         });
     });
 }
 
-/// Test that rebasing unrelated branches produces NoOp or Failed result.
+/// Test that rebasing unrelated branches produces `NoOp` or Failed result.
 ///
 /// This verifies that when branches have no common ancestor, the system
 /// detects the unrelated histories and returns an appropriate result.
@@ -533,9 +524,9 @@ fn rebase_with_unrelated_branches_returns_noop() {
     });
 }
 
-/// Test that rebasing on detached HEAD returns NoOp with clear reason.
+/// Test that rebasing on detached HEAD returns `NoOp` with clear reason.
 ///
-/// This verifies that when HEAD is detached, the system returns NoOp with
+/// This verifies that when HEAD is detached, the system returns `NoOp` with
 /// a reason message that mentions the detached HEAD state.
 #[test]
 fn rebase_on_detached_head_returns_noop_with_clear_reason() {
@@ -622,17 +613,14 @@ fn verify_rebase_completed_detects_incomplete_rebase() {
             // Now try to rebase onto main (which also has file1.txt)
             // This should succeed since feature is ahead of main
             let result = rebase_onto(&default_branch, executor.as_ref());
-            match result {
-                Ok(RebaseResult::Success) => {
-                    // Verify the rebase completed using LibGit2
-                    assert!(
-                        verify_rebase_completed(&default_branch).unwrap_or(false),
-                        "Rebase should be verified as complete after success"
-                    );
-                }
-                _ => {
-                    // Other outcomes are acceptable
-                }
+            if matches!(result, Ok(RebaseResult::Success)) {
+                // Verify the rebase completed using LibGit2
+                assert!(
+                    verify_rebase_completed(&default_branch).unwrap_or(false),
+                    "Rebase should be verified as complete after success"
+                );
+            } else {
+                // Other outcomes are acceptable
             }
         });
     });
@@ -669,7 +657,7 @@ fn verify_rebase_completed_returns_false_when_diverged() {
             let _ = commit_all(&repo, "modify on feature");
 
             // Go back to default branch and modify the same file
-            let default_ref = format!("refs/heads/{}", default_branch);
+            let default_ref = format!("refs/heads/{default_branch}");
             repo.set_head(&default_ref).unwrap();
             repo.checkout_head(None).unwrap();
             write_file(dir.path().join("shared.txt"), "default branch content");

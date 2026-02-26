@@ -1,6 +1,6 @@
 //! V3 hardened resume tests (execution history, file system state, prompt replay).
 //!
-//! These tests use MockAppEffectHandler for in-memory testing without
+//! These tests use `MockAppEffectHandler` for in-memory testing without
 //! real filesystem or git operations.
 
 mod execution_history;
@@ -51,8 +51,8 @@ fn make_checkpoint_json_with_resume_count(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-456",
@@ -63,8 +63,7 @@ fn make_checkpoint_json_with_resume_count(working_dir: &str) -> String {
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -115,8 +114,8 @@ fn make_comprehensive_v3_checkpoint(
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{prompt_checksum}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "comprehensive-test-run-id",
@@ -132,15 +131,15 @@ fn make_comprehensive_v3_checkpoint(
                 "files": {{
                     "PROMPT.md": {{
                         "path": "PROMPT.md",
-                        "checksum": "{}",
-                        "size": {},
+                        "checksum": "{prompt_checksum}",
+                        "size": {prompt_len},
                         "content": null,
                         "exists": true
                     }},
                     ".agent/PLAN.md": {{
                         "path": ".agent/PLAN.md",
-                        "checksum": "{}",
-                        "size": {},
+                        "checksum": "{plan_checksum}",
+                        "size": {plan_len},
                         "content": null,
                         "exists": true
                     }}
@@ -152,8 +151,7 @@ fn make_comprehensive_v3_checkpoint(
                 "planning_1": "Planning prompt for iteration 1",
                 "development_1": "Development prompt for iteration 1"
             }}
-        }}"#,
-        working_dir, prompt_checksum, prompt_checksum, prompt_len, plan_checksum, plan_len
+        }}"#
     )
 }
 
@@ -198,8 +196,8 @@ fn make_checkpoint_with_git_commit_oid(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-git-commit-oid",
@@ -244,8 +242,7 @@ fn make_checkpoint_with_git_commit_oid(working_dir: &str) -> String {
             "prompt_history": {{
                 "development_1": "Implement feature X"
             }}
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -290,8 +287,8 @@ fn make_checkpoint_with_all_new_fields(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-new-fields",
@@ -332,8 +329,7 @@ fn make_checkpoint_with_all_new_fields(working_dir: &str) -> String {
             "prompt_history": {{
                 "development_1": "Implement the feature"
             }}
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -378,7 +374,7 @@ fn make_checkpoint_without_new_fields(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
+            "working_dir": "{working_dir}",
             "prompt_md_checksum": null,
             "git_user_name": null,
             "git_user_email": null,
@@ -410,8 +406,7 @@ fn make_checkpoint_without_new_fields(working_dir: &str) -> String {
             }},
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        working_dir
+        }}"#
     )
 }
 
@@ -456,8 +451,8 @@ fn make_checkpoint_with_detailed_execution_history(working_dir: &str) -> String 
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-resume-note",
@@ -502,7 +497,6 @@ fn make_checkpoint_with_detailed_execution_history(working_dir: &str) -> String 
             "prompt_history": {{
                 "development_1": "Implement feature X"
             }}
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }

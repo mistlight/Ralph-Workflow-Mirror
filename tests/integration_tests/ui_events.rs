@@ -1,10 +1,10 @@
-//! Integration tests for UIEvent emission during pipeline execution.
+//! Integration tests for `UIEvent` emission during pipeline execution.
 //!
 //! These tests verify that:
-//! - Phase transitions emit appropriate UIEvents
+//! - Phase transitions emit appropriate `UIEvents`
 //! - Progress events are emitted during iterations
-//! - UIEvents do not affect reducer state
-//! - UIEvents are properly formatted for display
+//! - `UIEvents` do not affect reducer state
+//! - `UIEvents` are properly formatted for display
 //!
 //! # Integration Test Style Guide
 //!
@@ -74,8 +74,7 @@ fn test_phase_transition_ui_event_format() {
         let display = event.format_for_display();
         assert!(
             display.contains("Development"),
-            "Should contain phase name, got: {}",
-            display
+            "Should contain phase name, got: {display}"
         );
     });
 }
@@ -140,7 +139,7 @@ fn test_ui_events_do_not_affect_reducer_state() {
         let event = ralph_workflow::reducer::PipelineEvent::pipeline_started();
 
         // Reduce state
-        let new_state = reduce(initial_state.clone(), event);
+        let new_state = reduce(initial_state, event);
 
         // State should be updated based on the PipelineEvent, not any UIEvent
         // UIEvents exist separately and never go through the reducer
@@ -184,7 +183,7 @@ fn test_all_phase_emojis_are_defined() {
 
         for phase in phases {
             let emoji = UIEvent::phase_emoji(&phase);
-            assert!(!emoji.is_empty(), "Phase {:?} should have an emoji", phase);
+            assert!(!emoji.is_empty(), "Phase {phase:?} should have an emoji");
         }
     });
 }
@@ -388,28 +387,23 @@ fn test_complete_phase_transition_sequence() {
 
         assert!(
             phase_transitions.contains(&PipelinePhase::Planning),
-            "Should emit Planning transition, got: {:?}",
-            phase_transitions
+            "Should emit Planning transition, got: {phase_transitions:?}"
         );
         assert!(
             phase_transitions.contains(&PipelinePhase::Development),
-            "Should emit Development transition, got: {:?}",
-            phase_transitions
+            "Should emit Development transition, got: {phase_transitions:?}"
         );
         assert!(
             phase_transitions.contains(&PipelinePhase::Review),
-            "Should emit Review transition, got: {:?}",
-            phase_transitions
+            "Should emit Review transition, got: {phase_transitions:?}"
         );
         assert!(
             phase_transitions.contains(&PipelinePhase::Finalizing),
-            "Should emit Finalizing transition, got: {:?}",
-            phase_transitions
+            "Should emit Finalizing transition, got: {phase_transitions:?}"
         );
         assert!(
             phase_transitions.contains(&PipelinePhase::Complete),
-            "Should emit Complete transition, got: {:?}",
-            phase_transitions
+            "Should emit Complete transition, got: {phase_transitions:?}"
         );
     });
 }
@@ -592,10 +586,10 @@ fn test_xml_output_format_for_display_renders_semantically() {
     with_default_timeout(|| {
         let event = UIEvent::XmlOutput {
             xml_type: XmlOutputType::DevelopmentResult,
-            content: r#"<ralph-development-result>
+            content: r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Test complete</ralph-summary>
-</ralph-development-result>"#
+</ralph-development-result>"
                 .to_string(),
             context: Some(XmlOutputContext {
                 iteration: Some(1),
@@ -609,18 +603,15 @@ fn test_xml_output_format_for_display_renders_semantically() {
         // Verify semantic rendering, not raw XML
         assert!(
             !output.contains("<ralph-"),
-            "Should not contain raw XML tags in output: {}",
-            output
+            "Should not contain raw XML tags in output: {output}"
         );
         assert!(
             output.contains("✅") || output.contains("completed"),
-            "Should have status indicator: {}",
-            output
+            "Should have status indicator: {output}"
         );
         assert!(
             output.contains("Test complete"),
-            "Should have summary: {}",
-            output
+            "Should have summary: {output}"
         );
     });
 }
@@ -663,7 +654,7 @@ fn test_xml_output_type_all_variants() {
                 if i == j {
                     assert_eq!(t1, t2);
                 } else {
-                    assert_ne!(t1, t2, "{:?} should be different from {:?}", t1, t2);
+                    assert_ne!(t1, t2, "{t1:?} should be different from {t2:?}");
                 }
             }
         }
@@ -675,21 +666,21 @@ fn test_xml_output_type_all_variants() {
 // =========================================================================
 
 /// Tests the single-writer principle: XML output is rendered semantically via
-/// UIEvent::XmlOutput and the centralized rendering module only.
+/// `UIEvent::XmlOutput` and the centralized rendering module only.
 ///
 /// This verifies that:
-/// 1. render_ui_event() produces semantic output (user-friendly status, not raw XML)
-/// 2. The rendering module is the single entrypoint for UIEvent formatting
+/// 1. `render_ui_event()` produces semantic output (user-friendly status, not raw XML)
+/// 2. The rendering module is the single entrypoint for `UIEvent` formatting
 /// 3. Phase code does not produce competing raw XML output
 #[test]
 fn test_single_writer_xml_output_via_ui_event_only() {
     with_default_timeout(|| {
         use ralph_workflow::rendering::render_ui_event;
 
-        let xml_content = r#"<ralph-development-result>
+        let xml_content = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Test summary for single-writer verification</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let event = UIEvent::XmlOutput {
             xml_type: XmlOutputType::DevelopmentResult,
@@ -706,23 +697,19 @@ fn test_single_writer_xml_output_via_ui_event_only() {
         // The single writer renders semantically, not as raw XML
         assert!(
             !rendered.contains("<ralph-development-result>"),
-            "Single writer should produce semantic output, not raw XML. Got: {}",
-            rendered
+            "Single writer should produce semantic output, not raw XML. Got: {rendered}"
         );
         assert!(
             !rendered.contains("<ralph-status>"),
-            "Single writer should not emit raw XML status tags. Got: {}",
-            rendered
+            "Single writer should not emit raw XML status tags. Got: {rendered}"
         );
         assert!(
             rendered.contains("✅") || rendered.to_lowercase().contains("completed"),
-            "Single writer should produce user-friendly status. Got: {}",
-            rendered
+            "Single writer should produce user-friendly status. Got: {rendered}"
         );
         assert!(
             rendered.contains("Test summary for single-writer verification"),
-            "Single writer should include content from XML. Got: {}",
-            rendered
+            "Single writer should include content from XML. Got: {rendered}"
         );
 
         // Verify UIEvent::format_for_display() delegates to render_ui_event()
@@ -735,8 +722,8 @@ fn test_single_writer_xml_output_via_ui_event_only() {
     });
 }
 
-/// Tests that the centralized renderer routes all XmlOutputType variants
-/// through the single entrypoint (render_ui_event). Well-formed XML produces
+/// Tests that the centralized renderer routes all `XmlOutputType` variants
+/// through the single entrypoint (`render_ui_event`). Well-formed XML produces
 /// semantic output; malformed XML gracefully falls back to raw display with
 /// a warning, but still through the single writer.
 #[test]
@@ -748,26 +735,26 @@ fn test_single_writer_handles_all_xml_output_types() {
         let wellformed_cases = [
             (
                 XmlOutputType::DevelopmentResult,
-                r#"<ralph-development-result>
+                r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>done</ralph-summary>
-</ralph-development-result>"#,
+</ralph-development-result>",
                 "✅", // expected indicator in output
             ),
             (
                 XmlOutputType::ReviewIssues,
                 // Note: <ralph-no-issues-found> must be nested inside <ralph-issues>
-                r#"<ralph-issues>
+                r"<ralph-issues>
 <ralph-no-issues-found>All code is approved</ralph-no-issues-found>
-</ralph-issues>"#,
+</ralph-issues>",
                 "✅", // approval checkmark
             ),
             (
                 XmlOutputType::CommitMessage,
-                r#"<ralph-commit>
+                r"<ralph-commit>
 <ralph-subject>test: add feature</ralph-subject>
 <ralph-body>Body text</ralph-body>
-</ralph-commit>"#,
+</ralph-commit>",
                 "test: add feature", // subject should appear
             ),
         ];
@@ -785,17 +772,13 @@ fn test_single_writer_handles_all_xml_output_types() {
             // Both paths must produce identical output (single writer)
             assert_eq!(
                 via_render, via_format,
-                "format_for_display must delegate to render_ui_event for {:?}",
-                xml_type
+                "format_for_display must delegate to render_ui_event for {xml_type:?}"
             );
 
             // Well-formed XML produces semantic output with expected indicator
             assert!(
                 via_render.contains(expected_indicator),
-                "Single writer should produce semantic output with '{}' for {:?}. Got: {}",
-                expected_indicator,
-                xml_type,
-                via_render
+                "Single writer should produce semantic output with '{expected_indicator}' for {xml_type:?}. Got: {via_render}"
             );
         }
 
@@ -817,8 +800,7 @@ fn test_single_writer_handles_all_xml_output_types() {
         // Fallback shows warning indicator
         assert!(
             fallback_render.contains("⚠️") || fallback_render.contains("Unable to parse"),
-            "Fallback should indicate parsing issue. Got: {}",
-            fallback_render
+            "Fallback should indicate parsing issue. Got: {fallback_render}"
         );
     });
 }

@@ -231,7 +231,7 @@ fn test_resume_binds_execution_history_and_completion_checkpoint_uses_updated_hi
             }
         }
 
-        impl<'ctx> EffectHandler<'ctx> for AppendHistoryHandler {
+        impl EffectHandler<'_> for AppendHistoryHandler {
             fn execute(
                 &mut self,
                 effect: Effect,

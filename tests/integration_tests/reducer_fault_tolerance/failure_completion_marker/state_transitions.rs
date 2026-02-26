@@ -1,9 +1,9 @@
 //! Tests for reducer state transitions during failure handling.
 //!
 //! Verifies that the reducer correctly transitions through phases when
-//! handling AgentChainExhausted errors:
-//! 1. Planning/Development → AwaitingDevFix (on error)
-//! 2. AwaitingDevFix → Interrupted (after marker emission)
+//! handling `AgentChainExhausted` errors:
+//! 1. Planning/Development → `AwaitingDevFix` (on error)
+//! 2. `AwaitingDevFix` → Interrupted (after marker emission)
 //! 3. Interrupted → Complete (after checkpoint saved)
 //!
 //! These tests focus on the pure reducer logic and orchestration,
@@ -94,8 +94,7 @@ fn test_failure_status_triggers_awaiting_dev_fix_not_immediate_exit() {
                 next_effect,
                 Effect::CheckUncommittedChangesBeforeTermination
             ),
-            "Expected CheckUncommittedChangesBeforeTermination for Interrupted phase, got {:?}",
-            next_effect
+            "Expected CheckUncommittedChangesBeforeTermination for Interrupted phase, got {next_effect:?}"
         );
     });
 }
@@ -148,8 +147,7 @@ fn test_interrupted_from_dev_fix_is_complete_before_checkpoint() {
                 next_effect,
                 Effect::CheckUncommittedChangesBeforeTermination
             ),
-            "Next effect should be CheckUncommittedChangesBeforeTermination, got {:?}",
-            next_effect
+            "Next effect should be CheckUncommittedChangesBeforeTermination, got {next_effect:?}"
         );
     });
 }

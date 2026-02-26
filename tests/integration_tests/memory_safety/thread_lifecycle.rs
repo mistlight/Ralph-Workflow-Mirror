@@ -27,14 +27,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Standard PROMPT.md content for thread lifecycle tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test thread cleanup.
 
 ## Acceptance
 
 - Pipeline completes
-"#;
+";
 
 #[test]
 fn test_pipeline_completes_without_hanging() {
@@ -91,8 +91,7 @@ fn test_pipeline_completes_multiple_times_no_thread_accumulation() {
 
             assert!(
                 result.is_ok(),
-                "Pipeline run {} should complete successfully",
-                run
+                "Pipeline run {run} should complete successfully"
             );
         }
 

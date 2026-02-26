@@ -33,7 +33,7 @@ pub mod basic_conflicts;
 pub mod hook_failures;
 
 /// Initialize a git repository with an initial commit.
-pub(crate) fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
+pub fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
     write_file(dir.path().join("initial.txt"), "initial content");
     let _ = commit_all(&repo, "initial commit");
@@ -41,9 +41,9 @@ pub(crate) fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
 }
 
 /// Helper to get the default branch name from the repository head.
-pub(crate) fn get_default_branch_name(repo: &git2::Repository) -> String {
+pub fn get_default_branch_name(repo: &git2::Repository) -> String {
     repo.head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().map(std::string::ToString::to_string))
         .unwrap_or_else(|| "main".to_string())
 }

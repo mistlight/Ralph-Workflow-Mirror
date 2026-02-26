@@ -1,4 +1,4 @@
-//! Integration tests for AwaitingDevFix recovery.
+//! Integration tests for `AwaitingDevFix` recovery.
 //!
 //! Split into submodules to keep each file under line limits.
 

@@ -1,6 +1,6 @@
 //! Checkpoint creation, content, and cleanup tests.
 //!
-//! These tests use MockAppEffectHandler for in-memory testing without
+//! These tests use `MockAppEffectHandler` for in-memory testing without
 //! real filesystem or git operations.
 
 use std::path::PathBuf;
@@ -15,14 +15,14 @@ use crate::test_timeout::with_default_timeout;
 use super::{make_checkpoint_json, MOCK_REPO_PATH};
 
 /// Standard PROMPT.md content for tests - matches the required format.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 // ============================================================================
 // Checkpoint Creation Tests

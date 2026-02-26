@@ -25,7 +25,7 @@ fn test_sync_channel_applies_backpressure() {
 
         // Fill channel to capacity
         for i in 0..5 {
-            tx.send(format!("event_{}", i))
+            tx.send(format!("event_{i}"))
                 .expect("Should send within capacity");
         }
 
@@ -74,7 +74,7 @@ fn test_channel_drains_on_drop() {
 
         // Send events
         for i in 0..5 {
-            tx.send(format!("event_{}", i)).unwrap();
+            tx.send(format!("event_{i}")).unwrap();
         }
 
         // Drop sender - no more sends possible
@@ -159,7 +159,7 @@ fn test_bounded_channel_high_throughput() {
         // Producer thread
         let producer = thread::spawn(move || {
             for i in 0..100 {
-                tx.send(format!("event_{}", i)).unwrap();
+                tx.send(format!("event_{i}")).unwrap();
             }
         });
 
@@ -202,8 +202,7 @@ fn test_bounded_channel_capacity_limits() {
             // Next try_send should fail
             assert!(
                 matches!(tx.try_send(capacity), Err(mpsc::TrySendError::Full(_))),
-                "Channel with capacity {} should be full",
-                capacity
+                "Channel with capacity {capacity} should be full"
             );
 
             // Drain one
@@ -212,8 +211,7 @@ fn test_bounded_channel_capacity_limits() {
             // Now should succeed
             assert!(
                 tx.try_send(capacity).is_ok(),
-                "Should send after making space in channel with capacity {}",
-                capacity
+                "Should send after making space in channel with capacity {capacity}"
             );
         }
     });
@@ -270,7 +268,7 @@ fn test_streaming_output_channel_pattern() {
         // Producer (simulates stdout pump)
         let producer = thread::spawn(move || {
             for i in 0..CHUNKS {
-                let data = format!("line {}\n", i).into_bytes();
+                let data = format!("line {i}\n").into_bytes();
                 loop {
                     match tx.try_send(data.clone()) {
                         Ok(()) => break,

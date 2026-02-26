@@ -1,6 +1,6 @@
 //! Integration test for XSD retry missing file detection.
 //!
-//! Verifies that XSD retry prompts detect missing schema files and last_output.xml
+//! Verifies that XSD retry prompts detect missing schema files and `last_output.xml`
 //! and emit actionable diagnostics including workspace root path.
 //!
 //! # Integration Test Style Guide
@@ -37,8 +37,7 @@ fn test_planning_xsd_retry_detects_missing_schema() {
         assert!(
             prompt.contains("WARNING: Required XSD retry files are missing")
                 && prompt.contains("workspace.root()"),
-            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
-            prompt
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{prompt}"
         );
     });
 }
@@ -59,8 +58,7 @@ fn test_review_xsd_retry_detects_missing_files() {
         assert!(
             prompt.contains("WARNING: Required XSD retry files are missing")
                 && prompt.contains("workspace.root()"),
-            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
-            prompt
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{prompt}"
         );
     });
 }
@@ -84,8 +82,7 @@ fn test_development_xsd_retry_detects_missing_files() {
         assert!(
             prompt.contains("WARNING: Required XSD retry files are missing")
                 && prompt.contains("workspace.root()"),
-            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
-            prompt
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{prompt}"
         );
     });
 }
@@ -106,8 +103,7 @@ fn test_fix_xsd_retry_detects_missing_files() {
         assert!(
             prompt.contains("WARNING: Required XSD retry files are missing")
                 && prompt.contains("workspace.root()"),
-            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
-            prompt
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{prompt}"
         );
     });
 }
@@ -128,8 +124,7 @@ fn test_commit_xsd_retry_detects_missing_files() {
         assert!(
             prompt.contains("WARNING: Required XSD retry files are missing")
                 && prompt.contains("workspace.root()"),
-            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{}",
-            prompt
+            "Should detect missing schema AND include workspace root diagnostics. Got prompt: \n{prompt}"
         );
     });
 }

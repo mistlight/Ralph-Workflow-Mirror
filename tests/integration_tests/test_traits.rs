@@ -1,6 +1,6 @@
 //! Integration tests for test trait exports.
 //!
-//! These tests verify that test traits like MockAppEffectHandler and MemoryWorkspace
+//! These tests verify that test traits like `MockAppEffectHandler` and `MemoryWorkspace`
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
 //!
@@ -24,9 +24,9 @@ use std::path::{Path, PathBuf};
 // MockAppEffectHandler tests (replaces MockGit tests)
 // ============================================================================
 
-/// Test that MockAppEffectHandler can be created and used.
+/// Test that `MockAppEffectHandler` can be created and used.
 ///
-/// This verifies that when a MockAppEffectHandler instance is created, it can be used
+/// This verifies that when a `MockAppEffectHandler` instance is created, it can be used
 /// to execute effects and capture them for assertion.
 #[test]
 fn test_mock_app_effect_handler_creation() {
@@ -37,7 +37,7 @@ fn test_mock_app_effect_handler_creation() {
     });
 }
 
-/// Test that MockAppEffectHandler builder pattern works.
+/// Test that `MockAppEffectHandler` builder pattern works.
 ///
 /// This verifies that when the builder methods are chained, they configure
 /// the mock handler with the specified return values for effects.
@@ -61,9 +61,9 @@ fn test_mock_app_effect_handler_builder() {
     });
 }
 
-/// Test that MockAppEffectHandler captures effects.
+/// Test that `MockAppEffectHandler` captures effects.
 ///
-/// This verifies that when effects are executed on MockAppEffectHandler,
+/// This verifies that when effects are executed on `MockAppEffectHandler`,
 /// they are captured and can be inspected for testing assertions.
 #[test]
 fn test_mock_app_effect_handler_captures_effects() {
@@ -85,9 +85,9 @@ fn test_mock_app_effect_handler_captures_effects() {
     });
 }
 
-/// Test that MockAppEffectHandler was_executed works.
+/// Test that `MockAppEffectHandler` `was_executed` works.
 ///
-/// This verifies that the was_executed method correctly identifies
+/// This verifies that the `was_executed` method correctly identifies
 /// whether a specific effect was captured.
 #[test]
 fn test_mock_app_effect_handler_was_executed() {
@@ -103,10 +103,10 @@ fn test_mock_app_effect_handler_was_executed() {
     });
 }
 
-/// Test that MockAppEffectHandler without_repo returns error.
+/// Test that `MockAppEffectHandler` `without_repo` returns error.
 ///
 /// This verifies that when the mock is configured without a repo,
-/// GitRequireRepo returns an error.
+/// `GitRequireRepo` returns an error.
 #[test]
 fn test_mock_app_effect_handler_without_repo() {
     with_default_timeout(|| {
@@ -116,7 +116,7 @@ fn test_mock_app_effect_handler_without_repo() {
     });
 }
 
-/// Test that MockAppEffectHandler filesystem operations work.
+/// Test that `MockAppEffectHandler` filesystem operations work.
 ///
 /// This verifies that the mock filesystem correctly handles
 /// write, read, and exists operations.
@@ -144,10 +144,10 @@ fn test_mock_app_effect_handler_filesystem() {
     });
 }
 
-/// Test that MockAppEffectHandler GitSaveStartCommit writes to mock filesystem.
+/// Test that `MockAppEffectHandler` `GitSaveStartCommit` writes to mock filesystem.
 ///
-/// This verifies that when GitSaveStartCommit is executed, it writes
-/// the HEAD OID to .agent/start_commit in the mock filesystem.
+/// This verifies that when `GitSaveStartCommit` is executed, it writes
+/// the HEAD OID to .`agent/start_commit` in the mock filesystem.
 #[test]
 fn test_mock_app_effect_handler_save_start_commit() {
     with_default_timeout(|| {
@@ -168,9 +168,9 @@ fn test_mock_app_effect_handler_save_start_commit() {
 // MemoryWorkspace tests
 // ============================================================================
 
-/// Test that MemoryWorkspace can be created and used via Workspace trait.
+/// Test that `MemoryWorkspace` can be created and used via Workspace trait.
 ///
-/// This verifies that when a MemoryWorkspace is created, it can be used
+/// This verifies that when a `MemoryWorkspace` is created, it can be used
 /// through the Workspace trait to perform filesystem operations.
 #[test]
 fn test_memory_workspace_creation() {
@@ -180,7 +180,7 @@ fn test_memory_workspace_creation() {
     });
 }
 
-/// Test that MemoryWorkspace builder pattern works for virtual file system.
+/// Test that `MemoryWorkspace` builder pattern works for virtual file system.
 ///
 /// This verifies that when the builder is used to add files, they exist
 /// in the virtual filesystem and can be read via Workspace trait methods.
@@ -203,7 +203,7 @@ fn test_memory_workspace_builder() {
     });
 }
 
-/// Test that MemoryWorkspace captures write operations.
+/// Test that `MemoryWorkspace` captures write operations.
 ///
 /// This verifies that when files are written via Workspace trait,
 /// the operations are tracked and written content can be retrieved.
@@ -233,9 +233,9 @@ fn test_memory_workspace_captures_writes() {
     });
 }
 
-/// Test that MemoryWorkspace implements Workspace trait with full roundtrip.
+/// Test that `MemoryWorkspace` implements Workspace trait with full roundtrip.
 ///
-/// This verifies that when Workspace trait methods are used on MemoryWorkspace,
+/// This verifies that when Workspace trait methods are used on `MemoryWorkspace`,
 /// they correctly implement read, write, exists, and remove operations.
 #[test]
 fn test_memory_workspace_implements_workspace_trait() {
@@ -259,7 +259,7 @@ fn test_memory_workspace_implements_workspace_trait() {
     });
 }
 
-/// Test that MemoryWorkspace tracks written files.
+/// Test that `MemoryWorkspace` tracks written files.
 ///
 /// This verifies that when filesystem operations are performed,
 /// the written files can be inspected for verification.
@@ -279,7 +279,7 @@ fn test_memory_workspace_written_files_tracking() {
     });
 }
 
-/// Test that MemoryWorkspace read errors work correctly.
+/// Test that `MemoryWorkspace` read errors work correctly.
 ///
 /// This verifies that when reading non-existent files,
 /// appropriate errors are returned.
@@ -293,7 +293,7 @@ fn test_memory_workspace_read_errors() {
     });
 }
 
-/// Test that MemoryWorkspace can simulate agent file operations.
+/// Test that `MemoryWorkspace` can simulate agent file operations.
 ///
 /// This verifies that when a typical agent workflow is simulated,
 /// all file operations are correctly tracked and can be verified.

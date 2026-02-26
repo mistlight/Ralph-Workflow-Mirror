@@ -40,11 +40,11 @@ fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
 fn get_default_branch_name(repo: &git2::Repository) -> String {
     repo.head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().map(std::string::ToString::to_string))
         .unwrap_or_else(|| "main".to_string())
 }
 
-/// Test that ProcessTerminated error kind is properly represented.
+/// Test that `ProcessTerminated` error kind is properly represented.
 ///
 /// This verifies that when a process termination error is constructed,
 /// the error description contains relevant termination information.
@@ -63,9 +63,9 @@ fn rebase_detects_process_termination_error_kind() {
     });
 }
 
-/// Test that ProcessTerminated error is categorized as Category 4.
+/// Test that `ProcessTerminated` error is categorized as Category 4.
 ///
-/// This verifies that when a ProcessTerminated error occurs, the system
+/// This verifies that when a `ProcessTerminated` error occurs, the system
 /// correctly categorizes it as an interrupted/corrupted state failure.
 #[test]
 fn rebase_process_terminated_has_correct_category() {
@@ -81,7 +81,7 @@ fn rebase_process_terminated_has_correct_category() {
     });
 }
 
-/// Test that InconsistentState error kind is properly represented.
+/// Test that `InconsistentState` error kind is properly represented.
 ///
 /// This verifies that when an inconsistent state error is constructed,
 /// the error description contains details about the corruption.
@@ -100,9 +100,9 @@ fn rebase_detects_inconsistent_state_error_kind() {
     });
 }
 
-/// Test that InconsistentState error is categorized as Category 4.
+/// Test that `InconsistentState` error is categorized as Category 4.
 ///
-/// This verifies that when an InconsistentState error occurs, the system
+/// This verifies that when an `InconsistentState` error occurs, the system
 /// correctly categorizes it as an interrupted/corrupted state failure.
 #[test]
 fn rebase_inconsistent_state_has_correct_category() {
@@ -218,9 +218,9 @@ fn rebase_detects_corrupted_rebase_merge_directory() {
     });
 }
 
-/// Test that missing ORIG_HEAD in rebase-apply is handled gracefully.
+/// Test that missing `ORIG_HEAD` in rebase-apply is handled gracefully.
 ///
-/// This verifies that when .git/rebase-apply exists without ORIG_HEAD file,
+/// This verifies that when .git/rebase-apply exists without `ORIG_HEAD` file,
 /// the system handles the situation without crashing.
 #[test]
 fn rebase_handles_missing_orig_head() {
@@ -264,13 +264,10 @@ fn rebase_handles_missing_head_ref() {
             // Rebase should detect this and handle gracefully
             let result = rebase_onto("main", executor.as_ref());
 
-            match result {
-                Ok(_) => {
-                    // May succeed if git can recover
-                }
-                Err(_) => {
-                    // May fail with clear error
-                }
+            if result.is_ok() {
+                // May succeed if git can recover
+            } else {
+                // May fail with clear error
             }
         });
     });
@@ -317,7 +314,7 @@ fn rebase_checkpoint_corruption_recovery() {
 
 /// Test that orphaned temporary merge files are cleaned up.
 ///
-/// This verifies that when MERGE_HEAD, MERGE_MSG, and similar files
+/// This verifies that when `MERGE_HEAD`, `MERGE_MSG`, and similar files
 /// exist without an active merge, the system cleans them up.
 #[test]
 fn rebase_handles_orphaned_temp_files() {
@@ -427,13 +424,10 @@ fn rebase_detects_detached_head_after_interruption() {
             // System should handle detached HEAD with rebase state
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(_) => {
-                    // May succeed
-                }
-                Err(_) => {
-                    // May fail with clear error
-                }
+            if result.is_ok() {
+                // May succeed
+            } else {
+                // May fail with clear error
             }
 
             // Clean up
@@ -445,7 +439,7 @@ fn rebase_detects_detached_head_after_interruption() {
 /// Test that garbage collected objects are reported as repository corruption.
 ///
 /// This verifies that when git gc has removed objects needed for recovery,
-/// the system returns RepositoryCorrupt error with appropriate message.
+/// the system returns `RepositoryCorrupt` error with appropriate message.
 #[test]
 fn rebase_handles_git_gc_removed_objects() {
     with_default_timeout(|| {
@@ -465,7 +459,7 @@ fn rebase_handles_git_gc_removed_objects() {
     });
 }
 
-/// Test that ProcessTerminated errors are marked as recoverable.
+/// Test that `ProcessTerminated` errors are marked as recoverable.
 ///
 /// This verifies that when a process termination occurs, the system
 /// considers the error recoverable via checkpoint mechanism.
@@ -484,7 +478,7 @@ fn rebase_process_terminated_is_recoverable() {
     });
 }
 
-/// Test that InconsistentState errors are marked as recoverable.
+/// Test that `InconsistentState` errors are marked as recoverable.
 ///
 /// This verifies that when inconsistent state is detected, the system
 /// considers the error recoverable via cleanup operations.

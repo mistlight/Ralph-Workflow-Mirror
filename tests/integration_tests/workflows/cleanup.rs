@@ -27,14 +27,14 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for cleanup tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test cleanup functionality.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for cleanup tests.
 fn create_cleanup_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
@@ -56,7 +56,7 @@ fn create_cleanup_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
 
 /// Test that the pipeline completes cleanly with 0 iterations.
 ///
-/// This verifies that when pipeline runs with developer_iters=0 and reviewer_reviews=0,
+/// This verifies that when pipeline runs with `developer_iters=0` and `reviewer_reviews=0`,
 /// system completes successfully via effect capture.
 #[test]
 fn test_pipeline_completes_cleanly_with_zero_iterations() {
@@ -211,7 +211,7 @@ fn test_isolation_mode_does_not_create_context_files() {
 /// Test that isolation mode deletes existing STATUS.md, NOTES.md, and ISSUES.md.
 ///
 /// This verifies that when isolation mode is enabled and these files exist,
-/// the system deletes them via DeleteFile effects.
+/// the system deletes them via `DeleteFile` effects.
 #[test]
 fn test_isolation_mode_deletes_existing_context_files() {
     with_default_timeout(|| {
@@ -263,7 +263,7 @@ fn test_isolation_mode_deletes_existing_context_files() {
 /// Test that --no-isolation flag creates STATUS.md, NOTES.md, and ISSUES.md.
 ///
 /// This verifies that when the --no-isolation flag is used, the system
-/// creates STATUS.md, NOTES.md, and ISSUES.md files via WriteFile effects.
+/// creates STATUS.md, NOTES.md, and ISSUES.md files via `WriteFile` effects.
 #[test]
 fn test_no_isolation_creates_context_files() {
     with_default_timeout(|| {
@@ -314,7 +314,7 @@ fn test_no_isolation_creates_context_files() {
     });
 }
 
-/// Test that isolation_mode = false creates STATUS.md, NOTES.md, and ISSUES.md.
+/// Test that `isolation_mode` = false creates STATUS.md, NOTES.md, and ISSUES.md.
 ///
 /// This verifies that when isolation mode is disabled via config,
 /// the system creates STATUS.md, NOTES.md, and ISSUES.md files.

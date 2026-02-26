@@ -2,7 +2,7 @@
 //!
 //! These tests verify that reducer state machine handles all transitions correctly
 //! in real pipeline execution. Tests verify actual state changes through event
-//! emission and reduce() function, not just unit tests of individual transitions.
+//! emission and `reduce()` function, not just unit tests of individual transitions.
 //!
 //! # Integration Test Style Guide
 //!
@@ -517,7 +517,7 @@ fn test_authentication_error_triggers_agent_fallback() {
 /// Test that agent fallback occurs after internal error retry budget is exhausted.
 ///
 /// When an agent encounters internal errors repeatedly, the pipeline should:
-/// 1. First retry the same agent up to continuation.same_agent_retry_limit times
+/// 1. First retry the same agent up to `continuation.same_agent_retry_limit` times
 /// 2. Then fall back to the next agent after retry budget is exhausted
 ///
 /// This tests the observable behavior of agent selection after errors,
@@ -600,10 +600,10 @@ fn test_event_replay_reproduces_final_state() {
 // These integration tests verify that CommitSkipped respects previous_phase
 // for proper phase transitions, matching the behavior of CommitCreated.
 
-/// Test that CommitSkipped after development iteration goes to Planning for next iteration.
+/// Test that `CommitSkipped` after development iteration goes to Planning for next iteration.
 ///
 /// When commit is skipped after a development iteration (not the last one),
-/// the pipeline should go back to Planning for the next iteration, not FinalValidation.
+/// the pipeline should go back to Planning for the next iteration, not `FinalValidation`.
 #[test]
 fn test_commit_skipped_respects_previous_phase_from_development() {
     with_default_timeout(|| {
@@ -629,10 +629,10 @@ fn test_commit_skipped_respects_previous_phase_from_development() {
     });
 }
 
-/// Test that CommitSkipped after last development iteration goes to Review.
+/// Test that `CommitSkipped` after last development iteration goes to Review.
 ///
 /// When commit is skipped after the last development iteration,
-/// the pipeline should go to Review, not FinalValidation.
+/// the pipeline should go to Review, not `FinalValidation`.
 #[test]
 fn test_commit_skipped_after_last_dev_iteration_goes_to_review() {
     with_default_timeout(|| {
@@ -657,7 +657,7 @@ fn test_commit_skipped_after_last_dev_iteration_goes_to_review() {
     });
 }
 
-/// Test that CommitSkipped after fix attempt stays in Review for next pass.
+/// Test that `CommitSkipped` after fix attempt stays in Review for next pass.
 ///
 /// When commit is skipped after a fix attempt (not the last review pass),
 /// the pipeline should stay in Review for the next pass.
@@ -685,10 +685,10 @@ fn test_commit_skipped_respects_previous_phase_from_review() {
     });
 }
 
-/// Test that CommitSkipped after last review pass goes to FinalValidation.
+/// Test that `CommitSkipped` after last review pass goes to `FinalValidation`.
 ///
 /// When commit is skipped after the last review pass,
-/// the pipeline should go to FinalValidation.
+/// the pipeline should go to `FinalValidation`.
 #[test]
 fn test_commit_skipped_after_last_review_goes_to_final_validation() {
     with_default_timeout(|| {

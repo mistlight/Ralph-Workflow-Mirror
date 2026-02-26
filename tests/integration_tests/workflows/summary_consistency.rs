@@ -40,8 +40,8 @@ fn test_summary_matches_reducer_state_simple_run() {
             state = reduce(
                 state,
                 PipelineEvent::commit_created(
-                    format!("commit{}", i),
-                    format!("Commit message {}", i),
+                    format!("commit{i}"),
+                    format!("Commit message {i}"),
                 ),
             );
         }

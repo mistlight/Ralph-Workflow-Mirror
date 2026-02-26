@@ -1,13 +1,13 @@
 //! Tests for git push flow in cloud mode.
 //!
 //! These tests verify that cloud mode correctly sequences git operations:
-//! - ConfigureGitAuth effect is emitted before first push
-//! - PushToRemote effect is emitted after each commit
+//! - `ConfigureGitAuth` effect is emitted before first push
+//! - `PushToRemote` effect is emitted after each commit
 //! - Push failures are handled gracefully (don't halt pipeline)
 //! - PR creation works in finalizing phase
 //! - Multiple commits result in multiple pushes
 //!
-//! All tests use reducer-level testing (PipelineState, effects, events)
+//! All tests use reducer-level testing (`PipelineState`, effects, events)
 //! to verify orchestration logic without requiring full pipeline execution.
 
 use ralph_workflow::config::{CloudConfig, Config};
@@ -218,9 +218,9 @@ fn test_pipeline_state_has_cloud_fields() {
     with_default_timeout(|| {
         let cloud_config = CloudStateConfig::disabled();
         let mut state = PipelineState::initial(1, 0);
-        state.cloud_config = cloud_config;
+        state.cloud = cloud_config;
 
-        assert!(!state.cloud_config.enabled, "Cloud should be disabled");
+        assert!(!state.cloud.enabled, "Cloud should be disabled");
         assert!(
             state.pending_push_commit.is_none(),
             "No pending push when disabled"
@@ -240,7 +240,7 @@ fn test_git_auth_configured_event_updates_state() {
     with_default_timeout(|| {
         let cloud_config = CloudStateConfig::disabled();
         let mut state = PipelineState::initial(1, 0);
-        state.cloud_config = cloud_config;
+        state.cloud = cloud_config;
         state.git_auth_configured = false;
 
         let event = PipelineEvent::Commit(CommitEvent::GitAuthConfigured);
@@ -258,7 +258,7 @@ fn test_push_completed_clears_pending_push() {
     with_default_timeout(|| {
         let cloud_config = CloudStateConfig::disabled();
         let mut state = PipelineState::initial(1, 0);
-        state.cloud_config = cloud_config;
+        state.cloud = cloud_config;
         state.pending_push_commit = Some("abc123".to_string());
         state.push_count = 0;
 
@@ -282,7 +282,7 @@ fn test_push_failed_keeps_pending_push_for_retry() {
     with_default_timeout(|| {
         let cloud_config = CloudStateConfig::disabled();
         let mut state = PipelineState::initial(1, 0);
-        state.cloud_config = cloud_config;
+        state.cloud = cloud_config;
         state.pending_push_commit = Some("abc123".to_string());
         state.push_count = 0;
 
@@ -310,7 +310,7 @@ fn test_pr_created_event_updates_state() {
     with_default_timeout(|| {
         let cloud_config = CloudStateConfig::disabled();
         let mut state = PipelineState::initial(1, 0);
-        state.cloud_config = cloud_config;
+        state.cloud = cloud_config;
         state.pr_created = false;
 
         let event = PipelineEvent::Commit(CommitEvent::PullRequestCreated {
@@ -391,7 +391,7 @@ fn test_push_to_remote_effect_pushes_head_to_named_remote_branch() {
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud_config,
         };
 
         let state = PipelineState::initial(1, 0);
@@ -437,11 +437,11 @@ fn orchestration_ready_state() -> PipelineState {
 fn test_orchestration_cloud_disabled_never_emits_push_or_pr_effects() {
     with_default_timeout(|| {
         let mut state = orchestration_ready_state();
-        state.cloud_config = CloudStateConfig::disabled();
+        state.cloud = CloudStateConfig::disabled();
         state.pending_push_commit = Some("abc123".to_string());
         state.git_auth_configured = false;
         state.phase = PipelinePhase::Finalizing;
-        state.cloud_config.git_remote.create_pr = true;
+        state.cloud.git_remote.create_pr = true;
 
         let effect = determine_next_effect(&state);
 
@@ -464,9 +464,9 @@ fn test_orchestration_cloud_disabled_never_emits_push_or_pr_effects() {
 fn test_orchestration_cloud_enabled_sequences_auth_then_push() {
     with_default_timeout(|| {
         let mut state = orchestration_ready_state();
-        state.cloud_config.enabled = true;
-        state.cloud_config.run_id = Some("run_123".to_string());
-        state.cloud_config.git_remote.push_branch = "feature/run-123".to_string();
+        state.cloud.enabled = true;
+        state.cloud.run_id = Some("run_123".to_string());
+        state.cloud.git_remote.push_branch = "feature/run-123".to_string();
         state.pending_push_commit = Some("abc123".to_string());
         state.git_auth_configured = false;
 
@@ -499,14 +499,14 @@ fn test_orchestration_cloud_enabled_sequences_auth_then_push() {
 fn test_orchestration_cloud_enabled_creates_pr_in_finalizing_when_configured() {
     with_default_timeout(|| {
         let mut state = orchestration_ready_state();
-        state.cloud_config.enabled = true;
-        state.cloud_config.run_id = Some("run_123".to_string());
-        state.cloud_config.git_remote.push_branch = "feature/run-123".to_string();
-        state.cloud_config.git_remote.create_pr = true;
-        state.cloud_config.git_remote.pr_base_branch = Some("main".to_string());
-        state.cloud_config.git_remote.pr_title_template =
+        state.cloud.enabled = true;
+        state.cloud.run_id = Some("run_123".to_string());
+        state.cloud.git_remote.push_branch = "feature/run-123".to_string();
+        state.cloud.git_remote.create_pr = true;
+        state.cloud.git_remote.pr_base_branch = Some("main".to_string());
+        state.cloud.git_remote.pr_title_template =
             Some("Ralph changes for {run_id}".to_string());
-        state.cloud_config.git_remote.pr_body_template =
+        state.cloud.git_remote.pr_body_template =
             Some("Summary: {prompt_summary}".to_string());
 
         state.phase = PipelinePhase::Finalizing;

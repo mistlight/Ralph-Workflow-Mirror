@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-fn fast_kill_config() -> KillConfig {
+const fn fast_kill_config() -> KillConfig {
     KillConfig::new(
         Duration::from_millis(20),
         Duration::from_millis(5),
@@ -236,7 +236,7 @@ fn continuous_file_updates_prevent_timeout_over_extended_period() {
                 workspace_for_updates
                     .write(
                         Path::new(".agent/PLAN.md"),
-                        &format!("# Updated plan iteration {}", i),
+                        &format!("# Updated plan iteration {i}"),
                     )
                     .ok();
             }
@@ -307,7 +307,7 @@ fn mixed_output_and_file_activity_prevents_timeout() {
                     workspace_for_updates
                         .write(
                             Path::new(".agent/NOTES.md"),
-                            &format!("# Notes update {}", i),
+                            &format!("# Notes update {i}"),
                         )
                         .ok();
                 }

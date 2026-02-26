@@ -170,7 +170,7 @@ fn test_continuation_state_persists_across_events() {
 // ContinuationState Method Tests
 // ============================================================================
 
-/// Test ContinuationState::new() creates an empty state.
+/// Test `ContinuationState::new()` creates an empty state.
 #[test]
 fn test_continuation_state_new() {
     with_default_timeout(|| {
@@ -184,7 +184,7 @@ fn test_continuation_state_new() {
     });
 }
 
-/// Test ContinuationState::trigger_continuation() increments attempt count.
+/// Test `ContinuationState::trigger_continuation()` increments attempt count.
 #[test]
 fn test_continuation_state_trigger_increments_attempt() {
     with_default_timeout(|| {
@@ -207,7 +207,7 @@ fn test_continuation_state_trigger_increments_attempt() {
     });
 }
 
-/// Test ContinuationState::reset() clears all fields.
+/// Test `ContinuationState::reset()` clears all fields.
 #[test]
 fn test_continuation_state_reset_clears_all() {
     with_default_timeout(|| {
@@ -238,7 +238,7 @@ fn test_continuation_state_reset_clears_all() {
     });
 }
 
-/// Test DevelopmentStatus display formatting.
+/// Test `DevelopmentStatus` display formatting.
 #[test]
 fn test_development_status_display() {
     with_default_timeout(|| {

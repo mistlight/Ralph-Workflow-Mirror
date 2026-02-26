@@ -24,8 +24,8 @@ use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 /// Test that gitignore effect runs before cleanup in Planning phase.
 ///
 /// This verifies that when the pipeline starts in Planning phase and the agent
-/// chain is initialized, the next effect is EnsureGitignoreEntries (before
-/// CleanupContext).
+/// chain is initialized, the next effect is `EnsureGitignoreEntries` (before
+/// `CleanupContext`).
 #[test]
 fn test_gitignore_ensured_before_cleanup() {
     with_default_timeout(|| {
@@ -46,16 +46,15 @@ fn test_gitignore_ensured_before_cleanup() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::EnsureGitignoreEntries),
-            "Expected EnsureGitignoreEntries, got {:?}",
-            effect
+            "Expected EnsureGitignoreEntries, got {effect:?}"
         );
     });
 }
 
 /// Test that after gitignore is ensured, orchestration proceeds to cleanup.
 ///
-/// This verifies that when gitignore_entries_ensured flag is set, the
-/// orchestrator proceeds to the next effect (CleanupContext).
+/// This verifies that when `gitignore_entries_ensured` flag is set, the
+/// orchestrator proceeds to the next effect (`CleanupContext`).
 #[test]
 fn test_gitignore_ensured_proceeds_to_cleanup() {
     with_default_timeout(|| {
@@ -76,8 +75,7 @@ fn test_gitignore_ensured_proceeds_to_cleanup() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::CleanupContext),
-            "Expected CleanupContext after gitignore ensured, got {:?}",
-            effect
+            "Expected CleanupContext after gitignore ensured, got {effect:?}"
         );
     });
 }
@@ -85,7 +83,7 @@ fn test_gitignore_ensured_proceeds_to_cleanup() {
 /// Test that gitignore effect doesn't run again on resume.
 ///
 /// This verifies that when resuming a pipeline where gitignore has already
-/// been ensured, the orchestrator skips EnsureGitignoreEntries and proceeds
+/// been ensured, the orchestrator skips `EnsureGitignoreEntries` and proceeds
 /// to the next effect.
 #[test]
 fn test_gitignore_not_rerun_on_resume() {
@@ -107,8 +105,7 @@ fn test_gitignore_not_rerun_on_resume() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::CleanupContext),
-            "Expected to skip gitignore check on resume, got {:?}",
-            effect
+            "Expected to skip gitignore check on resume, got {effect:?}"
         );
     });
 }
@@ -138,8 +135,7 @@ fn test_gitignore_after_agent_chain_init() {
                     role: AgentRole::Developer
                 }
             ),
-            "Expected InitializeAgentChain before gitignore, got {:?}",
-            effect
+            "Expected InitializeAgentChain before gitignore, got {effect:?}"
         );
     });
 }

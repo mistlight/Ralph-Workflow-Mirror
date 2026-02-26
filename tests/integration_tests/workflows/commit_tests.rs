@@ -29,14 +29,14 @@ use crate::common::{
 use crate::test_timeout::with_default_timeout;
 
 /// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test the Ralph workflow integration
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 // ============================================================================
 // Commit Behavior Tests

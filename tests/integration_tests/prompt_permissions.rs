@@ -23,8 +23,7 @@ fn test_permission_lifecycle_success_path() {
         let effect1 = determine_next_effect(&initial_state);
         assert!(
             matches!(effect1, Effect::LockPromptPermissions),
-            "First effect should lock permissions, got {:?}",
-            effect1
+            "First effect should lock permissions, got {effect1:?}"
         );
 
         // Step 2: Execute lock, get event
@@ -43,8 +42,7 @@ fn test_permission_lifecycle_success_path() {
                     | Effect::EnsureGitignoreEntries
                     | Effect::PrepareCommitPrompt { .. }
             ),
-            "After lock, should proceed to commit work, got {:?}",
-            effect3
+            "After lock, should proceed to commit work, got {effect3:?}"
         );
 
         // Fast-forward: simulate pipeline completing through to Finalizing
@@ -100,8 +98,7 @@ fn test_permission_lifecycle_failure_path() {
         let effect2 = determine_next_effect(&interrupted_state);
         assert!(
             matches!(effect2, Effect::RestorePromptPermissions),
-            "Interrupted should restore permissions before checkpoint, got {:?}",
-            effect2
+            "Interrupted should restore permissions before checkpoint, got {effect2:?}"
         );
 
         // Step 3: Execute restore
@@ -154,20 +151,18 @@ fn test_permission_restoration_on_resume_from_interrupted() {
         let effect1 = determine_next_effect(&resumed_state);
         assert!(
             matches!(effect1, Effect::CheckUncommittedChangesBeforeTermination),
-            "Resume should check uncommitted changes first on Interrupted, got {:?}",
-            effect1
+            "Resume should check uncommitted changes first on Interrupted, got {effect1:?}"
         );
 
         // Execute safety check
         let result1 = handler.execute_mock(effect1);
-        let state_after_check = reduce(resumed_state.clone(), result1.event);
+        let state_after_check = reduce(resumed_state, result1.event);
 
         // Step 2: After safety check, should derive RestorePromptPermissions
         let effect2 = determine_next_effect(&state_after_check);
         assert!(
             matches!(effect2, Effect::RestorePromptPermissions),
-            "After safety check, should restore permissions if pending, got {:?}",
-            effect2
+            "After safety check, should restore permissions if pending, got {effect2:?}"
         );
 
         // Step 3: Execute restore
@@ -208,8 +203,7 @@ fn test_permission_restoration_on_user_interrupt() {
         let effect3 = determine_next_effect(&interrupted_state);
         assert!(
             matches!(effect3, Effect::RestorePromptPermissions),
-            "User interrupt should restore permissions, got {:?}",
-            effect3
+            "User interrupt should restore permissions, got {effect3:?}"
         );
 
         let result3 = handler.execute_mock(effect3);
@@ -228,13 +222,13 @@ fn test_permission_restoration_on_user_interrupt() {
 // PROMPT.md cleanup function tests
 // ============================================================================
 
-/// Test that make_prompt_writable_with_workspace completes successfully.
+/// Test that `make_prompt_writable_with_workspace` completes successfully.
 ///
-/// This tests the function that AgentPhaseGuard::drop() calls to restore
+/// This tests the function that `AgentPhaseGuard::drop()` calls to restore
 /// PROMPT.md permissions. The guard cleanup (including PROMPT.md restoration)
-/// is tested in unit tests within the crate where GitHelpers is accessible.
+/// is tested in unit tests within the crate where `GitHelpers` is accessible.
 ///
-/// Note: MemoryWorkspace has no-op implementations for set_readonly/set_writable,
+/// Note: `MemoryWorkspace` has no-op implementations for `set_readonly/set_writable`,
 /// so we verify the function completes without error.
 #[test]
 fn test_make_prompt_writable_with_workspace_succeeds() {
@@ -262,7 +256,7 @@ fn test_make_prompt_writable_with_workspace_succeeds() {
     });
 }
 
-/// Test that make_prompt_read_only_with_workspace followed by writable works.
+/// Test that `make_prompt_read_only_with_workspace` followed by writable works.
 ///
 /// This tests the lock/unlock cycle that the pipeline uses.
 #[test]
@@ -280,16 +274,14 @@ fn test_prompt_permission_lock_unlock_cycle() {
         let lock_warning = make_prompt_read_only_with_workspace(&workspace);
         assert!(
             lock_warning.is_none(),
-            "Lock should succeed: {:?}",
-            lock_warning
+            "Lock should succeed: {lock_warning:?}"
         );
 
         // Unlock (make writable)
         let unlock_warning = make_prompt_writable_with_workspace(&workspace);
         assert!(
             unlock_warning.is_none(),
-            "Unlock should succeed: {:?}",
-            unlock_warning
+            "Unlock should succeed: {unlock_warning:?}"
         );
 
         // PROMPT.md should still exist
@@ -302,10 +294,10 @@ fn test_prompt_permission_lock_unlock_cycle() {
 
 /// Test that startup cleanup restores PROMPT.md from prior interrupted run.
 ///
-/// Simulates SIGKILL scenario: PROMPT.md is read-only and .no_agent_commit exists.
+/// Simulates SIGKILL scenario: PROMPT.md is read-only and .`no_agent_commit` exists.
 /// Verifies that the cleanup functions would restore PROMPT.md permissions.
 ///
-/// Note: MemoryWorkspace has no-op permission operations, but we verify the
+/// Note: `MemoryWorkspace` has no-op permission operations, but we verify the
 /// cleanup function sequence completes without error.
 #[test]
 fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
@@ -340,10 +332,10 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
 // Ctrl+C cleanup tests (reducer-level simulation)
 // ============================================================================
 
-/// Test that Ctrl+C (simulated via interrupted_by_user flag) restores PROMPT.md.
+/// Test that Ctrl+C (simulated via `interrupted_by_user` flag) restores PROMPT.md.
 ///
-/// This test simulates the Ctrl+C scenario by setting interrupted_by_user=true
-/// in the initial state and verifying RestorePromptPermissions effect is derived.
+/// This test simulates the Ctrl+C scenario by setting `interrupted_by_user=true`
+/// in the initial state and verifying `RestorePromptPermissions` effect is derived.
 #[test]
 fn test_ctrl_c_restores_prompt_md_writable() {
     with_default_timeout(|| {
@@ -370,8 +362,7 @@ fn test_ctrl_c_restores_prompt_md_writable() {
         let effect3 = determine_next_effect(&interrupted_state);
         assert!(
             matches!(effect3, Effect::RestorePromptPermissions),
-            "User interrupt should restore PROMPT.md permissions, got {:?}",
-            effect3
+            "User interrupt should restore PROMPT.md permissions, got {effect3:?}"
         );
 
         // Step 4: Execute restore
@@ -393,9 +384,9 @@ fn test_ctrl_c_restores_prompt_md_writable() {
     });
 }
 
-/// Test that early Ctrl+C (before LockPromptPermissions) still restores PROMPT.md.
+/// Test that early Ctrl+C (before `LockPromptPermissions`) still restores PROMPT.md.
 ///
-/// This covers Gap 1: interrupt arrives before restore_needed is set to true.
+/// This covers Gap 1: interrupt arrives before `restore_needed` is set to true.
 /// Even though this run didn't lock PROMPT.md, restoration should still be attempted
 /// in case a prior run left it read-only.
 #[test]
@@ -421,20 +412,19 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
         let effect = determine_next_effect(&interrupted_state);
         assert!(
             matches!(effect, Effect::RestorePromptPermissions),
-            "Early Ctrl+C (restore_needed=false) should still derive RestorePromptPermissions, got {:?}",
-            effect
+            "Early Ctrl+C (restore_needed=false) should still derive RestorePromptPermissions, got {effect:?}"
         );
     });
 }
 
 /// Test that marker removal workspace functions work correctly.
 ///
-/// The .no_agent_commit file blocks git operations during agent phase.
-/// After Ctrl+C (or panic), AgentPhaseGuard::drop() calls end_agent_phase()
+/// The .`no_agent_commit` file blocks git operations during agent phase.
+/// After Ctrl+C (or panic), `AgentPhaseGuard::drop()` calls `end_agent_phase()`
 /// which removes this marker.
 ///
 /// This test verifies the marker workspace functions that support cleanup.
-/// Full guard behavior testing requires crate-internal access to GitHelpers.
+/// Full guard behavior testing requires crate-internal access to `GitHelpers`.
 #[test]
 fn test_marker_workspace_functions() {
     with_default_timeout(|| {
@@ -477,8 +467,8 @@ fn test_marker_workspace_functions() {
 
 /// Test that hook marker detection works via workspace function.
 ///
-/// Ralph installs hooks with RALPH_RUST_MANAGED_HOOK marker. On cleanup,
-/// AgentPhaseGuard::drop() calls uninstall_hooks() which removes or
+/// Ralph installs hooks with `RALPH_RUST_MANAGED_HOOK` marker. On cleanup,
+/// `AgentPhaseGuard::drop()` calls `uninstall_hooks()` which removes or
 /// restores the original hooks.
 ///
 /// This test verifies the marker detection function works correctly.
@@ -533,10 +523,10 @@ fn test_hook_marker_detection_via_workspace() {
 // Additional Ctrl+C cleanup tests per acceptance criteria
 // ============================================================================
 
-/// Test that Interrupted phase emits RestorePromptPermissions even when restore_needed=false.
+/// Test that Interrupted phase emits `RestorePromptPermissions` even when `restore_needed=false`.
 ///
-/// This is a regression test for Gap 1: if interrupt arrives before LockPromptPermissions
-/// executed, restore_needed=false but PROMPT.md may still need restoration from a prior
+/// This is a regression test for Gap 1: if interrupt arrives before `LockPromptPermissions`
+/// executed, `restore_needed=false` but PROMPT.md may still need restoration from a prior
 /// crashed run that left it read-only.
 #[test]
 fn test_interrupted_phase_restores_prompt_md_when_restore_not_needed() {
@@ -560,8 +550,7 @@ fn test_interrupted_phase_restores_prompt_md_when_restore_not_needed() {
         let effect = determine_next_effect(&interrupted_state);
         assert!(
             matches!(effect, Effect::RestorePromptPermissions),
-            "Orchestration must emit RestorePromptPermissions even when restore_needed=false, got {:?}",
-            effect
+            "Orchestration must emit RestorePromptPermissions even when restore_needed=false, got {effect:?}"
         );
     });
 }
@@ -617,14 +606,14 @@ fn test_startup_cleanup_restores_hooks_from_prior_run() {
     });
 }
 
-/// Test that AgentPhaseGuard drop behavior includes PROMPT.md restoration.
+/// Test that `AgentPhaseGuard` drop behavior includes PROMPT.md restoration.
 ///
-/// This documents that when AgentPhaseGuard is dropped without disarm(),
+/// This documents that when `AgentPhaseGuard` is dropped without `disarm()`,
 /// it restores PROMPT.md permissions as part of cleanup. The actual guard
 /// implementation is in ralph-workflow/src/pipeline/types.rs:57-74.
 ///
-/// Note: MemoryWorkspace has no-op permission methods, but the guard's
-/// make_prompt_writable_with_workspace call is verified to not error.
+/// Note: `MemoryWorkspace` has no-op permission methods, but the guard's
+/// `make_prompt_writable_with_workspace` call is verified to not error.
 #[test]
 fn test_agent_phase_guard_drop_restores_prompt_md() {
     with_default_timeout(|| {
@@ -655,9 +644,9 @@ fn test_agent_phase_guard_drop_restores_prompt_md() {
     });
 }
 
-/// Test that Ctrl+C cleanup removes .no_agent_commit marker.
+/// Test that Ctrl+C cleanup removes .`no_agent_commit` marker.
 ///
-/// The .no_agent_commit marker blocks git operations during agent phase.
+/// The .`no_agent_commit` marker blocks git operations during agent phase.
 /// On Ctrl+C (or panic), cleanup must remove this marker so git is usable.
 ///
 /// This verifies the marker workspace functions used by cleanup paths.
@@ -695,8 +684,8 @@ fn test_ctrl_c_removes_no_agent_commit() {
 
 /// Test that Ctrl+C cleanup can detect and restore git hooks.
 ///
-/// Ralph installs hooks with RALPH_RUST_MANAGED_HOOK marker. On Ctrl+C,
-/// AgentPhaseGuard::drop() calls uninstall_hooks() which:
+/// Ralph installs hooks with `RALPH_RUST_MANAGED_HOOK` marker. On Ctrl+C,
+/// `AgentPhaseGuard::drop()` calls `uninstall_hooks()` which:
 /// - If .ralph.orig exists: restores original hook
 /// - If no original: removes the hook
 ///

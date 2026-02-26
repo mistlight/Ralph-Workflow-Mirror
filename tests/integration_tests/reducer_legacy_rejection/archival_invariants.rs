@@ -14,7 +14,7 @@
 //!
 //! These tests follow [../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md):
 //! - Test observable behavior: effect determination
-//! - Use MemoryWorkspace to simulate legacy files
+//! - Use `MemoryWorkspace` to simulate legacy files
 //! - Verify event-driven architecture
 
 use crate::common::with_locked_prompt_permissions;
@@ -53,8 +53,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-            "Effect should be determined from state alone, got {:?}",
-            effect
+            "Effect should be determined from state alone, got {effect:?}"
         );
 
         // Even with max iterations reached, state-based transition should happen
@@ -70,8 +69,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::PrepareReviewContext { .. }),
-            "Review effect should be determined from state alone, got {:?}",
-            effect
+            "Review effect should be determined from state alone, got {effect:?}"
         );
     });
 }
@@ -81,7 +79,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
 /// Even when legacy files exist in the workspace (ISSUES.md, PLAN.md, commit.xml),
 /// the pipeline must not read them to derive results. All results must come from
 /// the current XML paths. This test explicitly creates these files and verifies
-/// determine_next_effect remains unchanged.
+/// `determine_next_effect` remains unchanged.
 #[test]
 fn test_legacy_artifact_files_completely_ignored() {
     use ralph_workflow::agents::AgentRole;
@@ -227,16 +225,14 @@ fn test_archived_xml_uses_processed_suffix() {
             // Original should be gone
             assert!(
                 !workspace.exists(Path::new(path)),
-                "Original file should be removed after archiving: {}",
-                path
+                "Original file should be removed after archiving: {path}"
             );
 
             // .processed should exist
-            let processed_path = format!("{}.processed", path);
+            let processed_path = format!("{path}.processed");
             assert!(
                 workspace.exists(Path::new(&processed_path)),
-                "Archived file should have .processed suffix: {}",
-                processed_path
+                "Archived file should have .processed suffix: {processed_path}"
             );
         }
     });

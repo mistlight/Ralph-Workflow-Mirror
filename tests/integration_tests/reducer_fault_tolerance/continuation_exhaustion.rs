@@ -59,8 +59,7 @@ fn test_continuation_exhaustion_triggers_agent_fallback() {
         let effect = determine_next_effect(&new_state);
         assert!(
             matches!(effect, Effect::CleanupContinuationContext),
-            "Should clean up continuation context before preparing for new agent; got {:?}",
-            effect
+            "Should clean up continuation context before preparing for new agent; got {effect:?}"
         );
     });
 }
@@ -127,8 +126,7 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::TriggerDevFixFlow { .. }),
-            "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
-            effect
+            "Should trigger dev-fix flow when in AwaitingDevFix phase; got {effect:?}"
         );
     });
 }
@@ -168,8 +166,7 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         // Then: It should report agent chain exhaustion
         assert!(
             matches!(effect, Effect::ReportAgentChainExhausted { .. }),
-            "Expected ReportAgentChainExhausted, got {:?}",
-            effect
+            "Expected ReportAgentChainExhausted, got {effect:?}"
         );
 
         // When: The error event is reduced
@@ -200,13 +197,12 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         // Then: It should trigger dev-fix flow
         assert!(
             matches!(next_effect, Effect::TriggerDevFixFlow { .. }),
-            "Expected TriggerDevFixFlow for AwaitingDevFix phase, got {:?}",
-            next_effect
+            "Expected TriggerDevFixFlow for AwaitingDevFix phase, got {next_effect:?}"
         );
 
         // When: Dev-fix flow is triggered and completion marker is emitted
         let after_trigger_state = reduce(
-            new_state.clone(),
+            new_state,
             PipelineEvent::AwaitingDevFix(
                 ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
                     failed_phase: PipelinePhase::Development,
@@ -253,8 +249,7 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
                 final_effect,
                 Effect::CheckUncommittedChangesBeforeTermination
             ),
-            "Expected CheckUncommittedChangesBeforeTermination for Interrupted phase, got {:?}",
-            final_effect
+            "Expected CheckUncommittedChangesBeforeTermination for Interrupted phase, got {final_effect:?}"
         );
 
         // When: Safety check passes (simulate handler emitting event)
@@ -266,8 +261,7 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
         let final_effect = determine_next_effect(&after_check_state);
         assert!(
             matches!(final_effect, Effect::SaveCheckpoint { .. }),
-            "Expected SaveCheckpoint after safety check, got {:?}",
-            final_effect
+            "Expected SaveCheckpoint after safety check, got {final_effect:?}"
         );
 
         // When: Checkpoint is saved (simulate by applying CheckpointSaved event)
@@ -335,8 +329,7 @@ fn test_budget_exhausted_with_failed_status_transitions_to_awaiting_dev_fix() {
         let effect = determine_next_effect(&new_state);
         assert!(
             matches!(effect, Effect::TriggerDevFixFlow { .. }),
-            "Expected TriggerDevFixFlow, got {:?}",
-            effect
+            "Expected TriggerDevFixFlow, got {effect:?}"
         );
     });
 }

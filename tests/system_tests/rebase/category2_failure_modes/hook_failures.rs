@@ -130,7 +130,7 @@ fn rebase_detects_commit_hook_rejection_mid_rebase() {
             let main_obj = repo.revparse_single(&default_branch).unwrap();
             let main_commit = main_obj.peel_to_commit().unwrap();
             repo.checkout_tree(main_commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             // Add another commit on default

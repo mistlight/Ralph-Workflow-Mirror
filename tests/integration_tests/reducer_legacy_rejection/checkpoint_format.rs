@@ -48,7 +48,7 @@ fn test_checkpoint_rejects_legacy_format() {
 
 /// Test that V1 checkpoint format is rejected.
 ///
-/// V1 checkpoints have version field but lack run_id and other v2 fields.
+/// V1 checkpoints have version field but lack `run_id` and other v2 fields.
 #[test]
 fn test_checkpoint_rejects_v1_format() {
     with_default_timeout(|| {
@@ -109,7 +109,7 @@ fn test_checkpoint_rejects_v1_format() {
 
 /// Test that V2 checkpoint format is rejected.
 ///
-/// V2 checkpoints have run_id but lack v3 fields (execution_history, etc.).
+/// V2 checkpoints have `run_id` but lack v3 fields (`execution_history`, etc.).
 #[test]
 fn test_checkpoint_rejects_v2_format() {
     with_default_timeout(|| {
@@ -239,8 +239,7 @@ fn test_checkpoint_accepts_v3_format() {
         let result = load_checkpoint_with_workspace(&workspace);
         assert!(
             result.is_ok(),
-            "Should accept V3 checkpoint format: {:?}",
-            result
+            "Should accept V3 checkpoint format: {result:?}"
         );
         assert!(result.unwrap().is_some(), "Checkpoint should be present");
     });

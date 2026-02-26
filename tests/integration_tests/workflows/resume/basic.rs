@@ -1,6 +1,6 @@
 //! Resume flag tests and working directory validation tests.
 //!
-//! These tests use MockAppEffectHandler for in-memory testing without
+//! These tests use `MockAppEffectHandler` for in-memory testing without
 //! real filesystem or git operations.
 
 use std::path::PathBuf;

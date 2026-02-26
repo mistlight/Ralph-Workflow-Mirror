@@ -6,7 +6,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**.
 //!
 //! Before writing, modifying, or debugging any integration test, you MUST read
 //! that document. Key principles:
@@ -23,7 +23,7 @@ use ralph_workflow::files::llm_output_extraction::file_based_extraction::{
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::path::Path;
 
-/// Test that has_valid_xml_output returns true when issues.xml exists with valid XML.
+/// Test that `has_valid_xml_output` returns true when issues.xml exists with valid XML.
 ///
 /// This is the core bug fix test: when an agent writes XML to the designated
 /// file path (.agent/tmp/issues.xml), the validator should detect it as valid
@@ -34,9 +34,9 @@ fn test_has_valid_xml_output_detects_file_based_xml() {
         // Setup: Create workspace with valid XML in the expected location
         let workspace = MemoryWorkspace::new_test().with_file(
             paths::ISSUES_XML,
-            r#"<ralph-issues>
+            r"<ralph-issues>
 <ralph-no-issues-found>No issues found during review.</ralph-no-issues-found>
-</ralph-issues>"#,
+</ralph-issues>",
         );
 
         // Execute: Check if the file-based validator detects the XML
@@ -47,7 +47,7 @@ fn test_has_valid_xml_output_detects_file_based_xml() {
     });
 }
 
-/// Test that has_valid_xml_output returns true for XML with issues.
+/// Test that `has_valid_xml_output` returns true for XML with issues.
 ///
 /// This verifies that the validator correctly identifies XML containing
 /// actual issues (not just no-issues-found).
@@ -56,10 +56,10 @@ fn test_has_valid_xml_output_detects_issues_xml() {
     with_default_timeout(|| {
         let workspace = MemoryWorkspace::new_test().with_file(
             paths::ISSUES_XML,
-            r#"<ralph-issues>
+            r"<ralph-issues>
 <ralph-issue>Variable unused in src/main.rs</ralph-issue>
 <ralph-issue>Missing error handling in src/utils.rs</ralph-issue>
-</ralph-issues>"#,
+</ralph-issues>",
         );
 
         let result = has_valid_xml_output(&workspace, Path::new(paths::ISSUES_XML));
@@ -134,19 +134,19 @@ fn test_has_valid_xml_output_returns_false_for_missing_file() {
     });
 }
 
-/// Test that fix_result.xml is also detected.
+/// Test that `fix_result.xml` is also detected.
 ///
-/// This verifies that the validator works for both issues.xml and fix_result.xml,
+/// This verifies that the validator works for both issues.xml and `fix_result.xml`,
 /// since both use the same file-based output mechanism.
 #[test]
 fn test_has_valid_xml_output_detects_fix_result_xml() {
     with_default_timeout(|| {
         let workspace = MemoryWorkspace::new_test().with_file(
             paths::FIX_RESULT_XML,
-            r#"<ralph-fix-result>
+            r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>Fixed all issues.</ralph-summary>
-</ralph-fix-result>"#,
+</ralph-fix-result>",
         );
 
         let result = has_valid_xml_output(&workspace, Path::new(paths::FIX_RESULT_XML));
@@ -164,10 +164,10 @@ fn test_has_valid_xml_output_handles_leading_whitespace() {
     with_default_timeout(|| {
         let workspace = MemoryWorkspace::new_test().with_file(
             paths::ISSUES_XML,
-            r#"  
+            r"  
    <ralph-issues>
 <ralph-no-issues-found>No issues</ralph-no-issues-found>
-</ralph-issues>"#,
+</ralph-issues>",
         );
 
         let result = has_valid_xml_output(&workspace, Path::new(paths::ISSUES_XML));
@@ -181,7 +181,7 @@ fn test_has_valid_xml_output_handles_leading_whitespace() {
 
 /// Test that file-based XML extraction works even without JSON logs.
 ///
-/// This is a regression test for the bug where extract_and_validate_review_output_xml
+/// This is a regression test for the bug where `extract_and_validate_review_output_xml`
 /// would return "No review output captured" when:
 /// 1. No JSON result events in logs (e.g., opencode parser)
 /// 2. No ISSUES.md file exists
@@ -196,9 +196,9 @@ fn test_file_based_xml_extraction_without_json_logs() {
         };
 
         // Setup: Valid XML in issues.xml, NO JSON logs, NO ISSUES.md
-        let valid_xml = r#"<ralph-issues>
+        let valid_xml = r"<ralph-issues>
 <ralph-no-issues-found>All code conforms to the architecture requirements.</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let workspace = MemoryWorkspace::new_test()
             .with_file(paths::ISSUES_XML, valid_xml)

@@ -42,7 +42,7 @@ struct Fixture {
     repo_root: PathBuf,
     workspace: Arc<MemoryWorkspace>,
     run_log_context: ralph_workflow::logging::RunLogContext,
-    cloud_config: ralph_workflow::config::CloudConfig,
+    cloud: ralph_workflow::config::CloudConfig,
 }
 
 impl Fixture {
@@ -69,7 +69,7 @@ impl Fixture {
             repo_root,
             workspace,
             run_log_context,
-            cloud_config: ralph_workflow::config::CloudConfig::disabled(),
+            cloud: ralph_workflow::config::CloudConfig::disabled(),
         }
     }
 
@@ -99,7 +99,7 @@ impl Fixture {
             repo_root,
             workspace,
             run_log_context,
-            cloud_config: ralph_workflow::config::CloudConfig::disabled(),
+            cloud: ralph_workflow::config::CloudConfig::disabled(),
         }
     }
 
@@ -126,7 +126,7 @@ impl Fixture {
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
-            cloud_config: &self.cloud_config,
+            cloud: &self.cloud,
         }
     }
 }
@@ -136,7 +136,7 @@ struct LoopingHandler {
     state: PipelineState,
 }
 
-impl<'ctx> EffectHandler<'ctx> for LoopingHandler {
+impl EffectHandler<'_> for LoopingHandler {
     fn execute(
         &mut self,
         _effect: Effect,
@@ -158,7 +158,7 @@ struct PanicHandler {
     state: PipelineState,
 }
 
-impl<'ctx> EffectHandler<'ctx> for PanicHandler {
+impl EffectHandler<'_> for PanicHandler {
     fn execute(
         &mut self,
         _effect: Effect,
@@ -179,7 +179,7 @@ struct AdditionalEventsHandler {
     state: PipelineState,
 }
 
-impl<'ctx> EffectHandler<'ctx> for AdditionalEventsHandler {
+impl EffectHandler<'_> for AdditionalEventsHandler {
     fn execute(
         &mut self,
         _effect: Effect,
@@ -206,7 +206,7 @@ struct PhaseChangingHandler {
     state: PipelineState,
 }
 
-impl<'ctx> EffectHandler<'ctx> for PhaseChangingHandler {
+impl EffectHandler<'_> for PhaseChangingHandler {
     fn execute(
         &mut self,
         _effect: Effect,
@@ -251,8 +251,7 @@ fn test_event_loop_dumps_trace_on_max_iterations() {
         let trace_path = trace_path_buf.to_string_lossy();
         assert!(
             fixture.workspace.was_written(trace_path.as_ref()),
-            "expected event loop to dump trace to {}",
-            trace_path
+            "expected event loop to dump trace to {trace_path}"
         );
 
         let trace = fixture
@@ -295,8 +294,7 @@ fn test_event_loop_dumps_trace_on_panic() {
         let trace_path = trace_path_buf.to_string_lossy();
         assert!(
             fixture.workspace.was_written(trace_path.as_ref()),
-            "expected event loop to dump trace to {} on panic",
-            trace_path
+            "expected event loop to dump trace to {trace_path} on panic"
         );
 
         let trace = fixture
@@ -418,8 +416,7 @@ fn test_max_iterations_logs_trace_path_to_workspace_log() {
         let trace_path = trace_path_buf.to_string_lossy();
         assert!(
             log.contains(trace_path.as_ref()),
-            "expected logs to mention trace path {}",
-            trace_path
+            "expected logs to mention trace path {trace_path}"
         );
     });
 }

@@ -46,10 +46,8 @@ fn test_assistant_event_before_streaming_no_duplicates() {
         let count = vterm_ref.count_visible_pattern("Hello World");
         assert!(
             count <= 1,
-            "DUPLICATION BUG: 'Hello World' appears {} times. \
-         Assistant event and streaming should not both render. Output: {}",
-            count,
-            visible
+            "DUPLICATION BUG: 'Hello World' appears {count} times. \
+         Assistant event and streaming should not both render. Output: {visible}"
         );
     });
 }
@@ -80,8 +78,7 @@ fn test_assistant_event_during_streaming_no_duplicates() {
         // No duplicate lines should appear
         assert!(
             !vterm_ref.has_duplicate_lines(),
-            "Mid-stream assistant events should not cause duplicates. Output: {}",
-            visible
+            "Mid-stream assistant events should not cause duplicates. Output: {visible}"
         );
 
         // Content should be present
@@ -95,10 +92,10 @@ fn test_assistant_event_during_streaming_no_duplicates() {
 /// Test GLM-style multiple assistant events with tool use content.
 ///
 /// This reproduces the specific GLM/CCS bug pattern where:
-/// 1. MessageStart with id
-/// 2. Assistant event arrives with tool_use content and same id
+/// 1. `MessageStart` with id
+/// 2. Assistant event arrives with `tool_use` content and same id
 /// 3. More assistant events arrive with the same id
-/// 4. The bug causes the tool_use to be displayed multiple times
+/// 4. The bug causes the `tool_use` to be displayed multiple times
 #[test]
 fn test_glm_multiple_assistant_events_same_id_no_duplicates() {
     with_default_timeout(|| {
@@ -125,18 +122,14 @@ fn test_glm_multiple_assistant_events_same_id_no_duplicates() {
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Assistant event should not duplicate streaming output. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Assistant event should not duplicate streaming output. Output: {visible}"
         );
 
         // File path should appear only once
         let path_count = vterm_ref.count_visible_pattern("/test/file.txt");
         assert!(
             path_count <= 1,
-            "GLM BUG: File path appears {} times. Output: {}",
-            path_count,
-            visible
+            "GLM BUG: File path appears {path_count} times. Output: {visible}"
         );
     });
 }
@@ -144,7 +137,7 @@ fn test_glm_multiple_assistant_events_same_id_no_duplicates() {
 /// Test GLM-style multiple content blocks in single assistant event.
 ///
 /// This reproduces the GLM pattern where assistant events include ALL accumulated
-/// content blocks (text + tool_uses) in a single event. GLM sends these updates
+/// content blocks (text + `tool_uses`) in a single event. GLM sends these updates
 /// as it accumulates more content blocks, and each assistant event should not
 /// re-render content that was already displayed.
 #[test]
@@ -175,28 +168,24 @@ fn test_glm_assistant_event_with_multiple_content_blocks() {
         let text_count = vterm_ref.count_visible_pattern("Let me explore the codebase");
         assert!(
             text_count <= 2,
-            "GLM BUG: 'Let me explore the codebase' appears {} times. Assistant events with multiple content blocks should not cause excessive duplication. Output: {}",
-            text_count,
-            visible
+            "GLM BUG: 'Let me explore the codebase' appears {text_count} times. Assistant events with multiple content blocks should not cause excessive duplication. Output: {visible}"
         );
 
         // "Read" tool should appear only once
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Output: {visible}"
         );
     });
 }
 
-/// Test GLM-style assistant event with ONLY tool_use (no text).
+/// Test GLM-style assistant event with ONLY `tool_use` (no text).
 ///
 /// This tests the specific case where GLM sends an assistant event containing
-/// only tool_use blocks (no text content). This is a common pattern for GLM
+/// only `tool_use` blocks (no text content). This is a common pattern for GLM
 /// when it makes tool calls. The hash-based deduplication only checks text
-/// content, so tool_use blocks need special handling.
+/// content, so `tool_use` blocks need special handling.
 #[test]
 fn test_glm_assistant_event_only_tool_use_blocks() {
     with_default_timeout(|| {
@@ -223,30 +212,26 @@ fn test_glm_assistant_event_only_tool_use_blocks() {
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Assistant event with tool_use should not duplicate streaming output. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Assistant event with tool_use should not duplicate streaming output. Output: {visible}"
         );
 
         // Pattern should appear only once (or few times for in-place updates)
         let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
         assert!(
             pattern_count <= 2,
-            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
-            pattern_count,
-            visible
+            "GLM BUG: Pattern '**/*.rs' appears {pattern_count} times. Output: {visible}"
         );
     });
 }
 
-/// Test GLM bug: assistant event with DIFFERENT message_id but same content.
+/// Test GLM bug: assistant event with DIFFERENT `message_id` but same content.
 ///
 /// This reproduces a potential GLM bug where the assistant event has a different
-/// message_id than the streaming events (perhaps due to CCS layer transformation).
-/// In this case, message_id matching fails, and we rely on hash-based deduplication.
+/// `message_id` than the streaming events (perhaps due to CCS layer transformation).
+/// In this case, `message_id` matching fails, and we rely on hash-based deduplication.
 ///
-/// The bug: `is_duplicate_by_hash` only checks TEXT content, ignoring tool_use.
-/// This means assistant events with tool_use but no text will NOT be deduplicated.
+/// The bug: `is_duplicate_by_hash` only checks TEXT content, ignoring `tool_use`.
+/// This means assistant events with `tool_use` but no text will NOT be deduplicated.
 #[test]
 fn test_glm_assistant_event_different_message_id_tool_use_only() {
     with_default_timeout(|| {
@@ -274,27 +259,23 @@ fn test_glm_assistant_event_different_message_id_tool_use_only() {
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Assistant event with different message_id but same content should still be deduplicated. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Assistant event with different message_id but same content should still be deduplicated. Output: {visible}"
         );
 
         // File path should appear only once
         let path_count = vterm_ref.count_visible_pattern("/test/file.txt");
         assert!(
             path_count <= 2,
-            "GLM BUG: File path '/test/file.txt' appears {} times. Output: {}",
-            path_count,
-            visible
+            "GLM BUG: File path '/test/file.txt' appears {path_count} times. Output: {visible}"
         );
     });
 }
 
-/// Test GLM bug: assistant event with text + tool_use, different message_id.
+/// Test GLM bug: assistant event with text + `tool_use`, different `message_id`.
 ///
-/// This tests the case where GLM sends an assistant event with BOTH text and tool_use,
-/// but with a different message_id than the streaming events. The hash-based deduplication
-/// only checks the text portion, so the tool_use portion might get duplicated.
+/// This tests the case where GLM sends an assistant event with BOTH text and `tool_use`,
+/// but with a different `message_id` than the streaming events. The hash-based deduplication
+/// only checks the text portion, so the `tool_use` portion might get duplicated.
 #[test]
 fn test_glm_assistant_event_text_and_tool_different_message_id() {
     with_default_timeout(|| {
@@ -322,18 +303,14 @@ fn test_glm_assistant_event_text_and_tool_different_message_id() {
         let text_count = vterm_ref.count_visible_pattern("I'll read the file now");
         assert!(
             text_count <= 2,
-            "GLM BUG: Text appears {} times. Output: {}",
-            text_count,
-            visible
+            "GLM BUG: Text appears {text_count} times. Output: {visible}"
         );
 
         // Tool should appear only once
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Tool use should be deduplicated even with different message_id. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Tool use should be deduplicated even with different message_id. Output: {visible}"
         );
     });
 }
@@ -342,7 +319,7 @@ fn test_glm_assistant_event_text_and_tool_different_message_id() {
 ///
 /// This tests the pattern where GLM sends:
 /// 1. Assistant event BEFORE streaming starts
-/// 2. MessageStart (with same id)
+/// 2. `MessageStart` (with same id)
 /// 3. Streaming deltas
 /// 4. Additional assistant events DURING streaming
 #[test]
@@ -370,24 +347,21 @@ fn test_glm_assistant_event_before_and_during_streaming() {
         let count = vterm_ref.count_visible_pattern("Let me explore");
         assert!(
             count <= 2, // Allow some margin for in-place updates
-            "GLM BUG: 'Let me explore' appears {} times. Assistant events and streaming should not both render. Output: {}",
-            count,
-            visible
+            "GLM BUG: 'Let me explore' appears {count} times. Assistant events and streaming should not both render. Output: {visible}"
         );
 
         // Final content should be present
         assert!(
             visible.contains("Let me explore"),
-            "Final content should be visible. Got: {}",
-            visible
+            "Final content should be visible. Got: {visible}"
         );
     });
 }
 
-/// Test GLM-style repeated MessageStart events with assistant events.
+/// Test GLM-style repeated `MessageStart` events with assistant events.
 ///
-/// GLM has been observed to send multiple MessageStart events with the same
-/// message_id, interleaved with assistant events. This test verifies that
+/// GLM has been observed to send multiple `MessageStart` events with the same
+/// `message_id`, interleaved with assistant events. This test verifies that
 /// deduplication still works correctly.
 #[test]
 fn test_glm_repeated_message_start_with_assistant_events() {
@@ -414,9 +388,7 @@ fn test_glm_repeated_message_start_with_assistant_events() {
         let count = vterm_ref.count_visible_pattern("Test Content");
         assert!(
             count <= 2,
-            "GLM BUG: 'Test Content' appears {} times. Repeated MessageStart with assistant events should not cause excessive duplication. Output: {}",
-            count,
-            visible
+            "GLM BUG: 'Test Content' appears {count} times. Repeated MessageStart with assistant events should not cause excessive duplication. Output: {visible}"
         );
     });
 }

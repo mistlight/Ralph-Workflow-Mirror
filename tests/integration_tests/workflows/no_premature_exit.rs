@@ -56,7 +56,7 @@ fn test_pipeline_completes_after_all_dev_iterations_no_review() {
             // Create commit after each iteration
             state = reduce(
                 state,
-                PipelineEvent::commit_created(format!("hash{}", i), format!("Commit {}", i)),
+                PipelineEvent::commit_created(format!("hash{i}"), format!("Commit {i}")),
             );
         }
 
@@ -82,8 +82,8 @@ fn test_pipeline_transitions_to_review_after_all_dev_iterations() {
             state = reduce(
                 state,
                 PipelineEvent::commit_created(
-                    format!("hash{}", i),
-                    format!("Commit message {}", i),
+                    format!("hash{i}"),
+                    format!("Commit message {i}"),
                 ),
             );
         }
@@ -325,7 +325,7 @@ fn test_fix_continuation_state_resets_at_new_pass() {
     });
 }
 
-/// Test that pipeline completes exactly at total_reviewer_passes, not before.
+/// Test that pipeline completes exactly at `total_reviewer_passes`, not before.
 #[test]
 fn test_exactly_completes_at_total_reviewer_passes() {
     with_default_timeout(|| {

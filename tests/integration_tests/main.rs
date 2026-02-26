@@ -15,7 +15,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**.
 //!
 //! Before writing, modifying, or debugging any integration test, you MUST read
 //! that document. It defines non-negotiable rules for:

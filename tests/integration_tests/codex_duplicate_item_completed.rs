@@ -1,6 +1,6 @@
 //! Regression test for duplicate `item.completed` events.
 //!
-//! Codex can emit duplicate `item.completed` events for the same agent_message.
+//! Codex can emit duplicate `item.completed` events for the same `agent_message`.
 //! This must not cause the final agent message to be printed more than once in
 //! non-TTY modes (Basic/None).
 //!

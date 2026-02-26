@@ -7,7 +7,7 @@
 //! each delta was printed as a fresh line instead of updating in-place in non-TTY modes,
 //! causing repeated "[ccs/glm]" or "[ccs/codex]" lines in logs.
 //!
-//! Fix: Suppress per-delta output in non-TTY modes (TerminalMode::Basic and TerminalMode::None)
+//! Fix: Suppress per-delta output in non-TTY modes (`TerminalMode::Basic` and `TerminalMode::None`)
 //! and flush accumulated content ONCE at completion boundaries.
 //!
 //! # Integration Test Style Guide
@@ -26,6 +26,7 @@ use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
 use std::io::BufReader;
 use std::rc::Rc;
+use std::fmt::Write;
 
 // ============================================================================
 // CCS/GLM (ClaudeParser) Tests
@@ -67,16 +68,13 @@ fn test_ccs_glm_text_deltas_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 '[ccs/glm]' prefix in None mode for text deltas, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 '[ccs/glm]' prefix in None mode for text deltas, found {prefix_count}.\n\nOutput:\n{output}"
         );
 
         // Verify the content is present (not lost)
         assert!(
             output.contains("Hello World! This is a test") || output.contains("Hello World!"),
-            "Expected accumulated text content to be present. Output:\n{}",
-            output
+            "Expected accumulated text content to be present. Output:\n{output}"
         );
     });
 }
@@ -111,9 +109,7 @@ fn test_ccs_glm_text_deltas_no_spam_in_basic_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 '[ccs/glm]' prefix in Basic mode for text deltas, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 '[ccs/glm]' prefix in Basic mode for text deltas, found {prefix_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -156,23 +152,18 @@ fn test_ccs_glm_thinking_deltas_no_spam_in_none_mode() {
         let thinking_label_count = output.matches("Thinking:").count();
         assert!(
             thinking_prefix_count <= 1,
-            "Expected <= 1 '[ccs/glm]' prefix in None mode for thinking-only stream, found {}.\n\nOutput:\n{}",
-            thinking_prefix_count,
-            output
+            "Expected <= 1 '[ccs/glm]' prefix in None mode for thinking-only stream, found {thinking_prefix_count}.\n\nOutput:\n{output}"
         );
         assert!(
             thinking_label_count <= 1,
-            "Expected <= 1 'Thinking:' label in None mode, found {}.\n\nOutput:\n{}",
-            thinking_label_count,
-            output
+            "Expected <= 1 'Thinking:' label in None mode, found {thinking_label_count}.\n\nOutput:\n{output}"
         );
 
         // Verify thinking content is present (not lost)
         if thinking_label_count > 0 {
             assert!(
                 output.contains("I need to think about this") || output.contains("think about"),
-                "Expected accumulated thinking content to be present. Output:\n{}",
-                output
+                "Expected accumulated thinking content to be present. Output:\n{output}"
             );
         }
     });
@@ -208,9 +199,7 @@ fn test_ccs_glm_thinking_deltas_no_spam_in_basic_mode() {
         let thinking_label_count = output.matches("Thinking:").count();
         assert!(
             thinking_label_count <= 1,
-            "Expected <= 1 'Thinking:' label in Basic mode, found {}.\n\nOutput:\n{}",
-            thinking_label_count,
-            output
+            "Expected <= 1 'Thinking:' label in Basic mode, found {thinking_label_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -248,9 +237,7 @@ fn test_ccs_glm_tool_input_deltas_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 2,
-            "Expected <= 2 '[ccs/glm]' prefixes in None mode for tool deltas (tool start + optional input flush), found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 2 '[ccs/glm]' prefixes in None mode for tool deltas (tool start + optional input flush), found {prefix_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -284,9 +271,7 @@ fn test_ccs_glm_tool_input_deltas_no_spam_in_basic_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 2,
-            "Expected <= 2 '[ccs/glm]' prefixes in Basic mode for tool deltas, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 2 '[ccs/glm]' prefixes in Basic mode for tool deltas, found {prefix_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -332,9 +317,7 @@ fn test_ccs_glm_mixed_deltas_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 4,
-            "Expected <= 4 '[ccs/glm]' prefixes in None mode for mixed deltas (1 thinking + 1 text + 2 tool), found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 4 '[ccs/glm]' prefixes in None mode for mixed deltas (1 thinking + 1 text + 2 tool), found {prefix_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -376,17 +359,14 @@ fn test_ccs_codex_reasoning_deltas_no_spam_in_none_mode() {
         let thinking_label_count = output.matches("Thinking:").count();
         assert!(
             thinking_label_count <= 1,
-            "Expected <= 1 'Thinking:' label in None mode, found {}.\n\nOutput:\n{}",
-            thinking_label_count,
-            output
+            "Expected <= 1 'Thinking:' label in None mode, found {thinking_label_count}.\n\nOutput:\n{output}"
         );
 
         // Verify reasoning content is present (not lost)
         if thinking_label_count > 0 {
             assert!(
                 output.contains("First chunk") || output.contains("fifth"),
-                "Expected accumulated reasoning content to be present. Output:\n{}",
-                output
+                "Expected accumulated reasoning content to be present. Output:\n{output}"
             );
         }
     });
@@ -419,9 +399,7 @@ fn test_ccs_codex_reasoning_deltas_no_spam_in_basic_mode() {
         let thinking_label_count = output.matches("Thinking:").count();
         assert!(
             thinking_label_count <= 1,
-            "Expected <= 1 'Thinking:' label in Basic mode, found {}.\n\nOutput:\n{}",
-            thinking_label_count,
-            output
+            "Expected <= 1 'Thinking:' label in Basic mode, found {thinking_label_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -455,16 +433,13 @@ fn test_ccs_codex_agent_message_deltas_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/codex]").count();
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 '[ccs/codex]' prefix in None mode for agent_message deltas, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 '[ccs/codex]' prefix in None mode for agent_message deltas, found {prefix_count}.\n\nOutput:\n{output}"
         );
 
         // Verify the content is present (not lost)
         assert!(
             output.contains("Hello World!"),
-            "Expected accumulated agent_message content to be present. Output:\n{}",
-            output
+            "Expected accumulated agent_message content to be present. Output:\n{output}"
         );
     });
 }
@@ -495,15 +470,12 @@ fn test_ccs_codex_agent_message_deltas_no_spam_in_basic_mode() {
         let prefix_count = output.matches("[ccs/codex]").count();
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 '[ccs/codex]' prefix in Basic mode for agent_message deltas, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 '[ccs/codex]' prefix in Basic mode for agent_message deltas, found {prefix_count}.\n\nOutput:\n{output}"
         );
 
         assert!(
             output.contains("Test message"),
-            "Expected accumulated agent_message content to be present. Output:\n{}",
-            output
+            "Expected accumulated agent_message content to be present. Output:\n{output}"
         );
     });
 }
@@ -532,11 +504,9 @@ fn test_ccs_glm_extreme_text_deltas_no_spam_in_none_mode() {
         );
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream, 
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#
+            ).unwrap();
         }
 
         stream.push_str(
@@ -556,16 +526,13 @@ fn test_ccs_glm_extreme_text_deltas_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 1,
-            "Expected <= 1 '[ccs/glm]' prefix in None mode for 100 text deltas, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 1 '[ccs/glm]' prefix in None mode for 100 text deltas, found {prefix_count}.\n\nOutput:\n{output}"
         );
 
         // Verify content is present (should contain multiple words)
         assert!(
             output.contains("word0") && output.contains("word99"),
-            "Expected accumulated text content (word0...word99) to be present. Output:\n{}",
-            output
+            "Expected accumulated text content (word0...word99) to be present. Output:\n{output}"
         );
     });
 }
@@ -608,22 +575,18 @@ fn test_ccs_glm_two_text_blocks_both_flushed() {
         // Should have both blocks
         assert!(
             output.contains("first block"),
-            "Expected 'first block' to be present. Output:\n{}",
-            output
+            "Expected 'first block' to be present. Output:\n{output}"
         );
         assert!(
             output.contains("second block"),
-            "Expected 'second block' to be present. Output:\n{}",
-            output
+            "Expected 'second block' to be present. Output:\n{output}"
         );
 
         // Should have at most 2 prefixes (one per block)
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 2,
-            "Expected <= 2 '[ccs/glm]' prefixes for 2 text blocks, found {}.\n\nOutput:\n{}",
-            prefix_count,
-            output
+            "Expected <= 2 '[ccs/glm]' prefixes for 2 text blocks, found {prefix_count}.\n\nOutput:\n{output}"
         );
     });
 }
@@ -657,9 +620,8 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
         );
         for i in 0..20 {
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"think{} "}}}}}}
-"#,
-                i
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"think{i} "}}}}}}
+"#
             ));
         }
         stream.push_str(
@@ -674,9 +636,8 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
         );
         for i in 0..30 {
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"text{} "}}}}}}
-"#,
-                i
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"text{i} "}}}}}}
+"#
             ));
         }
         stream.push_str(
@@ -691,9 +652,8 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
         );
         for i in 0..15 {
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"cmd{} "}}}}}}}}
-"#,
-                i
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"cmd{i} "}}}}}}}}
+"#
             ));
         }
         stream.push_str(
@@ -708,9 +668,8 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
         );
         for i in 0..25 {
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":3,"delta":{{"type":"thinking_delta","thinking":"more{} "}}}}}}
-"#,
-                i
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":3,"delta":{{"type":"thinking_delta","thinking":"more{i} "}}}}}}
+"#
             ));
         }
         stream.push_str(
@@ -725,9 +684,8 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
         );
         for i in 0..20 {
             stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":4,"delta":{{"type":"text_delta","text":"final{} "}}}}}}
-"#,
-                i
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":4,"delta":{{"type":"text_delta","text":"final{i} "}}}}}}
+"#
             ));
         }
         stream.push_str(
@@ -756,23 +714,19 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/glm]").count();
         assert!(
             prefix_count <= 6,
-            "Expected <= 6 '[ccs/glm]' prefixes for 110 deltas across 5 blocks, found {}.\n\n\
+            "Expected <= 6 '[ccs/glm]' prefixes for 110 deltas across 5 blocks, found {prefix_count}.\n\n\
              This indicates per-delta spam is still occurring!\n\n\
-             Output:\n{}",
-            prefix_count,
-            output
+             Output:\n{output}"
         );
 
         // Verify all content types are present (not lost during suppression)
         assert!(
             output.contains("think"),
-            "Expected thinking content to be present. Output:\n{}",
-            output
+            "Expected thinking content to be present. Output:\n{output}"
         );
         assert!(
             output.contains("text"),
-            "Expected text content to be present. Output:\n{}",
-            output
+            "Expected text content to be present. Output:\n{output}"
         );
     });
 }
@@ -796,9 +750,8 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
         // First turn - 30 reasoning deltas
         for i in 0..30 {
             stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason1_{} "}}}}
-"#,
-                i
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason1_{i} "}}}}
+"#
             ));
         }
         stream.push_str(
@@ -809,9 +762,8 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
         // First turn - 25 agent_message deltas
         for i in 0..25 {
             stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg1_{} "}}}}
-"#,
-                i
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg1_{i} "}}}}
+"#
             ));
         }
         stream.push_str(
@@ -822,9 +774,8 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
         // Second turn - 20 reasoning deltas
         for i in 0..20 {
             stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason2_{} "}}}}
-"#,
-                i
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason2_{i} "}}}}
+"#
             ));
         }
         stream.push_str(
@@ -835,9 +786,8 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
         // Second turn - 15 agent_message deltas
         for i in 0..15 {
             stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg2_{} "}}}}
-"#,
-                i
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg2_{i} "}}}}
+"#
             ));
         }
         stream.push_str(
@@ -860,33 +810,27 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
         let prefix_count = output.matches("[ccs/codex]").count();
         assert!(
             prefix_count <= 4,
-            "Expected <= 4 '[ccs/codex]' prefixes for 90 deltas across 4 items, found {}.\n\n\
+            "Expected <= 4 '[ccs/codex]' prefixes for 90 deltas across 4 items, found {prefix_count}.\n\n\
              This indicates per-delta spam is still occurring!\n\n\
-             Output:\n{}",
-            prefix_count,
-            output
+             Output:\n{output}"
         );
 
         // Verify content from both turns is present
         assert!(
             output.contains("reason1") || output.contains("Thinking"),
-            "Expected first turn reasoning content to be present. Output:\n{}",
-            output
+            "Expected first turn reasoning content to be present. Output:\n{output}"
         );
         assert!(
             output.contains("msg1"),
-            "Expected first turn message content to be present. Output:\n{}",
-            output
+            "Expected first turn message content to be present. Output:\n{output}"
         );
         assert!(
             output.contains("reason2") || output.contains("Thinking"),
-            "Expected second turn reasoning content to be present. Output:\n{}",
-            output
+            "Expected second turn reasoning content to be present. Output:\n{output}"
         );
         assert!(
             output.contains("msg2"),
-            "Expected second turn message content to be present. Output:\n{}",
-            output
+            "Expected second turn message content to be present. Output:\n{output}"
         );
     });
 }

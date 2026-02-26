@@ -1,6 +1,6 @@
 //! Rebase state preservation and conflict tests.
 //!
-//! These tests use MockAppEffectHandler for in-memory testing without
+//! These tests use `MockAppEffectHandler` for in-memory testing without
 //! real filesystem or git operations.
 
 use std::path::PathBuf;
@@ -210,7 +210,7 @@ fn make_checkpoint_json(working_dir: &str, phase: &str) -> String {
     format!(
         r#"{{
             "version": 3,
-            "phase": "{}",
+            "phase": "{phase}",
             "iteration": 1,
             "total_iterations": 1,
             "reviewer_pass": 0,
@@ -247,8 +247,8 @@ fn make_checkpoint_json(working_dir: &str, phase: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -259,8 +259,7 @@ fn make_checkpoint_json(working_dir: &str, phase: &str) -> String {
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        phase, working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -305,8 +304,8 @@ fn make_checkpoint_json_with_execution_history(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-rebase-conflict",
@@ -317,8 +316,7 @@ fn make_checkpoint_json_with_execution_history(working_dir: &str) -> String {
             "execution_history": {{"steps": [], "file_snapshots": {{}}}},
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -363,8 +361,8 @@ fn make_checkpoint_json_with_prompt_history(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-prompt-history",
@@ -375,7 +373,6 @@ fn make_checkpoint_json_with_prompt_history(working_dir: &str) -> String {
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": {{"postrebase_conflict_resolution": "Resolve conflicts"}}
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }

@@ -1,6 +1,6 @@
 //! Bounded memory growth tests
 //!
-//! These tests verify that execution_history does not grow unbounded during
+//! These tests verify that `execution_history` does not grow unbounded during
 //! long-running pipelines. Following TDD: these tests are written FIRST and
 //! should FAIL until the bounding mechanism is implemented in Step 11.
 //!
@@ -10,7 +10,7 @@
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! This module tests observable behavior:
-//! - execution_history length remains bounded
+//! - `execution_history` length remains bounded
 //! - Oldest entries are dropped when limit is reached
 //! - Checkpoint size remains reasonable with bounded history
 //! - Resume from checkpoint preserves bounded history correctly
@@ -74,20 +74,17 @@ fn test_execution_history_drops_oldest_entries_when_limit_reached() {
         let first_iteration = state
             .execution_history
             .front()
-            .map(|step| step.iteration)
-            .unwrap_or(0);
+            .map_or(0, |step| step.iteration);
 
         let last_iteration = state
             .execution_history
             .back()
-            .map(|step| step.iteration)
-            .unwrap_or(0);
+            .map_or(0, |step| step.iteration);
 
         // First entry should be from iteration 500 or later (oldest 500 dropped)
         assert!(
             first_iteration >= 500,
-            "First entry should be from iteration 500+, got {}",
-            first_iteration
+            "First entry should be from iteration 500+, got {first_iteration}"
         );
 
         // Last entry should be from iteration 1499
@@ -167,14 +164,12 @@ fn test_execution_history_bounded_growth_prevents_oom() {
         // After Step 11: This will pass with 1,000 entries (bounded)
         let max_allowed = 1000;
 
-        if state.execution_history.len() > max_allowed {
-            panic!(
-                "Execution history grew unbounded! Expected <= {}, got {}. \
-                 This test will pass after Step 11 implements bounding.",
-                max_allowed,
-                state.execution_history.len()
-            );
-        }
+        assert!(state.execution_history.len() <= max_allowed, 
+            "Execution history grew unbounded! Expected <= {}, got {}. \
+             This test will pass after Step 11 implements bounding.",
+            max_allowed,
+            state.execution_history.len()
+        );
     });
 }
 
@@ -206,15 +201,13 @@ fn test_checkpoint_size_remains_reasonable_with_bounded_history() {
         // After bounding: 1000 entries → ~375 KB
         assert!(
             size_mb < 1,
-            "Checkpoint size should be < 1 MB with bounded history, got {} MB",
-            size_mb
+            "Checkpoint size should be < 1 MB with bounded history, got {size_mb} MB"
         );
 
         // More specific: with 1000 entries, should be around 375-400 KB
         assert!(
             size_kb < 500,
-            "Checkpoint size should be < 500 KB with 1000 entries, got {} KB",
-            size_kb
+            "Checkpoint size should be < 500 KB with 1000 entries, got {size_kb} KB"
         );
     });
 }
@@ -293,9 +286,7 @@ fn test_bounded_history_maintains_recent_context() {
             assert_eq!(
                 curr_iteration,
                 prev_iteration + 1,
-                "Entries should be contiguous, found gap between {} and {}",
-                prev_iteration,
-                curr_iteration
+                "Entries should be contiguous, found gap between {prev_iteration} and {curr_iteration}"
             );
         }
     });
@@ -340,15 +331,13 @@ fn test_execution_history_bounded_with_10000_iterations() {
         let size_kb = json.len() / 1024;
 
         println!(
-            "Checkpoint size after 10,000 iterations (bounded to 1000): {} KB",
-            size_kb
+            "Checkpoint size after 10,000 iterations (bounded to 1000): {size_kb} KB"
         );
 
         // Size should be reasonable (< 500 KB) with bounded history
         assert!(
             size_kb < 500,
-            "Checkpoint size should be < 500 KB with bounded history, got {} KB",
-            size_kb
+            "Checkpoint size should be < 500 KB with bounded history, got {size_kb} KB"
         );
     });
 }
@@ -377,7 +366,7 @@ fn test_checkpoint_size_remains_stable_with_bounded_history() {
             let size_kb = json.len() / 1024;
             checkpoint_sizes.push((end, size_kb));
 
-            println!("After {} iterations: {} KB", end, size_kb);
+            println!("After {end} iterations: {size_kb} KB");
         }
 
         // After first 1000 iterations, size should be established
@@ -392,16 +381,12 @@ fn test_checkpoint_size_remains_stable_with_bounded_history() {
 
         assert!(
             (size_after_2000 as i32 - size_after_1000 as i32).abs() <= tolerance as i32,
-            "Checkpoint size should remain stable between 1000 and 2000 iterations: {} KB vs {} KB",
-            size_after_1000,
-            size_after_2000
+            "Checkpoint size should remain stable between 1000 and 2000 iterations: {size_after_1000} KB vs {size_after_2000} KB"
         );
 
         assert!(
             (size_after_3000 as i32 - size_after_1000 as i32).abs() <= tolerance as i32,
-            "Checkpoint size should remain stable between 1000 and 3000 iterations: {} KB vs {} KB",
-            size_after_1000,
-            size_after_3000
+            "Checkpoint size should remain stable between 1000 and 3000 iterations: {size_after_1000} KB vs {size_after_3000} KB"
         );
     });
 }
@@ -443,11 +428,7 @@ fn test_memory_does_not_grow_with_many_checkpoint_cycles() {
 
             assert!(
                 diff <= tolerance as i32,
-                "Checkpoint size should remain stable across cycles. Cycle {}: {} bytes vs initial {} bytes (diff: {} bytes)",
-                cycle,
-                size,
-                first_size,
-                diff
+                "Checkpoint size should remain stable across cycles. Cycle {cycle}: {size} bytes vs initial {first_size} bytes (diff: {diff} bytes)"
             );
         }
 
@@ -521,28 +502,23 @@ fn test_bounded_growth_with_mixed_phase_operations() {
         // Each phase should be represented (roughly 250 each)
         assert!(
             planning_count > 200 && planning_count < 300,
-            "Planning phase should be represented: {}",
-            planning_count
+            "Planning phase should be represented: {planning_count}"
         );
         assert!(
             development_count > 200 && development_count < 300,
-            "Development phase should be represented: {}",
-            development_count
+            "Development phase should be represented: {development_count}"
         );
         assert!(
             review_count > 200 && review_count < 300,
-            "Review phase should be represented: {}",
-            review_count
+            "Review phase should be represented: {review_count}"
         );
         assert!(
             commit_count > 200 && commit_count < 300,
-            "Commit phase should be represented: {}",
-            commit_count
+            "Commit phase should be represented: {commit_count}"
         );
 
         println!(
-            "Phase distribution: Planning={}, Development={}, Review={}, Commit={}",
-            planning_count, development_count, review_count, commit_count
+            "Phase distribution: Planning={planning_count}, Development={development_count}, Review={review_count}, Commit={commit_count}"
         );
     });
 }

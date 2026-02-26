@@ -5,7 +5,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**.
 //!
 //! Before writing, modifying, or debugging any integration test, you MUST read
 //! that document. Key principles:
@@ -20,7 +20,7 @@
 //! - Use **dependency injection** for configuration, not environment variables
 //!
 //! The utilities in this module support proper integration test patterns:
-//! - `run_ralph_cli_with_handler()`: Run ralph CLI with MockAppEffectHandler
+//! - `run_ralph_cli_with_handler()`: Run ralph CLI with `MockAppEffectHandler`
 //! - `run_ralph_cli_with_handlers()`: Run ralph CLI with both app and reducer mock handlers
 //! - `create_test_config_struct()`: Create a Config struct directly for dependency injection
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
@@ -52,11 +52,11 @@ use clap::Parser;
 use ralph_workflow::reducer::state::{PipelineState, PromptPermissionsState};
 use std::sync::Arc;
 
-/// Create a MemoryWorkspace from a MockAppEffectHandler.
+/// Create a `MemoryWorkspace` from a `MockAppEffectHandler`.
 ///
-/// This function creates a MemoryWorkspace pre-populated with all files
+/// This function creates a `MemoryWorkspace` pre-populated with all files
 /// from the handler's in-memory filesystem. This allows the pipeline
-/// to use MemoryWorkspace for file operations while the handler remains
+/// to use `MemoryWorkspace` for file operations while the handler remains
 /// the source of truth for effect handling.
 ///
 /// Returns both the workspace and a set of initial file paths for tracking deletions.
@@ -85,7 +85,7 @@ fn create_workspace_from_handler(
     (Arc::new(workspace), initial_paths, initial_files)
 }
 
-/// Sync files from a MemoryWorkspace back to a MockAppEffectHandler.
+/// Sync files from a `MemoryWorkspace` back to a `MockAppEffectHandler`.
 ///
 /// After the pipeline runs, the workspace contains newly created/modified files
 /// and may have deleted some files. This function:
@@ -93,7 +93,7 @@ fn create_workspace_from_handler(
 /// 2. Removes files from handler that were in the initial workspace but are now deleted
 ///
 /// **Important for existing files**: Files that exist in BOTH the workspace and
-/// handler are NOT overwritten, since they may have been updated by AppEffects
+/// handler are NOT overwritten, since they may have been updated by `AppEffects`
 /// during execution (e.g., `.agent/start_commit` is updated by `GitResetStartCommit`).
 ///
 /// This design means:
@@ -120,7 +120,7 @@ fn sync_workspace_to_handler(
         .collect();
 
     // Sync files from workspace to handler.
-    for (path, content) in workspace_files.iter() {
+    for (path, content) in &workspace_files {
         let content_str = String::from_utf8_lossy(content).to_string();
         let is_in_handler = handler_files_snapshot.contains(path);
 
@@ -176,11 +176,11 @@ pub fn with_locked_prompt_permissions(mut state: PipelineState) -> PipelineState
     state
 }
 
-/// Run ralph workflow with a custom MockAppEffectHandler.
+/// Run ralph workflow with a custom `MockAppEffectHandler`.
 ///
 /// This function allows tests to inject a mock effect handler to verify
 /// that the CLI properly delegates git/filesystem operations to the handler
-/// instead of calling git_helpers directly.
+/// instead of calling `git_helpers` directly.
 ///
 /// **NOTE:** This function uses `MemoryConfigEnvironment` for full isolation.
 /// The config environment is pre-configured with:
@@ -218,7 +218,7 @@ pub fn run_ralph_cli_with_handler(
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
     let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
+    argv.extend(args.iter().map(std::string::ToString::to_string));
 
     // Parse args using clap directly
     let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
@@ -323,7 +323,7 @@ pub fn run_ralph_cli_with_handlers(
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
     let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
+    argv.extend(args.iter().map(std::string::ToString::to_string));
 
     // Parse args using clap directly
     let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
@@ -375,7 +375,7 @@ pub fn run_ralph_cli_with_handlers(
     result
 }
 
-/// Run ralph workflow with a custom MemoryConfigEnvironment.
+/// Run ralph workflow with a custom `MemoryConfigEnvironment`.
 ///
 /// This variant of `run_ralph_cli_with_handler` allows passing a custom
 /// `MemoryConfigEnvironment` for tests that need to verify config file creation
@@ -387,7 +387,7 @@ pub fn run_ralph_cli_with_handlers(
 /// * `executor` - Process executor for external process execution
 /// * `config` - Pre-built Config struct (bypasses env var loading)
 /// * `handler` - Mock effect handler to capture effects
-/// * `config_env` - Custom MemoryConfigEnvironment for config path resolution
+/// * `config_env` - Custom `MemoryConfigEnvironment` for config path resolution
 ///
 /// # Example
 ///
@@ -416,7 +416,7 @@ pub fn run_ralph_cli_with_env(
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
     let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
+    argv.extend(args.iter().map(std::string::ToString::to_string));
 
     // Parse args using clap directly
     let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
@@ -451,15 +451,15 @@ pub fn run_ralph_cli_with_env(
     result
 }
 
-/// Create a MockProcessExecutor configured for successful agent execution.
+/// Create a `MockProcessExecutor` configured for successful agent execution.
 ///
 /// This helper prevents tests from spawning real AI agent processes by
-/// pre-configuring a MockProcessExecutor with successful results for all
+/// pre-configuring a `MockProcessExecutor` with successful results for all
 /// common agent types.
 ///
 /// # Returns
 ///
-/// Returns an Arc-wrapped MockProcessExecutor that returns success (exit code 0)
+/// Returns an Arc-wrapped `MockProcessExecutor` that returns success (exit code 0)
 /// for all agent commands (claude, codex, opencode, etc.).
 ///
 /// # Usage
@@ -480,7 +480,7 @@ pub fn run_ralph_cli_with_env(
 /// # Integration Test Style Guide Compliance
 ///
 /// This helper enforces the style guide rule: **NO Process Spawning in Tests**.
-/// Tests must use MockProcessExecutor instead of RealProcessExecutor to avoid
+/// Tests must use `MockProcessExecutor` instead of `RealProcessExecutor` to avoid
 /// spawning real agent subprocesses.
 ///
 /// # Command Mocking

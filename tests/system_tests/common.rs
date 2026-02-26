@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-/// Create a MockProcessExecutor configured for git command success.
+/// Create a `MockProcessExecutor` configured for git command success.
 ///
 /// This helper provides mock responses for common git commands used in
 /// rebase and other git operations, preventing real git subprocess spawning.

@@ -178,8 +178,8 @@ fn test_marker_file_check_is_documented_intentional() {
 
 /// Test that the event loop does not inject synthetic checkpoint events.
 ///
-/// Checkpointing must happen only through the SaveCheckpoint effect executed by
-/// the handler. The event loop must not directly apply CheckpointSaved events.
+/// Checkpointing must happen only through the `SaveCheckpoint` effect executed by
+/// the handler. The event loop must not directly apply `CheckpointSaved` events.
 #[test]
 fn test_event_loop_does_not_inject_checkpoint_saved_events() {
     with_default_timeout(|| {
@@ -231,7 +231,7 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &ralph_workflow::config::CloudConfig::disabled(),
+            cloud: &ralph_workflow::config::CloudConfig::disabled(),
         };
 
         // Start in FinalValidation so the loop runs without needing SaveCheckpoint.

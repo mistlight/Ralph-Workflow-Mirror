@@ -2,8 +2,8 @@
 //!
 //! These tests verify the plan workflow functionality.
 //!
-//! Note: Tests that require agent execution (developer_iters > 0) cannot be
-//! properly tested without the AgentExecutor trait infrastructure. Those tests
+//! Note: Tests that require agent execution (`developer_iters` > 0) cannot be
+//! properly tested without the `AgentExecutor` trait infrastructure. Those tests
 //! should be unit tests with mocked executors at the code level.
 //!
 //! These integration tests focus on behavior that doesn't require agent execution.
@@ -30,14 +30,14 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for plan tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for plan tests.
 fn create_plan_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
@@ -63,9 +63,9 @@ fn create_plan_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
 // These integration tests focus on behavior that doesn't require agent execution.
 // ============================================================================
 
-/// Test that the plan phase is skipped when developer_iters is set to zero.
+/// Test that the plan phase is skipped when `developer_iters` is set to zero.
 ///
-/// This verifies that when a user runs ralph with developer_iters=0,
+/// This verifies that when a user runs ralph with `developer_iters=0`,
 /// the planning phase is skipped entirely and no PLAN.md file is created.
 #[test]
 fn test_skips_plan_phase_when_zero_developer_iters() {
@@ -87,9 +87,9 @@ fn test_skips_plan_phase_when_zero_developer_iters() {
     });
 }
 
-/// Test that a commit can be created without a plan when developer_iters is zero.
+/// Test that a commit can be created without a plan when `developer_iters` is zero.
 ///
-/// This verifies that when a user runs ralph with developer_iters=0,
+/// This verifies that when a user runs ralph with `developer_iters=0`,
 /// a commit effect is triggered successfully without requiring a PLAN.md file.
 #[test]
 fn test_commit_without_plan_succeeds() {

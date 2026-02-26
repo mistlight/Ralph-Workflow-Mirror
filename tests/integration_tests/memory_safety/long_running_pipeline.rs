@@ -25,7 +25,7 @@ fn create_test_step(iteration: u32) -> ExecutionStep {
         iteration,
         "agent_invoked",
         StepOutcome::success(
-            Some(format!("output for iteration {}", iteration)),
+            Some(format!("output for iteration {iteration}")),
             vec![format!("file_{}.rs", iteration % 100)],
         ),
     )
@@ -98,9 +98,7 @@ fn test_checkpoint_size_remains_reasonable_with_max_history() {
 
         assert!(
             size_bytes < MAX_CHECKPOINT_SIZE,
-            "Checkpoint size {} bytes exceeds maximum {} bytes",
-            size_bytes,
-            MAX_CHECKPOINT_SIZE
+            "Checkpoint size {size_bytes} bytes exceeds maximum {MAX_CHECKPOINT_SIZE} bytes"
         );
 
         // Log size for regression tracking
@@ -140,8 +138,7 @@ fn test_memory_growth_rate_is_zero_after_limit_reached() {
         let first_iteration = state.execution_history.front().unwrap().iteration;
         assert!(
             first_iteration >= 1000,
-            "Oldest entry should be from recent iterations, got {}",
-            first_iteration
+            "Oldest entry should be from recent iterations, got {first_iteration}"
         );
     });
 }
@@ -179,13 +176,13 @@ fn test_heap_size_estimate_remains_bounded() {
                         output.as_ref().map_or(0, |s| s.len())
                             + files_modified
                                 .as_ref()
-                                .map_or(0, |files| files.iter().map(|s| s.capacity()).sum())
+                                .map_or(0, |files| files.iter().map(std::string::String::capacity).sum())
                     }
                     StepOutcome::Failure { error, signals, .. } => {
                         error.len()
                             + signals
                                 .as_ref()
-                                .map_or(0, |sigs| sigs.iter().map(|s| s.capacity()).sum())
+                                .map_or(0, |sigs| sigs.iter().map(std::string::String::capacity).sum())
                     }
                     StepOutcome::Partial {
                         completed,
@@ -205,9 +202,7 @@ fn test_heap_size_estimate_remains_bounded() {
 
         assert!(
             heap_size < MAX_HEAP_SIZE,
-            "Heap size {} exceeds maximum {}",
-            heap_size,
-            MAX_HEAP_SIZE
+            "Heap size {heap_size} exceeds maximum {MAX_HEAP_SIZE}"
         );
 
         println!("Estimated heap size: {} KB", heap_size / 1024);

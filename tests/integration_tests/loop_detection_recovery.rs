@@ -43,7 +43,7 @@ fn test_loop_detection_triggers_recovery() {
 
 /// Test that loop detection fields exist and function correctly.
 ///
-/// Verifies that loop detection fields are present in ContinuationState.
+/// Verifies that loop detection fields are present in `ContinuationState`.
 #[test]
 fn test_loop_detection_fields_exist() {
     with_default_timeout(|| {

@@ -3,7 +3,7 @@
 //! These tests verify that:
 //! - Per-run log directories are created with correct structure
 //! - Resume continues logging to the same run directory
-//! - event_loop.log does not contain sensitive content
+//! - `event_loop.log` does not contain sensitive content
 //!
 //! # Integration Test Style Guide
 //!
@@ -99,8 +99,7 @@ fn test_per_run_log_directory_creation_impl() -> Result<()> {
     let re = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.\d{3}Z(-\d{2})?$").unwrap();
     assert!(
         re.is_match(run_id),
-        "run_id format should match YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]: got {}",
-        run_id
+        "run_id format should match YYYY-MM-DD_HH-mm-ss.SSSZ[-NN]: got {run_id}"
     );
 
     // Verify run.json exists
@@ -164,8 +163,7 @@ fn test_event_loop_log_redaction_impl() -> Result<()> {
         .with_file(
             "PROMPT.md",
             format!(
-                "# Task: test\n## Goal\n{}\n## Acceptance\n- Pass\n\n{}",
-                sentinel_prompt, sentinel_secret
+                "# Task: test\n## Goal\n{sentinel_prompt}\n## Acceptance\n- Pass\n\n{sentinel_secret}"
             ),
         );
 
@@ -248,14 +246,14 @@ fn test_collision_handling_impl() -> Result<()> {
 
     // Create the base directory with agents subdirectory to simulate a collision
     // The collision detection checks for the agents subdirectory, not just the parent
-    let base_dir = std::path::PathBuf::from(format!(".agent/logs-{}", fixed_id));
+    let base_dir = std::path::PathBuf::from(format!(".agent/logs-{fixed_id}"));
     workspace
         .create_dir_all(&base_dir.join("agents"))
         .expect("Failed to create base directory for collision test");
 
     // Also create collision variants 1-5 with agents subdirectories to test proper collision handling
     for i in 1..=5 {
-        let collision_dir = std::path::PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i));
+        let collision_dir = std::path::PathBuf::from(format!(".agent/logs-{fixed_id}-{i:02}"));
         workspace
             .create_dir_all(&collision_dir.join("agents"))
             .expect("Failed to create collision directory");
@@ -263,21 +261,20 @@ fn test_collision_handling_impl() -> Result<()> {
 
     // Now create a RunLogContext with the fixed base run_id
     // It should skip base and collisions 1-5 and create collision variant 06
-    let ctx = RunLogContext::for_testing(fixed_id.clone(), &workspace)?;
+    let ctx = RunLogContext::for_testing(fixed_id, &workspace)?;
 
     // Verify the run_id has a collision suffix -06
     let run_id_str = ctx.run_id().as_str();
     assert!(
         run_id_str.ends_with("-06"),
-        "Run ID should have collision suffix -06, got: {}",
-        run_id_str
+        "Run ID should have collision suffix -06, got: {run_id_str}"
     );
 
     // Verify the directory exists
     assert!(workspace.exists(ctx.run_dir()));
 
     // Verify the directory name matches
-    let expected_dir = std::path::PathBuf::from(format!(".agent/logs-{}", run_id_str));
+    let expected_dir = std::path::PathBuf::from(format!(".agent/logs-{run_id_str}"));
     assert_eq!(
         ctx.run_dir(),
         &expected_dir,
@@ -327,15 +324,14 @@ fn test_no_legacy_logs_created_impl() -> Result<()> {
 
     // Verify no agent logs in legacy .agent/logs/ location
     let all_files = app_handler.get_all_files();
-    for (path, _) in all_files.iter() {
+    for (path, _) in &all_files {
         let path_str = path.to_string_lossy();
         // Check that no files starting with known prefixes exist in .agent/logs/
         if path_str.starts_with(".agent/logs/") {
             // Allow .agent/logs-<timestamp>/ directories but not .agent/logs/
             assert!(
                 path_str.starts_with(".agent/logs-"),
-                "Should not create legacy logs in .agent/logs/, found: {}",
-                path_str
+                "Should not create legacy logs in .agent/logs/, found: {path_str}"
             );
         }
     }
@@ -421,38 +417,31 @@ fn test_agent_log_headers_impl() -> Result<()> {
         // Verify header structure
         assert!(
             content.contains("# Ralph Agent Invocation Log"),
-            "Agent log {} should have header",
-            path_str
+            "Agent log {path_str} should have header"
         );
         assert!(
             content.contains("# Role:"),
-            "Agent log {} should specify role",
-            path_str
+            "Agent log {path_str} should specify role"
         );
         assert!(
             content.contains("# Agent:"),
-            "Agent log {} should specify agent name",
-            path_str
+            "Agent log {path_str} should specify agent name"
         );
         assert!(
             content.contains("# Model Index:"),
-            "Agent log {} should specify model index",
-            path_str
+            "Agent log {path_str} should specify model index"
         );
         assert!(
             content.contains("# Attempt:"),
-            "Agent log {} should specify attempt number",
-            path_str
+            "Agent log {path_str} should specify attempt number"
         );
         assert!(
             content.contains("# Phase:"),
-            "Agent log {} should specify phase",
-            path_str
+            "Agent log {path_str} should specify phase"
         );
         assert!(
             content.contains("# Timestamp:"),
-            "Agent log {} should have timestamp",
-            path_str
+            "Agent log {path_str} should have timestamp"
         );
     }
 
@@ -562,12 +551,11 @@ fn test_resume_logging_continuity_impl() -> Result<()> {
         }},
         "rebase_state": "NotStarted",
         "working_dir": "/mock/repo",
-        "run_id": "{}",
+        "run_id": "{run_id_str}",
         "resume_count": 0,
         "actual_developer_runs": 0,
         "actual_reviewer_runs": 0
-    }}"#,
-        run_id_str
+    }}"#
     );
 
     app_handler.add_file(".agent/checkpoint.json", &checkpoint_json);
@@ -716,28 +704,23 @@ fn test_event_loop_log_structure_impl() -> Result<()> {
         // Verify line contains expected fields
         assert!(
             line.contains("ts="),
-            "Line should contain timestamp: {}",
-            line
+            "Line should contain timestamp: {line}"
         );
         assert!(
             line.contains("phase="),
-            "Line should contain phase: {}",
-            line
+            "Line should contain phase: {line}"
         );
         assert!(
             line.contains("effect="),
-            "Line should contain effect: {}",
-            line
+            "Line should contain effect: {line}"
         );
         assert!(
             line.contains("event="),
-            "Line should contain event: {}",
-            line
+            "Line should contain event: {line}"
         );
         assert!(
             line.contains("ms="),
-            "Line should contain duration: {}",
-            line
+            "Line should contain duration: {line}"
         );
 
         // Verify sequence numbers are present and monotonically increasing
@@ -749,8 +732,7 @@ fn test_event_loop_log_structure_impl() -> Result<()> {
                 .collect();
             assert!(
                 !seq_str.is_empty(),
-                "Line should start with a sequence number: {}",
-                line
+                "Line should start with a sequence number: {line}"
             );
         }
     }

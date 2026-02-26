@@ -26,10 +26,10 @@ use crate::test_timeout::with_default_timeout;
 #[test]
 fn test_development_xml_valid_completed_status() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented the feature with all tests passing</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Test extraction
         let extracted = extract_development_result_xml(xml);
@@ -58,12 +58,12 @@ fn test_development_xml_valid_completed_status() {
 #[test]
 fn test_development_xml_valid_partial_status() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Started implementation, more work remains</ralph-summary>
 <ralph-files-changed>- src/main.rs</ralph-files-changed>
 <ralph-next-steps>Complete the remaining implementation tasks</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Test extraction
         let extracted = extract_development_result_xml(xml);
@@ -91,10 +91,10 @@ fn test_development_xml_valid_partial_status() {
 #[test]
 fn test_development_xml_valid_failed_status() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>failed</ralph-status>
 <ralph-summary>Could not complete due to missing dependency</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Test extraction
         let extracted = extract_development_result_xml(xml);
@@ -157,9 +157,9 @@ fn test_development_xml_extracted_from_ndjson() {
 #[test]
 fn test_development_xml_missing_status_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-summary>Missing status element</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -184,9 +184,9 @@ fn test_development_xml_missing_status_fails_validation() {
 #[test]
 fn test_development_xml_missing_summary_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -210,10 +210,10 @@ fn test_development_xml_missing_summary_fails_validation() {
 #[test]
 fn test_development_xml_invalid_status_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>invalid_status</ralph-status>
 <ralph-summary>Test</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -235,11 +235,11 @@ fn test_development_xml_invalid_status_fails_validation() {
 #[test]
 fn test_development_xml_duplicate_status_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Test</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -259,11 +259,11 @@ fn test_development_xml_duplicate_status_fails_validation() {
 #[test]
 fn test_development_xml_unexpected_element_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Test</ralph-summary>
 <ralph-unknown>value</ralph-unknown>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -283,10 +283,10 @@ fn test_development_xml_unexpected_element_fails_validation() {
 #[test]
 fn test_development_xml_empty_status_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>   </ralph-status>
 <ralph-summary>Test</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -303,10 +303,10 @@ fn test_development_xml_empty_status_fails_validation() {
 #[test]
 fn test_development_xml_empty_summary_fails_validation() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>   </ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some(), "Should extract XML even if invalid");
@@ -334,9 +334,9 @@ fn test_development_xml_no_xml_returns_none() {
 #[test]
 fn test_development_xml_xsd_error_formatting() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml).unwrap();
         let validated = validate_development_result_xml(&extracted);
@@ -363,14 +363,14 @@ fn test_development_xml_xsd_error_formatting() {
 #[test]
 fn test_development_xml_with_all_optional_fields() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented full feature</ralph-summary>
 <ralph-files-changed>- src/main.rs
 - src/utils.rs
 - tests/feature_test.rs</ralph-files-changed>
 <ralph-next-steps>Run integration tests and deploy</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some());
@@ -396,10 +396,10 @@ fn test_development_xml_with_all_optional_fields() {
 #[test]
 fn test_development_xml_minimal_valid() {
     with_default_timeout(|| {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let extracted = extract_development_result_xml(xml);
         assert!(extracted.is_some());
