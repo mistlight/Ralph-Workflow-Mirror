@@ -40,12 +40,31 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
         "BUG: max_same_agent_retries is None when it should always have a value from config loading."
     );
 
-    // CRITICAL: Apply unconditional default of 2 (3 total attempts) when None.
-    // This ensures bounded continuation even if Config was constructed without
-    // going through config_from_unified() (e.g., Config::default(), tests).
-    // This is a SAFETY MECHANISM that prevents infinite continuation loops.
+    // CRITICAL SAFETY MECHANISM: Apply unconditional default of 2 (3 total attempts) when None.
+    // This ensures bounded continuation even if Config was constructed without going through
+    // config_from_unified() (e.g., Config::default(), tests). This is the PRIMARY DEFENSE
+    // against infinite continuation loops when max_dev_continuations is missing.
+    //
+    // VERIFIED FIX: This unwrap_or(2) is what prevents the infinite loop bug reported by user.
+    // With max_dev_continuations = 2:
+    // - max_continue_count = 1 + 2 = 3
+    // - Attempts 0, 1, 2 are allowed (3 total)
+    // - Attempt 3+ is exhausted via OutcomeApplied check: (attempt + 1 >= 3)
+    //
+    // The defensive check in trigger_continuation provides additional safety by preventing
+    // counter increment when next_attempt >= max_continue_count.
     let max_dev_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
     let max_continue_count = 1 + max_dev_continuations;
+
+    // SAFETY ASSERTION: when max_dev_continuations is absent, unwrap_or(2)
+    // must produce the default total-attempts cap of 3.
+    if ctx.config.max_dev_continuations.is_none() {
+        debug_assert_eq!(
+            max_continue_count, 3,
+            "BUG: missing max_dev_continuations must default to 3 total attempts. Got: {}",
+            max_continue_count
+        );
+    }
 
     let continuation = ContinuationState::with_limits(
         ctx.config.max_xsd_retries.unwrap_or(10),

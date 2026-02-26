@@ -87,12 +87,12 @@ pub const DEFAULT_KILL_CONFIG: KillConfig = KillConfig::new(
 #[cfg(unix)]
 pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
     let pid_str = pid.to_string();
-    let pgid_str = format!("-{pid_str}");
+    let process_group_id = format!("-{pid_str}");
 
     // Prefer killing the whole process group so descendant processes that inherited
     // stdout/stderr FDs don't keep pipes open after the parent is gone.
     let group_ok = executor
-        .execute("kill", &["-KILL", "--", &pgid_str], &[], None)
+        .execute("kill", &["-KILL", "--", &process_group_id], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false);
 
@@ -131,11 +131,11 @@ pub(crate) fn kill_process(
     config: KillConfig,
 ) -> KillResult {
     let pid_str = pid.to_string();
-    let pgid_str = format!("-{pid_str}");
+    let process_group_id = format!("-{pid_str}");
 
     // Send SIGTERM to the process group first (see module docs).
     let term_ok = executor
-        .execute("kill", &["-TERM", "--", &pgid_str], &[], None)
+        .execute("kill", &["-TERM", "--", &process_group_id], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false)
         || executor
@@ -165,7 +165,7 @@ pub(crate) fn kill_process(
         }
 
         let kill_ok = executor
-            .execute("kill", &["-KILL", "--", &pgid_str], &[], None)
+            .execute("kill", &["-KILL", "--", &process_group_id], &[], None)
             .map(|o| o.status.success())
             .unwrap_or(false)
             || executor

@@ -311,7 +311,7 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"file" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == b"file" => {
                 let attrs = get_attributes(&e);
                 let path = attrs
                     .get("path")
@@ -377,7 +377,7 @@ fn parse_reference_files(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"file" => {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref() == b"file" => {
                 let attrs = get_attributes(&e);
                 let path = attrs
                     .get("path")

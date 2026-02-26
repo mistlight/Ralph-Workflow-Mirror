@@ -247,18 +247,21 @@ fn test_continuation_budget_exhausted_switches_to_next_agent() {
         state,
         PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Partial),
     );
+    // UPDATED: After fix for wt-39, continuation budget exhaustion now completes the iteration
+    // and transitions to CommitMessage (or next phase) rather than staying in Development.
+    // This prevents the infinite loop where the system would restart continuation with a new agent.
     assert_eq!(
         new_state.phase,
-        PipelinePhase::Development,
-        "Should stay in Development phase to try next agent"
+        PipelinePhase::CommitMessage,
+        "Should complete iteration and transition to CommitMessage after budget exhaustion"
     );
     assert_eq!(
-        new_state.agent_chain.current_agent_index, 1,
-        "Should switch to next agent when continuation budget exhausted"
+        new_state.agent_chain.current_agent_index, 0,
+        "Agent chain should be reset after iteration completion"
     );
     assert_eq!(
         new_state.continuation.continuation_attempt, 0,
-        "Should reset continuation attempt for new agent"
+        "Should reset continuation attempt after iteration completion"
     );
 }
 
@@ -309,8 +312,6 @@ fn test_continuation_budget_exhausted_preserves_iteration() {
 #[test]
 fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
     use crate::agents::AgentRole;
-    use crate::reducer::effect::Effect;
-    use crate::reducer::orchestration::determine_next_effect;
     use crate::reducer::state::{AgentChainState, DevelopmentStatus};
 
     let agent_chain = AgentChainState::initial()
@@ -328,51 +329,35 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
     state.prompt_permissions.locked = true;
     state.prompt_permissions.restore_needed = true;
 
-    // Exhaust continuation for agent-a
-    state = reduce(
-        state,
-        PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
-    );
-    assert_eq!(state.agent_chain.current_agent_index, 1); // Now on agent-b
-
-    // Clean up context before next agent
-    state = reduce(
-        state,
-        PipelineEvent::development_continuation_context_cleaned(),
-    );
-
-    // Exhaust continuation for agent-b (last agent) with Failed status
-    // CRITICAL: Since all agents are exhausted AND last status is Failed,
-    // the reducer now transitions directly to AwaitingDevFix instead of
-    // just switching agents. This ensures the pipeline NEVER exits early
-    // due to budget exhaustion - it always continues through dev-fix flow.
+    // UPDATED (wt-39 fix): After continuation budget exhaustion, the system now completes
+    // the iteration and transitions to CommitMessage rather than staying in Development
+    // to try more agents within the same iteration. This prevents the infinite loop where
+    // continuation would restart after cycling through all agents.
+    //
+    // The new behavior establishes a clear contract: one continuation budget per iteration.
+    // If work is incomplete after exhausting the budget, the iteration completes and either:
+    // 1. Advances to next iteration (where different agents can be tried), OR
+    // 2. Transitions to next pipeline phase
+    //
+    // This ensures bounded execution per iteration and prevents unbounded agent fallback cycles.
     state = reduce(
         state,
         PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
     );
 
-    // Should transition to AwaitingDevFix (new behavior for non-terminating pipeline)
+    // After budget exhaustion, iteration completes and transitions to CommitMessage
     assert_eq!(
         state.phase,
-        PipelinePhase::AwaitingDevFix,
-        "Should transition to AwaitingDevFix when all agents exhausted with Failed status"
+        PipelinePhase::CommitMessage,
+        "Should complete iteration and transition to CommitMessage after continuation budget exhaustion"
     );
     assert_eq!(
-        state.previous_phase,
-        Some(PipelinePhase::Development),
-        "Should preserve previous phase"
+        state.agent_chain.current_agent_index, 0,
+        "Agent chain should be reset to first agent after iteration completion"
     );
-    assert!(
-        !state.dev_fix_triggered,
-        "dev_fix_triggered should be false so TriggerDevFixFlow executes"
-    );
-
-    // Now orchestration should trigger dev-fix flow
-    let effect = determine_next_effect(&state);
-    assert!(
-        matches!(effect, Effect::TriggerDevFixFlow { .. }),
-        "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
-        effect
+    assert_eq!(
+        state.continuation.continuation_attempt, 0,
+        "Continuation attempt should be reset after iteration completion"
     );
 }
 
@@ -428,24 +413,32 @@ fn test_continuation_budget_with_missing_config_key() {
         "Attempt 2 should not be exhausted"
     );
 
+    // Third trigger_continuation hits the defensive check (next_attempt = 3 >= 3)
     let state = state.trigger_continuation(
         DevelopmentStatus::Partial,
-        "partial work 3".to_string(),
+        "partial work 3 attempt".to_string(),
         None,
         None,
     );
-    assert_eq!(state.continuation_attempt, 3);
+    assert_eq!(
+        state.continuation_attempt, 2,
+        "defensive check should prevent increment to 3"
+    );
     assert!(
-        state.continuations_exhausted(),
-        "Attempt 3 should be exhausted (3 >= 3)"
+        !state.continuations_exhausted(),
+        "counter at 2, so 2 < 3 is true (not exhausted by counter check)"
+    );
+    assert!(
+        !state.continue_pending,
+        "defensive check should clear continue_pending"
     );
 }
 
 /// Test that continuation cap is enforced at the reducer level.
 ///
-/// This test verifies that when continuation_attempt reaches max_continue_count,
-/// the continuations_exhausted() check correctly identifies budget exhaustion.
-/// The orchestration layer uses this signal to fire ContinuationBudgetExhausted event.
+/// This test verifies that when the defensive check in trigger_continuation fires,
+/// the counter does not increment and continue_pending is cleared.
+/// The orchestration layer detects exhaustion via OutcomeApplied's (attempt + 1 >= max) check.
 #[test]
 fn test_orchestration_fires_budget_exhausted_at_cap() {
     use crate::reducer::state::DevelopmentStatus;
@@ -454,8 +447,8 @@ fn test_orchestration_fires_budget_exhausted_at_cap() {
     let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
     state.phase = PipelinePhase::Development;
 
-    // Simulate 3 continuation triggers (attempts 1, 2, 3)
-    for _ in 1..=3 {
+    // Simulate 2 continuation triggers (attempts 1, 2)
+    for _ in 1..=2 {
         state = reduce(
             state,
             PipelineEvent::development_iteration_continuation_triggered(
@@ -468,9 +461,182 @@ fn test_orchestration_fires_budget_exhausted_at_cap() {
         );
     }
 
-    assert_eq!(state.continuation.continuation_attempt, 3);
-    assert!(state.continuation.continuations_exhausted());
+    assert_eq!(state.continuation.continuation_attempt, 2);
+    assert!(!state.continuation.continuations_exhausted());
 
-    // Orchestration should derive ContinuationBudgetExhausted event
-    // This is tested indirectly through the integration test
+    // Attempt third continuation (defensive check prevents increment)
+    state = reduce(
+        state,
+        PipelineEvent::development_iteration_continuation_triggered(
+            0,
+            DevelopmentStatus::Partial,
+            "partial attempt 3".to_string(),
+            None,
+            None,
+        ),
+    );
+
+    assert_eq!(
+        state.continuation.continuation_attempt, 2,
+        "defensive check should prevent increment to 3"
+    );
+    assert!(
+        !state.continuation.continuations_exhausted(),
+        "counter at 2, so 2 < 3 is true"
+    );
+    assert!(
+        !state.continuation.continue_pending,
+        "defensive check should clear continue_pending"
+    );
+
+    // In normal flow, OutcomeApplied would check (continuation_attempt + 1 >= max_continue_count)
+    // which is (2 + 1 >= 3) = true, and emit ContinuationBudgetExhausted instead of
+    // ContinuationTriggered, preventing the defensive check from ever being reached.
+}
+
+/// Test that trigger_continuation defensive check prevents counter increment at boundary.
+///
+/// This is a more focused test of the fix for the infinite loop bug (wt-39). It verifies
+/// that when trigger_continuation is called at the boundary (attempt 2 with max 3), the
+/// defensive check prevents the counter from incrementing to 3, keeping it at 2 instead.
+///
+/// # Why This Test Matters
+///
+/// Before the fix, the code incremented the counter BEFORE checking the boundary:
+/// ```rust
+/// self.continuation_attempt = next_attempt; // BUG: Sets counter BEFORE boundary check
+/// if next_attempt >= self.max_continue_count { /* defensive check */ }
+/// ```
+///
+/// This allowed the counter to reach 3 (the max value) instead of staying at 2 (below max).
+/// The fix moved the boundary check BEFORE the increment:
+/// ```rust
+/// if next_attempt >= self.max_continue_count { return self; } // Return WITHOUT incrementing
+/// self.continuation_attempt = next_attempt; // Only update if not exhausted
+/// ```
+#[test]
+fn test_trigger_continuation_at_boundary_does_not_increment() {
+    use crate::reducer::state::DevelopmentStatus;
+
+    let continuation = ContinuationState::with_limits(10, 3, 2);
+    let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+    state.phase = PipelinePhase::Development;
+
+    // Simulate 2 continuation triggers (attempts 1, 2)
+    for _ in 1..=2 {
+        state = reduce(
+            state,
+            PipelineEvent::development_iteration_continuation_triggered(
+                0,
+                DevelopmentStatus::Partial,
+                "partial".to_string(),
+                None,
+                None,
+            ),
+        );
+    }
+
+    assert_eq!(state.continuation.continuation_attempt, 2);
+    assert!(!state.continuation.continuations_exhausted());
+
+    // Attempt third continuation (defensive check should prevent increment)
+    let old_counter = state.continuation.continuation_attempt;
+    state = reduce(
+        state,
+        PipelineEvent::development_iteration_continuation_triggered(
+            0,
+            DevelopmentStatus::Partial,
+            "partial attempt 3".to_string(),
+            None,
+            None,
+        ),
+    );
+
+    // CRITICAL: Counter must stay at 2, not increment to 3
+    assert_eq!(
+        state.continuation.continuation_attempt, old_counter,
+        "trigger_continuation defensive check must prevent counter increment at boundary"
+    );
+    assert_eq!(state.continuation.continuation_attempt, 2);
+    assert!(!state.continuation.continue_pending);
+    assert!(!state.continuation.context_write_pending);
+}
+
+/// Test that OutcomeApplied correctly detects exhaustion before triggering continuation.
+///
+/// This test verifies the orchestration-level exhaustion detection that prevents the
+/// infinite loop bug (wt-39). The `OutcomeApplied` event handler checks if the NEXT
+/// attempt would exceed the limit using `(attempt + 1 >= max)`, and if so, emits
+/// `ContinuationBudgetExhausted` instead of `ContinuationTriggered`.
+///
+/// # Why This Test Matters
+///
+/// The defensive check in `trigger_continuation` (tested above) is a safety net, but
+/// the PRIMARY defense against infinite loops is this orchestration-level check in
+/// `OutcomeApplied`. This test verifies that check works correctly:
+///
+/// - Attempt 0 completes with Partial → continues (0 + 1 = 1 < 3)
+/// - Attempt 1 completes with Partial → continues (1 + 1 = 2 < 3)
+/// - Attempt 2 completes with Partial → exhausts (2 + 1 = 3 >= 3)
+///
+/// After exhaustion, the system switches agents and resets the continuation counter to 0.
+#[test]
+fn test_outcome_applied_exhausts_before_triggering_third_continuation() {
+    use crate::reducer::event::DevelopmentEvent;
+    use crate::reducer::state::{DevelopmentStatus, DevelopmentValidatedOutcome};
+
+    let continuation = ContinuationState::with_limits(10, 3, 2);
+    let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+    state.phase = PipelinePhase::Development;
+    state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+    // Attempt 0 (initial) completes with Partial
+    state.development_validated_outcome = Some(DevelopmentValidatedOutcome {
+        iteration: 0,
+        status: DevelopmentStatus::Partial,
+        summary: "partial work".to_string(),
+        files_changed: None,
+        next_steps: None,
+    });
+    state = reduce(
+        state,
+        PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+    );
+    assert_eq!(state.continuation.continuation_attempt, 1);
+
+    // Attempt 1 completes with Partial
+    state.development_validated_outcome = Some(DevelopmentValidatedOutcome {
+        iteration: 0,
+        status: DevelopmentStatus::Partial,
+        summary: "more partial work".to_string(),
+        files_changed: None,
+        next_steps: None,
+    });
+    state = reduce(
+        state,
+        PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+    );
+    assert_eq!(state.continuation.continuation_attempt, 2);
+
+    // Attempt 2 completes with Partial
+    // CRITICAL: OutcomeApplied should detect exhaustion here via (2 + 1 >= 3) check
+    // and emit ContinuationBudgetExhausted, NOT ContinuationTriggered
+    state.development_validated_outcome = Some(DevelopmentValidatedOutcome {
+        iteration: 0,
+        status: DevelopmentStatus::Partial,
+        summary: "still more partial work".to_string(),
+        files_changed: None,
+        next_steps: None,
+    });
+    state = reduce(
+        state,
+        PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+    );
+
+    // After budget exhaustion, agent switches and counter resets to 0
+    assert_eq!(
+        state.continuation.continuation_attempt, 0,
+        "OutcomeApplied at attempt 2 should exhaust budget (2+1>=3) and reset counter via agent switch"
+    );
+    assert!(!state.continuation.is_continuation());
 }

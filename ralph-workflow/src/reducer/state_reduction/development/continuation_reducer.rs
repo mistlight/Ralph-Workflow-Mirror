@@ -8,6 +8,8 @@
 use crate::reducer::event::*;
 use crate::reducer::state::*;
 
+use super::reduce_development_event;
+
 pub(super) fn reduce_continuation_event(
     state: PipelineState,
     event: DevelopmentEvent,
@@ -21,15 +23,25 @@ pub(super) fn reduce_continuation_event(
             next_steps,
         } => {
             // Trigger continuation with context from the previous attempt
-            // Increment continuation attempt counter
+            let old_attempt = state.continuation.continuation_attempt;
+            let new_continuation =
+                state
+                    .continuation
+                    .trigger_continuation(status, summary, files_changed, next_steps);
+            let new_attempt = new_continuation.continuation_attempt;
+
+            // Only increment metrics if the continuation counter actually incremented.
+            // The defensive check in trigger_continuation may prevent the increment when
+            // at the budget boundary, in which case metrics should also not increment.
+            let metrics = if new_attempt > old_attempt {
+                state.metrics.increment_dev_continuation_attempt()
+            } else {
+                state.metrics
+            };
+
             PipelineState {
                 iteration,
-                continuation: state.continuation.trigger_continuation(
-                    status,
-                    summary,
-                    files_changed,
-                    next_steps,
-                ),
+                continuation: new_continuation,
                 development_context_prepared_iteration: None,
                 development_prompt_prepared_iteration: None,
                 development_xml_cleaned_iteration: None,
@@ -41,7 +53,7 @@ pub(super) fn reduce_continuation_event(
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
-                metrics: state.metrics.increment_dev_continuation_attempt(),
+                metrics,
                 ..state
             }
         }
@@ -162,28 +174,35 @@ pub(super) fn reduce_continuation_event(
             total_attempts: _,
             last_status,
         } => {
-            // Policy: Switch to next agent when continuations exhausted.
-            // CRITICAL: If all agents are exhausted AND work is incomplete (Failed/Partial status),
-            // transition directly to AwaitingDevFix to emit completion marker and invoke dev-fix flow.
-            // This ensures the pipeline NEVER exits early due to budget exhaustion - it always
-            // continues through the configured remediation path (AwaitingDevFix -> TriggerDevFixFlow
-            // -> completion marker write -> Interrupted -> SaveCheckpoint).
+            // CRITICAL FIX: After continuation budget exhaustion, COMPLETE the iteration
+            // rather than falling back to another agent within the same iteration.
+            //
+            // Previous behavior: Switch to next agent and stay in Development phase
+            // → Created infinite loop: attempt 1→2→exhaust→switch→restart→1→2→exhaust...
+            //
+            // New behavior: Complete the iteration (even if work incomplete) and either:
+            // 1. Advance to next iteration if dev_iters remain
+            // 2. Transition to AwaitingDevFix if all iterations exhausted
+            //
+            // This ensures bounded execution: after max_continue_count attempts fail,
+            // the system moves forward rather than cycling indefinitely with fresh agents.
+
             let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
 
-            // Check if all agents exhausted AND work incomplete
+            // Check if we should transition to remediation flow
             if new_agent_chain.is_exhausted()
                 && matches!(
                     last_status,
                     DevelopmentStatus::Failed | DevelopmentStatus::Partial
                 )
             {
-                // Transition to AwaitingDevFix for remediation attempt
+                // All agents exhausted AND work incomplete → try dev-fix flow
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::AwaitingDevFix,
                     previous_phase: Some(crate::reducer::event::PipelinePhase::Development),
                     iteration,
                     agent_chain: new_agent_chain,
-                    dev_fix_triggered: false, // CRITICAL: ensure TriggerDevFixFlow executes
+                    dev_fix_triggered: false,
                     continuation: ContinuationState {
                         continuation_attempt: 0,
                         invalid_output_attempts: 0,
@@ -193,7 +212,7 @@ pub(super) fn reduce_continuation_event(
                         same_agent_retry_count: 0,
                         same_agent_retry_pending: false,
                         same_agent_retry_reason: None,
-                        context_cleanup_pending: false, // No cleanup needed when transitioning to AwaitingDevFix
+                        context_cleanup_pending: false,
                         ..state.continuation
                     },
                     development_context_prepared_iteration: None,
@@ -206,11 +225,23 @@ pub(super) fn reduce_continuation_event(
                     ..state
                 }
             } else {
-                // Otherwise, fall back to next agent (if available)
-                PipelineState {
-                    phase: crate::reducer::event::PipelinePhase::Development,
+                // Agents remain OR work complete → COMPLETE iteration and advance
+                //
+                // CRITICAL: Do NOT stay in Development phase with reset continuation state.
+                // This would restart the continuation cycle, creating the infinite loop.
+                //
+                // Instead, emit IterationCompleted to advance to the next iteration or
+                // proceed to the next pipeline phase.
+                let next_event = DevelopmentEvent::IterationCompleted {
                     iteration,
-                    agent_chain: new_agent_chain,
+                    // Mark as output_valid even if status is Partial/Failed, because we've
+                    // exhausted our continuation budget and need to move forward rather than
+                    // loop indefinitely. The summary will reflect the incomplete status.
+                    output_valid: true,
+                };
+
+                // Reset continuation state and agent chain for next iteration
+                let state_after_completion = PipelineState {
                     continuation: ContinuationState {
                         continuation_attempt: 0,
                         invalid_output_attempts: 0,
@@ -223,15 +254,12 @@ pub(super) fn reduce_continuation_event(
                         context_cleanup_pending: true,
                         ..state.continuation
                     },
-                    development_context_prepared_iteration: None,
-                    development_prompt_prepared_iteration: None,
-                    development_xml_cleaned_iteration: None,
-                    development_agent_invoked_iteration: None,
-                    development_xml_extracted_iteration: None,
-                    development_validated_outcome: None,
-                    development_xml_archived_iteration: None,
+                    agent_chain: new_agent_chain.reset(),
                     ..state
-                }
+                };
+
+                // Process IterationCompleted event through the reducer
+                reduce_development_event(state_after_completion, next_event)
             }
         }
         DevelopmentEvent::ContinuationContextWritten {

@@ -2,7 +2,7 @@
 ///
 /// Returns `Some(output)` for events that should bypass the empty check (like streaming),
 /// or `None` for events that should go through the normal empty check.
-pub fn handle_item_started(ctx: &EventHandlerContext, item: Option<&CodexItem>) -> Option<String> {
+pub fn handle_item_started(ctx: &EventHandlerContext<'_>, item: Option<&CodexItem>) -> Option<String> {
     item.and_then(|item| match item.item_type.as_deref() {
         Some("command_execution") => {
             let output = handle_command_execution_started(ctx, item.command.clone());
@@ -43,7 +43,7 @@ pub fn handle_item_started(ctx: &EventHandlerContext, item: Option<&CodexItem>) 
 /// Returns `Some(output)` for events that should bypass the empty check (like streaming),
 /// or `None` for events that should go through the normal empty check.
 pub fn handle_item_completed(
-    ctx: &EventHandlerContext,
+    ctx: &EventHandlerContext<'_>,
     item: Option<&CodexItem>,
 ) -> Option<String> {
     item.and_then(|item| match item.item_type.as_deref() {

@@ -2,10 +2,10 @@
 // Contains the main validation logic and parsed commit message types.
 
 /// Example of a valid commit message XML for error messages.
-const EXAMPLE_COMMIT_XML: &str = r#"<ralph-commit>
+const EXAMPLE_COMMIT_XML: &str = r"<ralph-commit>
 <ralph-subject>feat(api): add user authentication</ralph-subject>
 <ralph-body>Implements JWT-based authentication for the API.</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>";
 
 /// Validate XML content against the XSD schema.
 ///

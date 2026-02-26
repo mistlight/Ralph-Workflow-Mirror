@@ -75,8 +75,8 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
     let context_end = (byte_index + 50).min(content.len());
     let safe_start = floor_char_boundary(content, context_start);
     let safe_end = ceil_char_boundary(content, context_end.max(safe_start));
-    let context = content.get(safe_start..safe_end).unwrap_or(content);
-    let preview = truncate_text(context, 100);
+    let ctx = content.get(safe_start..safe_end).unwrap_or(content);
+    let preview = truncate_text(ctx, 100);
 
     // Provide specific suggestions based on character type
     let suggestion = if ch == '\0' {

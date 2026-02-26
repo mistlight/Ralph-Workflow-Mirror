@@ -96,6 +96,16 @@ impl ContinuationState {
     /// - Attempts 0, 1, 2 are allowed (3 total)
     /// - Attempt 3+ triggers exhaustion
     ///
+    /// # Exhaustion Behavior
+    ///
+    /// When continuation budget is exhausted (`ContinuationBudgetExhausted` event):
+    /// - If all agents exhausted AND status is Failed/Partial → transition to AwaitingDevFix
+    /// - Otherwise → complete current iteration (via IterationCompleted) and advance to next iteration
+    ///
+    /// This ensures bounded execution: the system never restarts the continuation cycle
+    /// with a fresh agent within the same iteration, preventing infinite loops when work
+    /// remains incomplete despite exhausting the continuation budget.
+    ///
     /// # Naming Note
     ///
     /// The field is named `max_continue_count` rather than `max_total_attempts` because
@@ -121,11 +131,25 @@ impl ContinuationState {
         self.previous_files_changed = files_changed.map(|v| v.into_boxed_slice());
         self.previous_next_steps = next_steps;
 
+        // CRITICAL FIX: Check boundary BEFORE incrementing counter.
+        // With max_continue_count = 3:
+        // - At attempt 0: next_attempt = 1, 1 < 3 → continue (correct)
+        // - At attempt 1: next_attempt = 2, 2 < 3 → continue (correct)
+        // - At attempt 2: next_attempt = 3, 3 >= 3 → exhaust WITHOUT incrementing (correct)
+        //
+        // BEFORE FIX: Line 128 set continuation_attempt = next_attempt even when the defensive
+        // check triggered, allowing the counter to reach the boundary value (3) instead of
+        // staying below it (2). This caused the off-by-one bug where the system allowed
+        // one extra attempt beyond the configured limit.
+        //
+        // AFTER FIX: When the defensive check triggers, we return immediately WITHOUT updating
+        // continuation_attempt. The counter stays at 2, preventing the off-by-one bug.
         let next_attempt = self.continuation_attempt.saturating_add(1);
         if next_attempt >= self.max_continue_count {
-            // Defensive: if called at/over the budget boundary, do not schedule another
-            // continuation attempt. Keep state consistent by clearing pending flags.
-            self.continuation_attempt = next_attempt;
+            // At boundary: do not schedule another continuation AND do not increment counter.
+            // The exhaustion check in OutcomeApplied (iteration_reducer.rs:169-171)
+            // already emitted ContinuationBudgetExhausted, which will reset this counter.
+            // Clearing these flags ensures orchestration doesn't try to continue.
             self.continue_pending = false;
             self.context_write_pending = false;
             self.context_cleanup_pending = false;

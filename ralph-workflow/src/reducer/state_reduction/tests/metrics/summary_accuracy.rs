@@ -293,8 +293,11 @@ fn test_continuation_budget_exhausted_does_not_increment_completed() {
     });
     state = reduce(state, event);
 
-    // Should NOT increment dev_iterations_completed on budget exhaustion
-    assert_eq!(state.metrics.dev_iterations_completed, 0);
+    // UPDATED (wt-39 fix): After continuation budget exhaustion, the system now emits
+    // IterationCompleted to complete the iteration and prevent infinite loops.
+    // IterationCompleted increments dev_iterations_completed, so the count is now 1.
+    assert_eq!(state.metrics.dev_iterations_completed, 1,
+        "After wt-39 fix, continuation budget exhaustion completes the iteration, incrementing the counter");
 }
 
 #[test]

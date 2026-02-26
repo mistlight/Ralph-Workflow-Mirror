@@ -279,11 +279,11 @@ pub fn prompt_generate_commit_message_with_diff_with_log(
     let has_changes = !diff_content.is_empty();
 
     if !has_changes {
-        let content = "ERROR: Empty diff provided. This indicates a bug in the caller - \
+        let error_message = "ERROR: Empty diff provided. This indicates a bug in the caller - \
                 meaningful changes should be checked before requesting a commit message."
             .to_string();
         return RenderedTemplate {
-            content,
+            content: error_message,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![],
@@ -315,12 +315,12 @@ pub fn prompt_generate_commit_message_with_diff_with_log(
         Err(e) => {
             eprintln!("Warning: Failed to render commit template: {e}");
             // Last resort: simple inline prompt with manual log
-            let content = format!(
+            let fallback_prompt = format!(
                 "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
                  Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
             );
             RenderedTemplate {
-                content,
+                content: fallback_prompt,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![SubstitutionEntry {
@@ -483,7 +483,7 @@ pub fn prompt_commit_xsd_retry_with_log(
 
     // If both files are missing, return fallback with manual log
     if !schema_exists && !last_output_exists {
-        let content = format!(
+        let fallback_content = format!(
             "{}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
              Error: {}\n\n\
              The schema and previous output files could not be found. \
@@ -492,7 +492,7 @@ pub fn prompt_commit_xsd_retry_with_log(
             diagnostic_prefix, xsd_error
         );
         return RenderedTemplate {
-            content,
+            content: fallback_content,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![SubstitutionEntry {
@@ -537,13 +537,13 @@ pub fn prompt_commit_xsd_retry_with_log(
         }
         Err(_) => {
             // Fallback with manual log
-            let content = format!(
+            let fallback_message = format!(
                 "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
                  Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
                  Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
             );
             RenderedTemplate {
-                content,
+                content: fallback_message,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![SubstitutionEntry {
