@@ -343,7 +343,10 @@ fn check_sparse_checkout_state() -> io::Result<()> {
             // for files outside the sparse checkout cone
             // We return Ok to allow the operation, but the caller should be aware
         }
-        (Err(_), _) | (_, Err(_)) | _ => {
+        (Err(_), _) | (_, Err(_)) => {
+            // Config not set - sparse checkout not enabled
+        }
+        _ => {
             // Config not set - sparse checkout not enabled, or other case
         }
     }

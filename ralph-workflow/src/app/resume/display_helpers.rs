@@ -48,7 +48,8 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
         2 => parts.push("--verbose".to_string()),
         3 => parts.push("--full".to_string()),
         4 => parts.push("--debug".to_string()),
-        1 | _ => {} // Normal is default or unknown
+        1 => {} // Normal (default)
+        _ => {} // Unknown
     }
 
     // Add --show-streaming-metrics if true
