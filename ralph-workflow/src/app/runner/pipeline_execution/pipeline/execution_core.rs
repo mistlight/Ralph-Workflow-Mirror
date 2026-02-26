@@ -81,6 +81,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     use crate::reducer::PipelineState;
     use std::sync::Arc;
     use std::time::Duration;
+    use crate::checkpoint::RunContext;
 
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
@@ -110,7 +111,6 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
     // Create run context - either new or from checkpoint
-    use crate::checkpoint::RunContext;
     let run_context = resume_checkpoint.as_ref().map_or_else(
         RunContext::new,
         RunContext::from_checkpoint

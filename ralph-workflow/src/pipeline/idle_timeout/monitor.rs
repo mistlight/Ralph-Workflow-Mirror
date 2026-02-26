@@ -146,9 +146,6 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
     executor: Arc<dyn ProcessExecutor>,
     config: MonitorConfig,
 ) -> MonitorResult {
-    let timeout_secs = config.timeout_secs;
-    let check_interval = config.check_interval;
-    let kill_config = config.kill_config;
     use std::sync::atomic::Ordering;
 
     #[derive(Debug, Clone, Copy)]
@@ -158,6 +155,10 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
         last_sigkill_sent_at: Option<std::time::Instant>,
         triggered_at: std::time::Instant,
     }
+
+    let timeout_secs = config.timeout_secs;
+    let check_interval = config.check_interval;
+    let kill_config = config.kill_config;
 
     let mut timeout_triggered: Option<TimeoutEnforcementState> = None;
 
