@@ -188,10 +188,9 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
     }
 
     // Show helpful next step based on current phase
-    if let Some(next_step) = suggest_next_step(checkpoint) {
-        logger.info("");
-        logger.info(&format!("Next: {next_step}"));
-    }
+    let next_step = suggest_next_step(checkpoint);
+    logger.info("");
+    logger.info(&format!("Next: {next_step}"));
 
     // Show example commands for inspecting state
     logger.info("");

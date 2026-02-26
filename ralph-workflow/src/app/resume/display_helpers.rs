@@ -93,45 +93,45 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
 ///
 /// Returns a detailed, actionable description of what will happen next
 /// when the user resumes from this checkpoint.
-fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
+fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> String {
     match checkpoint.phase {
         PipelinePhase::Planning => {
-            Some("continue creating implementation plan from PROMPT.md".to_string())
+            "continue creating implementation plan from PROMPT.md".to_string()
         }
-        PipelinePhase::PreRebase => Some("complete rebase before starting development".to_string()),
+        PipelinePhase::PreRebase => "complete rebase before starting development".to_string(),
         PipelinePhase::PreRebaseConflict => {
-            Some("resolve rebase conflicts then continue to development".to_string())
+            "resolve rebase conflicts then continue to development".to_string()
         }
         PipelinePhase::Development => {
             if checkpoint.iteration < checkpoint.total_iterations {
-                Some(format!(
+                format!(
                     "continue development iteration {} of {} (will use same prompts as before)",
                     checkpoint.iteration + 1,
                     checkpoint.total_iterations
-                ))
+                )
             } else {
-                Some("move to review phase".to_string())
+                "move to review phase".to_string()
             }
         }
         PipelinePhase::Review => {
             if checkpoint.reviewer_pass < checkpoint.total_reviewer_passes {
-                Some(format!(
+                format!(
                     "continue review pass {} of {} (will review recent changes)",
                     checkpoint.reviewer_pass + 1,
                     checkpoint.total_reviewer_passes
-                ))
+                )
             } else {
-                Some("complete review cycle".to_string())
+                "complete review cycle".to_string()
             }
         }
-        PipelinePhase::PostRebase => Some("complete post-development rebase".to_string()),
-        PipelinePhase::PostRebaseConflict => Some("resolve post-rebase conflicts".to_string()),
-        PipelinePhase::CommitMessage => Some("finalize commit message".to_string()),
-        PipelinePhase::FinalValidation => Some("complete final validation".to_string()),
-        PipelinePhase::Complete => Some("pipeline complete!".to_string()),
-        PipelinePhase::Rebase => Some("complete rebase operation".to_string()),
+        PipelinePhase::PostRebase => "complete post-development rebase".to_string(),
+        PipelinePhase::PostRebaseConflict => "resolve post-rebase conflicts".to_string(),
+        PipelinePhase::CommitMessage => "finalize commit message".to_string(),
+        PipelinePhase::FinalValidation => "complete final validation".to_string(),
+        PipelinePhase::Complete => "pipeline complete!".to_string(),
+        PipelinePhase::Rebase => "complete rebase operation".to_string(),
         PipelinePhase::AwaitingDevFix => {
-            Some("attempt to fix pipeline failure and emit completion marker".to_string())
+            "attempt to fix pipeline failure and emit completion marker".to_string()
         }
         PipelinePhase::Interrupted => {
             // Provide more detailed information for interrupted state
@@ -156,7 +156,7 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
             // Explain what will happen on resume
             context.push("full pipeline will run from interrupted point".to_string());
 
-            Some(context.join(" - "))
+            context.join(" - ")
         }
     }
 }
