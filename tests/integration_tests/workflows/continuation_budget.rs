@@ -1118,3 +1118,97 @@ fn test_trigger_continuation_defensive_check_prevents_counter_increment() {
         );
     });
 }
+
+/// Regression test for infinite continuation loop bug (wt-39).
+///
+/// # Bug Description
+///
+/// When `max_dev_continuations` is missing from config (relying on default value of 2,
+/// yielding max_continue_count = 3), the system allowed continuations to proceed indefinitely
+/// when work status remained non-Complete (e.g., always Partial or Failed).
+///
+/// # Root Cause
+///
+/// The defensive check in `trigger_continuation` (budget.rs:137-147) incremented the counter
+/// BEFORE checking the boundary, allowing the counter to reach the max value instead of staying
+/// below it. This off-by-one bug caused the system to allow one extra attempt beyond the limit.
+///
+/// # Fix
+///
+/// The boundary check was moved BEFORE the counter increment (budget.rs:138-147), ensuring the
+/// counter stays at 2 when the defensive check triggers, not 3. The `OutcomeApplied` exhaustion
+/// check (iteration_reducer.rs:169-180) detects exhaustion via `(attempt + 1 >= max)`, which
+/// correctly identifies that the next attempt would exceed the budget.
+///
+/// # Test Strategy
+///
+/// This test simulates the exact scenario from the bug report:
+/// 1. Config has max_dev_continuations = None, defaulting to 2 (max_continue_count = 3)
+/// 2. Every attempt returns Partial status (never Complete)
+/// 3. Verify continuation stops after exactly 3 attempts (0, 1, 2), not indefinitely
+///
+/// The test tracks total attempts and uses a safety limit to prevent an actual infinite loop
+/// in the test itself. Before the fix, this test would fail because the counter would continue
+/// past 3 attempts.
+#[test]
+fn test_missing_max_dev_continuations_prevents_infinite_loop() {
+    with_default_timeout(|| {
+        // Reproduce the infinite loop bug from user report:
+        // Config.max_dev_continuations is None (missing from config)
+        // After unwrap_or(2) in create_initial_state_with_config, max_continue_count = 3
+        let continuation = ContinuationState::with_limits(10, 3, 2);
+        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+
+        // Track total attempt count to detect infinite loop
+        let mut total_attempts = 0;
+        const MAX_SAFE_ATTEMPTS: usize = 10; // Safety limit to prevent actual infinite loop in test
+
+        // Simulate the scenario from logs: every attempt returns Partial (never Complete)
+        for attempt in 0..MAX_SAFE_ATTEMPTS {
+            // Simulate OutcomeApplied with Partial status
+            state.development_validated_outcome = Some(
+                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
+                    iteration: 0,
+                    status: DevelopmentStatus::Partial,
+                    summary: format!("Partial work attempt {}", attempt),
+                    files_changed: None,
+                    next_steps: Some("Continue work".to_string()),
+                },
+            );
+
+            state = reduce(
+                state,
+                PipelineEvent::Development(DevelopmentEvent::OutcomeApplied { iteration: 0 }),
+            );
+
+            total_attempts += 1;
+
+            // After exactly 3 attempts (0, 1, 2), continuation should exhaust
+            // and agent chain should advance (resetting continuation_attempt to 0)
+            if total_attempts == 3 {
+                assert_eq!(
+                    state.continuation.continuation_attempt, 0,
+                    "CRITICAL BUG: After 3 attempts, continuation should be exhausted and counter reset. \
+                     Instead, continuation continues indefinitely. This is the infinite loop bug."
+                );
+                break;
+            }
+
+            // If we reach more than 3 attempts without exhaustion, the bug persists
+            if total_attempts > 3 {
+                panic!(
+                    "INFINITE LOOP BUG REPRODUCED: Continuation continued past 3 attempts (attempt {}). \
+                     Expected exhaustion at attempt 3 with max_continue_count=3.",
+                    total_attempts
+                );
+            }
+        }
+
+        // Verify we stopped at exactly 3 attempts
+        assert_eq!(
+            total_attempts, 3,
+            "Continuation should stop after exactly 3 attempts, not run indefinitely"
+        );
+    });
+}
