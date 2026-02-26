@@ -188,17 +188,17 @@ impl BriefDescription for StepOutcome {
                 ..
             } => {
                 output.as_ref().and_then(|out| {
-                    if !out.is_empty() {
-                        Some(format!("Success - {}", out.lines().next().unwrap_or("")))
-                    } else {
+                    if out.is_empty() {
                         None
+                    } else {
+                        Some(format!("Success - {}", out.lines().next().unwrap_or("")))
                     }
                 }).or_else(|| {
                     files_modified.as_ref().and_then(|files| {
-                        if !files.is_empty() {
-                            Some(format!("Success - {} files modified", files.len()))
-                        } else {
+                        if files.is_empty() {
                             None
+                        } else {
+                            Some(format!("Success - {} files modified", files.len()))
                         }
                     })
                 }).unwrap_or_else(|| "Success".to_string())
