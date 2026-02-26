@@ -22,7 +22,9 @@ pub fn git_snapshot_in_repo(repo_root: &Path) -> io::Result<String> {
 /// Implementation of git snapshot.
 fn git_snapshot_impl(repo: &git2::Repository) -> io::Result<String> {
     let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true).recurse_untracked_dirs(true);
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
     let statuses = repo
         .statuses(Some(&mut opts))
         .map_err(|e| git2_to_io_error(&e))?;

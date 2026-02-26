@@ -6,8 +6,8 @@
 use ralph_workflow::git_helpers::get_hooks_dir;
 use ralph_workflow::git_helpers::hooks::HOOK_MARKER;
 use ralph_workflow::git_helpers::{
-    self, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase, git_snapshot, hooks,
-    start_agent_phase, uninstall_hooks, GitHelpers,
+    self, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase, git_snapshot,
+    git_snapshot_in_repo, hooks, start_agent_phase, uninstall_hooks, GitHelpers,
 };
 use ralph_workflow::logger::Logger;
 use std::fs::{self, File};
@@ -253,5 +253,40 @@ fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
         io_err.kind(),
         std::io::ErrorKind::NotFound,
         "expected NotFound kind for missing repo discovery error"
+    );
+}
+
+#[test]
+fn test_git_snapshot_excludes_gitignored_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+
+    // Configure git user for commits.
+    let mut cfg = repo.config().unwrap();
+    cfg.set_str("user.name", "test").unwrap();
+    cfg.set_str("user.email", "test@test.com").unwrap();
+
+    // Create .gitignore excluding .agent/ directory.
+    fs::write(dir.path().join(".gitignore"), ".agent/\n").unwrap();
+
+    // Stage and commit .gitignore so it takes effect.
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new(".gitignore")).unwrap();
+    index.write().unwrap();
+    let tree_oid = index.write_tree().unwrap();
+    let tree = repo.find_tree(tree_oid).unwrap();
+    let sig = git2::Signature::now("test", "test@test.com").unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+        .unwrap();
+
+    // Create an ignored file (simulates .agent/tmp/plan.xml from pipeline).
+    fs::create_dir_all(dir.path().join(".agent/tmp")).unwrap();
+    fs::write(dir.path().join(".agent/tmp/plan.xml"), "content").unwrap();
+
+    // git_snapshot_in_repo should NOT report gitignored files.
+    let snapshot = git_snapshot_in_repo(dir.path()).unwrap();
+    assert!(
+        snapshot.trim().is_empty(),
+        "git_snapshot should not include gitignored files, got: {snapshot}"
     );
 }

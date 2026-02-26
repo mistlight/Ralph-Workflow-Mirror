@@ -260,17 +260,25 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         },
         CommitEvent::Skipped { .. } => {
             if let Some(resume_phase) = state.termination_resume_phase {
-                // Special case: commit was skipped by the AI during the pre-termination
-                // safety check.
+                // The pre-termination safety check detected uncommitted changes and
+                // routed here to attempt a commit.
                 //
-                // SAFETY: A skip MUST NOT unblock termination when we previously detected
-                // a dirty repo. Re-run the safety check after the skip and only proceed
-                // once the repo is actually clean.
+                // Two distinct skip scenarios:
+                //
+                // 1. Empty diff (orchestration-initiated skip): The diff check found
+                //    nothing to commit, so orchestration emitted SkipCommit. The repo
+                //    has no committable changes — unblock termination to prevent an
+                //    infinite loop (safety check → commit → empty diff → skip → repeat).
+                //
+                // 2. Non-empty diff (AI-driven skip): The AI chose to skip despite
+                //    changes existing. Re-run the safety check to verify the repo is
+                //    actually clean before allowing termination.
+                let checked = state.commit_diff_empty;
                 return PipelineState {
                     commit: CommitState::Skipped,
                     phase: resume_phase,
                     termination_resume_phase: None,
-                    pre_termination_commit_checked: false,
+                    pre_termination_commit_checked: checked,
                     previous_phase: None,
                     commit_prompt_prepared: false,
                     commit_agent_invoked: false,

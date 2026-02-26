@@ -150,3 +150,29 @@ fn test_skip_does_not_unblock_termination_when_safety_commit_pending() {
         "Skip during safety-check commit must not unblock termination"
     );
 }
+
+#[test]
+fn test_empty_diff_skip_unblocks_termination_when_safety_commit_pending() {
+    // When the pre-termination safety check detected a dirty repo and routed into
+    // CommitMessage, but the diff is empty (orchestration-initiated skip, not AI-driven),
+    // the repo has nothing to commit. The skip MUST unblock termination to prevent an
+    // infinite loop: safety check → commit phase → empty diff → skip → safety check → ...
+    let mut state = PipelineState::initial(0, 0);
+    state.phase = PipelinePhase::CommitMessage;
+    state.termination_resume_phase = Some(PipelinePhase::Complete);
+    state.pre_termination_commit_checked = false;
+    state.commit_diff_empty = true; // Orchestration detected empty diff
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_skipped("No changes to commit (empty diff)".to_string()),
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::Complete);
+    assert_eq!(new_state.termination_resume_phase, None);
+    assert!(
+        new_state.pre_termination_commit_checked,
+        "Empty-diff skip during safety-check commit must unblock termination \
+         to prevent infinite loop"
+    );
+}
