@@ -56,33 +56,8 @@ impl PipelineState {
             last_push_error,
             unpushed_commits,
             last_pushed_commit,
-        ) = if let Some(cs) = cloud_state.as_ref() {
-            // Preserve checkpoint-safe cloud state for correct resume semantics.
-            // Note: git auth configuration can be re-run safely; however, restoring
-            // `git_auth_configured=true` for SSH key paths would skip the env-var
-            // setup in a new process. Reset it in that case.
-            let git_auth_configured = match &cs.cloud_config.git_remote.auth_method {
-                crate::config::GitAuthStateMethod::SshKey { key_path } if key_path.is_some() => {
-                    false
-                }
-                _ => cs.git_auth_configured,
-            };
-
-            (
-                cs.cloud_config.clone(),
-                cs.pending_push_commit.clone(),
-                git_auth_configured,
-                cs.pr_created,
-                cs.pr_url.clone(),
-                cs.pr_number,
-                cs.push_count,
-                cs.push_retry_count,
-                cs.last_push_error.clone(),
-                cs.unpushed_commits.clone(),
-                cs.last_pushed_commit.clone(),
-            )
-        } else {
-            (
+        ) = cloud_state.as_ref().map_or_else(
+            || (
                 crate::config::CloudStateConfig::disabled(),
                 None,
                 false,
@@ -94,8 +69,34 @@ impl PipelineState {
                 None,
                 Vec::new(),
                 None,
-            )
-        };
+            ),
+            |cs| {
+                // Preserve checkpoint-safe cloud state for correct resume semantics.
+                // Note: git auth configuration can be re-run safely; however, restoring
+                // `git_auth_configured=true` for SSH key paths would skip the env-var
+                // setup in a new process. Reset it in that case.
+                let git_auth_configured = match &cs.cloud_config.git_remote.auth_method {
+                    crate::config::GitAuthStateMethod::SshKey { key_path } if key_path.is_some() => {
+                        false
+                    }
+                    _ => cs.git_auth_configured,
+                };
+
+                (
+                    cs.cloud_config.clone(),
+                    cs.pending_push_commit.clone(),
+                    git_auth_configured,
+                    cs.pr_created,
+                    cs.pr_url.clone(),
+                    cs.pr_number,
+                    cs.push_count,
+                    cs.push_retry_count,
+                    cs.last_push_error.clone(),
+                    cs.unpushed_commits.clone(),
+                    cs.last_pushed_commit.clone(),
+                )
+            }
+        );
 
         let mut state = Self {
             phase: map_checkpoint_phase(checkpoint.phase),
