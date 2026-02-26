@@ -226,4 +226,18 @@ mod tests {
             "prompt must not leak iteration information; got: {prompt}"
         );
     }
+
+    #[test]
+    fn test_generate_analysis_prompt_excludes_unverifiable_plan_items_from_accounting() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+        let prompt = generate_analysis_prompt("Plan", "Diff", &workspace);
+
+        assert!(
+            prompt
+                .contains("Do not count plan items that cannot be verified from codebase evidence"),
+            "prompt must instruct verifier to skip unverifiable plan items; got: {prompt}"
+        );
+    }
 }

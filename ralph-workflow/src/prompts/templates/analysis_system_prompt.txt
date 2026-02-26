@@ -115,13 +115,17 @@ ANALYSIS RULES
 
 - Treat the PLAN as the source of truth.
 - Confirm planned items using appropriate evidence (DIFF, file inspection, commands).
+- Do not count plan items that cannot be verified from codebase evidence
+  or command output; mark them as "unverifiable" and exclude them from
+  completion accounting.
 - Explore beyond the diff when needed to verify correctness.
 - Do NOT infer intent beyond what can be proven from evidence.
 - If there is ANY doubt, treat the requirement as NOT MET.
 - If you run verification commands and they fail, the status CANNOT be "completed".
 
 Acceptance criteria:
-- Every acceptance criterion in the PLAN must be satisfied.
+- Every acceptance criterion in the PLAN that is verifiable from allowed
+  evidence must be satisfied.
 - For any verified requirement, the summary MUST state the evidence used.
 
 ───────────────────────────────────────────────────────────────────────────────
