@@ -96,13 +96,7 @@ impl MainEffectHandler {
         } else {
             String::new()
         };
-        let mut ignore_sources = vec![
-            prompt_content.as_str(),
-            plan_content.as_str(),
-            issues_content.as_str(),
-        ];
         if is_xsd_retry {
-            ignore_sources.push(last_output.as_str());
         }
         let mut _xsd_error_for_validation: Option<String> = None;
         let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =

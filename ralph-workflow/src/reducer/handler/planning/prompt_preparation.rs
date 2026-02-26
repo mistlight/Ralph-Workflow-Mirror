@@ -44,7 +44,6 @@ impl MainEffectHandler {
             })?;
         }
 
-        let mut ignore_sources_owned: Vec<String> = Vec::new();
         let continuation_state = &self.state.continuation;
 
         let (prompt, template_name, prompt_key, was_replayed, _should_validate, rendered_log) =
@@ -188,7 +187,6 @@ impl MainEffectHandler {
                                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     }
                                 })?;
-                            ignore_sources_owned.push(prompt_md.clone());
                             PromptContentReference::inline(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
@@ -279,7 +277,6 @@ impl MainEffectHandler {
                                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     }
                                 })?;
-                            ignore_sources_owned.push(prompt_md.clone());
                             PromptContentReference::inline(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {

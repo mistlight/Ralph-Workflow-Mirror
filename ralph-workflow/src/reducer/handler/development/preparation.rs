@@ -87,7 +87,6 @@ impl MainEffectHandler {
         };
 
         let continuation_state = &self.state.continuation;
-        let mut ignore_sources_owned: Vec<String> = Vec::new();
         let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
         let (dev_prompt, template_name, prompt_key, was_replayed, _should_validate, rendered_log) =
@@ -288,7 +287,6 @@ impl MainEffectHandler {
                                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     }
                                 })?;
-                            ignore_sources_owned.push(prompt_md.clone());
                             PromptContentReference::inline(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
@@ -308,7 +306,6 @@ impl MainEffectHandler {
                                         path: ".agent/PLAN.md".to_string(),
                                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     })?;
-                            ignore_sources_owned.push(plan_md.clone());
                             PlanContentReference::Inline(plan_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
@@ -410,7 +407,6 @@ impl MainEffectHandler {
                                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     }
                                 })?;
-                            ignore_sources_owned.push(prompt_md.clone());
                             Some(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { .. } => None,
@@ -424,7 +420,6 @@ impl MainEffectHandler {
                                         path: ".agent/PLAN.md".to_string(),
                                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     })?;
-                            ignore_sources_owned.push(plan_md.clone());
                             Some(plan_md)
                         }
                         PromptInputRepresentation::FileReference { .. } => None,

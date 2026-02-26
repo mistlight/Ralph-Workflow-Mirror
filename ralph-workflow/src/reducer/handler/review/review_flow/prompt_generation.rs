@@ -72,7 +72,6 @@ impl MainEffectHandler {
             }
         };
 
-        let mut ignore_sources_owned: Vec<String> = Vec::new();
         let (plan_inline, diff_inline) = if matches!(prompt_mode, PromptMode::Normal) {
             let Some(inputs) = materialized_inputs else {
                 return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
@@ -93,7 +92,6 @@ impl MainEffectHandler {
                             .into());
                         }
                     };
-                    ignore_sources_owned.push(plan.clone());
                     Some(plan)
                 }
                 PromptInputRepresentation::FileReference { .. } => None,
@@ -114,7 +112,6 @@ impl MainEffectHandler {
                             .into());
                         }
                     };
-                    ignore_sources_owned.push(diff.clone());
                     Some(diff)
                 }
                 PromptInputRepresentation::FileReference { .. } => None,
@@ -208,7 +205,6 @@ impl MainEffectHandler {
                 }
             }
         }
-        let mut _xsd_error_for_validation: Option<String> = None;
         let (
             prompt_key,
             review_prompt_xml,
@@ -227,7 +223,6 @@ impl MainEffectHandler {
                     .last_review_xsd_error
                     .as_deref()
                     .unwrap_or("XML output failed validation. Provide valid XML output.");
-                _xsd_error_for_validation = Some(xsd_error.to_string());
                 let rendered = prompt_review_xsd_retry_with_context_files_and_log(
                     ctx.template_context,
                     xsd_error,
