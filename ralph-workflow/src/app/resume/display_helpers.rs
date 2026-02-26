@@ -168,7 +168,8 @@ fn create_progress_bar(current: u32, total: u32) -> String {
     }
 
     let width = 20; // Total width of progress bar
-    let filled = ((f64::from(current) / f64::from(total)) * width as f64).round() as usize;
+    let filled_f64 = ((f64::from(current) / f64::from(total)) * width as f64).round();
+    let filled = filled_f64.max(0.0) as usize;
     let filled = filled.min(width);
 
     let mut bar = String::from("[");
@@ -181,7 +182,8 @@ fn create_progress_bar(current: u32, total: u32) -> String {
     }
     bar.push(']');
 
-    let percentage = ((f64::from(current) / f64::from(total)) * 100.0).round() as u32;
+    let percentage_f64 = ((f64::from(current) / f64::from(total)) * 100.0).round();
+    let percentage = percentage_f64.max(0.0) as u32;
     format!("{bar} {percentage}%")
 }
 

@@ -116,7 +116,8 @@ impl ExecutionHistoryBaseline {
     ///
     /// Returns error if the operation fails.
     pub fn check_heap_size(&self, measured: usize) -> Result<(), String> {
-        let max_allowed = (self.heap_size_bytes as f64 * self.tolerance) as usize;
+        let max_f64 = self.heap_size_bytes as f64 * self.tolerance;
+        let max_allowed = max_f64.max(0.0) as usize;
         if measured > max_allowed {
             Err(format!(
                 "Heap size {} bytes exceeds baseline {} bytes (tolerance: {}x)",
@@ -133,7 +134,8 @@ impl ExecutionHistoryBaseline {
     ///
     /// Returns error if the operation fails.
     pub fn check_serialized_size(&self, measured: usize) -> Result<(), String> {
-        let max_allowed = (self.serialized_size_bytes as f64 * self.tolerance) as usize;
+        let max_f64 = self.serialized_size_bytes as f64 * self.tolerance;
+        let max_allowed = max_f64.max(0.0) as usize;
         if measured > max_allowed {
             Err(format!(
                 "Serialized size {} bytes exceeds baseline {} bytes (tolerance: {}x)",
