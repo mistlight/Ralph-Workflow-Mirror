@@ -347,8 +347,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
     if !state.agent_chain.agents.is_empty() && state.agent_chain.is_exhausted() {
         let progressed = match state.phase {
-            PipelinePhase::Planning => state.iteration > 0,
-            PipelinePhase::Development => state.iteration > 0,
+            PipelinePhase::Planning | PipelinePhase::Development => state.iteration > 0,
             PipelinePhase::Review => state.reviewer_pass > 0,
             PipelinePhase::CommitMessage => matches!(
                 state.commit,

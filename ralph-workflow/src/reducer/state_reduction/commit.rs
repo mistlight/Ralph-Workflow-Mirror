@@ -44,7 +44,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         // This event is kept ONLY for backward compatibility with old checkpoints.
         // New handler code uses fallback instructions instead of emitting DiffFailed.
         // If this event is somehow emitted, treat as no-op to avoid termination.
-        CommitEvent::DiffFailed { .. } => state,
+        CommitEvent::DiffFailed { .. } | CommitEvent::PullRequestFailed { .. } => state,
         CommitEvent::DiffInvalidated { .. } => PipelineState {
             commit_diff_prepared: false,
             commit_diff_empty: false,
@@ -244,7 +244,6 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             ..state
         },
 
-        CommitEvent::PullRequestFailed { .. } => state,
         CommitEvent::GenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
             commit_prompt_prepared: false,

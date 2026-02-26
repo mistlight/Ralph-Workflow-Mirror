@@ -192,9 +192,8 @@ impl RebaseState {
     #[must_use] 
     pub fn current_head(&self) -> Option<String> {
         match self {
-            Self::NotStarted | Self::Skipped => None,
             Self::InProgress { original_head, .. } => Some(original_head.clone()),
-            Self::Conflicted { .. } => None,
+            Self::NotStarted | Self::Skipped | Self::Conflicted { .. } => None,
             Self::Completed { new_head } => Some(new_head.clone()),
         }
     }

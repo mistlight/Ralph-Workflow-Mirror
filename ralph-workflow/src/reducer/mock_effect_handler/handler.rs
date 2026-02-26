@@ -157,10 +157,7 @@ If you determine there are NO actual changes to commit, respond with:
                     crate::reducer::event::PipelinePhase::CommitMessage => {
                         PipelinePhase::CommitMessage
                     }
-                    crate::reducer::event::PipelinePhase::FinalValidation => {
-                        PipelinePhase::FinalValidation
-                    }
-                    crate::reducer::event::PipelinePhase::Finalizing => {
+                    crate::reducer::event::PipelinePhase::FinalValidation | crate::reducer::event::PipelinePhase::Finalizing => {
                         PipelinePhase::FinalValidation
                     }
                     crate::reducer::event::PipelinePhase::Complete => PipelinePhase::Complete,

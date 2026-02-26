@@ -20,7 +20,6 @@ impl MainEffectHandler {
         // If no fallbacks configured, fall back to context agent
         if agents.is_empty() {
             let fallback_agent = match role {
-                AgentRole::Developer => ctx.developer_agent.to_string(),
                 AgentRole::Reviewer => ctx.reviewer_agent.to_string(),
                 AgentRole::Commit => {
                     if let Some(commit_agent) = get_primary_commit_agent(ctx) {
@@ -36,7 +35,7 @@ impl MainEffectHandler {
                         )));
                     }
                 }
-                AgentRole::Analysis => ctx.developer_agent.to_string(),
+                AgentRole::Developer | AgentRole::Analysis => ctx.developer_agent.to_string(),
             };
             agents.push(fallback_agent);
         }

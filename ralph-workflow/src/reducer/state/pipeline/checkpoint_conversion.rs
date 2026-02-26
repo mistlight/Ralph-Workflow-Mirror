@@ -232,12 +232,10 @@ const fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
         }
         CheckpointPhase::Development => PipelinePhase::Development,
         CheckpointPhase::Review => PipelinePhase::Review,
-        CheckpointPhase::CommitMessage => PipelinePhase::CommitMessage,
+        CheckpointPhase::CommitMessage | CheckpointPhase::PostRebase | CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
         CheckpointPhase::FinalValidation => PipelinePhase::FinalValidation,
         CheckpointPhase::Complete => PipelinePhase::Complete,
         CheckpointPhase::PreRebaseConflict => PipelinePhase::Planning,
-        CheckpointPhase::PostRebase => PipelinePhase::CommitMessage,
-        CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
         CheckpointPhase::AwaitingDevFix => PipelinePhase::AwaitingDevFix,
         CheckpointPhase::Interrupted => PipelinePhase::Interrupted,
     }
