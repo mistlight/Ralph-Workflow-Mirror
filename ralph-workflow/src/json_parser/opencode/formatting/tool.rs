@@ -254,11 +254,10 @@ impl OpenCodeParser {
                 // Primary: pattern, optional: path
                 let pattern = obj.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                 let path = obj.get("path").and_then(|v| v.as_str());
-                if let Some(p) = path {
-                    format!("{pattern} in {p}")
-                } else {
-                    pattern.to_string()
-                }
+                path.map_or_else(
+                    || pattern.to_string(),
+                    |p| format!("{pattern} in {p}")
+                )
             }
             "grep" => {
                 // Primary: pattern, optional: path, include
@@ -276,11 +275,10 @@ impl OpenCodeParser {
                 // Primary: url, optional: format
                 let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
                 let format = obj.get("format").and_then(|v| v.as_str());
-                if let Some(f) = format {
-                    format!("{url} ({f})")
-                } else {
-                    url.to_string()
-                }
+                format.map_or_else(
+                    || url.to_string(),
+                    |f| format!("{url} ({f})")
+                )
             }
             "todowrite" | "todoread" => {
                 // Show count of todos if available

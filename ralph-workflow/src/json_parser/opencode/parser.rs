@@ -201,10 +201,10 @@ impl OpenCodeParser {
     fn next_fallback_step_id(&self, session: &str, timestamp: Option<u64>) -> String {
         let counter = self.fallback_step_counter.get().saturating_add(1);
         self.fallback_step_counter.set(counter);
-        match timestamp {
-            Some(ts) => format!("{session}:{ts}:{counter}"),
-            None => format!("{session}:fallback:{counter}"),
-        }
+        timestamp.map_or_else(
+            || format!("{session}:fallback:{counter}"),
+            |ts| format!("{session}:{ts}:{counter}")
+        )
     }
 
     /// Check if an `OpenCode` event is a control event (state management with no user output)

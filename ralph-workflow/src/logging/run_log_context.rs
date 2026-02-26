@@ -332,11 +332,10 @@ impl RunLogContext {
     /// `.agent/logs-<run_id>/agents/dev_2_a1.log` for retries.
     #[must_use]
     pub fn agent_log(&self, phase: &str, index: u32, attempt: Option<u32>) -> PathBuf {
-        let filename = if let Some(a) = attempt {
-            format!("{phase}_{index}_a{a}.log")
-        } else {
-            format!("{phase}_{index}.log")
-        };
+        let filename = attempt.map_or_else(
+            || format!("{phase}_{index}.log"),
+            |a| format!("{phase}_{index}_a{a}.log")
+        );
         self.run_dir.join("agents").join(filename)
     }
 
