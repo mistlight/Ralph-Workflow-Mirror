@@ -204,6 +204,7 @@ fn handle_rebase_conflicts(
         colors: *phase_ctx.colors,
         executor_arc: std::sync::Arc::clone(&phase_ctx.executor_arc),
         workspace: phase_ctx.workspace,
+        workspace_arc: std::sync::Arc::clone(&phase_ctx.workspace_arc),
     };
 
     match try_resolve_conflicts(

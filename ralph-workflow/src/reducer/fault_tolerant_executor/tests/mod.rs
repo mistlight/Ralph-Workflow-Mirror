@@ -32,7 +32,7 @@ use std::sync::Arc;
 /// Test helper: Workspace that times out when writing to a specific path
 ///
 /// Used to test timeout handling when saving prompts or other files.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct TimedOutWriteWorkspace {
     inner: MemoryWorkspace,
     fail_path: PathBuf,

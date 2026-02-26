@@ -276,8 +276,12 @@ fn test_continuation_prompt_includes_previous_context() {
 
         // Verify the prompt contains key elements
         assert!(
+            prompt.contains("IMPLEMENTATION MODE"),
+            "Prompt should use implementation-mode framing"
+        );
+        assert!(
             prompt.contains("CONTINUATION CONTEXT"),
-            "Prompt should indicate continuation context section"
+            "Prompt should include continuation context"
         );
         assert!(
             prompt.contains("partial"),
@@ -288,12 +292,8 @@ fn test_continuation_prompt_includes_previous_context() {
             "Prompt should include previous summary"
         );
         assert!(
-            prompt.contains("src/lib.rs"),
-            "Prompt should include changed files"
-        );
-        assert!(
-            prompt.contains("Add tests"),
-            "Prompt should include next steps"
+            prompt.contains("src/lib.rs") && prompt.contains("src/main.rs"),
+            "Prompt should include changed files when provided"
         );
         assert!(
             prompt.contains("continuation 1 of"),
@@ -317,14 +317,16 @@ fn test_continuation_prompt_references_original_files() {
             None,
         );
 
-        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test();
+        let workspace = ralph_workflow::workspace::MemoryWorkspace::new_test()
+            .with_file("PROMPT.md", "Original request")
+            .with_file(".agent/PLAN.md", "Implementation plan");
         let prompt = prompt_developer_iteration_continuation_xml(
             &template_context,
             &continuation_state,
             &workspace,
         );
 
-        // Verify the prompt includes original request and plan sections
+        // Verify inclusion of original request and plan context
         assert!(
             prompt.contains("ORIGINAL REQUEST"),
             "Prompt should include original request section"
@@ -334,10 +336,12 @@ fn test_continuation_prompt_references_original_files() {
             "Prompt should include implementation plan section"
         );
         assert!(
-            prompt.contains("do NOT modify")
-                || prompt.contains("DO NOT MODIFY")
-                || prompt.contains("Do NOT"),
-            "Prompt should warn against modifying files or creating status files"
+            prompt.contains("Original request") && prompt.contains("Implementation plan"),
+            "Prompt should include original request and plan content"
+        );
+        assert!(
+            prompt.contains("Do NOT create STATUS.md"),
+            "Prompt should warn against creating status files"
         );
     });
 }

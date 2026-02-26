@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::tempdir;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct WriteFailingWorkspace {
     inner: MemoryWorkspace,
     forbidden_write_path: PathBuf,
@@ -158,6 +158,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -250,6 +251,7 @@ fn test_prepare_planning_prompt_emits_template_rendered_on_validation_failure() 
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -348,6 +350,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -425,6 +428,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -516,6 +520,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -588,6 +593,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -641,6 +647,7 @@ fn test_prepare_planning_prompt_errors_when_prompt_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -712,6 +719,7 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -765,6 +773,7 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -840,6 +849,7 @@ fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

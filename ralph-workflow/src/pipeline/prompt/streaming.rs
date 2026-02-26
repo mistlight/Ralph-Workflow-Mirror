@@ -692,6 +692,7 @@ mod tests {
             executor,
             executor_arc: Arc::clone(&executor_arc),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
         };
 
         let cancel = Arc::new(AtomicBool::new(false));

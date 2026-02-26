@@ -165,6 +165,7 @@ pub fn run_review_pass(
         executor: ctx.executor,
         executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
         workspace: ctx.workspace,
+        workspace_arc: std::sync::Arc::clone(&ctx.workspace_arc),
     };
 
     let prompt_cmd = PromptCommand {

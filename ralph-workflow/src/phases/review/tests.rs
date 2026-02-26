@@ -27,6 +27,7 @@ struct TestFixture {
     executor_arc: Arc<dyn crate::executor::ProcessExecutor>,
     repo_root: PathBuf,
     workspace: MemoryWorkspace,
+    workspace_arc: Arc<dyn Workspace>,
     run_log_context: crate::logging::RunLogContext,
     cloud_config: crate::config::types::CloudConfig,
 }
@@ -37,6 +38,7 @@ impl TestFixture {
         let executor_arc =
             Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
         let repo_root = PathBuf::from("/test/repo");
+        let workspace_arc = Arc::new(workspace.clone()) as Arc<dyn Workspace>;
         let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         Self {
             config: Config::default(),
@@ -49,6 +51,7 @@ impl TestFixture {
             executor_arc,
             repo_root,
             workspace,
+            workspace_arc,
             run_log_context,
             cloud_config: crate::config::types::CloudConfig::disabled(),
         }
@@ -72,6 +75,7 @@ impl TestFixture {
             executor_arc: self.executor_arc.clone(),
             repo_root: self.repo_root.as_path(),
             workspace: &self.workspace,
+            workspace_arc: self.workspace_arc.clone(),
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
             cloud_config: &self.cloud_config,
@@ -164,6 +168,7 @@ fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
         executor_arc: executor_arc.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -221,6 +226,7 @@ fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
         executor_arc: executor_arc.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -289,6 +295,7 @@ fn test_run_review_pass_errors_on_missing_template_variables() {
         executor_arc: executor_arc.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -352,6 +359,7 @@ fn test_run_fix_pass_errors_on_missing_template_variables() {
         executor_arc: executor_arc.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

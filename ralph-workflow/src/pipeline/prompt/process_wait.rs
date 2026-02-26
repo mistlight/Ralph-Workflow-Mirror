@@ -230,6 +230,7 @@ mod tests {
             executor: executor_arc.as_ref(),
             executor_arc: Arc::clone(&executor_arc),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
         };
 
         let start = Instant::now();
@@ -286,6 +287,7 @@ mod tests {
             executor: executor_arc.as_ref(),
             executor_arc: Arc::clone(&executor_arc),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
         };
 
         let done = Arc::new(AtomicBool::new(false));

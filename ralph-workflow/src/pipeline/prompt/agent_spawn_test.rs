@@ -99,30 +99,6 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
     let monitor_should_stop_clone = Arc::clone(&monitor_should_stop);
     let activity_timestamp_clone = activity_timestamp.clone();
 
-    // Cancel stdout parsing as soon as idle-timeout enforcement begins.
-    {
-        let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
-        let should_stop_for_thread = Arc::clone(&monitor_should_stop);
-        let activity_for_thread = activity_timestamp.clone();
-        std::thread::spawn(move || {
-            use std::sync::atomic::Ordering;
-            let poll = std::time::Duration::from_millis(5);
-            loop {
-                if should_stop_for_thread.load(Ordering::Acquire) {
-                    return;
-                }
-                if crate::pipeline::idle_timeout::is_idle_timeout_exceeded(
-                    &activity_for_thread,
-                    idle_timeout_secs,
-                ) {
-                    stdout_cancel_for_thread.store(true, Ordering::Release);
-                    return;
-                }
-                std::thread::sleep(poll);
-            }
-        });
-    }
-
     let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
         std::sync::Arc::clone(&runtime.executor_arc);
 
@@ -130,12 +106,15 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
         let result =
             crate::pipeline::idle_timeout::monitor_idle_timeout_with_interval_and_kill_config(
                 activity_timestamp_clone,
+                None, // No file activity config
                 child_for_monitor,
-                idle_timeout_secs,
                 monitor_should_stop_clone,
                 monitor_executor,
-                monitor_check_interval,
-                kill_config,
+                crate::pipeline::idle_timeout::MonitorConfig {
+                    timeout_secs: idle_timeout_secs,
+                    check_interval: monitor_check_interval,
+                    kill_config,
+                },
             );
         if matches!(result, MonitorResult::TimedOut { .. }) {
             stdout_cancel_for_monitor.store(true, Ordering::Release);

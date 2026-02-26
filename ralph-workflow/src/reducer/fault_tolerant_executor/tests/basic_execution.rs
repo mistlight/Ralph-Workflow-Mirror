@@ -34,6 +34,7 @@ fn test_extracted_stdout_error_debug_log_is_gated_by_verbosity() {
         ),
     );
     let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
 
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
@@ -43,6 +44,7 @@ fn test_extracted_stdout_error_debug_log_is_gated_by_verbosity() {
         executor: executor_arc.as_ref(),
         executor_arc: Arc::clone(&executor_arc),
         workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
     };
 
     let env_vars: HashMap<String, String> = HashMap::new();
@@ -93,6 +95,7 @@ fn test_timeout_error_from_run_with_prompt_err_arm_triggers_timeout_fallback() {
         executor: executor_arc.as_ref(),
         executor_arc: Arc::clone(&executor_arc),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     let env_vars: HashMap<String, String> = HashMap::new();

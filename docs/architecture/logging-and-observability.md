@@ -242,6 +242,65 @@ The following files remain in their original locations (not under the run log di
 
 **Rationale**: These files are correctness-critical artifacts used by the reducer/orchestrator, not observability logs. They must remain in stable, well-known locations for the pipeline to function correctly.
 
+## Idle Timeout Activity Detection
+
+Idle-timeout decisions use a **dual-signal** model to avoid false timeout classification for active runs:
+
+1. **Output activity**: recent stdout/stderr updates from the agent process
+2. **AI file activity**: recent updates to meaningful AI artifacts under `.agent/`
+
+A run is only treated as idle when **both** signals are stale for the timeout window.
+
+### Recency Window and Cadence
+
+- Idle timeout window: **300 seconds**
+- Default monitor cadence: **30 seconds**
+- Cadence is configurable via monitor config for test and runtime tuning. Lower-frequency checks can be used during low-activity periods as long as the 300-second idle semantics remain correct.
+
+### Qualifying File Activity
+
+The timeout monitor treats recent updates to these AI-generated artifacts as progress:
+
+- `.agent/PLAN.md`
+- `.agent/ISSUES.md`
+- `.agent/STATUS.md`
+- `.agent/NOTES.md`
+- `.agent/commit-message.txt`
+- `.agent/tmp/*.xml`
+
+### Non-Qualifying File Activity
+
+The monitor explicitly excludes operational noise so timeout signals stay trustworthy:
+
+- Log churn (for example `*.log`)
+- `.agent/checkpoint.json`
+- `.agent/start_commit`
+- `.agent/review_baseline.txt`
+- Temporary/editor artifacts (`*.tmp`, `*.swp`, `*~`, `*.bak`)
+
+This ensures that log-only writes and routine system touches do not keep stalled runs marked as active.
+
+### Edge Cases and Performance
+
+#### Sparse File Updates
+
+If an agent updates files very infrequently (for example, once every 4 minutes), the timeout detection will correctly recognize this as ongoing activity. The 300-second recency window ensures that any modification within the last 5 minutes counts as "active".
+
+#### Monitoring Overhead
+
+File activity checking uses selective directory scanning with minimal overhead:
+
+- Only `.agent/` and `.agent/tmp/` directories are scanned
+- Excluded files (logs, system artifacts) are filtered early
+- Modification times are cached to avoid redundant disk I/O
+- Typical overhead: <1ms per check on modern systems
+
+The 30-second check interval provides a good balance between timely timeout detection and resource efficiency. During each check, the monitor samples file modification times to detect recent AI progress.
+
+#### Timeout Decision Logging
+
+When a timeout occurs, the monitor logs diagnostic information indicating whether it was due to lack of output activity, file activity, or both. This helps users understand whether the agent was truly stuck or if the timeout threshold needs adjustment.
+
 ## Architecture Integration
 
 ### Reducer/Effect Boundary

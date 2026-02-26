@@ -223,6 +223,7 @@ impl MainEffectHandler {
             executor: ctx.executor,
             executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
             workspace: ctx.workspace,
+            workspace_arc: std::sync::Arc::clone(&ctx.workspace_arc),
         };
 
         let started_event = PipelineEvent::agent_invocation_started(

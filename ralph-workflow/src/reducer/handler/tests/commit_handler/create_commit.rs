@@ -55,6 +55,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

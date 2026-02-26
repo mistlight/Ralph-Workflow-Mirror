@@ -1,3 +1,4 @@
+use super::super::monitor::MonitorConfig;
 use super::super::*;
 
 #[test]
@@ -36,18 +37,21 @@ fn monitor_does_not_skip_timeout_enforcement_when_try_wait_errors_before_kill() 
 
     let result = monitor_idle_timeout_with_interval_and_kill_config(
         timestamp,
+        None, // No file activity config
         child,
-        0,
         should_stop,
         executor,
-        Duration::from_millis(1),
-        KillConfig::new(
-            Duration::from_millis(1),
-            Duration::from_millis(1),
-            Duration::from_millis(1),
-            Duration::from_millis(20),
-            Duration::from_millis(5),
-        ),
+        MonitorConfig {
+            timeout_secs: 0,
+            check_interval: Duration::from_millis(1),
+            kill_config: KillConfig::new(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                Duration::from_millis(20),
+                Duration::from_millis(5),
+            ),
+        },
     );
 
     assert!(

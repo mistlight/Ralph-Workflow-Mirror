@@ -1,20 +1,21 @@
 use super::*;
 use crate::executor::MockProcessExecutor;
 use std::path::Path;
+use std::sync::Arc;
 
 #[test]
 fn test_run_with_agent_spawn_creates_parent_directory_for_logfile() {
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct StrictLogsWorkspace {
         inner: MemoryWorkspace,
-        logs_created: AtomicBool,
+        logs_created: Arc<AtomicBool>,
     }
 
     impl StrictLogsWorkspace {
         fn new(inner: MemoryWorkspace) -> Self {
             Self {
                 inner,
-                logs_created: AtomicBool::new(false),
+                logs_created: Arc::new(AtomicBool::new(false)),
             }
         }
     }
@@ -147,6 +148,7 @@ fn test_run_with_agent_spawn_creates_parent_directory_for_logfile() {
         executor: executor.as_ref(),
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     let result = run_with_agent_spawn(&cmd, &mut runtime, &[]);

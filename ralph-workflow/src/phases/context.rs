@@ -89,6 +89,8 @@ pub struct PhaseContext<'a> {
     /// - Production code passes `&WorkspaceFs` (real filesystem)
     /// - Tests can pass `&MemoryWorkspace` (in-memory storage)
     pub workspace: &'a dyn Workspace,
+    /// Arc-wrapped workspace for spawning into threads (e.g., file activity monitor).
+    pub workspace_arc: std::sync::Arc<dyn Workspace>,
     /// Run log context for per-run log path resolution.
     ///
     /// Provides paths to all log files under the per-run directory
@@ -189,6 +191,7 @@ mod tests {
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: PathBuf,
         workspace: MemoryWorkspace,
+        workspace_arc: std::sync::Arc<dyn Workspace>,
         run_log_context: crate::logging::RunLogContext,
     }
 
@@ -200,6 +203,8 @@ mod tests {
             let repo_root = PathBuf::from("/test/repo");
             // Use MemoryWorkspace for testing - no real filesystem access
             let workspace = MemoryWorkspace::new(repo_root.clone());
+            let workspace_arc =
+                std::sync::Arc::new(workspace.clone()) as std::sync::Arc<dyn Workspace>;
             let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
             Self {
                 config: Config::default(),
@@ -210,6 +215,7 @@ mod tests {
                 executor_arc,
                 repo_root,
                 workspace,
+                workspace_arc,
                 run_log_context,
             }
         }
@@ -247,6 +253,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
             cloud_config: &crate::config::types::CloudConfig::disabled(),
@@ -291,6 +298,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
             cloud_config: &crate::config::types::CloudConfig::disabled(),
@@ -327,6 +335,7 @@ mod tests {
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
             workspace: &fixture.workspace,
+            workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
             cloud_config: &crate::config::types::CloudConfig::disabled(),

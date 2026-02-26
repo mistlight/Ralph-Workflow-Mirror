@@ -387,6 +387,8 @@ fn test_push_to_remote_effect_pushes_head_to_named_remote_branch() {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            workspace_arc: Arc::new(workspace.clone())
+                as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: None,
             cloud_config: &cloud_config,

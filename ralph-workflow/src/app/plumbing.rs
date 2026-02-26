@@ -43,6 +43,8 @@ pub struct CommitGenerationConfig<'a> {
     pub template_context: &'a TemplateContext,
     /// Workspace for file operations (trait object for DI).
     pub workspace: &'a dyn crate::workspace::Workspace,
+    /// Arc-wrapped workspace for spawning into threads.
+    pub workspace_arc: Arc<dyn crate::workspace::Workspace>,
     /// Agent registry for accessing configured agents.
     pub registry: &'a AgentRegistry,
     /// Logger for info/warning messages.
@@ -204,6 +206,7 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         executor: executor_ref,
         executor_arc: Arc::clone(&config.executor),
         workspace: config.workspace,
+        workspace_arc: Arc::clone(&config.workspace_arc),
     };
 
     // Get the commit agent chain from the fallback config.

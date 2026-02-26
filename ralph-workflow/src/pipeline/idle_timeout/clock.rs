@@ -1,7 +1,8 @@
 // Clock trait and implementations for idle timeout monitoring
 
+use super::file_activity::FileActivityTracker;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Clock trait for obtaining current time. Enables testing with mock clocks.
@@ -74,6 +75,13 @@ pub const IDLE_TIMEOUT_SECS: u64 = 300;
 /// Use [`new_activity_timestamp`] to create.
 pub type SharedActivityTimestamp = Arc<AtomicU64>;
 
+/// Shared file activity tracker for timeout detection.
+///
+/// Tracks modification times of AI-generated files to detect ongoing work
+/// that may not produce stdout/stderr output. Use [`new_file_activity_tracker`]
+/// to create.
+pub type SharedFileActivityTracker = Arc<Mutex<FileActivityTracker>>;
+
 /// Creates a new shared activity timestamp initialized to the current time.
 ///
 /// Uses monotonic time (via `Instant`) to prevent issues with clock jumps
@@ -87,6 +95,14 @@ pub fn new_activity_timestamp() -> SharedActivityTimestamp {
 /// This variant is primarily used for testing with mock clocks.
 pub fn new_activity_timestamp_with_clock(clock: &dyn Clock) -> SharedActivityTimestamp {
     Arc::new(AtomicU64::new(clock.now_millis()))
+}
+
+/// Creates a new shared file activity tracker.
+///
+/// The tracker monitors AI-generated files in the `.agent/` directory to detect
+/// ongoing work that may not produce stdout/stderr output.
+pub fn new_file_activity_tracker() -> SharedFileActivityTracker {
+    Arc::new(Mutex::new(FileActivityTracker::new()))
 }
 
 /// Updates the shared activity timestamp to the current time.

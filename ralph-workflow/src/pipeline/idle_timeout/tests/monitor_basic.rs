@@ -56,6 +56,47 @@ fn monitor_stops_when_signaled() {
 }
 
 #[test]
+fn monitor_stops_promptly_even_with_long_check_interval() {
+    use crate::executor::MockAgentChild;
+
+    let timestamp = new_activity_timestamp();
+    let should_stop = Arc::new(AtomicBool::new(false));
+    let should_stop_clone = Arc::clone(&should_stop);
+
+    let (mock_child, controller) = MockAgentChild::new_running(0);
+    let child = Arc::new(Mutex::new(
+        Box::new(mock_child) as Box<dyn crate::executor::AgentChild>
+    ));
+
+    let executor: Arc<dyn crate::executor::ProcessExecutor> =
+        Arc::new(crate::executor::MockProcessExecutor::new());
+
+    let check_interval = Duration::from_secs(1);
+    let start = std::time::Instant::now();
+    let handle = thread::spawn(move || {
+        monitor_idle_timeout_with_interval(
+            timestamp,
+            child,
+            60,
+            should_stop_clone,
+            executor,
+            check_interval,
+        )
+    });
+
+    thread::sleep(Duration::from_millis(20));
+    should_stop.store(true, Ordering::Release);
+    controller.store(false, Ordering::Release);
+
+    let result = handle.join().expect("Monitor thread panicked");
+    assert_eq!(result, MonitorResult::ProcessCompleted);
+    assert!(
+        start.elapsed() < Duration::from_millis(300),
+        "monitor should stop promptly after stop signal"
+    );
+}
+
+#[test]
 #[cfg(unix)]
 fn kill_process_returns_failed_when_sigterm_command_exits_nonzero() {
     use std::io;

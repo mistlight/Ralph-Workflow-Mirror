@@ -15,7 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RemoveFailingWorkspace {
     inner: MemoryWorkspace,
     forbidden_remove_path: PathBuf,
@@ -128,7 +128,7 @@ impl Workspace for RemoveFailingWorkspace {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ReadDirFailingWorkspace {
     inner: MemoryWorkspace,
     forbidden_read_dir_path: PathBuf,
@@ -274,6 +274,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -340,6 +341,7 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

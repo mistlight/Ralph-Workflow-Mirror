@@ -3,10 +3,42 @@
 use super::kill::{
     force_kill_best_effort, kill_process, KillConfig, KillResult, DEFAULT_KILL_CONFIG,
 };
-use super::{is_idle_timeout_exceeded, SharedActivityTimestamp};
+use super::{is_idle_timeout_exceeded, SharedActivityTimestamp, SharedFileActivityTracker};
 use crate::executor::{AgentChild, ProcessExecutor};
+use crate::workspace::Workspace;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Configuration for file activity monitoring during timeout detection.
+///
+/// When provided, the monitor will check for recent AI-generated file updates
+/// in addition to stdout/stderr activity.
+pub struct FileActivityConfig {
+    /// Shared file activity tracker.
+    pub tracker: SharedFileActivityTracker,
+    /// Workspace for reading file metadata.
+    pub workspace: Arc<dyn Workspace>,
+}
+
+/// Configuration for the idle timeout monitor.
+pub struct MonitorConfig {
+    /// Timeout duration in seconds.
+    pub timeout_secs: u64,
+    /// Check interval for the monitor loop.
+    pub check_interval: Duration,
+    /// Kill configuration for process termination.
+    pub kill_config: KillConfig,
+}
+
+impl Default for MonitorConfig {
+    fn default() -> Self {
+        Self {
+            timeout_secs: super::IDLE_TIMEOUT_SECS,
+            check_interval: DEFAULT_CHECK_INTERVAL,
+            kill_config: DEFAULT_KILL_CONFIG,
+        }
+    }
+}
 
 /// Result of idle timeout monitoring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,8 +62,33 @@ pub enum MonitorResult {
     TimedOut { escalated: bool },
 }
 
-/// Default check interval for the idle monitor (1 second).
-const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+/// Default check interval for the idle monitor (30 seconds).
+const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(30);
+
+fn sleep_until_next_check_or_stop(
+    should_stop: &std::sync::atomic::AtomicBool,
+    check_interval: Duration,
+) -> bool {
+    use std::cmp;
+    use std::sync::atomic::Ordering;
+
+    let poll_interval = cmp::min(check_interval, Duration::from_millis(100));
+    let deadline = std::time::Instant::now() + check_interval;
+
+    loop {
+        if should_stop.load(Ordering::Acquire) {
+            return true;
+        }
+
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return false;
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
+        std::thread::sleep(cmp::min(poll_interval, remaining));
+    }
+}
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
 pub fn monitor_idle_timeout(
@@ -43,12 +100,15 @@ pub fn monitor_idle_timeout(
 ) -> MonitorResult {
     monitor_idle_timeout_with_interval_and_kill_config(
         activity_timestamp,
+        None, // No file activity config
         child,
-        timeout_secs,
         should_stop,
         executor,
-        DEFAULT_CHECK_INTERVAL,
-        DEFAULT_KILL_CONFIG,
+        MonitorConfig {
+            timeout_secs,
+            check_interval: DEFAULT_CHECK_INTERVAL,
+            kill_config: DEFAULT_KILL_CONFIG,
+        },
     )
 }
 
@@ -63,24 +123,29 @@ pub fn monitor_idle_timeout_with_interval(
 ) -> MonitorResult {
     monitor_idle_timeout_with_interval_and_kill_config(
         activity_timestamp,
+        None, // No file activity config
         child,
-        timeout_secs,
         should_stop,
         executor,
-        check_interval,
-        DEFAULT_KILL_CONFIG,
+        MonitorConfig {
+            timeout_secs,
+            check_interval,
+            kill_config: DEFAULT_KILL_CONFIG,
+        },
     )
 }
 
 pub fn monitor_idle_timeout_with_interval_and_kill_config(
     activity_timestamp: SharedActivityTimestamp,
+    file_activity_config: Option<FileActivityConfig>,
     child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
-    timeout_secs: u64,
     should_stop: Arc<std::sync::atomic::AtomicBool>,
     executor: Arc<dyn ProcessExecutor>,
-    check_interval: Duration,
-    kill_config: KillConfig,
+    config: MonitorConfig,
 ) -> MonitorResult {
+    let timeout_secs = config.timeout_secs;
+    let check_interval = config.check_interval;
+    let kill_config = config.kill_config;
     use std::sync::atomic::Ordering;
 
     #[derive(Debug, Clone, Copy)]
@@ -100,7 +165,11 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             return MonitorResult::ProcessCompleted;
         }
 
-        std::thread::sleep(check_interval);
+        if timeout_triggered.is_none()
+            && sleep_until_next_check_or_stop(should_stop.as_ref(), check_interval)
+        {
+            return MonitorResult::ProcessCompleted;
+        }
 
         if let Some(mut state) = timeout_triggered.take() {
             let status = {
@@ -205,6 +274,42 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
 
         if !is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
             continue;
+        }
+
+        // Log diagnostic information about timeout trigger
+        let time_since_output = super::time_since_activity(&activity_timestamp);
+        eprintln!(
+            "Idle timeout exceeded: no output activity for {} seconds",
+            time_since_output.as_secs()
+        );
+
+        // Check file activity if config provided
+        if let Some(ref config) = file_activity_config {
+            let mut locked_tracker = config
+                .tracker
+                .lock()
+                .expect("file activity tracker mutex poisoned - indicates panic in another thread");
+
+            match locked_tracker.check_for_recent_activity(config.workspace.as_ref(), timeout_secs)
+            {
+                Ok(true) => {
+                    eprintln!("AI-generated files were updated recently, continuing monitoring");
+                    continue;
+                }
+                Ok(false) => {
+                    eprintln!(
+                        "No AI-generated file updates in the last {} seconds, proceeding with timeout",
+                        timeout_secs
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: file activity check failed (treating as indeterminate, skipping timeout enforcement this cycle): {}",
+                        e
+                    );
+                    continue;
+                }
+            }
         }
 
         let child_id = {

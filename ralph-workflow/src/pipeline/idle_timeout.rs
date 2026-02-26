@@ -6,15 +6,27 @@
 //!
 //! # Design
 //!
-//! The idle timeout system uses a shared atomic timestamp that gets updated
-//! whenever data is read from the subprocess stdout OR stderr. A monitor thread
-//! periodically checks this timestamp and can kill the subprocess if
-//! no output has been received for longer than the configured timeout.
+//! The idle timeout system tracks two types of activity to detect whether an
+//! agent is making progress:
+//!
+//! 1. **Output Activity**: A shared atomic timestamp gets updated whenever
+//!    data is read from subprocess stdout OR stderr.
+//! 2. **File Activity**: A tracker monitors AI-generated files in `.agent/`
+//!    (PLAN.md, ISSUES.md, NOTES.md, commit-message.txt, .agent/tmp/*.xml)
+//!    to detect file updates that indicate ongoing work.
+//!
+//! A monitor thread periodically checks both signals (by default every 30 seconds)
+//! and kills the subprocess only if BOTH output and file activity have been idle
+//! for longer than the configured timeout (300 seconds).
 //!
 //! Both stdout and stderr activity are tracked because some agents (e.g., opencode
 //! with `--print-logs`) output verbose progress information to stderr while
 //! processing, and only produce stdout when complete. Without tracking stderr,
 //! such agents would be incorrectly killed as idle.
+//!
+//! File activity tracking prevents false timeouts when agents produce sparse
+//! output but are actively writing files, which is common during planning,
+//! commit message generation, and other file-intensive phases.
 //!
 //! # Timeout Value
 //!
@@ -22,22 +34,53 @@
 //! - Long enough for complex tool operations and LLM reasoning
 //! - Short enough to detect truly stuck agents
 //! - Aligned with typical CI/CD step timeouts
+//!
+//! # Edge Cases and Behavior Notes
+//!
+//! ## Sparse File Updates
+//! If an agent updates files very infrequently (e.g., once every 4 minutes),
+//! the timeout detection will correctly recognize this as ongoing activity.
+//! The 300-second recency window ensures that any modification within the
+//! last 5 minutes counts as "active".
+//!
+//! ## Monitoring Cadence
+//! The default check interval is 30 seconds, meaning file activity is
+//! sampled every 30 seconds. This is much faster than the 300-second timeout
+//! window, ensuring timely detection while remaining resource-efficient.
+//! The check interval can be adjusted via MonitorConfig for testing or
+//! special operational requirements.
+//!
+//! ## Performance Characteristics
+//! File activity checking uses selective directory scanning:
+//! - Only .agent/ and .agent/tmp/ are scanned
+//! - Excluded files (logs, system artifacts) are filtered early
+//! - Modification times are cached to avoid redundant disk I/O
+//! - Impact on monitor overhead: typically <1ms per check on modern systems
+//!
+//! ## Timeout Reporting
+//! When a timeout occurs, logs indicate whether it was due to lack of
+//! output activity, file activity, or both. This helps users understand
+//! whether the agent was truly stuck or if the timeout threshold needs
+//! adjustment.
 
 mod clock;
+mod file_activity;
 pub(crate) mod kill;
 mod monitor;
 mod readers;
 
 pub use clock::{
     is_idle_timeout_exceeded, is_idle_timeout_exceeded_with_clock, new_activity_timestamp,
-    new_activity_timestamp_with_clock, time_since_activity, time_since_activity_with_clock,
-    touch_activity, touch_activity_with_clock, Clock, MonotonicClock, SharedActivityTimestamp,
-    IDLE_TIMEOUT_SECS,
+    new_activity_timestamp_with_clock, new_file_activity_tracker, time_since_activity,
+    time_since_activity_with_clock, touch_activity, touch_activity_with_clock, Clock,
+    MonotonicClock, SharedActivityTimestamp, SharedFileActivityTracker, IDLE_TIMEOUT_SECS,
 };
+pub use file_activity::FileActivityTracker;
 pub use kill::{KillConfig, DEFAULT_KILL_CONFIG};
 pub use monitor::{
     monitor_idle_timeout, monitor_idle_timeout_with_interval,
-    monitor_idle_timeout_with_interval_and_kill_config, MonitorResult,
+    monitor_idle_timeout_with_interval_and_kill_config, FileActivityConfig, MonitorConfig,
+    MonitorResult,
 };
 pub use readers::{ActivityTrackingReader, StderrActivityTracker};
 

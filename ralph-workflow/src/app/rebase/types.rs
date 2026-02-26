@@ -13,6 +13,7 @@ pub(crate) struct ConflictResolutionContext<'a> {
     pub colors: Colors,
     pub executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
     pub workspace: &'a dyn crate::workspace::Workspace,
+    pub workspace_arc: std::sync::Arc<dyn crate::workspace::Workspace>,
 }
 
 /// Result type for conflict resolution attempts.

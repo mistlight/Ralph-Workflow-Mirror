@@ -435,6 +435,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("test_traits.rs"),
     },
     SourceFile {
+        path: "timeout_file_activity.rs",
+        contents: include_str!("timeout_file_activity.rs"),
+    },
+    SourceFile {
         path: "template_rendering_errors.rs",
         contents: include_str!("template_rendering_errors.rs"),
     },

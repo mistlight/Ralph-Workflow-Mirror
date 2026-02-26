@@ -1,6 +1,7 @@
 use super::*;
 use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
+use crate::prompts::template_context::TemplateContext;
 use crate::workspace::{MemoryWorkspace, Workspace};
 use std::path::Path;
 use std::sync::Arc;
@@ -12,8 +13,10 @@ fn run_ai_conflict_resolution_uses_unique_logfile_with_attempt_index() {
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
+    let template_context = TemplateContext::default();
 
     let executor: Arc<MockProcessExecutor> = Arc::new(MockProcessExecutor::new());
+    let executor_arc = Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>;
 
     let workspace = MemoryWorkspace::new_test();
     workspace
@@ -26,16 +29,20 @@ fn run_ai_conflict_resolution_uses_unique_logfile_with_attempt_index() {
         )
         .expect("write existing log");
 
-    let _ = run_ai_conflict_resolution(
-        "resolve conflicts",
-        &config,
-        &registry,
-        &logger,
+    let workspace_arc = Arc::new(workspace.clone());
+
+    let ctx = ConflictResolutionContext {
+        config: &config,
+        registry: &registry,
+        template_context: &template_context,
+        logger: &logger,
         colors,
-        Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
-        &workspace,
-    )
-    .expect("run");
+        executor_arc,
+        workspace: &workspace,
+        workspace_arc,
+    };
+
+    let _ = run_ai_conflict_resolution("resolve conflicts", &ctx).expect("run");
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);

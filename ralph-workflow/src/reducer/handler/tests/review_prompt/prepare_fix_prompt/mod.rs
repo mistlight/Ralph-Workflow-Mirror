@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 /// Test helper: Workspace that fails reads for a specific path with a configurable error kind.
 ///
 /// Used to verify that non-NotFound errors are properly surfaced rather than masked.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct ReadFailingWorkspace {
     inner: MemoryWorkspace,
     forbidden_read_path: PathBuf,
