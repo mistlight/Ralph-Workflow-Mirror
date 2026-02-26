@@ -424,13 +424,9 @@ impl FileSnapshot {
     /// Get the file content, decompressing if necessary.
     #[must_use]
     pub fn get_content(&self) -> Option<String> {
-        if let Some(ref content) = self.content {
-            Some(content.clone())
-        } else if let Some(ref compressed) = self.compressed_content {
-            decompress_data(compressed).ok()
-        } else {
-            None
-        }
+        self.content.as_ref().map(Clone::clone).or_else(|| {
+            self.compressed_content.as_ref().and_then(|compressed| decompress_data(compressed).ok())
+        })
     }
 
     /// Create a snapshot for a non-existent file.

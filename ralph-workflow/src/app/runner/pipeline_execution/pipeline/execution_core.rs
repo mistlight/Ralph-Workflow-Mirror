@@ -276,11 +276,10 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
 
     // Set up interrupt context for checkpoint saving on Ctrl+C
     // This must be done after phase_ctx is created
-    let initial_phase = if let Some(ref checkpoint) = resume_checkpoint {
-        checkpoint.phase
-    } else {
-        PipelinePhase::Planning
-    };
+    let initial_phase = resume_checkpoint.as_ref().map_or(
+        PipelinePhase::Planning,
+        |checkpoint| checkpoint.phase
+    );
     setup_interrupt_context_for_pipeline(
         initial_phase,
         config.developer_iters,

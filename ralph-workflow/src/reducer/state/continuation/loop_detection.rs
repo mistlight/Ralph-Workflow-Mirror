@@ -25,13 +25,12 @@ impl ContinuationState {
         if self.last_effect_kind.as_deref() == Some(&current_fingerprint) {
             // Same effect as last time - increment counter
             self.consecutive_same_effect_count += 1;
-            self
         } else {
             // Different effect - reset counter and update fingerprint
             self.last_effect_kind = Some(current_fingerprint);
             self.consecutive_same_effect_count = 1;
-            self
         }
+        self
     }
 
     /// Check if loop detection threshold has been exceeded.

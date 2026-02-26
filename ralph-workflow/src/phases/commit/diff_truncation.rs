@@ -104,9 +104,7 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
             "\n[Truncated: {files_included} of {total_files} files shown]\n"
         );
         if summary.len() <= max_size {
-            if result.len() + summary.len() <= max_size {
-                result.push_str(&summary);
-            } else {
+            if result.len() + summary.len() > max_size {
                 let target_bytes = max_size.saturating_sub(summary.len());
                 if target_bytes < result.len() {
                     let mut cut = 0usize;
@@ -118,8 +116,8 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
                     }
                     result.truncate(cut);
                 }
-                result.push_str(&summary);
             }
+            result.push_str(&summary);
         }
     }
 

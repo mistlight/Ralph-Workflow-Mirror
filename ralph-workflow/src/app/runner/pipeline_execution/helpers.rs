@@ -107,18 +107,19 @@ fn create_phase_context_with_config<'ctx>(
     // IMPORTANT: When loading from checkpoint, we MUST enforce the configured
     // execution_history_limit using clone_bounded() to prevent oversized legacy
     // checkpoints from loading arbitrarily large history into memory.
-    let (execution_history, prompt_history) = if let Some(checkpoint) = resume_checkpoint {
-        let exec_history = checkpoint
-            .execution_history
-            .as_ref().map_or_else(crate::checkpoint::execution_history::ExecutionHistory::new, |h| h.clone_bounded(config.execution_history_limit));
-        let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
-        (exec_history, prompt_hist)
-    } else {
-        (
+    let (execution_history, prompt_history) = resume_checkpoint.map_or_else(
+        || (
             crate::checkpoint::execution_history::ExecutionHistory::new(),
             std::collections::HashMap::new(),
-        )
-    };
+        ),
+        |checkpoint| {
+            let exec_history = checkpoint
+                .execution_history
+                .as_ref().map_or_else(crate::checkpoint::execution_history::ExecutionHistory::new, |h| h.clone_bounded(config.execution_history_limit));
+            let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
+            (exec_history, prompt_hist)
+        }
+    );
 
     PhaseContext {
         config,
