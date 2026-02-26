@@ -18,17 +18,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct StrictTmpWorkspace {
     inner: MemoryWorkspace,
-    tmp_created: AtomicBool,
+    tmp_created: Arc<AtomicBool>,
 }
 
 impl StrictTmpWorkspace {
     fn new(inner: MemoryWorkspace) -> Self {
         Self {
             inner,
-            tmp_created: AtomicBool::new(false),
+            tmp_created: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -122,7 +122,7 @@ impl Workspace for StrictTmpWorkspace {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct FailingMarkerWorkspace {
     inner: MemoryWorkspace,
 }
@@ -222,6 +222,7 @@ impl Workspace for FailingMarkerWorkspace {
 /// Groups related parameters to avoid clippy::too_many_arguments.
 struct ContextParams<'a> {
     workspace: &'a dyn Workspace,
+    workspace_arc: &'a Arc<dyn Workspace>,
     repo_root: &'a Path,
     executor: &'a Arc<MockProcessExecutor>,
     config: &'a Config,
@@ -254,6 +255,7 @@ fn build_context<'a>(
         executor_arc: Arc::clone(params.executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: params.repo_root,
         workspace: params.workspace,
+        workspace_arc: Arc::clone(params.workspace_arc),
         run_log_context: params.run_log_context,
         cloud_reporter: None,
         cloud_config,
@@ -271,12 +273,14 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
         ContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             repo_root: &repo_root,
             executor: &executor,
             config: &config,
@@ -324,12 +328,14 @@ fn emit_completion_marker_with_write_failure_emits_event() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = FailingMarkerWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
         ContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             repo_root: &repo_root,
             executor: &executor,
             config: &config,
@@ -380,12 +386,14 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
         ContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             repo_root: &repo_root,
             executor: &executor,
             config: &config,
@@ -462,12 +470,14 @@ fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_age
     );
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
         ContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             repo_root: &repo_root,
             executor: &executor,
             config: &config,
@@ -618,6 +628,7 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
     let executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
 
     let cloud_config = crate::config::types::CloudConfig::disabled();
+    let workspace_arc = std::sync::Arc::clone(&workspace) as std::sync::Arc<dyn Workspace>;
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -635,6 +646,7 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
         executor_arc: std::sync::Arc::clone(&executor_arc),
         repo_root: repo_root.as_path(),
         workspace: workspace.as_ref(),
+        workspace_arc,
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

@@ -3,13 +3,15 @@ use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::logger::argv_requests_json;
 use crate::pipeline::idle_timeout::KillConfig;
 use crate::pipeline::idle_timeout::{
-    monitor_idle_timeout, new_activity_timestamp, time_since_activity, MonitorResult,
-    StderrActivityTracker, IDLE_TIMEOUT_SECS,
+    monitor_idle_timeout_with_interval_and_kill_config, new_activity_timestamp,
+    new_file_activity_tracker, time_since_activity, FileActivityConfig, MonitorConfig,
+    MonitorResult, StderrActivityTracker, DEFAULT_KILL_CONFIG, IDLE_TIMEOUT_SECS,
 };
 use crate::pipeline::types::CommandResult;
 use std::io::{self, BufReader};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::types::{PipelineRuntime, PromptCommand};
 
@@ -124,6 +126,10 @@ pub(super) fn run_with_agent_spawn(
     let child_for_monitor = Arc::clone(&child_shared);
 
     let activity_timestamp = new_activity_timestamp();
+    let file_activity_config = Some(FileActivityConfig {
+        tracker: new_file_activity_tracker(),
+        workspace: Arc::clone(&runtime.workspace_arc),
+    });
     let stdout_cancel = Arc::new(AtomicBool::new(false));
     let stdout_cancel_for_monitor = Arc::clone(&stdout_cancel);
     let monitor_should_stop = Arc::new(AtomicBool::new(false));
@@ -168,12 +174,17 @@ pub(super) fn run_with_agent_spawn(
         std::sync::Arc::clone(&runtime.executor_arc);
 
     let mut monitor_handle = Some(std::thread::spawn(move || {
-        let result = monitor_idle_timeout(
+        let result = monitor_idle_timeout_with_interval_and_kill_config(
             activity_timestamp_clone,
+            file_activity_config,
             child_for_monitor,
-            IDLE_TIMEOUT_SECS,
             monitor_should_stop_clone,
             monitor_executor,
+            MonitorConfig {
+                timeout_secs: IDLE_TIMEOUT_SECS,
+                check_interval: Duration::from_secs(30), // 30-second check interval
+                kill_config: DEFAULT_KILL_CONFIG,
+            },
         );
         if matches!(result, MonitorResult::TimedOut { .. }) {
             stdout_cancel_for_monitor.store(true, Ordering::Release);
@@ -317,7 +328,7 @@ pub(super) fn run_with_agent_spawn(
                 ""
             };
             runtime.logger.warn(&format!(
-                "Agent killed due to idle timeout (no stdout/stderr for {} seconds, \
+                "Agent killed due to idle timeout (no stdout/stderr and no AI file updates for {} seconds, \
                  last activity {:.1}s ago, process exit code was {}{}, \
                  kill reason: IDLE_TIMEOUT_MONITOR)",
                 IDLE_TIMEOUT_SECS,

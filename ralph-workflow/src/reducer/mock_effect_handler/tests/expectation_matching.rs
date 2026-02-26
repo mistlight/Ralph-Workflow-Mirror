@@ -105,6 +105,7 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

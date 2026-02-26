@@ -43,7 +43,7 @@ use std::sync::Arc;
 ///
 /// Used to test error handling when prompt files cannot be read due to
 /// permission errors or other non-NotFound I/O errors.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct ReadFailingWorkspace {
     inner: MemoryWorkspace,
     forbidden_read_path: PathBuf,

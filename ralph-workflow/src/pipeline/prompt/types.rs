@@ -34,6 +34,8 @@ pub struct PipelineRuntime<'a> {
     pub executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
     /// Workspace for file operations.
     pub workspace: &'a dyn crate::workspace::Workspace,
+    /// Arc-wrapped workspace for spawning into threads (e.g., file activity monitor).
+    pub workspace_arc: std::sync::Arc<dyn crate::workspace::Workspace>,
 }
 
 /// Options for saving a prompt to file and clipboard.

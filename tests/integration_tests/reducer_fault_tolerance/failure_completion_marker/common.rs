@@ -90,6 +90,8 @@ impl Fixture {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &self.repo_root,
             workspace: self.workspace.as_ref(),
+            workspace_arc: Arc::clone(&self.workspace)
+                as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
             cloud_config: &self.cloud_config,

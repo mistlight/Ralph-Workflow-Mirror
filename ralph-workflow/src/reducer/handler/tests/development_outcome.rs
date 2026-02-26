@@ -62,6 +62,7 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

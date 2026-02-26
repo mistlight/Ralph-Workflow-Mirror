@@ -55,6 +55,7 @@ fn test_usage_limit_triggers_rate_limited_event_not_timeout() {
         executor: executor_arc.as_ref(),
         executor_arc: Arc::clone(&executor_arc),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     let env_vars: HashMap<String, String> = HashMap::new();

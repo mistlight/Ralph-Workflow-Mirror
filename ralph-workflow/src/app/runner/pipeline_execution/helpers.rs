@@ -139,6 +139,7 @@ fn create_phase_context_with_config<'ctx>(
         executor_arc: std::sync::Arc::clone(&ctx.executor),
         repo_root: &ctx.repo_root,
         workspace: &*ctx.workspace,
+        workspace_arc: std::sync::Arc::clone(&ctx.workspace),
         run_log_context: &ctx.run_log_context,
         cloud_reporter: if config.cloud_config.enabled {
             Some(cloud_reporter)

@@ -24,17 +24,17 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct StrictTmpWorkspace {
         inner: MemoryWorkspace,
-        tmp_created: AtomicBool,
+        tmp_created: Arc<AtomicBool>,
     }
 
     impl StrictTmpWorkspace {
         fn new(inner: MemoryWorkspace) -> Self {
             Self {
                 inner,
-                tmp_created: AtomicBool::new(false),
+                tmp_created: Arc::new(AtomicBool::new(false)),
             }
         }
     }
@@ -164,6 +164,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &strict_workspace,
+        workspace_arc: Arc::new(strict_workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -286,6 +287,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -379,6 +381,7 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -458,6 +461,7 @@ fn test_create_initial_state_with_config_injects_cloud_state() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -556,6 +560,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: &repo_root,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

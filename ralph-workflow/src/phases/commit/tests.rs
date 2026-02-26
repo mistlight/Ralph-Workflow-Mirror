@@ -167,6 +167,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
             cloud_config: &cloud_config,
@@ -226,6 +227,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
             cloud_config: &cloud_config,
@@ -298,6 +300,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
             cloud_config: &cloud_config,
@@ -349,6 +352,7 @@ mod tests {
             executor: executor_ref,
             executor_arc: executor_arc_for_runtime,
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
         };
 
         let agents = vec!["claude".to_string()];
@@ -591,6 +595,7 @@ mod tests {
             executor: executor_arc.as_ref(),
             executor_arc: executor_arc.clone(),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
         };
 
         // Call with a chain of agents - should try ccs, fail, then try claude
@@ -670,6 +675,7 @@ mod tests {
             executor_arc: executor_arc.clone(),
             repo_root: repo_root.as_path(),
             workspace: &workspace,
+            workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
             cloud_config: &cloud_config,

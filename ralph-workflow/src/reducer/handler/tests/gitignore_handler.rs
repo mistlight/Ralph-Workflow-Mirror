@@ -17,6 +17,7 @@ use std::sync::Arc;
 /// Helper struct to group test context parameters
 struct TestContextParams<'a> {
     workspace: &'a dyn crate::workspace::Workspace,
+    workspace_arc: &'a Arc<dyn crate::workspace::Workspace>,
     config: &'a Config,
     registry: &'a AgentRegistry,
     logger: &'a Logger,
@@ -50,6 +51,7 @@ fn create_test_context<'a>(
         executor_arc: params.executor_arc,
         repo_root: params.repo_root,
         workspace: params.workspace,
+        workspace_arc: Arc::clone(params.workspace_arc),
         run_log_context: params.run_log_context,
         cloud_reporter: None,
         cloud_config,
@@ -60,6 +62,7 @@ fn create_test_context<'a>(
 fn test_ensure_gitignore_creates_file_when_missing() {
     let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -74,6 +77,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
     let mut ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             config: &config,
             registry: &registry,
             logger: &logger,
@@ -123,6 +127,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
 fn test_ensure_gitignore_appends_when_file_exists() {
     let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -137,6 +142,7 @@ fn test_ensure_gitignore_appends_when_file_exists() {
     let mut ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             config: &config,
             registry: &registry,
             logger: &logger,
@@ -185,6 +191,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
     let cloud_config = crate::config::types::CloudConfig::disabled();
     let existing = "# Ralph-workflow artifacts (auto-generated)\n/PROMPT*\n.agent/\n";
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", existing);
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -199,6 +206,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
     let mut ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             config: &config,
             registry: &registry,
             logger: &logger,
@@ -243,6 +251,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
 fn test_ensure_gitignore_partial_entries() {
     let cloud_config = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "/PROMPT*\n");
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -257,6 +266,7 @@ fn test_ensure_gitignore_partial_entries() {
     let mut ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             config: &config,
             registry: &registry,
             logger: &logger,
@@ -400,6 +410,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
     let cloud_config = crate::config::types::CloudConfig::disabled();
     // Setup: workspace with existing file that will fail to write
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
     let failing_workspace = FailingWriteWorkspace::new(&workspace);
 
     let colors = Colors { enabled: false };
@@ -415,6 +426,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
     let mut ctx = create_test_context(
         TestContextParams {
             workspace: &failing_workspace,
+            workspace_arc: &workspace_arc,
             config: &config,
             registry: &registry,
             logger: &logger,
@@ -468,6 +480,7 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
     let cloud_config = crate::config::types::CloudConfig::disabled();
     // Setup: no existing .gitignore, write will fail
     let workspace = MemoryWorkspace::new_test();
+    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
     let failing_workspace = FailingWriteWorkspace::new(&workspace);
 
     let colors = Colors { enabled: false };
@@ -483,6 +496,7 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
     let mut ctx = create_test_context(
         TestContextParams {
             workspace: &failing_workspace,
+            workspace_arc: &workspace_arc,
             config: &config,
             registry: &registry,
             logger: &logger,

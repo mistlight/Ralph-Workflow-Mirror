@@ -206,6 +206,7 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
             config: &config,
             template_context: &template_context,
             workspace: &*workspace,
+            workspace_arc: std::sync::Arc::clone(&workspace),
             registry: &registry,
             logger: &logger,
             colors,

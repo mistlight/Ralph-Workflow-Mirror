@@ -17,7 +17,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ReadFailingWorkspace {
     inner: MemoryWorkspace,
     forbidden_read_path: PathBuf,
@@ -28,7 +28,7 @@ struct ReadFailingWorkspace {
 ///
 /// This models workspace implementations that do not implicitly create parent
 /// directories, ensuring we don't rely on `Workspace::write` doing so.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ParentDirRequiredWorkspace {
     inner: MemoryWorkspace,
 }
@@ -272,6 +272,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -343,6 +344,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -403,6 +405,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -473,6 +476,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -540,6 +544,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -604,6 +609,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -671,6 +677,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,
@@ -733,6 +740,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
         executor_arc: executor.clone(),
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

@@ -130,12 +130,15 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
         let result =
             crate::pipeline::idle_timeout::monitor_idle_timeout_with_interval_and_kill_config(
                 activity_timestamp_clone,
+                None, // No file activity config
                 child_for_monitor,
-                idle_timeout_secs,
                 monitor_should_stop_clone,
                 monitor_executor,
-                monitor_check_interval,
-                kill_config,
+                crate::pipeline::idle_timeout::MonitorConfig {
+                    timeout_secs: idle_timeout_secs,
+                    check_interval: monitor_check_interval,
+                    kill_config,
+                },
             );
         if matches!(result, MonitorResult::TimedOut { .. }) {
             stdout_cancel_for_monitor.store(true, Ordering::Release);

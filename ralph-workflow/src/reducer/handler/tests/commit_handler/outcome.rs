@@ -49,6 +49,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

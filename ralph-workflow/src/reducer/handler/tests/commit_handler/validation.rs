@@ -50,6 +50,7 @@ fn validate_commit_xml_emits_ui_xml_output_even_when_xml_file_missing() {
         executor_arc,
         repo_root: repo_root.as_path(),
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &cloud_config,

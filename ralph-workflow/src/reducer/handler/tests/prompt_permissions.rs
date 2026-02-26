@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 struct ContextDeps<'a> {
     workspace: &'a MemoryWorkspace,
+    workspace_arc: &'a std::sync::Arc<dyn crate::workspace::Workspace>,
     repo_root: &'a PathBuf,
     executor: &'a Arc<MockProcessExecutor>,
     config: &'a Config,
@@ -50,6 +51,7 @@ fn build_context<'a>(
         executor_arc: Arc::clone(deps.executor) as Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: deps.repo_root,
         workspace: deps.workspace,
+        workspace_arc: Arc::clone(deps.workspace_arc),
         run_log_context: deps.run_log_context,
         cloud_reporter: None,
         cloud_config,
@@ -67,12 +69,15 @@ fn restore_prompt_permissions_emits_complete_transition_in_finalizing() {
     let executor = Arc::new(MockProcessExecutor::new());
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
+    let workspace_arc =
+        std::sync::Arc::new(workspace.clone()) as std::sync::Arc<dyn crate::workspace::Workspace>;
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
     let mut ctx = build_context(
         ContextDeps {
             workspace: &workspace,
+            workspace_arc: &workspace_arc,
             repo_root: &repo_root,
             executor: &executor,
             config: &config,

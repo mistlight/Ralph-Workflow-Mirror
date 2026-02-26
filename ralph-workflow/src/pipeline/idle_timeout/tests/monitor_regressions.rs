@@ -77,18 +77,21 @@ fn monitor_does_not_hold_child_lock_while_waiting_between_sigterm_checks() {
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_for_monitor,
+                None, // No file activity tracking for this test
                 child_for_monitor,
-                0,
                 should_stop_for_monitor,
                 executor,
-                Duration::from_millis(1),
-                config(
-                    Duration::from_secs(2),
-                    Duration::from_millis(500),
-                    Duration::from_millis(50),
-                    Duration::from_secs(5),
-                    Duration::from_secs(1),
-                ),
+                MonitorConfig {
+                    timeout_secs: 0,
+                    check_interval: Duration::from_millis(1),
+                    kill_config: config(
+                        Duration::from_secs(2),
+                        Duration::from_millis(500),
+                        Duration::from_millis(50),
+                        Duration::from_secs(5),
+                        Duration::from_secs(1),
+                    ),
+                },
             )
         }
     });
@@ -152,18 +155,21 @@ fn monitor_reports_timeout_even_if_sigkill_confirmation_times_out() {
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_for_monitor,
+                None,
                 child_for_monitor,
-                0,
                 should_stop_for_monitor,
                 executor_dyn,
-                Duration::from_millis(1),
-                config(
-                    Duration::from_millis(10),
-                    Duration::from_millis(1),
-                    Duration::from_millis(1),
-                    Duration::from_secs(2),
-                    Duration::from_millis(20),
-                ),
+                MonitorConfig {
+                    timeout_secs: 0,
+                    check_interval: Duration::from_millis(1),
+                    kill_config: config(
+                        Duration::from_millis(10),
+                        Duration::from_millis(1),
+                        Duration::from_millis(1),
+                        Duration::from_secs(2),
+                        Duration::from_millis(20),
+                    ),
+                },
             )
         }
     });
@@ -229,18 +235,21 @@ fn monitor_treats_try_wait_errors_as_status_unknown_and_continues_enforcement() 
 
     let result = monitor_idle_timeout_with_interval_and_kill_config(
         timestamp,
+        None,
         child,
-        0,
         should_stop,
         executor,
-        Duration::from_millis(1),
-        config(
-            Duration::from_millis(10),
-            Duration::from_millis(1),
-            Duration::from_millis(10),
-            Duration::from_millis(50),
-            Duration::from_millis(20),
-        ),
+        MonitorConfig {
+            timeout_secs: 0,
+            check_interval: Duration::from_millis(1),
+            kill_config: config(
+                Duration::from_millis(10),
+                Duration::from_millis(1),
+                Duration::from_millis(10),
+                Duration::from_millis(50),
+                Duration::from_millis(20),
+            ),
+        },
     );
 
     assert_eq!(result, MonitorResult::TimedOut { escalated: true });
@@ -271,18 +280,21 @@ fn monitor_escalates_to_sigkill_when_sigterm_ignored() {
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_clone,
+                None,
                 child_clone,
-                0,
                 should_stop_clone,
                 executor_dyn,
-                Duration::from_millis(1),
-                config(
-                    Duration::from_millis(20),
-                    Duration::from_millis(1),
-                    Duration::from_millis(50),
-                    Duration::from_secs(2),
-                    Duration::from_millis(20),
-                ),
+                MonitorConfig {
+                    timeout_secs: 0,
+                    check_interval: Duration::from_millis(1),
+                    kill_config: config(
+                        Duration::from_millis(20),
+                        Duration::from_millis(1),
+                        Duration::from_millis(50),
+                        Duration::from_secs(2),
+                        Duration::from_millis(20),
+                    ),
+                },
             )
         }
     });
@@ -330,21 +342,24 @@ fn monitor_succeeds_with_sigterm_when_process_terminates() {
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_clone,
+                None,
                 child_clone,
-                0,
                 should_stop_clone,
                 executor_dyn,
-                Duration::from_millis(1),
                 // Give the test ample SIGTERM grace so the polling loop has time
                 // to observe the TERM send and flip the mock child to "exited"
                 // before escalation.
-                config(
-                    Duration::from_millis(200),
-                    Duration::from_millis(1),
-                    Duration::from_millis(50),
-                    Duration::from_secs(2),
-                    Duration::from_millis(20),
-                ),
+                MonitorConfig {
+                    timeout_secs: 0,
+                    check_interval: Duration::from_millis(1),
+                    kill_config: config(
+                        Duration::from_millis(200),
+                        Duration::from_millis(1),
+                        Duration::from_millis(50),
+                        Duration::from_secs(2),
+                        Duration::from_millis(20),
+                    ),
+                },
             )
         }
     });
@@ -390,18 +405,21 @@ fn monitor_reports_timeout_even_if_process_still_alive_after_force_kill_hard_cap
         move || {
             let result = monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp,
+                None,
                 child_for_monitor,
-                0,
                 should_stop_for_monitor,
                 executor_dyn,
-                Duration::from_millis(1),
-                config(
-                    Duration::from_millis(1),
-                    Duration::from_millis(1),
-                    Duration::from_millis(5),
-                    Duration::from_millis(200),
-                    Duration::from_millis(20),
-                ),
+                MonitorConfig {
+                    timeout_secs: 0,
+                    check_interval: Duration::from_millis(1),
+                    kill_config: config(
+                        Duration::from_millis(1),
+                        Duration::from_millis(1),
+                        Duration::from_millis(5),
+                        Duration::from_millis(200),
+                        Duration::from_millis(20),
+                    ),
+                },
             );
             let _ = tx.send(result);
         }

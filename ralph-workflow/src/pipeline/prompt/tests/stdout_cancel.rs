@@ -137,6 +137,7 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
         executor: executor.as_ref(),
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     std::thread::scope(|scope| {

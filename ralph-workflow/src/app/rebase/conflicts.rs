@@ -43,15 +43,7 @@ pub(crate) fn try_resolve_conflicts(
         ));
     }
 
-    match run_ai_conflict_resolution(
-        &resolution_prompt,
-        ctx.config,
-        ctx.registry,
-        ctx.logger,
-        ctx.colors,
-        std::sync::Arc::clone(&ctx.executor_arc),
-        ctx.workspace,
-    ) {
+    match run_ai_conflict_resolution(&resolution_prompt, &ctx) {
         Ok(ConflictResolutionResult::FileEditsOnly) => handle_file_edits_resolution(ctx.logger),
         Ok(ConflictResolutionResult::Failed) => handle_failed_resolution(ctx.logger, executor),
         Err(e) => handle_error_resolution(ctx.logger, executor, e),
@@ -174,33 +166,30 @@ fn build_enhanced_resolution_prompt(
 
 fn run_ai_conflict_resolution(
     resolution_prompt: &str,
-    config: &crate::config::Config,
-    registry: &crate::agents::AgentRegistry,
-    logger: &Logger,
-    colors: Colors,
-    executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
-    workspace: &dyn crate::workspace::Workspace,
+    ctx: &ConflictResolutionContext<'_>,
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
     use std::path::Path;
 
     let log_dir = ".agent/logs/rebase_conflict_resolution";
-    let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
+    let reviewer_agent = ctx.config.reviewer_agent.as_deref().unwrap_or("codex");
 
-    let executor_ref: &dyn crate::executor::ProcessExecutor = &*executor_arc;
+    let executor_ref: &dyn crate::executor::ProcessExecutor = &*ctx.executor_arc;
     let mut runtime = PipelineRuntime {
         timer: &mut crate::pipeline::Timer::new(),
-        logger,
-        colors: &colors,
-        config,
+        logger: ctx.logger,
+        colors: &ctx.colors,
+        config: ctx.config,
         executor: executor_ref,
-        executor_arc: std::sync::Arc::clone(&executor_arc),
-        workspace,
+        executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+        workspace: ctx.workspace,
+        workspace_arc: std::sync::Arc::clone(&ctx.workspace_arc),
     };
 
-    workspace.create_dir_all(Path::new(log_dir))?;
+    ctx.workspace.create_dir_all(Path::new(log_dir))?;
 
-    let agent_config = registry
+    let agent_config = ctx
+        .registry
         .resolve_config(reviewer_agent)
         .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", reviewer_agent))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
@@ -211,7 +200,7 @@ fn run_ai_conflict_resolution(
         Path::new(&log_prefix),
         reviewer_agent,
         model_index,
-        workspace,
+        ctx.workspace,
     );
     let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
         &log_prefix,
@@ -266,6 +255,8 @@ pub fn try_resolve_conflicts_without_phase_ctx(
     let mut timer = Timer::new();
 
     let workspace = crate::workspace::WorkspaceFs::new(repo_root.to_path_buf());
+    let workspace_arc: std::sync::Arc<dyn crate::workspace::Workspace> =
+        std::sync::Arc::new(workspace.clone());
 
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
     let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
@@ -294,6 +285,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         executor_arc: std::sync::Arc::clone(&executor_arc),
         repo_root,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::clone(&workspace_arc),
         run_log_context: &run_log_context,
         cloud_reporter: None,
         cloud_config: &config.cloud_config,
@@ -307,6 +299,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         colors,
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::clone(&workspace_arc),
     };
 
     try_resolve_conflicts(

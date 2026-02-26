@@ -6,7 +6,7 @@ mod prepare_fix_prompt;
 mod prepare_review_prompt;
 mod xsd_retry;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AtomicWriteEnforcingWorkspace {
     inner: MemoryWorkspace,
     forbidden_write_path: std::path::PathBuf,

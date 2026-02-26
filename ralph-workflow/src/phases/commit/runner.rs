@@ -82,6 +82,7 @@ pub fn run_commit_attempt(
         executor: ctx.executor,
         executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
         workspace: ctx.workspace,
+        workspace_arc: std::sync::Arc::clone(&ctx.workspace_arc),
     };
 
     let log_dir = Path::new(".agent/logs/commit_generation");

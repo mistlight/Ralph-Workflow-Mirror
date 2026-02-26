@@ -112,6 +112,7 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
         executor: executor.as_ref(),
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     std::thread::scope(|scope| {
@@ -281,6 +282,7 @@ fn test_run_with_agent_spawn_cancels_stderr_collector_on_idle_timeout() {
         executor: executor.as_ref(),
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     let result = run_with_agent_spawn_with_monitor_config(
@@ -425,6 +427,7 @@ fn test_run_with_agent_spawn_regains_control_when_child_never_exits_after_sigkil
         executor: executor.as_ref(),
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     std::thread::scope(|scope| {
@@ -587,6 +590,7 @@ fn test_run_with_agent_spawn_regains_control_when_stdout_read_blocks_and_idle_ti
         executor: executor.as_ref(),
         executor_arc,
         workspace: &workspace,
+        workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
     std::thread::scope(|scope| {

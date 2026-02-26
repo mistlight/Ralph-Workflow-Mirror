@@ -227,6 +227,8 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            workspace_arc: Arc::new(workspace.clone())
+                as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: None,
             cloud_config: &ralph_workflow::config::CloudConfig::disabled(),

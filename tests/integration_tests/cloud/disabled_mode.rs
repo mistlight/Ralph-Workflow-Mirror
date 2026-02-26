@@ -260,6 +260,8 @@ fn test_cloud_mode_disabled_does_not_report_progress_even_if_reporter_is_injecte
                 as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
             repo_root: &repo_root,
             workspace: &workspace,
+            workspace_arc: Arc::new(workspace.clone())
+                as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: Some(&reporter),
             cloud_config: &cloud_config,

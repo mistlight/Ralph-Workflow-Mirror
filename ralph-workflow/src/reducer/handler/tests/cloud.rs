@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 struct Fixture {
     workspace: MemoryWorkspace,
+    workspace_arc: Arc<dyn crate::workspace::Workspace>,
     executor: Arc<MockProcessExecutor>,
     config: Config,
     registry: AgentRegistry,
@@ -35,6 +36,7 @@ impl Fixture {
 
     fn new_with_executor(cloud_config: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
         let workspace = MemoryWorkspace::new_test();
+        let workspace_arc = Arc::new(workspace.clone()) as Arc<dyn crate::workspace::Workspace>;
         let colors = Colors { enabled: false };
         let logger = Logger::new(colors);
         let config = Config::default();
@@ -45,6 +47,7 @@ impl Fixture {
         let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
         Self {
             workspace,
+            workspace_arc,
             executor,
             config,
             registry,
@@ -76,6 +79,7 @@ impl Fixture {
             executor_arc: Arc::clone(&self.executor) as Arc<dyn crate::executor::ProcessExecutor>,
             repo_root: self.repo_root.as_path(),
             workspace: &self.workspace,
+            workspace_arc: Arc::clone(&self.workspace_arc),
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
             cloud_config: &self.cloud_config,
