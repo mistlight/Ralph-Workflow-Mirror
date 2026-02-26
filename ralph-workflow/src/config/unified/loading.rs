@@ -500,7 +500,7 @@ impl UnifiedConfig {
 
         // Parse raw TOML to check field presence
         let local_toml: toml::Value = toml::from_str(local_content)
-            .unwrap_or_else(|_| toml::Value::Table(Default::default()));
+            .unwrap_or_else(|_| toml::Value::Table(toml::map::Map::default()));
 
         // Helper to check if a field is present in the TOML
         let general_table = local_toml.get("general");
