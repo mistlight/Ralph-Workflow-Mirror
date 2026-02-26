@@ -236,14 +236,11 @@ fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io:
             }
 
             match delta.status() {
-                Delta::Added => {
+                Delta::Added | Delta::Modified => {
                     delta_ids.push((delta.new_file().id(), true));
                 }
                 Delta::Deleted => {
                     delta_ids.push((delta.old_file().id(), false));
-                }
-                Delta::Modified => {
-                    delta_ids.push((delta.new_file().id(), true));
                 }
                 _ => {}
             }

@@ -30,10 +30,12 @@
 //! This handles protocol violations where block lifecycle ordering is violated.
 
 use crate::json_parser::delta_display::{
+
     compute_append_only_suffix, sanitize_for_display, DeltaRenderer, TextDeltaRenderer,
 };
 use crate::json_parser::streaming_state::StreamingSession;
 use crate::json_parser::terminal::TerminalMode;
+use std::fmt::Write;
 use crate::json_parser::types::ContentType;
 
 impl crate::json_parser::claude::ClaudeParser {
@@ -281,9 +283,8 @@ impl crate::json_parser::claude::ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                thinking_output.push_str(&format!(
-                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
-                                ));
+                                writeln!(thinking_output, 
+                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}").unwrap();
                             }
                         }
 
@@ -329,9 +330,8 @@ impl crate::json_parser::claude::ClaudeParser {
                                         TerminalMode::Full => unreachable!(),
                                     };
 
-                                    tool_output.push_str(&format!(
-                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
-                                    ));
+                                    writeln!(tool_output, 
+                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}").unwrap();
                                 }
                             }
                         }
@@ -366,8 +366,7 @@ impl crate::json_parser::claude::ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                text_output
-                                    .push_str(&format!("{prefix_fmt}{sanitized}{suffix_fmt}\n"));
+                                writeln!(text_output, "{prefix_fmt}{sanitized}{suffix_fmt}").unwrap();
                             }
                         }
 

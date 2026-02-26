@@ -62,6 +62,9 @@ pub mod rebase_state_machine;
 
 mod repo;
 
+/// # Errors
+///
+/// Returns an error if the git repository cannot be found or hooks directory cannot be determined.
 pub fn get_hooks_dir() -> io::Result<std::path::PathBuf> {
     repo::get_hooks_dir_from(std::path::Path::new("."))
 }

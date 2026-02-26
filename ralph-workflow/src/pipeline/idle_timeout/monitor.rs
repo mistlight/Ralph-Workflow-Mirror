@@ -135,6 +135,9 @@ pub fn monitor_idle_timeout_with_interval(
     )
 }
 
+/// # Panics
+///
+/// May panic if internal synchronization primitives (mutex, atomic) are in an invalid state.
 pub fn monitor_idle_timeout_with_interval_and_kill_config(
     activity_timestamp: SharedActivityTimestamp,
     file_activity_config: Option<FileActivityConfig>,

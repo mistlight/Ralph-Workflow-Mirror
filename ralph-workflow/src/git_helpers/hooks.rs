@@ -311,6 +311,10 @@ pub fn uninstall_hooks_silent() {
 /// # Returns
 ///
 /// `Ok(true)` if the marker is found, `Ok(false)` if not found or file doesn't exist.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn file_contains_marker_with_workspace(
     workspace: &dyn Workspace,
@@ -344,6 +348,10 @@ pub fn file_contains_marker_with_workspace(
 ///
 /// * `workspace` - The workspace to read from
 /// * `relative_path` - Path to the hook file relative to the workspace root
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn verify_hook_integrity_with_workspace(
     workspace: &dyn Workspace,

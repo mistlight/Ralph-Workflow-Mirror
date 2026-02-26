@@ -47,10 +47,13 @@ const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_
 ///
 /// Returns error if the operation fails.
 pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 2] = ["ralph-status", "ralph-summary"];
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = create_reader(content);
@@ -84,7 +87,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                     example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
             }
-            Ok(Event::Text(_)) | Ok(_) => {
+            Ok(Event::Text(_) | _) => {
                 // Text before root element or other events - continue to find root or reach EOF
                 // EOF will give a more informative "missing root element" error
             }
@@ -96,8 +99,6 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
     // Parse child elements
     let mut status: Option<String> = None;
     let mut summary: Option<String> = None;
-
-    const VALID_TAGS: [&str; 2] = ["ralph-status", "ralph-summary"];
 
     loop {
         buf.clear();

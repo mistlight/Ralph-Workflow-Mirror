@@ -127,6 +127,10 @@ impl CodexParser {
     ///
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to invoke parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stream parsing or file operations fail.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn parse_stream_for_test<R: std::io::BufRead>(
         &self,

@@ -17,6 +17,13 @@
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Agent validation fails
+/// - Pipeline initialization fails
+/// - Any pipeline phase execution fails
 #[cfg(feature = "test-utils")]
 pub fn run_with_config(
     args: Args,
@@ -59,6 +66,13 @@ pub fn run_with_config(
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Agent validation fails
+/// - Pipeline initialization fails
+/// - Any pipeline phase execution fails
 #[cfg(feature = "test-utils")]
 pub fn run_with_config_and_resolver<
     P: crate::config::ConfigEnvironment,
@@ -272,6 +286,13 @@ where
 /// assert!(app_handler.captured().iter().any(|e| matches!(e, AppEffect::GitRequireRepo)));
 /// assert!(effect_handler.captured_effects().iter().any(|e| matches!(e, Effect::CreateCommit { .. })));
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Agent validation fails
+/// - Pipeline initialization fails
+/// - Any pipeline phase execution fails
 #[cfg(feature = "test-utils")]
 pub fn run_with_config_and_handlers<'a, 'ctx, P, A, E>(
     params: RunWithHandlersParams<'a, 'ctx, P, A, E>,

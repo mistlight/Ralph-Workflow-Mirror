@@ -307,18 +307,12 @@ fn format_branch_info_section(info: &BranchInfo) -> String {
     let mut section = String::new();
 
     section.push_str("## Branch Information\n\n");
-    section.push_str(&format!(
-        "- **Current branch**: `{}`\n",
-        info.current_branch
-    ));
-    section.push_str(&format!(
-        "- **Target branch**: `{}`\n",
-        info.upstream_branch
-    ));
-    section.push_str(&format!(
-        "- **Diverging commits**: {}\n\n",
-        info.diverging_count
-    ));
+    writeln!(section, "- **Current branch**: `{}`",
+        info.current_branch).unwrap();
+    writeln!(section, "- **Target branch**: `{}`",
+        info.upstream_branch).unwrap();
+    writeln!(section, "- **Diverging commits**: {}\n",
+        info.diverging_count).unwrap();
 
     if !info.current_commits.is_empty() {
         section.push_str("### Recent commits on current branch:\n\n");

@@ -1,3 +1,4 @@
+
 // Step lifecycle formatting.
 
 impl OpenCodeParser {
@@ -133,15 +134,13 @@ impl OpenCodeParser {
                     }
                     match terminal_mode {
                         TerminalMode::Basic => {
-                            out.push_str(&format!(
-                                "{}[{}]{} {}{}{}\n",
+                            writeln!(out, "{}[{}]{} {}{}{}",
                                 c.dim(),
                                 prefix,
                                 c.reset(),
                                 c.white(),
                                 sanitized,
-                                c.reset()
-                            ));
+                                c.reset()).unwrap();
                         }
                         TerminalMode::None => {
                             writeln!(out, "[{prefix}] {sanitized}").unwrap();

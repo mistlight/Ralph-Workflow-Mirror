@@ -81,12 +81,15 @@ impl ConfigLoadWithValidationError {
                 }
 
                 if !other_errors.is_empty() {
+                    use std::fmt::Write;
                     for error in other_errors {
-                        output.push_str(&format!(
+                        write!(
+                            output,
                             "{}:\n  {}\n",
                             error.file().display(),
                             format_single_error(error)
-                        ));
+                        )
+                        .unwrap();
                     }
                     output.push('\n');
                 }
@@ -109,12 +112,10 @@ fn format_single_error(error: &ConfigValidationError) -> String {
         }
         ConfigValidationError::UnknownKey {
             key, suggestion, ..
-        } => {
-            suggestion.as_ref().map_or_else(
-                || format!("Unknown key '{key}'"),
-                |s| format!("Unknown key '{key}'. Did you mean '{s}'?"),
-            )
-        }
+        } => suggestion.as_ref().map_or_else(
+            || format!("Unknown key '{key}'"),
+            |s| format!("Unknown key '{key}'. Did you mean '{s}'?"),
+        ),
         ConfigValidationError::InvalidValue { key, message, .. } => {
             format!("Invalid value for '{key}': {message}")
         }
@@ -337,10 +338,11 @@ pub fn load_config_from_path_with_env(
     };
 
     // Step 4: Convert to Config
-    let config = merged_unified.as_ref().map_or_else(
-        default_config,
-        |unified_cfg| config_from_unified(unified_cfg, &mut warnings),
-    );
+    let config = merged_unified
+        .as_ref()
+        .map_or_else(default_config, |unified_cfg| {
+            config_from_unified(unified_cfg, &mut warnings)
+        });
 
     // Step 5: Apply environment variable overrides
     let config = apply_env_overrides(config, &mut warnings);

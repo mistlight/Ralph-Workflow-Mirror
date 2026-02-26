@@ -11,6 +11,13 @@
 /// # Type Parameters
 ///
 /// * `H` - Effect handler type that implements `EffectHandler` and `StatefulHandler`
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Resume validation fails
+/// - Pipeline execution fails
+/// - Effect handling fails
 #[cfg(feature = "test-utils")]
 pub fn run_pipeline_with_effect_handler<'ctx, H>(
     ctx: &PipelineContext,

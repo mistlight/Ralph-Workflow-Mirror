@@ -277,6 +277,15 @@ impl UnifiedConfig {
             GeneralWorkflowFlags,
         };
 
+        // Merge CCS config - empty string means use global
+        fn merge_ccs_string(local: &str, global: &str) -> String {
+            if local.is_empty() {
+                global.to_string()
+            } else {
+                local.to_string()
+            }
+        }
+
         // For programmatically-constructed configs, we use default comparison
         // NOTE: This has known issues with booleans and default-valued fields (Issue #2)
         // but is kept for backward compatibility with tests
@@ -408,15 +417,6 @@ impl UnifiedConfig {
                 local.general.execution_history_limit
             },
         };
-
-        // Merge CCS config - empty string means use global
-        fn merge_ccs_string(local: &str, global: &str) -> String {
-            if local.is_empty() {
-                global.to_string()
-            } else {
-                local.to_string()
-            }
-        }
 
         let ccs = CcsConfig {
             output_flag: merge_ccs_string(&local.ccs.output_flag, &self.ccs.output_flag),

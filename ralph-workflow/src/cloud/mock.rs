@@ -26,15 +26,24 @@ impl MockCloudReporter {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn set_should_fail(&self, fail: bool) {
         *self.should_fail.lock().unwrap() = fail;
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     #[must_use]
     pub fn calls(&self) -> Vec<MockCloudCall> {
         self.calls.lock().unwrap().clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     #[must_use]
     pub fn progress_count(&self) -> usize {
         self.calls
@@ -45,6 +54,9 @@ impl MockCloudReporter {
             .count()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     #[must_use]
     pub fn heartbeat_count(&self) -> usize {
         self.calls

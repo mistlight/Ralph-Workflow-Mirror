@@ -1,11 +1,17 @@
 use sha2::{Digest, Sha256};
+use std::fmt::Write;
 
 #[must_use]
 pub fn sha256_hex_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    digest
+        .iter()
+        .fold(String::with_capacity(64), |mut acc, b| {
+            write!(acc, "{b:02x}").unwrap();
+            acc
+        })
 }
 
 #[must_use]

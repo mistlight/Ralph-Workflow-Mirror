@@ -16,7 +16,7 @@ pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> Strin
 
     if let Some(ctx) = output_context {
         if let Some(pass) = ctx.pass {
-            write!(output, "\n╔═══ Fix Pass {pass} ═══╗\n\n").unwrap();
+            writeln!(output, "\n╔═══ Fix Pass {pass} ═══╗\n").unwrap();
         }
     }
 

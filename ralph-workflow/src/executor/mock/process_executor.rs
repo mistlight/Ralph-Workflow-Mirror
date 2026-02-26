@@ -113,6 +113,9 @@ impl MockProcessExecutor {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     #[must_use]
     pub fn with_result(self, command: &str, result: io::Result<ProcessOutput>) -> Self {
         self.results
@@ -167,14 +170,23 @@ impl MockProcessExecutor {
         self.with_result(command, Err(io::Error::new(kind, message)))
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn execute_count(&self) -> usize {
         self.execute_calls.lock().unwrap().len()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn execute_calls(&self) -> Vec<ExecuteCall> {
         self.execute_calls.lock().unwrap().clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn execute_calls_for(&self, command: &str) -> Vec<ExecuteCall> {
         self.execute_calls
             .lock()
@@ -185,11 +197,17 @@ impl MockProcessExecutor {
             .collect()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn reset_calls(&self) {
         self.execute_calls.lock().unwrap().clear();
         self.agent_calls.lock().unwrap().clear();
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     #[must_use]
     pub fn with_agent_result(
         self,
@@ -203,10 +221,16 @@ impl MockProcessExecutor {
         self
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn agent_calls(&self) -> Vec<AgentSpawnConfig> {
         self.agent_calls.lock().unwrap().clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn agent_calls_for(&self, command_pattern: &str) -> Vec<AgentSpawnConfig> {
         self.agent_calls
             .lock()

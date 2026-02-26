@@ -19,6 +19,10 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_file(".agent/PLAN.md", "# Implementation Plan");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
     #[must_use]
     pub fn with_file(self, path: &str, content: &str) -> Self {
         let path_buf = PathBuf::from(path);
@@ -44,6 +48,10 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_file_at_time("old_file.txt", "content", old_time);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
     #[must_use]
     pub fn with_file_at_time(
         self,
@@ -74,6 +82,10 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_file_bytes("binary.dat", &[0xFF, 0xFE, 0xFD]);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
     #[must_use]
     pub fn with_file_bytes(self, path: &str, content: &[u8]) -> Self {
         let path_buf = PathBuf::from(path);

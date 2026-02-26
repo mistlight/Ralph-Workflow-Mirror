@@ -218,6 +218,10 @@ impl MemoryConfigEnvironment {
     }
 
     /// Pre-populate a file in memory.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
     #[must_use]
     pub fn with_file<P: Into<PathBuf>, S: Into<String>>(self, path: P, content: S) -> Self {
         let path = path.into();
@@ -235,6 +239,10 @@ impl MemoryConfigEnvironment {
     }
 
     /// Get the contents of a file (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
     #[must_use]
     pub fn get_file(&self, path: &Path) -> Option<String> {
         self.files.read()
@@ -243,6 +251,10 @@ impl MemoryConfigEnvironment {
     }
 
     /// Check if a file was written (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
     #[must_use]
     pub fn was_written(&self, path: &Path) -> bool {
         self.files.read()

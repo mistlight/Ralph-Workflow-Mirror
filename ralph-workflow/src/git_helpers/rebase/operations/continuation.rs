@@ -19,6 +19,10 @@
 ///
 /// This is the authoritative source for rebase completion verification.
 /// It does NOT depend on parsing agent output or any other external signals.
+///
+/// # Errors
+///
+/// Returns an error if the repository cannot be accessed or branch verification fails.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn verify_rebase_completed(upstream_branch: &str) -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;

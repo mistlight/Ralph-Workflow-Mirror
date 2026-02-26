@@ -84,21 +84,19 @@ where
         handler.execute(effect, ctx)
     })) {
         Ok(Ok(result)) => GuardedEffectResult::Ok(Box::new(result)),
-        Ok(Err(err)) => {
-            extract_error_event(&err).map_or_else(
-                || GuardedEffectResult::Unrecoverable(err),
-                |error_event| {
-                    GuardedEffectResult::Ok(Box::new(crate::reducer::effect::EffectResult::event(
-                        crate::reducer::event::PipelineEvent::PromptInput(
-                            crate::reducer::event::PromptInputEvent::HandlerError {
-                                phase: state.phase,
-                                error: error_event,
-                            },
-                        ),
-                    )))
-                },
-            )
-        }
+        Ok(Err(err)) => extract_error_event(&err).map_or_else(
+            || GuardedEffectResult::Unrecoverable(err),
+            |error_event| {
+                GuardedEffectResult::Ok(Box::new(crate::reducer::effect::EffectResult::event(
+                    crate::reducer::event::PipelineEvent::PromptInput(
+                        crate::reducer::event::PromptInputEvent::HandlerError {
+                            phase: state.phase,
+                            error: error_event,
+                        },
+                    ),
+                )))
+            },
+        ),
         Err(_) => GuardedEffectResult::Panic,
     }
 }

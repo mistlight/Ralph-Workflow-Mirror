@@ -45,10 +45,20 @@ const EXAMPLE_COMMIT_XML: &str = r"<ralph-commit>
 pub fn validate_xml_against_xsd(
     xml_content: &str,
 ) -> Result<CommitMessageElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 6] = [
+        "ralph-subject",
+        "ralph-body",
+        "ralph-body-summary",
+        "ralph-body-details",
+        "ralph-body-footer",
+        "ralph-skip",
+    ];
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = create_reader(content);
@@ -82,7 +92,7 @@ pub fn validate_xml_against_xsd(
                     example: Some(EXAMPLE_COMMIT_XML.into()),
                 });
             }
-            Ok(Event::Text(_)) | Ok(_) => {
+            Ok(Event::Text(_) | _) => {
                 // Text before root element or other events - continue to find root or reach EOF
                 // EOF will give a more informative "missing root element" error
             }
@@ -98,15 +108,6 @@ pub fn validate_xml_against_xsd(
     let mut body_details: Option<String> = None;
     let mut body_footer: Option<String> = None;
     let mut skip_reason: Option<String> = None;
-
-    const VALID_TAGS: [&str; 6] = [
-        "ralph-subject",
-        "ralph-body",
-        "ralph-body-summary",
-        "ralph-body-details",
-        "ralph-body-footer",
-        "ralph-skip",
-    ];
 
     loop {
         buf.clear();

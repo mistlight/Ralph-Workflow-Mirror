@@ -22,10 +22,11 @@
 ///
 /// Returns error if the operation fails.
 pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = Reader::from_str(content);

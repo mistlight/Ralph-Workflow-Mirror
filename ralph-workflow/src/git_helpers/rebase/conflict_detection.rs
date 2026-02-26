@@ -75,6 +75,10 @@ impl ConcurrentOperation {
 ///     Err(e) => eprintln!("Error checking: {e}"),
 /// }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if the git repository cannot be accessed or filesystem operations fail.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperation>> {
     use std::fs;
@@ -151,6 +155,10 @@ pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperati
 /// # Returns
 ///
 /// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if the git command fails to execute.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn rebase_in_progress_cli(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<bool> {
     let output = executor.execute("git", &["status", "--porcelain"], &[], None)?;
@@ -197,6 +205,10 @@ impl CleanupResult {
 ///
 /// Returns `Ok(CleanupResult)` with details of what was cleaned up,
 /// or an error if cleanup failed catastrophically.
+///
+/// # Errors
+///
+/// Returns an error if the git repository cannot be accessed or filesystem operations fail.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
     use std::fs;
@@ -336,6 +348,10 @@ fn validate_state_file(path: &Path) -> io::Result<bool> {
 ///     Err(e) => println!("Recovery failed: {e}"),
 /// }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if recovery operations fail.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn attempt_automatic_recovery(
     executor: &dyn crate::executor::ProcessExecutor,
@@ -462,6 +478,10 @@ pub fn validate_git_state() -> io::Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(true)` if the working tree is dirty, `Ok(false)` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if the git command fails to execute.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn is_dirty_tree_cli(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<bool> {
     let output = executor.execute("git", &["status", "--porcelain"], &[], None)?;

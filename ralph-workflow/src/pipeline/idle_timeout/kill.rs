@@ -165,8 +165,7 @@ pub fn kill_process(
 
             match status {
                 Ok(Some(_)) => return KillResult::TerminatedByTerm,
-                Ok(None) => std::thread::sleep(config.poll_interval),
-                Err(_) => std::thread::sleep(config.poll_interval),
+                Ok(None) | Err(_) => std::thread::sleep(config.poll_interval),
             }
         }
 
@@ -193,8 +192,7 @@ pub fn kill_process(
 
             match status {
                 Ok(Some(_)) => return KillResult::TerminatedByKill,
-                Ok(None) => std::thread::sleep(config.poll_interval),
-                Err(_) => std::thread::sleep(config.poll_interval),
+                Ok(None) | Err(_) => std::thread::sleep(config.poll_interval),
             }
         }
 
@@ -237,8 +235,7 @@ pub(crate) fn kill_process(
 
             match status {
                 Ok(Some(_)) => return KillResult::TerminatedByKill,
-                Ok(None) => std::thread::sleep(config.poll_interval),
-                Err(_) => std::thread::sleep(config.poll_interval),
+                Ok(None) | Err(_) => std::thread::sleep(config.poll_interval),
             }
         }
 

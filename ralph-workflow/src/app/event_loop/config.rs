@@ -185,7 +185,7 @@ mod resume_overlay_tests {
 }
 
 /// Configuration for event loop.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct EventLoopConfig {
     /// Maximum number of iterations to prevent infinite loops.
     pub max_iterations: usize,

@@ -21,7 +21,7 @@ pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> Strin
     // Header with optional iteration context
     if let Some(ctx) = output_context {
         if let Some(iter) = ctx.iteration {
-            write!(output, "\n╔═══ Development Iteration {iter} ═══╗\n\n").unwrap();
+            writeln!(output, "\n╔═══ Development Iteration {iter} ═══╗\n").unwrap();
         }
     }
 
@@ -33,7 +33,7 @@ pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> Strin
             "failed" => ("❌", "Failed"),
             _ => ("❓", "Unknown"),
         };
-        write!(output, "{status_emoji} Status: {status_label}\n\n").unwrap();
+        writeln!(output, "{status_emoji} Status: {status_label}\n").unwrap();
 
         // Summary with proper formatting for multiline
         output.push_str("📋 Summary:\n");
@@ -80,22 +80,18 @@ fn render_files_changed_as_diff_like_view(files_changed: &str) -> String {
     let file_list: Vec<&str> = items.iter().map(|(p, _)| p.as_str()).collect();
     let mut output = String::new();
     output.push_str("\n📁 Files Changed:\n");
-    output.push_str(&format!(
-        "   Modified {} file(s): {}\n",
+    writeln!(output, "   Modified {} file(s): {}",
         file_list.len(),
-        file_list.join(", ")
-    ));
+        file_list.join(", ")).unwrap();
 
     for (path, action) in items {
-        write!(output, "\n   📄 {path}\n").unwrap();
-        output.push_str(&format!(
-            "      Action: {}\n",
+        writeln!(output, "\n   📄 {path}").unwrap();
+        writeln!(output, "      Action: {}",
             match action {
                 ChangeAction::Create => "created",
                 ChangeAction::Modify => "modified",
                 ChangeAction::Delete => "deleted",
-            }
-        ));
+            }).unwrap();
         output.push_str("      (no diff provided)\n");
     }
 

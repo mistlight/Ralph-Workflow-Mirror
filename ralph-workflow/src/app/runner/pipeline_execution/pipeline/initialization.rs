@@ -71,6 +71,9 @@ pub(super) struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
 pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     params: PipelinePreparationParams<'_, H>,
 ) -> anyhow::Result<Option<PipelineContext>> {
+    use crate::checkpoint::{load_checkpoint_with_workspace, save_checkpoint_with_workspace};
+    use crate::logging::RunLogContext;
+
     let PipelinePreparationParams {
         args,
         config,
@@ -97,10 +100,8 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
 
     // Create run log context for per-run log directory
     // If resuming, continue with the same run_id from checkpoint; otherwise create new
-    use crate::logging::RunLogContext;
     let run_log_context = if args.recovery.resume {
         // Try to load checkpoint to get log_run_id for resume continuity
-        use crate::checkpoint::load_checkpoint_with_workspace;
         let checkpoint = load_checkpoint_with_workspace(&*workspace)
             .context("Failed to load checkpoint for resume")?;
 
@@ -120,7 +121,6 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
                 // This save MUST succeed for resume log continuity. If it fails, we error out rather than
                 // proceeding with logs that will be fragmented on the next resume.
                 checkpoint.log_run_id = Some(run_log_context.run_id().to_string());
-                use crate::checkpoint::save_checkpoint_with_workspace;
                 save_checkpoint_with_workspace(&*workspace, &checkpoint).context(
                     "Failed to update checkpoint with log_run_id. Log continuity requires this update to succeed. \
                      Please check filesystem permissions and disk space, then retry.",
@@ -202,7 +202,7 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
 
     // Handle --generate-commit-msg
     if args.commit_plumbing.generate_commit_msg {
-        handle_generate_commit_msg(plumbing::CommitGenerationConfig {
+        handle_generate_commit_msg(&plumbing::CommitGenerationConfig {
             config: &config,
             template_context: &template_context,
             workspace: &*workspace,

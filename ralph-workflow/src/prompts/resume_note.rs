@@ -27,18 +27,14 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
     // Add phase information with specific context based on phase type
     match context.phase {
         PipelinePhase::Development => {
-            note.push_str(&format!(
-                "Resuming DEVELOPMENT phase (iteration {} of {})\n",
+            writeln!(note, "Resuming DEVELOPMENT phase (iteration {} of {})",
                 context.iteration + 1,
-                context.total_iterations
-            ));
+                context.total_iterations).unwrap();
         }
         PipelinePhase::Review => {
-            note.push_str(&format!(
-                "Resuming REVIEW phase (pass {} of {})\n",
+            writeln!(note, "Resuming REVIEW phase (pass {} of {})",
                 context.reviewer_pass + 1,
-                context.total_reviewer_passes
-            ));
+                context.total_reviewer_passes).unwrap();
         }
         _ => {
             writeln!(note, "Resuming from phase: {}", context.phase_name()).unwrap();
@@ -47,10 +43,8 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
 
     // Add resume count if this has been resumed before
     if context.resume_count > 0 {
-        note.push_str(&format!(
-            "This session has been resumed {} time(s)\n",
-            context.resume_count
-        ));
+        writeln!(note, "This session has been resumed {} time(s)",
+            context.resume_count).unwrap();
     }
 
     // Add rebase state if applicable
@@ -81,13 +75,11 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                 .collect();
 
             for step in &recent_steps {
-                note.push_str(&format!(
-                    "- [{}] {} (iteration {}): {}\n",
+                writeln!(note, "- [{}] {} (iteration {}): {}",
                     step.step_type,
                     step.phase,
                     step.iteration,
-                    step.outcome.brief_description()
-                ));
+                    step.outcome.brief_description()).unwrap();
 
                 // Add files modified count if available
                 if let Some(ref detail) = step.modified_files_detail {
@@ -113,10 +105,9 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                 // Add issues summary if available
                 if let Some(ref issues) = step.issues_summary {
                     if issues.found > 0 || issues.fixed > 0 {
-                        note.push_str(&format!(
+                        write!(note, 
                             "  Issues: {} found, {} fixed",
-                            issues.found, issues.fixed
-                        ));
+                            issues.found, issues.fixed).unwrap();
                         if let Some(ref desc) = issues.description {
                             write!(note, " ({desc})").unwrap();
                         }

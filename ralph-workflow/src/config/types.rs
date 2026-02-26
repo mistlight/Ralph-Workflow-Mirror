@@ -567,6 +567,12 @@ impl CloudConfig {
 }
 
 impl GitRemoteConfig {
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Remote name is empty
+    /// - Push branch is invalid
+    /// - Auth method configuration is invalid
     pub fn validate(&self) -> Result<(), String> {
         if self.remote_name.trim().is_empty() {
             return Err("RALPH_GIT_REMOTE must not be empty".to_string());

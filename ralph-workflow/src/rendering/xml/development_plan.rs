@@ -24,7 +24,7 @@ pub fn render(content: &str) -> String {
     if let Ok(elements) = validate_plan_xml(content) {
         // Context section
         output.push_str("📋 Context:\n");
-        write!(output, "   {}\n\n", elements.summary.context).unwrap();
+        writeln!(output, "   {}\n", elements.summary.context).unwrap();
 
         // Scope section with categories
         output.push_str("📊 Scope:\n");
@@ -55,10 +55,8 @@ pub fn render(content: &str) -> String {
                     }
                 )
             });
-            output.push_str(&format!(
-                "   {}. {}{}\n",
-                step.number, step.title, priority_badge
-            ));
+            writeln!(output, "   {}. {}{}",
+                step.number, step.title, priority_badge).unwrap();
 
             for file in &step.target_files {
                 let action_icon = match file.action {
@@ -96,7 +94,7 @@ pub fn render(content: &str) -> String {
                     Severity::Low => "🟢",
                 });
                 writeln!(output, "   {} Risk: {}", severity_icon, risk.risk).unwrap();
-                write!(output, "     → Mitigation: {}\n\n", risk.mitigation).unwrap();
+                writeln!(output, "     → Mitigation: {}\n", risk.mitigation).unwrap();
             }
         }
 

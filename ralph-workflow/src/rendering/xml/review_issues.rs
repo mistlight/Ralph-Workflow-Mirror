@@ -20,7 +20,7 @@ pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> Strin
     // Header with pass context
     if let Some(ctx) = output_context {
         if let Some(pass) = ctx.pass {
-            write!(output, "\n╔═══ Review Pass {pass} ═══╗\n\n").unwrap();
+            writeln!(output, "\n╔═══ Review Pass {pass} ═══╗\n").unwrap();
         } else {
             output.push_str("\n╔═══ Review Results ═══╗\n\n");
         }
@@ -38,10 +38,8 @@ pub fn render(content: &str, output_context: &Option<XmlOutputContext>) -> Strin
                 output.push_str("🎉 ✅ No issues found! Code looks good.\n");
             }
         } else {
-            output.push_str(&format!(
-                "🔍 Found {} issue(s) to address:\n\n",
-                elements.issues.len()
-            ));
+            writeln!(output, "🔍 Found {} issue(s) to address:\n",
+                elements.issues.len()).unwrap();
             output.push_str(&render_issues_grouped_by_file(
                 &elements.issues,
                 output_context,

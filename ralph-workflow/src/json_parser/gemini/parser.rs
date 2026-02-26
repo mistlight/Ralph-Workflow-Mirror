@@ -99,6 +99,10 @@ impl GeminiParser {
     /// Parse a stream for testing purposes.
     ///
     /// This exposes the internal `parse_stream` method for integration tests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stream parsing or file operations fail.
     #[cfg(feature = "test-utils")]
     pub fn parse_stream_for_test<R: std::io::BufRead>(
         &self,

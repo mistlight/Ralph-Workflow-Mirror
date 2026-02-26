@@ -24,7 +24,7 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
     result.push_str("### Scope\n\n");
     for item in &elements.summary.scope_items {
         if let Some(ref count) = item.count {
-            write!(result, "- **{}** {}", count, item.description).unwrap();
+            writeln!(result, "- **{}** {}", count, item.description).unwrap();
         } else {
             write!(result, "- {}", item.description).unwrap();
         }
@@ -64,10 +64,12 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
             )
         });
 
-        result.push_str(&format!(
+        write!(
+            result,
             "### Step {} ({}){}:  {}\n\n",
             step.number, step_type_str, priority_str, step.title
-        ));
+        )
+        .unwrap();
 
         // Target files
         if !step.target_files.is_empty() {
@@ -91,12 +93,12 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
 
         // Location
         if let Some(ref location) = step.location {
-            write!(result, "**Location:** {location}\n\n").unwrap();
+            writeln!(result, "**Location:** {location}").unwrap();
         }
 
         // Rationale
         if let Some(ref rationale) = step.rationale {
-            write!(result, "**Rationale:** {rationale}\n\n").unwrap();
+            writeln!(result, "**Rationale:** {rationale}\n").unwrap();
         }
 
         // Content
@@ -166,7 +168,7 @@ pub(crate) fn format_plan_as_markdown(elements: &PlanElements) -> String {
             )
         });
         writeln!(result, "**Risk{}:** {}", severity_str, rp.risk).unwrap();
-        write!(result, "**Mitigation:** {}\n\n", rp.mitigation).unwrap();
+        writeln!(result, "**Mitigation:** {}\n\n", rp.mitigation).unwrap();
     }
 
     // Verification strategy
@@ -204,7 +206,7 @@ fn format_rich_content(
             }
             ContentElement::Table(t) => {
                 if let Some(ref caption) = t.caption {
-                    write!(result, "**{caption}**\n\n").unwrap();
+                    writeln!(result, "**{caption}**").unwrap();
                 }
                 // Header row
                 if !t.columns.is_empty() {

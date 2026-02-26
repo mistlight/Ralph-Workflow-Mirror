@@ -89,11 +89,14 @@ pub const EXAMPLE_NO_ISSUES_XML: &str = r"<ralph-issues>
 /// - Text appears outside of tags
 /// - The XML is malformed
 pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 2] = ["ralph-issue", "ralph-no-issues-found"];
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
     // This provides clear error messages instead of cryptic parse errors
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = create_reader(content);
@@ -126,7 +129,7 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
                     example: Some(EXAMPLE_ISSUES_XML.into()),
                 });
             }
-            Ok(Event::Text(_)) | Ok(_) => {
+            Ok(Event::Text(_) | _) => {
                 // Text before root element or other events - continue to EOF error which is more informative
             }
             Err(e) => return Err(malformed_xml_error(e)),
@@ -137,8 +140,6 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
     // Parse child elements
     let mut issues: Vec<String> = Vec::new();
     let mut no_issues_found: Option<String> = None;
-
-    const VALID_TAGS: [&str; 2] = ["ralph-issue", "ralph-no-issues-found"];
 
     loop {
         buf.clear();

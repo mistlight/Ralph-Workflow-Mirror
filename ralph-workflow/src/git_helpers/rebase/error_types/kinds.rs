@@ -257,8 +257,9 @@ impl RebaseResult {
     #[must_use]
     pub fn conflict_files(&self) -> Option<&[String]> {
         match self {
-            Self::Conflicts(files) => Some(files),
-            Self::Failed(RebaseErrorKind::ContentConflict { files }) => Some(files),
+            Self::Conflicts(files) | Self::Failed(RebaseErrorKind::ContentConflict { files }) => {
+                Some(files)
+            }
             _ => None,
         }
     }

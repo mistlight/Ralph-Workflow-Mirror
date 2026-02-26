@@ -124,6 +124,10 @@ pub fn rebase_checkpoint_exists() -> bool {
 ///
 /// Checks that all required fields are present and valid.
 /// Returns `Ok(())` if valid, or an error describing the issue.
+///
+/// # Errors
+///
+/// Returns an error if the checkpoint is missing required fields or has invalid values.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn validate_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
     validate_checkpoint_impl(checkpoint)

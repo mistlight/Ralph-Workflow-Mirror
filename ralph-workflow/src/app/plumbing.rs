@@ -185,7 +185,7 @@ pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
 /// # Errors
 ///
 /// Returns error if the operation fails.
-pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow::Result<()> {
+pub fn handle_generate_commit_msg(config: &CommitGenerationConfig<'_>) -> anyhow::Result<()> {
     config.logger.info("Generating commit message...");
 
     // Generate the commit message using standard pipeline

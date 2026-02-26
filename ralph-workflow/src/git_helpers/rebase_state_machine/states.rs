@@ -272,6 +272,10 @@ impl RebaseStateMachine {
     /// This method consumes the state machine and saves the aborted state.
     /// It's primarily used in tests or for explicit abort scenarios where
     /// you own the state machine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if saving the checkpoint fails.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn abort(mut self) -> io::Result<()> {
         self.checkpoint = self

@@ -148,8 +148,8 @@ impl StreamingSession {
                             .unwrap_or("");
 
                         // Normalize: "TOOL_USE:{name}:{input}"
-                        reconstructed
-                            .push_str(&format!("TOOL_USE:{tool_name}:{accumulated_content}"));
+                        write!(reconstructed, "TOOL_USE:{tool_name}:{accumulated_content}").unwrap();
+                        write!(reconstructed, "TOOL_USE:{tool_name}:{accumulated_content}").unwrap();
                     }
                     ContentType::Thinking => {
                         // Thinking content - not currently used in assistant events

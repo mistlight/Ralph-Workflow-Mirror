@@ -52,11 +52,19 @@ const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
 pub fn validate_development_result_xml(
     xml_content: &str,
 ) -> Result<DevelopmentResultElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 4] = [
+        "ralph-status",
+        "ralph-summary",
+        "ralph-files-changed",
+        "ralph-next-steps",
+    ];
+
     let trimmed = xml_content.trim();
     let content = unwrap_cdata_wrapper(trimmed);
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content.as_ref())?;
 
     let mut reader = create_reader(content.as_ref());
@@ -90,7 +98,7 @@ pub fn validate_development_result_xml(
                     example: Some(EXAMPLE_DEVELOPMENT_RESULT_XML.into()),
                 });
             }
-            Ok(Event::Text(_)) | Ok(_) => {
+            Ok(Event::Text(_) | _) => {
                 // Text before root element or other events - continue to find root or reach EOF
                 // EOF will give a more informative "missing root element" error
             }
@@ -104,13 +112,6 @@ pub fn validate_development_result_xml(
     let mut summary: Option<String> = None;
     let mut files_changed: Option<String> = None;
     let mut next_steps: Option<String> = None;
-
-    const VALID_TAGS: [&str; 4] = [
-        "ralph-status",
-        "ralph-summary",
-        "ralph-files-changed",
-        "ralph-next-steps",
-    ];
 
     loop {
         buf.clear();
