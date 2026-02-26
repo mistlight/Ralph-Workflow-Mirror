@@ -19,6 +19,7 @@
 //! - `shared/_critical_header` - "CRITICAL: You have NO access" warning
 //! - `shared/_context_section` - PROMPT and PLAN context variables
 //! - `shared/_diff_section` - DIFF display in code block
+//! - `shared/_developer_iteration_guidance` - Shared implementation guidance
 //! - `shared/_output_checklist` - Prioritized checklist output format
 //! - `shared/_safety_no_execute` - No command execution, read-only mode
 //! - `shared/_unattended_mode` - Automated pipeline, no user interaction
@@ -43,6 +44,10 @@ pub fn get_shared_partials() -> HashMap<String, String> {
         (
             "shared/_diff_section".to_string(),
             include_str!("templates/shared/_diff_section.txt").to_string(),
+        ),
+        (
+            "shared/_developer_iteration_guidance".to_string(),
+            include_str!("templates/shared/_developer_iteration_guidance.txt").to_string(),
         ),
         (
             "shared/_output_checklist".to_string(),
@@ -72,6 +77,7 @@ mod tests {
         assert!(partials.contains_key("shared/_output_checklist"));
         assert!(partials.contains_key("shared/_safety_no_execute"));
         assert!(partials.contains_key("shared/_unattended_mode"));
+        assert!(partials.contains_key("shared/_developer_iteration_guidance"));
     }
 
     #[test]
@@ -105,5 +111,17 @@ mod tests {
         let partials = get_shared_partials();
         let diff_section = partials.get("shared/_diff_section").unwrap();
         assert!(diff_section.contains("{{DIFF}}"));
+    }
+
+    #[test]
+    fn test_developer_iteration_guidance_partial_contains_task_sections() {
+        let partials = get_shared_partials();
+        let guidance = partials
+            .get("shared/_developer_iteration_guidance")
+            .expect("developer iteration guidance partial should exist");
+
+        assert!(guidance.contains("YOUR TASK"));
+        assert!(guidance.contains("VERIFICATION AND VALIDATION"));
+        assert!(guidance.contains("EXPLORATION AND CONTEXT GATHERING"));
     }
 }
