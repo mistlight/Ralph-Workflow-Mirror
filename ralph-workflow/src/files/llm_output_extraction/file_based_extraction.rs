@@ -137,7 +137,7 @@ pub fn has_valid_xml_output(workspace: &dyn Workspace, xml_path: &Path) -> bool 
         return false;
     }
 
-    workspace.read(xml_path).map_or(false, |content| {
+    workspace.read(xml_path).is_ok_and(|content| {
         let trimmed = content.trim();
         !trimmed.is_empty() && trimmed.starts_with('<')
     })

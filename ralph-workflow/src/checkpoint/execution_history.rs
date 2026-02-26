@@ -424,7 +424,7 @@ impl FileSnapshot {
     /// Get the file content, decompressing if necessary.
     #[must_use]
     pub fn get_content(&self) -> Option<String> {
-        self.content.as_ref().map(Clone::clone).or_else(|| {
+        self.content.clone().or_else(|| {
             self.compressed_content.as_ref().and_then(|compressed| decompress_data(compressed).ok())
         })
     }
