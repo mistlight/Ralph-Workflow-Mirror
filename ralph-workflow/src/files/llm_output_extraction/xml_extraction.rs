@@ -5,6 +5,7 @@
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
 
 /// Extract an XML commit message from AI output using multiple strategies.
+#[must_use]
 pub fn extract_xml_commit(content: &str) -> Option<String> {
     // Strategy 1: Direct XML at start (most efficient)
     if let Some(xml) = try_extract_direct_xml(content) {

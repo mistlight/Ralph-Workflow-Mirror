@@ -75,9 +75,9 @@ fn test_error_type_descriptions() {
 #[test]
 fn test_validate_subject_with_code_element() {
     // XSD allows <code> elements for escaping special characters
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>fix: handle <code>a &lt; b</code> comparison</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
@@ -90,10 +90,10 @@ fn test_validate_subject_with_code_element() {
 
 #[test]
 fn test_validate_body_with_code_element() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>feat: add generic support</ralph-subject>
 <ralph-body>Added <code>HashMap&lt;K, V&gt;</code> support to the parser.</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
@@ -104,11 +104,11 @@ fn test_validate_body_with_code_element() {
 
 #[test]
 fn test_validate_detailed_body_with_code_elements() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>refactor: improve type handling</ralph-subject>
 <ralph-body-summary>Refactored <code>Option&lt;T&gt;</code> handling</ralph-body-summary>
 <ralph-body-details>Changed <code>if a &lt; b</code> to <code>if a &gt; b</code></ralph-body-details>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());

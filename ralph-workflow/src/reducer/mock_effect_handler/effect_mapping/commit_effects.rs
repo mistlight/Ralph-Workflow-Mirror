@@ -5,29 +5,29 @@
 //!
 //! ## Commit Phase Flow
 //!
-//! 1. **CheckCommitDiff** - Verify there are changes to commit
-//! 2. **MaterializeCommitInputs** - Prepare diff input for commit agent
-//! 3. **PrepareCommitPrompt** - Generate commit prompt
-//! 4. **InvokeCommitAgent** - Execute commit agent
-//! 5. **CleanupCommitXml** - Clean any existing XML
-//! 6. **ExtractCommitXml** - Extract XML from agent output
-//! 7. **ValidateCommitXml** - Validate and parse commit message
-//! 8. **ApplyCommitMessageOutcome** - Apply commit message to state
-//! 9. **ArchiveCommitXml** - Archive XML
-//! 10. **CreateCommit** or **SkipCommit** - Create git commit or skip if no changes
+//! 1. **`CheckCommitDiff`** - Verify there are changes to commit
+//! 2. **`MaterializeCommitInputs`** - Prepare diff input for commit agent
+//! 3. **`PrepareCommitPrompt`** - Generate commit prompt
+//! 4. **`InvokeCommitAgent`** - Execute commit agent
+//! 5. **`CleanupCommitXml`** - Clean any existing XML
+//! 6. **`ExtractCommitXml`** - Extract XML from agent output
+//! 7. **`ValidateCommitXml`** - Validate and parse commit message
+//! 8. **`ApplyCommitMessageOutcome`** - Apply commit message to state
+//! 9. **`ArchiveCommitXml`** - Archive XML
+//! 10. **`CreateCommit`** or **`SkipCommit`** - Create git commit or skip if no changes
 //!
 //! ## Rebase Support
 //!
 //! Before commit, the pipeline may rebase onto a target branch:
-//! - **RunRebase** - Rebase onto target branch
-//! - **ResolveRebaseConflicts** - Resolve conflicts if rebase fails
+//! - **`RunRebase`** - Rebase onto target branch
+//! - **`ResolveRebaseConflicts`** - Resolve conflicts if rebase fails
 //!
 //! ## Mock Behavior
 //!
 //! - Mock always returns a valid commit message
-//! - **CheckCommitDiff** can be configured to simulate empty diff (for testing skip logic)
-//! - **CreateCommit** returns a fake commit hash
-//! - **RunRebase** always succeeds with a fake head OID
+//! - **`CheckCommitDiff`** can be configured to simulate empty diff (for testing skip logic)
+//! - **`CreateCommit`** returns a fake commit hash
+//! - **`RunRebase`** always succeeds with a fake head OID
 
 use crate::files::llm_output_extraction::try_extract_xml_commit_with_trace;
 use crate::reducer::effect::Effect;
@@ -46,7 +46,7 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for each commit effect without
     /// performing real agent execution, XML validation, or git operations.
     pub(super) fn handle_commit_effect(
-        &mut self,
+        &self,
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
         match effect {
@@ -137,25 +137,27 @@ impl MockEffectHandler {
                     _ => 1,
                 };
                 let xml = self.simulate_commit_message_xml.clone().unwrap_or_else(|| {
-                    r#"<ralph-commit>
+                    r"<ralph-commit>
 <ralph-subject>feat: mock commit message for testing</ralph-subject>
 <ralph-body>This is a mock commit body generated for testing purposes.
 
 - Changed some files
 - Added new features</ralph-body>
-</ralph-commit>"#
+</ralph-commit>"
                         .to_string()
                 });
 
                 let (message, skip_reason, detail) = try_extract_xml_commit_with_trace(&xml);
 
-                let event = if let Some(reason) = skip_reason {
-                    PipelineEvent::commit_skipped(reason)
-                } else if let Some(message) = message {
-                    PipelineEvent::commit_xml_validated(message, attempt)
-                } else {
-                    PipelineEvent::commit_xml_validation_failed(detail, attempt)
-                };
+                let event = skip_reason.map_or_else(
+                    || {
+                        message.map_or_else(
+                            || PipelineEvent::commit_xml_validation_failed(detail, attempt),
+                            |message| PipelineEvent::commit_xml_validated(message, attempt),
+                        )
+                    },
+                    PipelineEvent::commit_skipped,
+                );
 
                 let ui = vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::CommitMessage,
@@ -167,24 +169,39 @@ impl MockEffectHandler {
             }
 
             Effect::ApplyCommitMessageOutcome => {
-                let event = match self.state.commit_validated_outcome.as_ref() {
-                    Some(outcome) => match (&outcome.message, &outcome.reason) {
-                        (Some(message), _) => PipelineEvent::commit_message_generated(
-                            message.clone(),
-                            outcome.attempt,
-                        ),
-                        (None, Some(reason)) => PipelineEvent::commit_message_validation_failed(
-                            reason.clone(),
-                            outcome.attempt,
-                        ),
-                        _ => PipelineEvent::commit_generation_failed(
-                            "Mock commit outcome missing message and reason".to_string(),
-                        ),
+                let event = self.state.commit_validated_outcome.as_ref().map_or_else(
+                    || {
+                        PipelineEvent::commit_generation_failed(
+                            "Mock commit outcome missing".to_string(),
+                        )
                     },
-                    None => PipelineEvent::commit_generation_failed(
-                        "Mock commit outcome missing".to_string(),
-                    ),
-                };
+                    |outcome| {
+                        outcome.message.as_ref().map_or_else(
+                            || {
+                                outcome.reason.as_ref().map_or_else(
+                                    || {
+                                        PipelineEvent::commit_generation_failed(
+                                            "Mock commit outcome missing message and reason"
+                                                .to_string(),
+                                        )
+                                    },
+                                    |reason| {
+                                        PipelineEvent::commit_message_validation_failed(
+                                            reason.clone(),
+                                            outcome.attempt,
+                                        )
+                                    },
+                                )
+                            },
+                            |message| {
+                                PipelineEvent::commit_message_generated(
+                                    message.clone(),
+                                    outcome.attempt,
+                                )
+                            },
+                        )
+                    },
+                );
                 Some((event, vec![]))
             }
 

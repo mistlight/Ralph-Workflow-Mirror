@@ -1,3 +1,9 @@
+// DO NOT CHANGE THESE CLIPPY SETTINGS, YOU MUST REFACTOR INSTEAD, EVEN IF IT TAKES YOU 100 YEARS
+// Note: clippy::cargo is not enabled because it flags transitive dependency version conflicts
+// (e.g., bitflags 1.3.2 from inotify vs 2.10.0 from other crates) which are ecosystem-level
+// issues outside our control and don't reflect code quality problems.
+#![deny(warnings, clippy::all, clippy::pedantic, clippy::nursery)]
+
 use git2::build::CheckoutBuilder;
 use git2::{IndexAddOption, Oid, Repository, Signature, Status, StatusOptions};
 use std::fs;

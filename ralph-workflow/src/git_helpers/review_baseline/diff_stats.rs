@@ -29,8 +29,16 @@ pub struct BaselineSummary {
 impl BaselineSummary {
     /// Format a compact version for inline display.
     pub fn format_compact(&self) -> String {
-        match &self.baseline_oid {
-            Some(oid) => {
+        self.baseline_oid.as_ref().map_or_else(
+            || {
+                format!(
+                    "Baseline: start_commit ({} files: +{}/-{} lines)",
+                    self.diff_stats.files_changed,
+                    self.diff_stats.lines_added,
+                    self.diff_stats.lines_deleted
+                )
+            },
+            |oid| {
                 let short_oid = &oid[..8.min(oid.len())];
                 if self.is_stale {
                     format!(
@@ -51,16 +59,8 @@ impl BaselineSummary {
                         self.diff_stats.lines_deleted
                     )
                 }
-            }
-            None => {
-                format!(
-                    "Baseline: start_commit ({} files: +{}/-{} lines)",
-                    self.diff_stats.files_changed,
-                    self.diff_stats.lines_added,
-                    self.diff_stats.lines_deleted
-                )
-            }
-        }
+            },
+        )
     }
 
     /// Format a detailed version for verbose display.
@@ -73,7 +73,7 @@ impl BaselineSummary {
         match &self.baseline_oid {
             Some(oid) => {
                 let short_oid = &oid[..8.min(oid.len())];
-                lines.push(format!("  Commit: {}", short_oid));
+                lines.push(format!("  Commit: {short_oid}"));
                 if self.commits_since > 0 {
                     lines.push(format!("  Commits since baseline: {}", self.commits_since));
                 }
@@ -97,11 +97,11 @@ impl BaselineSummary {
             lines.push(String::new());
             lines.push("  Changed files:".to_string());
             for file in &self.diff_stats.changed_files {
-                lines.push(format!("    - {}", file));
+                lines.push(format!("    - {file}"));
             }
             if self.diff_stats.changed_files.len() < self.diff_stats.files_changed {
                 let remaining = self.diff_stats.files_changed - self.diff_stats.changed_files.len();
-                lines.push(format!("    ... and {} more", remaining));
+                lines.push(format!("    ... and {remaining} more"));
             }
         }
 
@@ -122,12 +122,16 @@ impl BaselineSummary {
 /// Returns a `BaselineSummary` containing information about the current
 /// baseline, commits since baseline, staleness, and diff statistics.
 ///
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_baseline_summary() -> io::Result<BaselineSummary> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     get_baseline_summary_impl(&repo, load_review_baseline()?)
 }
 
-/// Implementation of get_baseline_summary.
+/// Implementation of `get_baseline_summary`.
 fn get_baseline_summary_impl(
     repo: &git2::Repository,
     baseline: ReviewBaseline,
@@ -146,7 +150,7 @@ fn get_baseline_summary_impl(
     let is_stale = commits_since > 10;
 
     // Get diff statistics
-    let diff_stats = get_diff_stats(repo, &baseline_oid)?;
+    let diff_stats = get_diff_stats(repo, baseline_oid.as_ref())?;
 
     Ok(BaselineSummary {
         baseline_oid,
@@ -168,17 +172,17 @@ fn count_lines_in_blob(content: &[u8]) -> usize {
     // Count newlines and add 1 to get the line count
     // This matches the previous behavior and ensures that even files
     // without trailing newlines are counted correctly
-    content.iter().filter(|&&c| c == b'\n').count() + 1
+    content.iter().copied().filter(|&c| c == b'\n').count() + 1
 }
 
 /// Get diff statistics for changes since the baseline.
-fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io::Result<DiffStats> {
+fn get_diff_stats(repo: &git2::Repository, baseline_oid: Option<&String>) -> io::Result<DiffStats> {
     let baseline_tree = match baseline_oid {
         Some(oid) => {
             let oid = git2::Oid::from_str(oid).map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("Invalid baseline OID: {}", oid),
+                    format!("Invalid baseline OID: {oid}"),
                 )
             })?;
             let commit = repo.find_commit(oid).map_err(|e| to_io_error(&e))?;
@@ -232,14 +236,11 @@ fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io:
             }
 
             match delta.status() {
-                Delta::Added => {
+                Delta::Added | Delta::Modified => {
                     delta_ids.push((delta.new_file().id(), true));
                 }
                 Delta::Deleted => {
                     delta_ids.push((delta.old_file().id(), false));
-                }
-                Delta::Modified => {
-                    delta_ids.push((delta.new_file().id(), true));
                 }
                 _ => {}
             }

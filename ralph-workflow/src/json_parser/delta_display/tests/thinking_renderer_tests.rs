@@ -1,4 +1,4 @@
-//! Tests for ThinkingDeltaRenderer implementation.
+//! Tests for `ThinkingDeltaRenderer` implementation.
 
 use super::*;
 

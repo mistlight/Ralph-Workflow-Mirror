@@ -15,7 +15,7 @@
 //! This module is ONLY responsible for formatting. It must NOT:
 //! - Read/write files or touch Workspace
 //! - Spawn processes or call executors
-//! - Decide pipeline control flow or emit/handle PipelineEvent
+//! - Decide pipeline control flow or emit/handle `PipelineEvent`
 //! - Perform XML extraction from logs (only render already-provided content)
 //!
 //! # Output Channels

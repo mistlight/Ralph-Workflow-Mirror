@@ -33,7 +33,7 @@ use std::time::Instant;
 /// * `j` - The cycle number (used for logging and prompt keys)
 /// * `_reviewer_context` - Context level for the fix prompt (currently unused)
 /// * `_resume_context` - Optional resume context for checkpoint replay
-/// * `_agent` - Optional agent override (defaults to ctx.reviewer_agent)
+/// * `agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
 ///
 /// # Returns
 ///
@@ -45,14 +45,18 @@ use std::time::Instant;
 /// - Agent configuration is missing
 /// - Prompt template contains unresolved placeholders
 /// - Status file cannot be updated
+///
+/// # Panics
+///
+/// Panics if invariants are violated.
 pub fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     _reviewer_context: ContextLevel,
     _resume_context: Option<&ResumeContext>,
-    _agent: Option<&str>,
+    agent: Option<&str>,
 ) -> anyhow::Result<FixPassResult> {
-    let active_agent = _agent.unwrap_or(ctx.reviewer_agent);
+    let active_agent = agent.unwrap_or(ctx.reviewer_agent);
     let fix_start_time = Instant::now();
 
     update_status_with_workspace(ctx.workspace, "Applying fixes", ctx.config.isolation_mode)?;
@@ -72,7 +76,7 @@ pub fn run_fix_pass(
 
     let files_to_modify = extract_file_paths_from_issues(&issues_content);
 
-    let prompt_key = format!("fix_{}", j);
+    let prompt_key = format!("fix_{j}");
     let (fix_prompt, was_replayed, substitution_log) =
         if let Some(stored_prompt) = ctx.prompt_history.get(&prompt_key) {
             (stored_prompt.clone(), true, None)
@@ -100,13 +104,12 @@ pub fn run_fix_pass(
         }
     }
 
-    if !was_replayed {
-        ctx.capture_prompt(&prompt_key, &fix_prompt);
-    } else {
+    if was_replayed {
         ctx.logger.info(&format!(
-            "Using stored prompt from checkpoint for determinism: {}",
-            prompt_key
+            "Using stored prompt from checkpoint for determinism: {prompt_key}"
         ));
+    } else {
+        ctx.capture_prompt(&prompt_key, &fix_prompt);
     }
 
     if ctx.config.verbosity.is_debug() {
@@ -154,7 +157,7 @@ pub fn run_fix_pass(
         .append_bytes(std::path::Path::new(&logfile), log_header.as_bytes())
     {
         ctx.logger
-            .warn(&format!("Failed to write agent log header: {}", e));
+            .warn(&format!("Failed to write agent log header: {e}"));
     }
 
     let log_prefix = format!("reviewer_fix_{j}"); // For attribution only
@@ -163,7 +166,7 @@ pub fn run_fix_pass(
     let agent_config = ctx
         .registry
         .resolve_config(active_agent)
-        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", active_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {active_agent}"))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let mut runtime = PipelineRuntime {
@@ -193,30 +196,14 @@ pub fn run_fix_pass(
     let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
     if result.exit_code != 0 {
         let auth_failure = stderr_contains_auth_error(&result.stderr);
-        return Ok(FixPassResult {
-            auth_failure,
-            agent_failed: true,
-            output_valid: false,
-            changes_made: false,
-            status: None,
-            summary: None,
-            xml_content: None,
-        });
+        return Ok(FixPassResult::agent_failed(auth_failure));
     }
 
     let xml_content =
         try_extract_from_file_with_workspace(ctx.workspace, Path::new(xml_paths::FIX_RESULT_XML));
 
     let Some(xml_to_validate) = xml_content else {
-        return Ok(FixPassResult {
-            auth_failure: false,
-            agent_failed: false,
-            output_valid: false,
-            changes_made: false,
-            status: None,
-            summary: None,
-            xml_content: None,
-        });
+        return Ok(FixPassResult::output_invalid(None));
     };
 
     match validate_fix_result_xml(&xml_to_validate) {
@@ -236,28 +223,17 @@ pub fn run_fix_pass(
             ctx.execution_history
                 .add_step_bounded(step, ctx.config.execution_history_limit);
 
-            Ok(FixPassResult {
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: true,
+            Ok(FixPassResult::validated(
                 changes_made,
-                status: Some(result_elements.status.clone()),
-                summary: result_elements.summary.clone(),
-                xml_content: Some(xml_to_validate),
-            })
+                result_elements.status.clone(),
+                result_elements.summary,
+                xml_to_validate,
+            ))
         }
         Err(err) => {
             ctx.logger
                 .warn(&format!("Fix XML validation failed: {err}"));
-            Ok(FixPassResult {
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: false,
-                changes_made: false,
-                status: None,
-                summary: None,
-                xml_content: Some(xml_to_validate),
-            })
+            Ok(FixPassResult::output_invalid(Some(xml_to_validate)))
         }
     }
 }

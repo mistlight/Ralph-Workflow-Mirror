@@ -17,11 +17,16 @@
 ///
 /// * `Ok(PlanElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = Reader::from_str(content);
@@ -69,7 +74,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-plan".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });

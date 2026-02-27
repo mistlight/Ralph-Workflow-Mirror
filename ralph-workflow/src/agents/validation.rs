@@ -1,8 +1,8 @@
-//! Startup validation for OpenCode agent references.
+//! Startup validation for `OpenCode` agent references.
 //!
 //! This module provides validation logic for checking that all `opencode/*`
 //! agent references in configured agent chains are valid (i.e., the provider
-//! and model exist in the OpenCode API catalog).
+//! and model exist in the `OpenCode` API catalog).
 //!
 //! Validation errors include helpful suggestions for typos using Levenshtein
 //! distance matching.
@@ -11,13 +11,17 @@ use crate::agents::fallback::FallbackConfig;
 use crate::agents::opencode_api::ApiCatalog;
 use crate::agents::opencode_resolver::OpenCodeResolver;
 
-/// Validate all OpenCode agent references in the fallback configuration.
+/// Validate all `OpenCode` agent references in the fallback configuration.
 ///
 /// This function checks that all `opencode/provider/model` references in the
 /// configured agent chains have valid providers and models in the API catalog.
 ///
 /// Returns `Ok(())` if all references are valid, or `Err(String)` with a
 /// user-friendly error message if any validation fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_opencode_agents(
     fallback: &FallbackConfig,
     catalog: &ApiCatalog,
@@ -34,7 +38,7 @@ pub fn validate_opencode_agents(
                 .get_fallbacks(crate::agents::AgentRole::Reviewer)
                 .iter(),
         )
-        .map(|s| s.as_str())
+        .map(std::string::String::as_str)
         .collect();
 
     // Validate each opencode/* agent
@@ -67,14 +71,14 @@ fn parse_opencode_ref(agent_name: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let _opencode = parts[0];
     let provider = parts[1].to_string();
     let model = parts[2].to_string();
 
     Some((provider, model))
 }
 
-/// Get all OpenCode agent references from the fallback configuration.
+/// Get all `OpenCode` agent references from the fallback configuration.
+#[must_use]
 pub fn get_opencode_refs(fallback: &FallbackConfig) -> Vec<String> {
     fallback
         .get_fallbacks(crate::agents::AgentRole::Developer)
@@ -89,7 +93,7 @@ pub fn get_opencode_refs(fallback: &FallbackConfig) -> Vec<String> {
         .collect()
 }
 
-/// Count the number of OpenCode agent references in the fallback configuration.
+/// Count the number of `OpenCode` agent references in the fallback configuration.
 #[cfg(test)]
 fn count_opencode_refs(fallback: &FallbackConfig) -> usize {
     fallback
@@ -128,7 +132,7 @@ mod tests {
                 id: "claude-sonnet-4-5".to_string(),
                 name: "Claude Sonnet 4.5".to_string(),
                 description: "Latest Claude Sonnet".to_string(),
-                context_length: Some(200000),
+                context_length: Some(200_000),
             }],
         );
 
@@ -140,7 +144,7 @@ mod tests {
         }
     }
 
-    fn create_fallback_with_refs(refs: Vec<&str>) -> FallbackConfig {
+    fn create_fallback_with_refs(refs: &[&str]) -> FallbackConfig {
         FallbackConfig {
             developer: refs.iter().map(|s| (*s).to_string()).collect(),
             ..FallbackConfig::default()
@@ -167,7 +171,7 @@ mod tests {
     #[test]
     fn test_validate_opencode_agents_valid() {
         let catalog = mock_catalog();
-        let fallback = create_fallback_with_refs(vec!["opencode/anthropic/claude-sonnet-4-5"]);
+        let fallback = create_fallback_with_refs(&["opencode/anthropic/claude-sonnet-4-5"]);
 
         let result = validate_opencode_agents(&fallback, &catalog);
         assert!(result.is_ok());
@@ -176,7 +180,7 @@ mod tests {
     #[test]
     fn test_validate_opencode_agents_invalid_provider() {
         let catalog = mock_catalog();
-        let fallback = create_fallback_with_refs(vec!["opencode/unknown/claude-sonnet-4-5"]);
+        let fallback = create_fallback_with_refs(&["opencode/unknown/claude-sonnet-4-5"]);
 
         let result = validate_opencode_agents(&fallback, &catalog);
         assert!(result.is_err());
@@ -186,7 +190,7 @@ mod tests {
     #[test]
     fn test_validate_opencode_agents_invalid_model() {
         let catalog = mock_catalog();
-        let fallback = create_fallback_with_refs(vec!["opencode/anthropic/unknown-model"]);
+        let fallback = create_fallback_with_refs(&["opencode/anthropic/unknown-model"]);
 
         let result = validate_opencode_agents(&fallback, &catalog);
         assert!(result.is_err());
@@ -195,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_count_opencode_refs() {
-        let fallback = create_fallback_with_refs(vec![
+        let fallback = create_fallback_with_refs(&[
             "opencode/anthropic/claude-sonnet-4-5",
             "claude",
             "opencode/openai/gpt-4",
@@ -207,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_get_opencode_refs() {
-        let fallback = create_fallback_with_refs(vec![
+        let fallback = create_fallback_with_refs(&[
             "opencode/anthropic/claude-sonnet-4-5",
             "claude",
             "opencode/openai/gpt-4",

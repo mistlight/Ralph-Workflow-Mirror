@@ -29,7 +29,7 @@ use std::time::Instant;
 /// * `j` - The cycle number (used for logging and prompt keys)
 /// * `review_label` - Human-readable label for this review pass
 /// * `_review_prompt` - Unused (kept for API compatibility)
-/// * `_agent` - Optional agent override (defaults to ctx.reviewer_agent)
+/// * `agent` - Optional agent override (defaults to `ctx.reviewer_agent`)
 ///
 /// # Returns
 ///
@@ -41,14 +41,18 @@ use std::time::Instant;
 /// - Agent configuration is missing
 /// - Prompt template contains unresolved placeholders
 /// - Log file cannot be written
+///
+/// # Panics
+///
+/// Panics if invariants are violated.
 pub fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     review_label: &str,
     _review_prompt: &str, // Unused - we build XML prompt internally
-    _agent: Option<&str>,
+    agent: Option<&str>,
 ) -> anyhow::Result<ReviewPassResult> {
-    let active_agent = _agent.unwrap_or(ctx.reviewer_agent);
+    let active_agent = agent.unwrap_or(ctx.reviewer_agent);
     let issues_path = Path::new(".agent/ISSUES.md");
 
     let plan_content = ctx
@@ -66,14 +70,14 @@ pub fn run_review_pass(
             }
         };
 
-    let prompt_key = format!("review_{}", j);
+    let prompt_key = format!("review_{j}");
     let (review_prompt_xml, was_replayed, substitution_log) =
         if let Some(stored_prompt) = ctx.prompt_history.get(&prompt_key) {
             (stored_prompt.clone(), true, None)
         } else {
             let refs = PromptContentBuilder::new(ctx.workspace)
-                .with_plan(plan_content.clone())
-                .with_diff(changes_content.clone(), &baseline_oid_for_prompts)
+                .with_plan(plan_content)
+                .with_diff(changes_content, &baseline_oid_for_prompts)
                 .build();
             let rendered = prompt_review_xml_with_references_and_log(
                 ctx.template_context,
@@ -95,13 +99,12 @@ pub fn run_review_pass(
         }
     }
 
-    if !was_replayed {
-        ctx.capture_prompt(&prompt_key, &review_prompt_xml);
-    } else {
+    if was_replayed {
         ctx.logger.info(&format!(
-            "Using stored prompt from checkpoint for determinism: {}",
-            prompt_key
+            "Using stored prompt from checkpoint for determinism: {prompt_key}"
         ));
+    } else {
+        ctx.capture_prompt(&prompt_key, &review_prompt_xml);
     }
 
     if ctx.config.verbosity.is_debug() {
@@ -154,7 +157,7 @@ pub fn run_review_pass(
     let agent_config = ctx
         .registry
         .resolve_config(active_agent)
-        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", active_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {active_agent}"))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let mut runtime = PipelineRuntime {
@@ -185,14 +188,7 @@ pub fn run_review_pass(
     let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
     if result.exit_code != 0 {
         let auth_failure = stderr_contains_auth_error(&result.stderr);
-        return Ok(ReviewPassResult {
-            early_exit: false,
-            auth_failure,
-            agent_failed: true,
-            output_valid: false,
-            issues_found: false,
-            xml_content: None,
-        });
+        return Ok(ReviewPassResult::agent_failed(auth_failure));
     }
 
     let parse_result = extract_and_validate_review_output_xml(ctx, &log_prefix, issues_path)?;
@@ -221,14 +217,7 @@ pub fn run_review_pass(
             ctx.execution_history
                 .add_step_bounded(step, ctx.config.execution_history_limit);
 
-            Ok(ReviewPassResult {
-                early_exit: false,
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: true,
-                issues_found: true,
-                xml_content: Some(xml_content),
-            })
+            Ok(ReviewPassResult::issues_found(xml_content))
         }
         ParseResult::NoIssuesExplicit { xml_content } => {
             ctx.logger
@@ -249,27 +238,13 @@ pub fn run_review_pass(
             ctx.execution_history
                 .add_step_bounded(step, ctx.config.execution_history_limit);
 
-            Ok(ReviewPassResult {
-                early_exit: true,
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: true,
-                issues_found: false,
-                xml_content: Some(xml_content),
-            })
+            Ok(ReviewPassResult::no_issues(xml_content))
         }
         ParseResult::ParseFailed(reason) => {
             ctx.logger
                 .warn(&format!("Review output validation failed: {reason}"));
 
-            Ok(ReviewPassResult {
-                early_exit: false,
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: false,
-                issues_found: false,
-                xml_content: None,
-            })
+            Ok(ReviewPassResult::output_invalid())
         }
     }
 }

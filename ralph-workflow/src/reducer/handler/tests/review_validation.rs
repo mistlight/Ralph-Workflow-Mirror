@@ -118,7 +118,7 @@ impl Workspace for ReadFailingWorkspace {
 
 #[test]
 fn test_validate_review_issues_xml_emits_event_with_xml_output() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let issues_xml =
         "<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::ISSUES_XML, issues_xml);
@@ -132,12 +132,12 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -157,13 +157,11 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
-        .validate_review_issues_xml(&mut ctx, 0)
-        .expect("validate_review_issues_xml should succeed");
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let result = handler.validate_review_issues_xml(&ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -192,7 +190,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
 
 #[test]
 fn test_validate_fix_result_xml_emits_ui_output() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let fix_xml =
         "<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::FIX_RESULT_XML, fix_xml);
@@ -206,12 +204,12 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -231,13 +229,11 @@ fn test_validate_fix_result_xml_emits_ui_output() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
-        .validate_fix_result_xml(&mut ctx, 0)
-        .expect("validate_fix_result_xml should succeed");
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let result = handler.validate_fix_result_xml(&ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -262,7 +258,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
 
 #[test]
 fn test_write_issues_markdown_renders_from_validated_issues() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -274,12 +270,12 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -299,7 +295,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -312,7 +308,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     });
 
     let result = handler
-        .write_issues_markdown(&mut ctx, 0)
+        .write_issues_markdown(&ctx, 0)
         .expect("write_issues_markdown should succeed");
 
     assert!(matches!(
@@ -330,7 +326,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
 
 #[test]
 fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let issues_xml = "<ralph-issues><ralph-issue>[high] src/lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
         .with_file(xml_paths::ISSUES_XML, issues_xml)
@@ -345,12 +341,12 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -370,7 +366,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -382,7 +378,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         no_issues_found: None,
     });
     let result = handler
-        .extract_review_issue_snippets(&mut ctx, 0)
+        .extract_review_issue_snippets(&ctx, 0)
         .expect("extract_review_issue_snippets should succeed");
 
     assert!(matches!(
@@ -411,7 +407,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
 
 #[test]
 fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let issues_xml =
         "<ralph-issues><ralph-issue>[high] C:\\repo\\src\\lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
@@ -427,12 +423,12 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -452,7 +448,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -465,7 +461,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         no_issues_found: None,
     });
     let result = handler
-        .extract_review_issue_snippets(&mut ctx, 0)
+        .extract_review_issue_snippets(&ctx, 0)
         .expect("extract_review_issue_snippets should succeed");
 
     assert!(matches!(
@@ -491,7 +487,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
 
 #[test]
 fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner =
         MemoryWorkspace::new_test().with_file("src/lib.rs", "fn main() {\n    let x = 1;\n}\n");
     let workspace = ReadFailingWorkspace::new(
@@ -509,12 +505,12 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -534,7 +530,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -546,11 +542,9 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         no_issues_found: None,
     });
 
-    let err = handler
-        .extract_review_issue_snippets(&mut ctx, 0)
-        .expect_err(
-            "extract_review_issue_snippets should surface non-NotFound issues.xml read failures",
-        );
+    let err = handler.extract_review_issue_snippets(&ctx, 0).expect_err(
+        "extract_review_issue_snippets should surface non-NotFound issues.xml read failures",
+    );
 
     let error_event = err
         .downcast_ref::<ErrorEvent>()
@@ -569,7 +563,7 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
 
 #[test]
 fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -581,12 +575,12 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -606,12 +600,12 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .write_issues_markdown(&mut ctx, 0)
+        .write_issues_markdown(&ctx, 0)
         .expect_err("write_issues_markdown should return error when validated outcome is missing");
 
     assert!(

@@ -1,4 +1,4 @@
-//! Tests for RunLogContext path resolution and collision handling.
+//! Tests for `RunLogContext` path resolution and collision handling.
 
 use super::*;
 use crate::workspace::WorkspaceFs;
@@ -121,14 +121,14 @@ fn test_collision_handling() {
     let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
 
     // Create the base directory with agents subdirectory to simulate a complete collision
-    let base_dir = PathBuf::from(format!(".agent/logs-{}", fixed_id));
+    let base_dir = PathBuf::from(format!(".agent/logs-{fixed_id}"));
     workspace
         .create_dir_all(&base_dir.join("agents"))
         .expect("Failed to create base directory for collision test");
 
     // Also create collision variants 1-5 with agents subdirectory
     for i in 1..=5 {
-        let collision_dir = PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i));
+        let collision_dir = PathBuf::from(format!(".agent/logs-{fixed_id}-{i:02}"));
         workspace
             .create_dir_all(&collision_dir.join("agents"))
             .expect("Failed to create collision directory");
@@ -136,21 +136,20 @@ fn test_collision_handling() {
 
     // Now create a RunLogContext with the fixed base run_id
     // It should skip base and collisions 1-5 and create collision variant 06
-    let ctx = RunLogContext::for_testing(fixed_id, &workspace).unwrap();
+    let ctx = RunLogContext::for_testing(&fixed_id, &workspace).unwrap();
 
     // Verify the run_id has a collision suffix -06
     let run_id_str = ctx.run_id().as_str();
     assert!(
         run_id_str.ends_with("-06"),
-        "Run ID should have collision suffix -06, got: {}",
-        run_id_str
+        "Run ID should have collision suffix -06, got: {run_id_str}"
     );
 
     // Verify the directory exists
     assert!(workspace.exists(ctx.run_dir()));
 
     // Verify the directory name matches
-    let expected_dir = PathBuf::from(format!(".agent/logs-{}", run_id_str));
+    let expected_dir = PathBuf::from(format!(".agent/logs-{run_id_str}"));
     assert_eq!(
         ctx.run_dir(),
         &expected_dir,
@@ -168,18 +167,16 @@ fn test_collision_exhaustion() {
 
     // Create the base directory and all 99 collision variants with agents subdirectory
     workspace
-        .create_dir_all(&PathBuf::from(format!(".agent/logs-{}", fixed_id)).join("agents"))
+        .create_dir_all(&PathBuf::from(format!(".agent/logs-{fixed_id}")).join("agents"))
         .unwrap();
     for i in 1..=99 {
         workspace
-            .create_dir_all(
-                &PathBuf::from(format!(".agent/logs-{}-{:02}", fixed_id, i)).join("agents"),
-            )
+            .create_dir_all(&PathBuf::from(format!(".agent/logs-{fixed_id}-{i:02}")).join("agents"))
             .unwrap();
     }
 
     // Now try to create a RunLogContext with the fixed base run_id - it should fail
-    let result = RunLogContext::for_testing(fixed_id, &workspace);
+    let result = RunLogContext::for_testing(&fixed_id, &workspace);
     assert!(
         result.is_err(),
         "Should fail when all collision variants are exhausted"
@@ -191,7 +188,6 @@ fn test_collision_exhaustion() {
     };
     assert!(
         err_msg.contains("Too many collisions") || err_msg.contains("collisions"),
-        "Error message should mention collisions: {}",
-        err_msg
+        "Error message should mention collisions: {err_msg}"
     );
 }

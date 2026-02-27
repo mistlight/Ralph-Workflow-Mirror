@@ -30,9 +30,10 @@
 ///
 /// Returns `Some(AgentConfig)` if the alias is found or if using default,
 /// `None` if the alias is not found in the map.
-pub fn resolve_ccs_agent(
+#[must_use]
+pub fn resolve_ccs_agent<S: std::hash::BuildHasher>(
     alias: &str,
-    aliases: &HashMap<String, CcsAliasConfig>,
+    aliases: &HashMap<String, CcsAliasConfig, S>,
     defaults: &CcsConfig,
 ) -> Option<AgentConfig> {
     // Empty alias means use default CCS
@@ -102,25 +103,30 @@ pub struct CcsEnvVarDebugSummary {
 }
 
 #[cfg(not(any(test, feature = "test-utils")))]
-pub(crate) struct CcsEnvVarDebugSummary {
+pub struct CcsEnvVarDebugSummary {
     pub(crate) whitelisted_keys_present: Vec<String>,
     pub(crate) redacted_sensitive_keys: usize,
     pub(crate) hidden_non_whitelisted_keys: usize,
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-pub fn ccs_env_var_debug_summary(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
+#[must_use]
+pub fn ccs_env_var_debug_summary<S: std::hash::BuildHasher>(
+    env_vars: &HashMap<String, String, S>,
+) -> CcsEnvVarDebugSummary {
     ccs_env_var_debug_summary_impl(env_vars)
 }
 
 #[cfg(not(any(test, feature = "test-utils")))]
-pub(crate) fn ccs_env_var_debug_summary(
+pub fn ccs_env_var_debug_summary(
     env_vars: &HashMap<String, String>,
 ) -> CcsEnvVarDebugSummary {
     ccs_env_var_debug_summary_impl(env_vars)
 }
 
-fn ccs_env_var_debug_summary_impl(env_vars: &HashMap<String, String>) -> CcsEnvVarDebugSummary {
+fn ccs_env_var_debug_summary_impl<S: std::hash::BuildHasher>(
+    env_vars: &HashMap<String, String, S>,
+) -> CcsEnvVarDebugSummary {
     // Whitelist of safe-to-log environment variable keys.
     // These are configuration keys, not credentials, so it's safe to log them.
     const SAFE_KEYS: &[&str] = &[
@@ -216,7 +222,7 @@ fn log_ccs_env_vars_loaded(
     }
 }
 
-fn is_glm_alias(alias_name: &str) -> bool {
+const fn is_glm_alias(alias_name: &str) -> bool {
     alias_name.eq_ignore_ascii_case("glm")
 }
 
@@ -231,6 +237,7 @@ fn is_glm_alias(alias_name: &str) -> bool {
 /// - We successfully loaded at least one env var for that profile
 /// - The configured command targets that profile (e.g. `ccs <profile>` or `ccs api <profile>`
 #[cfg(any(test, feature = "test-utils"))]
+#[must_use]
 pub fn resolve_ccs_command(
     alias_config: &CcsAliasConfig,
     alias_name: &str,
@@ -248,7 +255,7 @@ pub fn resolve_ccs_command(
 }
 
 #[cfg(not(any(test, feature = "test-utils")))]
-pub(crate) fn resolve_ccs_command(
+pub fn resolve_ccs_command(
     alias_config: &CcsAliasConfig,
     alias_name: &str,
     env_vars_loaded: bool,
@@ -445,6 +452,7 @@ fn build_ccs_config_from_flags(
 /// CCS aliases to use their configured credentials without requiring manual environment variable
 /// configuration, while avoiding hard-coded assumptions about CCS' internal schema.
 #[cfg(any(test, feature = "test-utils"))]
+#[must_use]
 pub fn build_ccs_agent_config(
     alias_config: &CcsAliasConfig,
     defaults: &CcsConfig,
@@ -455,7 +463,7 @@ pub fn build_ccs_agent_config(
 }
 
 #[cfg(not(any(test, feature = "test-utils")))]
-pub(crate) fn build_ccs_agent_config(
+pub fn build_ccs_agent_config(
     alias_config: &CcsAliasConfig,
     defaults: &CcsConfig,
     display_name: String,
@@ -538,11 +546,13 @@ pub struct CcsAliasResolver {
 
 impl CcsAliasResolver {
     /// Create a new CCS alias resolver with the given aliases.
+    #[must_use]
     pub const fn new(aliases: HashMap<String, CcsAliasConfig>, defaults: CcsConfig) -> Self {
         Self { aliases, defaults }
     }
 
     /// Create an empty resolver (no aliases configured).
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
@@ -554,6 +564,7 @@ impl CcsAliasResolver {
     /// For unknown aliases (e.g., `ccs/random`), generates a default CCS config
     /// to allow direct CCS execution without configuration.
     /// Returns `None` if the name is not a CCS reference (doesn't start with "ccs").
+    #[must_use]
     pub fn try_resolve(&self, agent_name: &str) -> Option<AgentConfig> {
         let alias = parse_ccs_ref(agent_name)?;
         // Try to resolve from configured aliases

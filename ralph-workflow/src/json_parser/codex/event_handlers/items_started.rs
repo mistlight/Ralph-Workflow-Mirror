@@ -68,7 +68,10 @@
 /// by the parser layer to prevent spam in logs and CI output.
 ///
 /// See file-level documentation for details.
-pub fn handle_agent_message_started(ctx: &EventHandlerContext<'_>, text: Option<&String>) -> String {
+pub fn handle_agent_message_started(
+    ctx: &EventHandlerContext<'_>,
+    text: Option<&String>,
+) -> String {
     if let Some(text) = text {
         let mut session = ctx.streaming_session.borrow_mut();
         session.on_text_delta_key("agent_msg", text);
@@ -104,7 +107,7 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext<'_>, text: Option<
                 );
                 ctx.last_rendered_content
                     .borrow_mut()
-                    .insert(key, sanitized.clone());
+                    .insert(key, sanitized);
                 rendered
             } else {
                 // Subsequent delta: emit ONLY new suffix
@@ -185,115 +188,120 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext<'_>, text: Option<
 /// ## Regression Test
 /// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
 pub fn handle_reasoning_started(ctx: &EventHandlerContext<'_>, text: Option<&String>) -> String {
-    if let Some(text) = text {
-        // Codex sends FULL accumulated content in each item.started event (snapshot-style),
-        // not incremental deltas like Claude. We need to compute the incremental delta here.
-        let (incremental_delta, accumulated) = {
-            let mut session = ctx.streaming_session.borrow_mut();
-            let previous_content = session
-                .get_accumulated(ContentType::Thinking, "reasoning")
-                .unwrap_or("")
-                .to_string();
-
-            // Compute incremental delta: if new content extends previous, extract the suffix
-            let delta = if text.starts_with(&previous_content) {
-                &text[previous_content.len()..]
+    text.map_or_else(
+        || {
+            if ctx.verbosity.is_verbose() {
+                format!(
+                    "{}[{}]{} {}Reasoning...{}\n",
+                    ctx.colors.dim(),
+                    ctx.display_name,
+                    ctx.colors.reset(),
+                    ctx.colors.cyan(),
+                    ctx.colors.reset()
+                )
             } else {
-                // New content doesn't extend previous (replace or first delta)
-                text.as_str()
-            };
-
-            // Only send the incremental delta to the session
-            session.on_thinking_delta_key("reasoning", delta);
-            (
-                delta.to_string(),
-                session
+                String::new()
+            }
+        },
+        |text| {
+            // Codex sends FULL accumulated content in each item.started event (snapshot-style),
+            // not incremental deltas like Claude. We need to compute the incremental delta here.
+            let (incremental_delta, accumulated) = {
+                let mut session = ctx.streaming_session.borrow_mut();
+                let previous_content = session
                     .get_accumulated(ContentType::Thinking, "reasoning")
                     .unwrap_or("")
-                    .to_string(),
-            )
-        };
+                    .to_string();
 
-        // Accumulate for backward compatibility with reasoning_completed
-        // For backward compat, use the full text not just delta
-        let mut acc = ctx.reasoning_accumulator.borrow_mut();
-        acc.add_delta(ContentType::Thinking, "reasoning", &incremental_delta);
-        drop(acc);
+                // Compute incremental delta: if new content extends previous, extract the suffix
+                let delta = if text.starts_with(&previous_content) {
+                    &text[previous_content.len()..]
+                } else {
+                    // New content doesn't extend previous (replace or first delta)
+                    text.as_str()
+                };
 
-        // Sanitize for display
-        let sanitized = crate::json_parser::delta_display::sanitize_for_display(&accumulated);
+                // Only send the incremental delta to the session
+                session.on_thinking_delta_key("reasoning", delta);
+                (
+                    delta.to_string(),
+                    session
+                        .get_accumulated(ContentType::Thinking, "reasoning")
+                        .unwrap_or("")
+                        .to_string(),
+                )
+            };
 
-        // Append-only pattern in Full mode
-        if ctx.terminal_mode == TerminalMode::Full {
-            let key = "thinking:reasoning".to_string();
-            let last_rendered = ctx
-                .last_rendered_content
-                .borrow()
-                .get(&key)
-                .cloned()
-                .unwrap_or_default();
+            // Accumulate for backward compatibility with reasoning_completed
+            // For backward compat, use the full text not just delta
+            let mut acc = ctx.reasoning_accumulator.borrow_mut();
+            acc.add_delta(ContentType::Thinking, "reasoning", &incremental_delta);
+            drop(acc);
 
-            if last_rendered.is_empty() {
-                // First delta: emit prefix + "Thinking: " + content (no newline)
-                let rendered = ThinkingDeltaRenderer::render_first_delta(
-                    &accumulated,
-                    ctx.display_name,
-                    *ctx.colors,
-                    ctx.terminal_mode,
-                );
-                ctx.last_rendered_content
-                    .borrow_mut()
-                    .insert(key, sanitized.clone());
-                rendered
-            } else {
-                // Subsequent delta: emit ONLY new suffix
-                let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
-                    &last_rendered,
-                    &sanitized,
-                );
+            // Sanitize for display
+            let sanitized = crate::json_parser::delta_display::sanitize_for_display(&accumulated);
 
-                // Detect discontinuities in thinking deltas
-                if new_suffix.is_empty() && !last_rendered.is_empty() && !sanitized.is_empty() {
-                    #[cfg(debug_assertions)]
-                    eprintln!(
-                        "Warning: Delta discontinuity detected in Codex thinking item. \
+            // Append-only pattern in Full mode
+            if ctx.terminal_mode == TerminalMode::Full {
+                let key = "thinking:reasoning".to_string();
+                let last_rendered = ctx
+                    .last_rendered_content
+                    .borrow()
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_default();
+
+                if last_rendered.is_empty() {
+                    // First delta: emit prefix + "Thinking: " + content (no newline)
+                    let rendered = ThinkingDeltaRenderer::render_first_delta(
+                        &accumulated,
+                        ctx.display_name,
+                        *ctx.colors,
+                        ctx.terminal_mode,
+                    );
+                    ctx.last_rendered_content
+                        .borrow_mut()
+                        .insert(key, sanitized);
+                    rendered
+                } else {
+                    // Subsequent delta: emit ONLY new suffix
+                    let new_suffix = crate::json_parser::delta_display::compute_append_only_suffix(
+                        &last_rendered,
+                        &sanitized,
+                    );
+
+                    // Detect discontinuities in thinking deltas
+                    if new_suffix.is_empty() && !last_rendered.is_empty() && !sanitized.is_empty() {
+                        #[cfg(debug_assertions)]
+                        eprintln!(
+                            "Warning: Delta discontinuity detected in Codex thinking item. \
                          Provider sent non-monotonic content. \
                          Last: {:?} (len={}), Current: {:?} (len={})",
-                        &last_rendered[..last_rendered.len().min(40)],
-                        last_rendered.len(),
-                        &sanitized[..sanitized.len().min(40)],
-                        sanitized.len()
-                    );
-                }
+                            &last_rendered[..last_rendered.len().min(40)],
+                            last_rendered.len(),
+                            &sanitized[..sanitized.len().min(40)],
+                            sanitized.len()
+                        );
+                    }
 
-                ctx.last_rendered_content
-                    .borrow_mut()
-                    .insert(key, sanitized.clone());
+                    ctx.last_rendered_content
+                        .borrow_mut()
+                        .insert(key, sanitized.clone());
 
-                if new_suffix.is_empty() {
-                    String::new()
-                } else {
-                    // Emit only the new suffix (no prefix, no cursor movement)
-                    // Use cyan color like ThinkingDeltaRenderer
-                    format!("{}{}{}", ctx.colors.cyan(), new_suffix, ctx.colors.reset())
+                    if new_suffix.is_empty() {
+                        String::new()
+                    } else {
+                        // Emit only the new suffix (no prefix, no cursor movement)
+                        // Use cyan color like ThinkingDeltaRenderer
+                        format!("{}{}{}", ctx.colors.cyan(), new_suffix, ctx.colors.reset())
+                    }
                 }
+            } else {
+                // Basic/None mode: suppress per-delta output
+                String::new()
             }
-        } else {
-            // Basic/None mode: suppress per-delta output
-            String::new()
-        }
-    } else if ctx.verbosity.is_verbose() {
-        format!(
-            "{}[{}]{} {}Reasoning...{}\n",
-            ctx.colors.dim(),
-            ctx.display_name,
-            ctx.colors.reset(),
-            ctx.colors.cyan(),
-            ctx.colors.reset()
-        )
-    } else {
-        String::new()
-    }
+        },
+    )
 }
 
 /// Handle `ItemStarted` event for `command_execution` type.

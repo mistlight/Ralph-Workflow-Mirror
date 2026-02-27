@@ -1,12 +1,12 @@
 //! Iteration lifecycle and step completion reducer
 //!
 //! Handles events related to:
-//! - Phase transitions (PhaseStarted, PhaseCompleted)
-//! - Iteration lifecycle (IterationStarted, IterationCompleted)
-//! - Step completions (ContextPrepared, PromptPrepared, etc.)
+//! - Phase transitions (`PhaseStarted`, `PhaseCompleted`)
+//! - Iteration lifecycle (`IterationStarted`, `IterationCompleted`)
+//! - Step completions (`ContextPrepared`, `PromptPrepared`, etc.)
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::DevelopmentEvent;
+use crate::reducer::state::{ContinuationState, DevelopmentStatus, PipelineState};
 
 use super::reduce_development_event;
 
@@ -133,7 +133,7 @@ pub(super) fn reduce_iteration_event(
                     iteration,
                     status,
                     summary,
-                    files_changed: files_changed.map(|v| v.into_boxed_slice()),
+                    files_changed: files_changed.map(std::vec::Vec::into_boxed_slice),
                     next_steps,
                 },
             ),

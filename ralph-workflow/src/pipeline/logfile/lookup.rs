@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Arguments
 ///
-/// * `log_prefix` - The prefix path (e.g., ".agent/logs/planning_1")
+/// * `log_prefix` - The prefix path (e.g., ".`agent/logs/planning_1`")
 /// * `workspace` - The workspace to search in
 ///
 /// # Returns
@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 /// }
 /// ```
 pub fn find_most_recent_logfile(log_prefix: &Path, workspace: &dyn Workspace) -> Option<PathBuf> {
-    let parent = log_prefix.parent().unwrap_or(Path::new("."));
+    let parent = log_prefix.parent().unwrap_or_else(|| Path::new("."));
     let prefix_str = log_prefix.file_name().and_then(|s| s.to_str())?;
 
     let mut best_file: Option<(PathBuf, std::time::SystemTime)> = None;
@@ -44,9 +44,13 @@ pub fn find_most_recent_logfile(log_prefix: &Path, workspace: &dyn Workspace) ->
             if entry.is_file() {
                 if let Some(filename) = entry.file_name().and_then(|s| s.to_str()) {
                     // Match files that start with our prefix, have more content, and end with .log
+                    let has_log_ext = entry
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("log"));
                     if filename.starts_with(prefix_str)
                         && filename.len() > prefix_str.len()
-                        && filename.ends_with(".log")
+                        && has_log_ext
                     {
                         // Get modification time for this file
                         if let Some(modified) = entry.modified() {
@@ -82,7 +86,7 @@ pub fn find_most_recent_logfile(log_prefix: &Path, workspace: &dyn Workspace) ->
 ///
 /// # Arguments
 ///
-/// * `log_prefix` - The prefix path (e.g., ".agent/logs/planning_1")
+/// * `log_prefix` - The prefix path (e.g., ".`agent/logs/planning_1`")
 /// * `workspace` - The workspace to read from
 ///
 /// # Returns

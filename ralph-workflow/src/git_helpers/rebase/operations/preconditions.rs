@@ -45,6 +45,10 @@
 ///     Err(e) => eprintln!("Cannot rebase: {e}"),
 /// }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if preconditions are not met or validation fails.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn validate_rebase_preconditions(
     executor: &dyn crate::executor::ProcessExecutor,
@@ -150,10 +154,9 @@ fn check_shallow_clone() -> io::Result<()> {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "Repository is a shallow clone with {} commits. \
+                "Repository is a shallow clone with {line_count} commits. \
                  Rebasing may fail due to missing history. \
-                 Consider running: git fetch --unshallow",
-                line_count
+                 Consider running: git fetch --unshallow"
             ),
         ));
     }
@@ -340,10 +343,9 @@ fn check_sparse_checkout_state() -> io::Result<()> {
             // for files outside the sparse checkout cone
             // We return Ok to allow the operation, but the caller should be aware
         }
-        (Err(_), _) | (_, Err(_)) => {
-            // Config not set - sparse checkout not enabled
+        _ => {
+            // Config not set - sparse checkout not enabled, or other case
         }
-        _ => {}
     }
 
     Ok(())

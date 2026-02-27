@@ -1,4 +1,4 @@
-//! Basic reducer/orchestration expectations for AwaitingDevFix.
+//! Basic reducer/orchestration expectations for `AwaitingDevFix`.
 
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
@@ -10,7 +10,7 @@ use ralph_workflow::reducer::event::{AwaitingDevFixEvent, PipelineEvent, Pipelin
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::state_reduction::reduce;
 
-/// Test that pipeline transitions to AwaitingDevFix on failure.
+/// Test that pipeline transitions to `AwaitingDevFix` on failure.
 #[test]
 fn transitions_to_awaiting_dev_fix_on_failure() {
     with_default_timeout(|| {
@@ -34,7 +34,7 @@ fn transitions_to_awaiting_dev_fix_on_failure() {
     });
 }
 
-/// Test that TriggerDevFixFlow effect is determined for AwaitingDevFix phase.
+/// Test that `TriggerDevFixFlow` effect is determined for `AwaitingDevFix` phase.
 #[test]
 fn awaiting_dev_fix_derives_trigger_dev_fix_flow() {
     with_default_timeout(|| {
@@ -45,13 +45,12 @@ fn awaiting_dev_fix_derives_trigger_dev_fix_flow() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::TriggerDevFixFlow { .. }),
-            "AwaitingDevFix should determine TriggerDevFixFlow effect, got {:?}",
-            effect
+            "AwaitingDevFix should determine TriggerDevFixFlow effect, got {effect:?}"
         );
     });
 }
 
-/// CompletionMarkerEmitted transitions AwaitingDevFix -> Interrupted.
+/// `CompletionMarkerEmitted` transitions `AwaitingDevFix` -> Interrupted.
 #[test]
 fn completion_marker_emitted_transitions_to_interrupted() {
     with_default_timeout(|| {
@@ -67,7 +66,7 @@ fn completion_marker_emitted_transitions_to_interrupted() {
     });
 }
 
-/// Test that DevFixAgentUnavailable does not terminate immediately.
+/// Test that `DevFixAgentUnavailable` does not terminate immediately.
 #[test]
 fn dev_fix_agent_unavailable_does_not_interrupt() {
     with_default_timeout(|| {
@@ -160,7 +159,7 @@ fn attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_missing()
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud_config,
         };
 
         let mut state = PipelineState::initial(1, 0);
@@ -243,7 +242,7 @@ fn attempt_recovery_never_targets_awaiting_dev_fix() {
                 as Arc<dyn ralph_workflow::workspace::Workspace>,
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud_config,
         };
 
         let mut state = PipelineState::initial(1, 0);

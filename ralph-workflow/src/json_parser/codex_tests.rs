@@ -277,9 +277,7 @@ fn test_codex_reasoning_no_spam_regression() {
     // at the completion boundary, not one line per delta.
     assert!(
         thinking_line_count <= 1,
-        "Expected at most 1 thinking line in non-TTY mode, got {}. Output:\n{}",
-        thinking_line_count,
-        output
+        "Expected at most 1 thinking line in non-TTY mode, got {thinking_line_count}. Output:\n{output}"
     );
 
     // Verify the final thinking line contains accumulated content
@@ -291,8 +289,7 @@ fn test_codex_reasoning_no_spam_regression() {
         // Should contain some of the accumulated reasoning content
         assert!(
             thinking_line.contains("diff") || thinking_line.contains("Reading"),
-            "Thinking line should contain accumulated content: {}",
-            thinking_line
+            "Thinking line should contain accumulated content: {thinking_line}"
         );
     }
 }
@@ -329,40 +326,34 @@ fn test_codex_reasoning_full_mode_in_place_updates() {
     // Subsequent deltas: just the new suffix text
     assert!(
         !output.contains('\r'),
-        "Append-only pattern should NOT use carriage return. Output:\n{}",
-        output
+        "Append-only pattern should NOT use carriage return. Output:\n{output}"
     );
 
     // NO cursor positioning sequences (append-only pattern)
     assert!(
         !output.contains("\x1b[1A"),
-        "Should not contain cursor up in append-only pattern. Output:\n{}",
-        output
+        "Should not contain cursor up in append-only pattern. Output:\n{output}"
     );
 
     assert!(
         !output.contains("\x1b[2K"),
-        "Should not contain line clear in append-only pattern. Output:\n{}",
-        output
+        "Should not contain line clear in append-only pattern. Output:\n{output}"
     );
 
     assert!(
         !output.contains("\x1b[1B"),
-        "Should not contain cursor down in append-only pattern. Output:\n{}",
-        output
+        "Should not contain cursor down in append-only pattern. Output:\n{output}"
     );
 
     // Final completion: just newline
     assert!(
         output.ends_with('\n'),
-        "Expected newline at completion. Output:\n{}",
-        output
+        "Expected newline at completion. Output:\n{output}"
     );
 
     // Verify accumulated content is present
     assert!(
         output.contains("First chunk second chunk third chunk"),
-        "Expected accumulated reasoning content. Output:\n{}",
-        output
+        "Expected accumulated reasoning content. Output:\n{output}"
     );
 }

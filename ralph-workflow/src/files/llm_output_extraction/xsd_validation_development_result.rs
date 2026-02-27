@@ -3,7 +3,7 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for development results.
 //!
-//! Uses quick_xml for robust XML parsing with proper whitespace handling.
+//! Uses `quick_xml` for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::xml_helpers::{
     create_reader, duplicate_element_error, format_content_preview, malformed_xml_error,
@@ -26,7 +26,7 @@ const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
 /// Validate development result XML content against the XSD schema.
 ///
 /// This function validates that the XML content conforms to the expected
-/// development result format defined in development_result.xsd:
+/// development result format defined in `development_result.xsd`:
 ///
 /// ```xml
 /// <ralph-development-result>
@@ -45,14 +45,26 @@ const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
 ///
 /// * `Ok(DevelopmentResultElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_development_result_xml(
     xml_content: &str,
 ) -> Result<DevelopmentResultElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 4] = [
+        "ralph-status",
+        "ralph-summary",
+        "ralph-files-changed",
+        "ralph-next-steps",
+    ];
+
     let trimmed = xml_content.trim();
     let content = unwrap_cdata_wrapper(trimmed);
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content.as_ref())?;
 
     let mut reader = create_reader(content.as_ref());
@@ -69,14 +81,10 @@ pub fn validate_development_result_xml(
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-development-result".to_string(),
                     expected: "<ralph-development-result> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-development-result> as the root element.".to_string(),
                     example: Some(EXAMPLE_DEVELOPMENT_RESULT_XML.into()),
                 });
-            }
-            Ok(Event::Text(_)) => {
-                // Text before root element - continue to find root or reach EOF
-                // EOF will give a more informative "missing root element" error
             }
             Ok(Event::Eof) => {
                 return Err(XsdValidationError {
@@ -90,8 +98,11 @@ pub fn validate_development_result_xml(
                     example: Some(EXAMPLE_DEVELOPMENT_RESULT_XML.into()),
                 });
             }
-            Ok(_) => {} // Skip XML declaration, comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Ok(Event::Text(_) | _) => {
+                // Text before root element or other events - continue to find root or reach EOF
+                // EOF will give a more informative "missing root element" error
+            }
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
         buf.clear();
     }
@@ -101,13 +112,6 @@ pub fn validate_development_result_xml(
     let mut summary: Option<String> = None;
     let mut files_changed: Option<String> = None;
     let mut next_steps: Option<String> = None;
-
-    const VALID_TAGS: [&str; 4] = [
-        "ralph-status",
-        "ralph-summary",
-        "ralph-files-changed",
-        "ralph-next-steps",
-    ];
 
     loop {
         buf.clear();
@@ -177,7 +181,7 @@ pub fn validate_development_result_xml(
                 });
             }
             Ok(_) => {} // Skip comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
     }
 
@@ -277,16 +281,19 @@ pub struct DevelopmentResultElements {
 
 impl DevelopmentResultElements {
     /// Returns true if the work is completed.
+    #[must_use]
     pub fn is_completed(&self) -> bool {
         self.status == "completed"
     }
 
     /// Returns true if the work is partially done.
+    #[must_use]
     pub fn is_partial(&self) -> bool {
         self.status == "partial"
     }
 
     /// Returns true if the work failed.
+    #[must_use]
     pub fn is_failed(&self) -> bool {
         self.status == "failed"
     }
@@ -298,10 +305,10 @@ mod tests {
 
     #[test]
     fn test_validate_valid_completed() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Fixed all bugs</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_ok());
@@ -314,10 +321,10 @@ mod tests {
 
     #[test]
     fn test_validate_valid_partial() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Started fixing bugs</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_ok());
@@ -328,10 +335,10 @@ mod tests {
 
     #[test]
     fn test_validate_valid_failed() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>failed</ralph-status>
 <ralph-summary>Could not complete the task</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_ok());
@@ -342,13 +349,13 @@ mod tests {
 
     #[test]
     fn test_validate_valid_with_all_optional_fields() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented feature X</ralph-summary>
 <ralph-files-changed>- src/main.rs
 - src/utils.rs</ralph-files-changed>
 <ralph-next-steps>Continue with testing</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_ok());
@@ -365,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_validate_missing_root_element() {
-        let xml = r#"Some random text without proper XML tags"#;
+        let xml = r"Some random text without proper XML tags";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -375,9 +382,9 @@ mod tests {
 
     #[test]
     fn test_validate_missing_status() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-summary>No status</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -387,9 +394,9 @@ mod tests {
 
     #[test]
     fn test_validate_missing_summary() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -399,10 +406,10 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_status() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>invalid_status_value</ralph-status>
 <ralph-summary>Test</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -412,10 +419,10 @@ mod tests {
 
     #[test]
     fn test_validate_empty_status() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>   </ralph-status>
 <ralph-summary>Test</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -423,10 +430,10 @@ mod tests {
 
     #[test]
     fn test_validate_empty_summary() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>   </ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -434,11 +441,11 @@ mod tests {
 
     #[test]
     fn test_validate_duplicate_status() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Test</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());
@@ -446,11 +453,11 @@ mod tests {
 
     #[test]
     fn test_validate_unexpected_element() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Test</ralph-summary>
 <ralph-unknown>value</ralph-unknown>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_err());

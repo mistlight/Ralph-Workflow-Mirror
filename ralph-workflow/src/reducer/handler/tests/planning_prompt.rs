@@ -122,7 +122,7 @@ impl Workspace for WriteFailingWorkspace {
 
 #[test]
 fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_PLANNING_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
@@ -161,7 +161,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -174,7 +174,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
     });
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -208,7 +208,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
 
 #[test]
 fn test_prepare_planning_prompt_emits_template_rendered_on_validation_failure() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("planning_xml.txt");
     fs::write(
@@ -254,7 +254,7 @@ fn test_prepare_planning_prompt_emits_template_rendered_on_validation_failure() 
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -308,7 +308,7 @@ fn test_prepare_planning_prompt_emits_template_rendered_on_validation_failure() 
 
 #[test]
 fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
     // When prompt file write fails, the handler logs a warning and continues successfully.
     let inner = MemoryWorkspace::new_test()
@@ -353,7 +353,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -366,7 +366,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
     });
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -392,7 +392,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
 
 #[test]
 fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_PLANNING_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "Prompt")
@@ -431,7 +431,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState {
@@ -444,7 +444,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
     });
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -485,7 +485,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
 
 #[test]
 fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let large_prompt = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", &large_prompt)
@@ -523,7 +523,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -534,7 +534,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
     );
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -561,7 +561,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
 
 #[test]
 fn test_materialize_planning_inputs_errors_when_prompt_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
@@ -576,7 +576,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -596,7 +596,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -606,7 +606,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
         crate::agents::AgentRole::Developer,
     );
 
-    let result = handler.materialize_planning_inputs(&mut ctx, 0);
+    let result = handler.materialize_planning_inputs(&ctx, 0);
     assert!(
         result.is_err(),
         "Expected Err when PROMPT.md is missing, got {result:?}",
@@ -615,7 +615,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
 
 #[test]
 fn test_prepare_planning_prompt_errors_when_prompt_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
@@ -650,7 +650,7 @@ fn test_prepare_planning_prompt_errors_when_prompt_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     // Seed reducer state with materialized planning inputs so prepare_planning_prompt can run.
@@ -685,7 +685,7 @@ fn test_prepare_planning_prompt_errors_when_prompt_missing() {
 
 #[test]
 fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "# Prompt\n")
         .with_dir(".agent/tmp");
@@ -722,10 +722,10 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     let result = handler.prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal);
     assert!(
         result.is_err(),
@@ -735,9 +735,10 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
 
 #[test]
 fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_output() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()
@@ -776,7 +777,7 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -811,9 +812,10 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
 
 #[test]
 fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()
@@ -852,7 +854,7 @@ fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

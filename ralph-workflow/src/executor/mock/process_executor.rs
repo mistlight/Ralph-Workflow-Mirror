@@ -15,7 +15,7 @@ use std::sync::Mutex;
 /// Since `io::Error` doesn't implement `Clone`, we store error info as strings
 /// and reconstruct the error on demand.
 #[derive(Debug, Clone)]
-pub(crate) enum MockResult<T: Clone> {
+pub enum MockResult<T: Clone> {
     Ok(T),
     Err {
         kind: io::ErrorKind,
@@ -26,15 +26,15 @@ pub(crate) enum MockResult<T: Clone> {
 impl<T: Clone> MockResult<T> {
     pub(crate) fn to_io_result(&self) -> io::Result<T> {
         match self {
-            MockResult::Ok(v) => Ok(v.clone()),
-            MockResult::Err { kind, message } => Err(io::Error::new(*kind, message.clone())),
+            Self::Ok(v) => Ok(v.clone()),
+            Self::Err { kind, message } => Err(io::Error::new(*kind, message.clone())),
         }
     }
 
     pub(crate) fn from_io_result(result: io::Result<T>) -> Self {
         match result {
-            Ok(v) => MockResult::Ok(v),
-            Err(e) => MockResult::Err {
+            Ok(v) => Self::Ok(v),
+            Err(e) => Self::Err {
                 kind: e.kind(),
                 message: e.to_string(),
             },
@@ -44,7 +44,7 @@ impl<T: Clone> MockResult<T> {
 
 impl<T: Clone + Default> Default for MockResult<T> {
     fn default() -> Self {
-        MockResult::Ok(T::default())
+        Self::Ok(T::default())
     }
 }
 
@@ -89,10 +89,12 @@ impl Default for MockProcessExecutor {
 }
 
 impl MockProcessExecutor {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn new_error() -> Self {
         fn err_result<T: Clone>(msg: &str) -> MockResult<T> {
             MockResult::Err {
@@ -111,6 +113,10 @@ impl MockProcessExecutor {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
+    #[must_use]
     pub fn with_result(self, command: &str, result: io::Result<ProcessOutput>) -> Self {
         self.results
             .lock()
@@ -119,6 +125,7 @@ impl MockProcessExecutor {
         self
     }
 
+    #[must_use]
     pub fn with_output(self, command: &str, stdout: &str) -> Self {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
@@ -138,6 +145,7 @@ impl MockProcessExecutor {
         self.with_result(command, result)
     }
 
+    #[must_use]
     pub fn with_error(self, command: &str, stderr: &str) -> Self {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
@@ -157,18 +165,28 @@ impl MockProcessExecutor {
         self.with_result(command, result)
     }
 
+    #[must_use]
     pub fn with_io_error(self, command: &str, kind: io::ErrorKind, message: &str) -> Self {
         self.with_result(command, Err(io::Error::new(kind, message)))
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn execute_count(&self) -> usize {
         self.execute_calls.lock().unwrap().len()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn execute_calls(&self) -> Vec<ExecuteCall> {
         self.execute_calls.lock().unwrap().clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn execute_calls_for(&self, command: &str) -> Vec<ExecuteCall> {
         self.execute_calls
             .lock()
@@ -179,11 +197,18 @@ impl MockProcessExecutor {
             .collect()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn reset_calls(&self) {
         self.execute_calls.lock().unwrap().clear();
         self.agent_calls.lock().unwrap().clear();
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
+    #[must_use]
     pub fn with_agent_result(
         self,
         command_pattern: &str,
@@ -196,10 +221,16 @@ impl MockProcessExecutor {
         self
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn agent_calls(&self) -> Vec<AgentSpawnConfig> {
         self.agent_calls.lock().unwrap().clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
     pub fn agent_calls_for(&self, command_pattern: &str) -> Vec<AgentSpawnConfig> {
         self.agent_calls
             .lock()
@@ -272,15 +303,14 @@ impl ProcessExecutor for MockProcessExecutor {
         let workdir_str = workdir.map(|p| p.display().to_string());
         self.execute_calls.lock().unwrap().push((
             command.to_string(),
-            args.iter().map(|s| s.to_string()).collect(),
+            args.iter().map(std::string::ToString::to_string).collect(),
             env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             workdir_str,
         ));
 
-        if let Some(result) = self.results.lock().unwrap().get(command) {
-            result.to_io_result()
-        } else {
-            self.default_result.lock().unwrap().to_io_result()
-        }
+        self.results.lock().unwrap().get(command).map_or_else(
+            || self.default_result.lock().unwrap().to_io_result(),
+            MockResult::to_io_result,
+        )
     }
 }

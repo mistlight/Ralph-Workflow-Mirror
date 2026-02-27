@@ -33,7 +33,7 @@ pub struct DiffReviewContent {
     pub baseline_oid: Option<String>,
     /// Short form (first 8 chars) of the baseline OID for display
     pub baseline_short: Option<String>,
-    /// Description of what the baseline represents (e.g., "review_baseline", "start_commit")
+    /// Description of what the baseline represents (e.g., "`review_baseline`", "`start_commit`")
     pub baseline_description: String,
 }
 
@@ -52,6 +52,7 @@ impl DiffReviewContent {
     /// ```
     ///
     /// If no baseline information is available, returns a generic message.
+    #[must_use]
     pub fn format_context_header(&self) -> String {
         let mut lines = Vec::new();
 

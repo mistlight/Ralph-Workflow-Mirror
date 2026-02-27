@@ -1,3 +1,12 @@
+// DO NOT CHANGE THESE CLIPPY SETTINGS, YOU MUST REFACTOR INSTEAD, EVEN IF IT TAKES YOU 100 YEARS
+// Note: unsafe_code is not denied in lib.rs because the library requires unsafe blocks for
+// legitimate POSIX operations (fcntl, kill, setpgid, etc.) with proper safety documentation.
+// The binary target (main.rs) denies unsafe_code since it should contain no unsafe operations.
+//
+// Note: clippy::cargo is not enabled because it flags transitive dependency version conflicts
+// (e.g., bitflags 1.3.2 from inotify vs 2.10.0 from other crates) which are ecosystem-level
+// issues outside our control and don't reflect code quality problems.
+#![deny(warnings, clippy::all, clippy::pedantic, clippy::nursery)]
 //! Ralph workflow library for AI agent orchestration.
 //!
 //! This crate provides the core functionality for the `ralph` CLI binary,
@@ -73,7 +82,7 @@
 //!
 //! **Agent Infrastructure:**
 //! - [`agents`] - Agent configuration, registry, and CCS (Claude Code Switch) support
-//! - [`json_parser`] - NDJSON streaming parsers for Claude, Codex, Gemini, OpenCode
+//! - [`json_parser`] - NDJSON streaming parsers for Claude, Codex, Gemini, `OpenCode`
 //! - [`prompts`] - Template system for agent prompts
 //!
 //! **Supporting:**

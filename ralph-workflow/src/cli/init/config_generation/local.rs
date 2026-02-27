@@ -41,6 +41,10 @@ const LOCAL_CONFIG_TEMPLATE: &str = r#"# Local Ralph configuration (.agent/ralph
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or an error if config creation failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_init_local_config_with<R: ConfigEnvironment>(
     colors: Colors,
     env: &R,
@@ -99,6 +103,10 @@ pub fn handle_init_local_config_with<R: ConfigEnvironment>(
 /// Handle the `--init-local-config` flag using the default path resolver.
 ///
 /// Convenience wrapper that uses [`RealConfigEnvironment`] internally.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_init_local_config(colors: Colors, force: bool) -> anyhow::Result<bool> {
     handle_init_local_config_with(colors, &RealConfigEnvironment, force)
 }

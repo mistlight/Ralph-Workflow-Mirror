@@ -137,7 +137,7 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -153,7 +153,7 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
         scope.spawn(move || {
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
-                &mut runtime,
+                &runtime,
                 &[],
                 1,
                 Duration::from_millis(10),
@@ -186,9 +186,7 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
         for t in kill_times {
             assert!(
                 t <= returned_at + Duration::from_millis(100),
-                "observed kill call at {:?} after return at {:?}",
-                t,
-                returned_at
+                "observed kill call at {t:?} after return at {returned_at:?}"
             );
         }
     });

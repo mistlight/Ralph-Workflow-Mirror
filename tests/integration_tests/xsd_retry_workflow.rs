@@ -28,7 +28,7 @@ use ralph_workflow::reducer::state_reduction::reduce;
 /// Test that planning XSD validation failure triggers agent re-invocation.
 ///
 /// When planning XML validation fails and retries are available:
-/// 1. Orchestration flags are reset (prompt_prepared, agent_invoked)
+/// 1. Orchestration flags are reset (`prompt_prepared`, `agent_invoked`)
 /// 2. Next effect should be to prepare the XSD retry prompt
 /// 3. Session reuse is enabled for the retry
 #[test]
@@ -85,8 +85,7 @@ fn test_planning_xsd_retry_triggers_reinvocation() {
         let effect = determine_next_effect(&new_state);
         assert!(
             matches!(effect, Effect::PreparePlanningPrompt { .. }),
-            "Next effect should be PreparePlanningPrompt for XSD retry, got {:?}",
-            effect
+            "Next effect should be PreparePlanningPrompt for XSD retry, got {effect:?}"
         );
     });
 }
@@ -230,8 +229,7 @@ fn test_review_xsd_retry_triggers_reinvocation() {
         let effect = determine_next_effect(&new_state);
         assert!(
             matches!(effect, Effect::PrepareReviewPrompt { .. }),
-            "Should prepare review XSD retry prompt, got {:?}",
-            effect
+            "Should prepare review XSD retry prompt, got {effect:?}"
         );
     });
 }
@@ -323,8 +321,7 @@ fn test_fix_xsd_retry_triggers_reinvocation() {
         let effect = determine_next_effect(&new_state);
         assert!(
             matches!(effect, Effect::PrepareFixPrompt { .. }),
-            "Should prepare fix XSD retry prompt, got {:?}",
-            effect
+            "Should prepare fix XSD retry prompt, got {effect:?}"
         );
     });
 }
@@ -518,8 +515,7 @@ fn test_commit_xsd_retry_triggers_reinvocation() {
         let effect = determine_next_effect(&new_state);
         assert!(
             matches!(effect, Effect::PrepareCommitPrompt { .. }),
-            "Should prepare commit XSD retry prompt, got {:?}",
-            effect
+            "Should prepare commit XSD retry prompt, got {effect:?}"
         );
     });
 }

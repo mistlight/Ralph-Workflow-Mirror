@@ -6,10 +6,7 @@ use anyhow::Result;
 use std::path::Path;
 
 impl MainEffectHandler {
-    pub(super) fn validate_final_state(
-        &mut self,
-        _ctx: &mut PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+    pub(super) fn validate_final_state(&self, _ctx: &mut PhaseContext<'_>) -> EffectResult {
         // Transition to Finalizing phase to restore PROMPT.md permissions
         // via the effect system before marking the pipeline complete
         let event = PipelineEvent::finalizing_started();
@@ -17,10 +14,10 @@ impl MainEffectHandler {
         // Emit phase transition UI event
         let ui_event = self.phase_transition_ui(PipelinePhase::Finalizing);
 
-        Ok(EffectResult::with_ui(event, vec![ui_event]))
+        EffectResult::with_ui(event, vec![ui_event])
     }
 
-    pub(super) fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+    pub(super) fn cleanup_context(ctx: &PhaseContext<'_>) -> Result<EffectResult> {
         ctx.logger
             .info("Cleaning up context files to prevent pollution...");
 
@@ -80,8 +77,7 @@ impl MainEffectHandler {
 
         if cleaned_count > 0 {
             ctx.logger.success(&format!(
-                "Context cleanup complete: {} files deleted",
-                cleaned_count
+                "Context cleanup complete: {cleaned_count} files deleted"
             ));
         } else {
             ctx.logger.info("No context files to clean up");
@@ -90,10 +86,7 @@ impl MainEffectHandler {
         Ok(EffectResult::event(PipelineEvent::context_cleaned()))
     }
 
-    pub(super) fn restore_prompt_permissions(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+    pub(super) fn restore_prompt_permissions(&self, ctx: &PhaseContext<'_>) -> EffectResult {
         use crate::files::make_prompt_writable_with_workspace;
 
         ctx.logger.info("Restoring PROMPT.md write permissions...");
@@ -113,16 +106,13 @@ impl MainEffectHandler {
         }
 
         if self.state.phase == PipelinePhase::Finalizing {
-            return Ok(result.with_ui_event(self.phase_transition_ui(PipelinePhase::Complete)));
+            return result.with_ui_event(self.phase_transition_ui(PipelinePhase::Complete));
         }
 
-        Ok(result)
+        result
     }
 
-    pub(super) fn lock_prompt_permissions(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+    pub(super) fn lock_prompt_permissions(ctx: &PhaseContext<'_>) -> EffectResult {
         use crate::files::make_prompt_read_only_with_workspace;
 
         ctx.logger
@@ -131,18 +121,15 @@ impl MainEffectHandler {
         let warning = make_prompt_read_only_with_workspace(ctx.workspace);
 
         if let Some(ref msg) = warning {
-            ctx.logger.warn(&format!("{}. Continuing anyway.", msg));
+            ctx.logger.warn(&format!("{msg}. Continuing anyway."));
         }
 
         let event = PipelineEvent::prompt_permissions_locked(warning);
 
-        Ok(EffectResult::event(event))
+        EffectResult::event(event)
     }
 
-    pub(super) fn cleanup_continuation_context(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+    pub(super) fn cleanup_continuation_context(ctx: &PhaseContext<'_>) -> Result<EffectResult> {
         cleanup_continuation_context_file(ctx)?;
         Ok(EffectResult::event(
             PipelineEvent::development_continuation_context_cleaned(),
@@ -150,14 +137,12 @@ impl MainEffectHandler {
     }
 
     pub(super) fn trigger_loop_recovery(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-        detected_loop: String,
+        ctx: &PhaseContext<'_>,
+        detected_loop: &str,
         loop_count: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         ctx.logger.warn(&format!(
-            "⚠️  LOOP DETECTED: Same effect repeated {} times: {}",
-            loop_count, detected_loop
+            "⚠️  LOOP DETECTED: Same effect repeated {loop_count} times: {detected_loop}"
         ));
         ctx.logger
             .info("Triggering mandatory loop recovery to break the cycle...");
@@ -171,28 +156,27 @@ impl MainEffectHandler {
         ctx.logger
             .success("Loop recovery triggered. Pipeline will resume with fresh state.");
 
-        Ok(EffectResult::event(PipelineEvent::loop_recovery_triggered(
-            detected_loop,
+        EffectResult::event(PipelineEvent::loop_recovery_triggered(
+            detected_loop.to_owned(),
             loop_count,
-        )))
+        ))
     }
 
     pub(super) fn emit_recovery_reset(
         &self,
         ctx: &PhaseContext<'_>,
-        reset_type: crate::reducer::effect::RecoveryResetType,
+        reset_type: &crate::reducer::effect::RecoveryResetType,
         target_phase: crate::reducer::event::PipelinePhase,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::reducer::event::AwaitingDevFixEvent;
 
         // Log the recovery reset for observability
         ctx.logger.info(&format!(
-            "Recovery escalation: {:?} reset to phase {:?}",
-            reset_type, target_phase
+            "Recovery escalation: {reset_type:?} reset to phase {target_phase:?}"
         ));
 
         // Emit RecoveryAttempted event to signal transition back to work
-        Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+        EffectResult::event(PipelineEvent::AwaitingDevFix(
             AwaitingDevFixEvent::RecoveryAttempted {
                 level: match reset_type {
                     crate::reducer::effect::RecoveryResetType::PhaseStart => 2,
@@ -202,7 +186,7 @@ impl MainEffectHandler {
                 attempt_count: self.state.dev_fix_attempt_count,
                 target_phase,
             },
-        )))
+        ))
     }
 
     pub(super) fn attempt_recovery(
@@ -210,7 +194,7 @@ impl MainEffectHandler {
         ctx: &PhaseContext<'_>,
         level: u32,
         attempt_count: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::reducer::event::AwaitingDevFixEvent;
 
         let target_phase = self
@@ -225,46 +209,40 @@ impl MainEffectHandler {
         };
 
         ctx.logger.info(&format!(
-            "Attempting recovery level {} (attempt {})",
-            level, attempt_count
+            "Attempting recovery level {level} (attempt {attempt_count})"
         ));
 
         // Emit RecoveryAttempted event to transition back to failed phase
-        Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+        EffectResult::event(PipelineEvent::AwaitingDevFix(
             AwaitingDevFixEvent::RecoveryAttempted {
                 level,
                 attempt_count,
                 target_phase,
             },
-        )))
+        ))
     }
 
     pub(super) fn emit_recovery_success(
-        &self,
         ctx: &PhaseContext<'_>,
         level: u32,
         total_attempts: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::reducer::event::AwaitingDevFixEvent;
 
         ctx.logger.info(&format!(
-            "Recovery succeeded at level {} after {} attempts",
-            level, total_attempts
+            "Recovery succeeded at level {level} after {total_attempts} attempts"
         ));
 
         // Emit RecoverySucceeded event to clear recovery state
-        Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+        EffectResult::event(PipelineEvent::AwaitingDevFix(
             AwaitingDevFixEvent::RecoverySucceeded {
                 level,
                 total_attempts,
             },
-        )))
+        ))
     }
 
-    pub(super) fn ensure_gitignore_entries(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+    pub(super) fn ensure_gitignore_entries(ctx: &PhaseContext<'_>) -> EffectResult {
         ctx.logger
             .info("Ensuring .gitignore contains agent artifact entries...");
 
@@ -296,7 +274,10 @@ impl MainEffectHandler {
         }
 
         // If any entries are missing, update .gitignore
-        if !entries_added.is_empty() {
+        if entries_added.is_empty() {
+            ctx.logger
+                .info("All required .gitignore entries already present");
+        } else {
             let mut new_content = existing_content;
 
             // Ensure content ends with newline if not empty
@@ -326,25 +307,23 @@ impl MainEffectHandler {
                 Err(err) => {
                     // Log warning but don't fail pipeline
                     ctx.logger.warn(&format!(
-                        "Failed to write .gitignore (continuing anyway): {}",
-                        err
+                        "Failed to write .gitignore (continuing anyway): {err}"
                     ));
                     // Clear entries_added since write failed
                     entries_added.clear();
                 }
             }
-        } else {
-            ctx.logger
-                .info("All required .gitignore entries already present");
         }
 
-        Ok(EffectResult::event(
-            PipelineEvent::gitignore_entries_ensured(entries_added, already_present, file_created),
+        EffectResult::event(PipelineEvent::gitignore_entries_ensured(
+            entries_added,
+            already_present,
+            file_created,
         ))
     }
 }
 
-fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
+fn cleanup_continuation_context_file(ctx: &PhaseContext<'_>) -> anyhow::Result<()> {
     let path = Path::new(".agent/tmp/continuation_context.md");
     if ctx.workspace.exists(path) {
         ctx.workspace
@@ -363,7 +342,7 @@ fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Resu
 fn entry_exists(content: &str, pattern: &str) -> bool {
     content
         .lines()
-        .map(|line| line.trim())
+        .map(str::trim)
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .any(|line| line == pattern)
 }

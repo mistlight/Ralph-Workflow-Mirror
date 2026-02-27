@@ -1,7 +1,7 @@
 //! System tests for git helper functions requiring real git repositories.
 //!
-//! These tests use real git2::Repository and filesystem operations.
-//! Tests that can use MemoryWorkspace should remain in the unit tests.
+//! These tests use real `git2::Repository` and filesystem operations.
+//! Tests that can use `MemoryWorkspace` should remain in the unit tests.
 
 use ralph_workflow::git_helpers::get_hooks_dir;
 use ralph_workflow::git_helpers::hooks::HOOK_MARKER;
@@ -243,9 +243,8 @@ fn test_cleanup_orphaned_marker() {
 fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
     let missing =
         std::env::temp_dir().join(format!("ralph-nonexistent-repo-{}", std::process::id()));
-    let err = match git2::Repository::discover(&missing) {
-        Ok(_) => panic!("expected repo discovery to fail for missing path"),
-        Err(err) => err,
+    let Err(err) = git2::Repository::discover(&missing) else {
+        panic!("expected repo discovery to fail for missing path")
     };
 
     let io_err = git_helpers::git2_to_io_error(&err);

@@ -47,7 +47,7 @@
 //! The default check interval is 30 seconds, meaning file activity is
 //! sampled every 30 seconds. This is much faster than the 300-second timeout
 //! window, ensuring timely detection while remaining resource-efficient.
-//! The check interval can be adjusted via MonitorConfig for testing or
+//! The check interval can be adjusted via `MonitorConfig` for testing or
 //! special operational requirements.
 //!
 //! ## Performance Characteristics

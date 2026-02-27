@@ -24,27 +24,27 @@ pub enum PresetType {
 }
 
 impl PresetType {
-    /// Get the (developer_iters, reviewer_reviews) counts for this preset.
+    /// Get the (`developer_iters`, `reviewer_reviews`) counts for this preset.
     #[must_use]
-    pub fn iteration_counts(self) -> (u32, u32) {
+    pub const fn iteration_counts(self) -> (u32, u32) {
         match self {
-            PresetType::Quick => (1, 1),
-            PresetType::Rapid => (2, 1),
-            PresetType::Long => (15, 10),
-            PresetType::Standard => (5, 2),
-            PresetType::Thorough => (10, 5),
+            Self::Quick => (1, 1),
+            Self::Rapid => (2, 1),
+            Self::Long => (15, 10),
+            Self::Standard => (5, 2),
+            Self::Thorough => (10, 5),
         }
     }
 
     /// Get the developer iterations for this preset.
     #[must_use]
-    pub fn developer_iters(self) -> u32 {
+    pub const fn developer_iters(self) -> u32 {
         self.iteration_counts().0
     }
 
     /// Get the reviewer reviews for this preset.
     #[must_use]
-    pub fn reviewer_reviews(self) -> u32 {
+    pub const fn reviewer_reviews(self) -> u32 {
         self.iteration_counts().1
     }
 }
@@ -130,8 +130,7 @@ impl CliState {
     pub fn resolved_developer_iters(&self, config_default: u32) -> u32 {
         self.developer_iters.unwrap_or_else(|| {
             self.preset_applied
-                .map(PresetType::developer_iters)
-                .unwrap_or(config_default)
+                .map_or(config_default, PresetType::developer_iters)
         })
     }
 
@@ -145,8 +144,7 @@ impl CliState {
     pub fn resolved_reviewer_reviews(&self, config_default: u32) -> u32 {
         self.reviewer_reviews.unwrap_or_else(|| {
             self.preset_applied
-                .map(PresetType::reviewer_reviews)
-                .unwrap_or(config_default)
+                .map_or(config_default, PresetType::reviewer_reviews)
         })
     }
 }

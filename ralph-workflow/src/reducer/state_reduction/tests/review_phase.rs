@@ -83,9 +83,9 @@ fn test_review_phase_started_preserves_agent_chain_backoff_policy() {
         review_state.agent_chain.retry_delay_ms,
         state.agent_chain.retry_delay_ms
     );
-    assert_eq!(
-        review_state.agent_chain.backoff_multiplier,
-        state.agent_chain.backoff_multiplier
+    assert!(
+        (review_state.agent_chain.backoff_multiplier - state.agent_chain.backoff_multiplier).abs()
+            < f64::EPSILON
     );
     assert_eq!(
         review_state.agent_chain.max_backoff_ms,

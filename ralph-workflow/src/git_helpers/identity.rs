@@ -36,11 +36,16 @@ pub struct GitIdentity {
 
 impl GitIdentity {
     /// Create a new `GitIdentity` with the given name and email.
+    #[must_use]
     pub const fn new(name: String, email: String) -> Self {
         Self { name, email }
     }
 
     /// Validate that the identity is well-formed.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn validate(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {
             return Err("Git user name cannot be empty".to_string());
@@ -74,6 +79,7 @@ impl GitIdentity {
 /// Uses platform-specific methods:
 /// - On Unix: `whoami` command, fallback to `$USER` env var
 /// - On Windows: `%USERNAME%` env var
+#[must_use]
 pub fn fallback_username(executor: Option<&dyn ProcessExecutor>) -> String {
     // Try environment variables first (fastest)
     if cfg!(unix) {
@@ -114,6 +120,7 @@ pub fn fallback_username(executor: Option<&dyn ProcessExecutor>) -> String {
 /// Get a fallback email based on the username.
 ///
 /// Format: `{username}@{hostname}` or `{username}@localhost`
+#[must_use]
 pub fn fallback_email(username: &str, executor: Option<&dyn ProcessExecutor>) -> String {
     // Try to get hostname
     let hostname = match get_hostname(executor) {
@@ -150,6 +157,7 @@ fn get_hostname(executor: Option<&dyn ProcessExecutor>) -> Option<String> {
 /// Get the default git identity (last resort).
 ///
 /// This should never be reached if the fallback chain is working correctly.
+#[must_use]
 pub fn default_identity() -> GitIdentity {
     GitIdentity::new("Ralph Workflow".to_string(), "ralph@localhost".to_string())
 }

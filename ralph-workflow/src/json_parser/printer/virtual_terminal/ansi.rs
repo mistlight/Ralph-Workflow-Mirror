@@ -1,4 +1,4 @@
-//! ANSI escape sequence processing for VirtualTerminal.
+//! ANSI escape sequence processing for `VirtualTerminal`.
 //!
 //! This module handles parsing and interpretation of ANSI escape sequences
 //! for cursor movement, line clearing, and text styling.
@@ -69,12 +69,9 @@ impl VirtualTerminal {
                                     // For now, we only implement mode 2 (full line clear)
                                     // which is what the streaming code uses
                                 }
-                                'm' => {
-                                    // SGR (Select Graphic Rendition) - colors/styles
-                                    // We ignore these as they don't affect text content
-                                }
                                 _ => {
-                                    // Unknown command, ignore
+                                    // SGR (Select Graphic Rendition) - colors/styles, or unknown command
+                                    // We ignore these as they don't affect text content
                                 }
                             }
                         }

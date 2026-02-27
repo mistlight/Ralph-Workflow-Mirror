@@ -6,7 +6,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**.
 //!
 //! Before writing, modifying, or debugging any integration test, you MUST read
 //! that document. Key principles:
@@ -18,19 +18,19 @@
 
 use crate::test_timeout::with_default_timeout;
 
-/// Test that valid all_issues_addressed status fix XML passes validation.
+/// Test that valid `all_issues_addressed` status fix XML passes validation.
 ///
 /// This verifies that when the fix agent produces valid XML with
-/// status="all_issues_addressed", the validation succeeds and identifies
+/// `status="all_issues_addressed`", the validation succeeds and identifies
 /// the completion status.
 #[test]
 fn test_fix_xml_valid_all_issues_addressed_status() {
     with_default_timeout(|| {
         // Setup: Create valid XML with all_issues_addressed status
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>All reported issues have been fixed</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Validate the XML through the public API
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -57,19 +57,19 @@ fn test_fix_xml_valid_all_issues_addressed_status() {
     });
 }
 
-/// Test that valid issues_remain status fix XML passes validation.
+/// Test that valid `issues_remain` status fix XML passes validation.
 ///
 /// This verifies that when the fix agent produces valid XML with
-/// status="issues_remain", the validation succeeds and identifies
+/// `status="issues_remain`", the validation succeeds and identifies
 /// that more work is needed.
 #[test]
 fn test_fix_xml_valid_issues_remain_status() {
     with_default_timeout(|| {
         // Setup: Create valid XML with issues_remain status
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>issues_remain</ralph-status>
 <ralph-summary>Some issues fixed, but more work needed</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -93,18 +93,18 @@ fn test_fix_xml_valid_issues_remain_status() {
     });
 }
 
-/// Test that valid no_issues_found status fix XML passes validation.
+/// Test that valid `no_issues_found` status fix XML passes validation.
 ///
 /// This verifies that when the fix agent produces valid XML with
-/// status="no_issues_found", the validation succeeds and identifies
+/// `status="no_issues_found`", the validation succeeds and identifies
 /// that there were no issues to fix.
 #[test]
 fn test_fix_xml_valid_no_issues_found_status() {
     with_default_timeout(|| {
         // Setup: Create valid XML with no_issues_found status (summary optional)
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>no_issues_found</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -148,7 +148,7 @@ fn test_fix_xml_valid_no_issues_found_status() {
 fn test_fix_xml_missing_root_element_provides_specific_error() {
     with_default_timeout(|| {
         // Setup: Create content without proper XML tags
-        let content = r#"Some random text without proper XML tags"#;
+        let content = r"Some random text without proper XML tags";
 
         // Execute: Try to validate the content
         let result = ralph_workflow::validate_fix_result_xml(content);
@@ -183,9 +183,9 @@ fn test_fix_xml_missing_root_element_provides_specific_error() {
 fn test_fix_xml_invalid_status_provides_valid_options() {
     with_default_timeout(|| {
         // Setup: Create XML with invalid status value
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>invalid_status</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -220,9 +220,9 @@ fn test_fix_xml_invalid_status_provides_valid_options() {
 fn test_fix_xml_empty_status_produces_error() {
     with_default_timeout(|| {
         // Setup: Create XML with empty status
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>   </ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -251,7 +251,7 @@ fn test_fix_xml_empty_status_produces_error() {
 fn test_fix_xml_extraction_from_markdown_fence() {
     with_default_timeout(|| {
         // Setup: Create content with XML wrapped in markdown fence
-        let content = r#"Here's my fix status:
+        let content = r"Here's my fix status:
 
 ```xml
 <ralph-fix-result>
@@ -260,7 +260,7 @@ fn test_fix_xml_extraction_from_markdown_fence() {
 </ralph-fix-result>
 ```
 
-That's all."#;
+That's all.";
 
         // Execute: Extract XML from the content
         let extracted = ralph_workflow::extract_fix_result_xml(content);
@@ -307,10 +307,10 @@ fn test_fix_xml_extraction_from_json_string() {
 fn test_fix_xml_formatted_for_display() {
     with_default_timeout(|| {
         // Setup: Create valid XML
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>All issues have been successfully fixed</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Format the XML for display
         let formatted = ralph_workflow::files::llm_output_extraction::format_xml_for_display(xml);
@@ -341,10 +341,10 @@ fn test_fix_xml_formatted_for_display() {
 fn test_fix_xml_duplicate_status_produces_specific_error() {
     with_default_timeout(|| {
         // Setup: Create XML with duplicate status element
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-status>issues_remain</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -377,10 +377,10 @@ fn test_fix_xml_duplicate_status_produces_specific_error() {
 fn test_fix_xml_unexpected_element_provides_valid_options() {
     with_default_timeout(|| {
         // Setup: Create XML with unexpected element
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-unknown-field>Some value</ralph-unknown-field>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -408,9 +408,9 @@ fn test_fix_xml_unexpected_element_provides_valid_options() {
 fn test_fix_xml_missing_closing_tag_produces_error() {
     with_default_timeout(|| {
         // Setup: Create XML without closing tag
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
-"#;
+";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -441,8 +441,8 @@ fn test_fix_xml_missing_closing_tag_produces_error() {
 fn test_fix_xsd_error_contains_all_required_information() {
     with_default_timeout(|| {
         // Setup: Create invalid XML (missing status element)
-        let xml = r#"<ralph-fix-result>
-</ralph-fix-result>"#;
+        let xml = r"<ralph-fix-result>
+</ralph-fix-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -495,9 +495,9 @@ fn test_fix_xsd_error_contains_all_required_information() {
 fn test_fix_xml_summary_is_optional() {
     with_default_timeout(|| {
         // Setup: Create minimal valid XML (only required status field)
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);
@@ -525,10 +525,10 @@ fn test_fix_xml_summary_is_optional() {
 fn test_fix_xml_whitespace_only_summary_is_treated_as_missing() {
     with_default_timeout(|| {
         // Setup: Create XML with whitespace-only summary
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>   </ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_fix_result_xml(xml);

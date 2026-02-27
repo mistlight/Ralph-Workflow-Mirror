@@ -24,8 +24,8 @@ fn extract_commit_message_from_file_with_workspace(
         return CommitExtractionOutcome::Skipped(reason);
     }
 
-    match message {
-        Some(msg) => CommitExtractionOutcome::Valid(CommitExtractionResult::new(msg)),
-        None => CommitExtractionOutcome::InvalidXml(detail),
-    }
+    message.map_or(
+        CommitExtractionOutcome::InvalidXml(detail),
+        |msg| CommitExtractionOutcome::Valid(CommitExtractionResult::new(msg))
+    )
 }

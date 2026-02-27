@@ -265,15 +265,14 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::RestorePromptPermissions => {
                 state = reduce(state, PipelineEvent::prompt_permissions_restored());
             }
-            _ => panic!("Unexpected effect: {:?}", effect),
+            _ => panic!("Unexpected effect: {effect:?}"),
         }
     }
 
     assert_eq!(
         iterations_run.len(),
         5,
-        "Should run exactly 5 iterations, ran: {:?}",
-        iterations_run
+        "Should run exactly 5 iterations, ran: {iterations_run:?}"
     );
     assert_eq!(
         iterations_run,

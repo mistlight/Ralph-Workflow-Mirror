@@ -1,13 +1,14 @@
 /// Maximum safe prompt size in bytes before pre-truncation.
 const MAX_SAFE_PROMPT_SIZE: u64 = 200_000;
 
-/// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, DeepSeek).
+/// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, `DeepSeek`).
 const GLM_MAX_PROMPT_SIZE: u64 = 100_000;
 
 /// Maximum prompt size for Claude-based agents.
 const CLAUDE_MAX_PROMPT_SIZE: u64 = 300_000;
 
 /// Get the maximum safe prompt size for a specific agent.
+#[must_use] 
 pub fn model_budget_bytes_for_agent_name(commit_agent: &str) -> u64 {
     let agent_lower = commit_agent.to_lowercase();
 
@@ -28,6 +29,7 @@ pub fn model_budget_bytes_for_agent_name(commit_agent: &str) -> u64 {
     }
 }
 
+#[must_use] 
 pub fn effective_model_budget_bytes(agent_names: &[String]) -> u64 {
     agent_names
         .iter()
@@ -99,13 +101,10 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
 
     if files_included < total_files {
         let summary = format!(
-            "\n[Truncated: {} of {} files shown]\n",
-            files_included, total_files
+            "\n[Truncated: {files_included} of {total_files} files shown]\n"
         );
         if summary.len() <= max_size {
-            if result.len() + summary.len() <= max_size {
-                result.push_str(&summary);
-            } else {
+            if result.len() + summary.len() > max_size {
                 let target_bytes = max_size.saturating_sub(summary.len());
                 if target_bytes < result.len() {
                     let mut cut = 0usize;
@@ -117,14 +116,15 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
                     }
                     result.truncate(cut);
                 }
-                result.push_str(&summary);
             }
+            result.push_str(&summary);
         }
     }
 
     result
 }
 
+#[must_use] 
 pub fn truncate_diff_to_model_budget(diff: &str, max_size_bytes: u64) -> (String, bool) {
     let max_size = usize::try_from(max_size_bytes).unwrap_or(usize::MAX);
     if diff.len() <= max_size {
@@ -149,11 +149,28 @@ fn prioritize_file_path(path: &str) -> i32 {
         100
     } else if parts.contains(&"tests") {
         50
-    } else if normalized.ends_with(".md") || normalized.ends_with(".txt") {
+    } else if std::path::Path::new(&normalized)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("txt"))
+    {
         10
     } else {
         0
     }
+}
+
+fn truncate_to_utf8_boundary(s: &mut String, max_bytes: usize) {
+    if s.len() <= max_bytes {
+        return;
+    }
+    let mut cut = 0usize;
+    for (idx, _) in s.char_indices() {
+        if idx > max_bytes {
+            break;
+        }
+        cut = idx;
+    }
+    s.truncate(cut);
 }
 
 fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
@@ -172,20 +189,6 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
 
     let suffix = " [truncated...]";
     let suffix_len = suffix.len();
-
-    fn truncate_to_utf8_boundary(s: &mut String, max_bytes: usize) {
-        if s.len() <= max_bytes {
-            return;
-        }
-        let mut cut = 0usize;
-        for (idx, _) in s.char_indices() {
-            if idx > max_bytes {
-                break;
-            }
-            cut = idx;
-        }
-        s.truncate(cut);
-    }
 
     if !result.is_empty() {
         // current_size tracks line lengths + '\n' for each included line.
@@ -232,8 +235,7 @@ mod diff_truncation_tests {
         let files_included = 1;
         let total_files = 2;
         let summary = format!(
-            "\n[Truncated: {} of {} files shown]\n",
-            files_included, total_files
+            "\n[Truncated: {files_included} of {total_files} files shown]\n"
         );
 
         let max_size = 1_000usize;
@@ -284,10 +286,10 @@ mod diff_truncation_tests {
     // Exhaustive edge case tests for truncation invariants
     // =========================================================================
 
-    /// Test that truncation output never exceeds max_size for various edge cases.
+    /// Test that truncation output never exceeds `max_size` for various edge cases.
     ///
     /// This exhaustively tests boundary conditions around the truncation summary
-    /// appending logic to ensure the invariant "output.len() <= max_size" holds.
+    /// appending logic to ensure the invariant "`output.len()` <= `max_size`" holds.
     #[test]
     fn truncate_diff_invariant_never_exceeds_max_size_edge_cases() {
         // Test various max_size values around the summary length
@@ -356,7 +358,7 @@ mod diff_truncation_tests {
         }
     }
 
-    /// Test that single-file diffs that exceed max_size are properly truncated.
+    /// Test that single-file diffs that exceed `max_size` are properly truncated.
     #[test]
     fn truncate_single_large_file_stays_within_budget() {
         let max_size = 100usize;
@@ -385,7 +387,7 @@ mod diff_truncation_tests {
 
         // Unicode content: each emoji is 4 bytes
         let emoji_line = "🎉".repeat(20); // 80 bytes
-        let diff = format!("diff --git a/a b/a\n+{}\n", emoji_line);
+        let diff = format!("diff --git a/a b/a\n+{emoji_line}\n");
 
         let (truncated, was_truncated) = truncate_diff_to_model_budget(&diff, max_size as u64);
         assert!(was_truncated, "unicode diff should be truncated");

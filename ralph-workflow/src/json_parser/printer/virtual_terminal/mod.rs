@@ -57,7 +57,7 @@ pub struct VirtualTerminal {
     pub(self) cursor_row: RefCell<usize>,
     /// Current cursor column (0-indexed)
     pub(self) cursor_col: RefCell<usize>,
-    /// Whether to simulate terminal mode (affects is_terminal())
+    /// Whether to simulate terminal mode (affects `is_terminal()`)
     pub(self) simulated_is_terminal: bool,
     /// Raw write history for debugging
     pub(self) write_history: RefCell<Vec<String>>,
@@ -71,6 +71,7 @@ pub struct VirtualTerminal {
 impl VirtualTerminal {
     /// Create a new virtual terminal (simulates being a TTY by default).
     /// This creates an unbounded terminal (no wrapping, no scrolling) for backward compatibility.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             screen: RefCell::new(vec![String::new()]),
@@ -85,6 +86,7 @@ impl VirtualTerminal {
 
     /// Create a new virtual terminal with specified terminal simulation.
     /// This creates an unbounded terminal (no wrapping, no scrolling) for backward compatibility.
+    #[must_use]
     pub fn new_with_terminal(is_terminal: bool) -> Self {
         Self {
             screen: RefCell::new(vec![String::new()]),
@@ -112,6 +114,7 @@ impl VirtualTerminal {
     /// let term = VirtualTerminal::new_with_geometry(80, 24);
     /// // Writing 100 characters will wrap to multiple rows
     /// ```
+    #[must_use]
     pub fn new_with_geometry(cols: usize, rows: usize) -> Self {
         Self {
             screen: RefCell::new(vec![String::new()]),
@@ -164,7 +167,7 @@ impl VirtualTerminal {
         self.screen.borrow().clone()
     }
 
-    /// Get all screen lines (alias for get_screen_content for clarity).
+    /// Get all screen lines (alias for `get_screen_content` for clarity).
     ///
     /// Returns the full screen buffer including empty lines.
     /// This allows tests to assert on exact screen state.
@@ -276,7 +279,7 @@ impl VirtualTerminal {
     /// assert!(term.would_cursor_up_leave_orphans(&long_content));
     /// ```
     pub fn would_cursor_up_leave_orphans(&self, content: &str) -> bool {
-        if let Some(cols) = self.cols {
+        self.cols.is_some_and(|cols| {
             // This helper is used by tests to model the cursor-up/clear-line failure mode
             // under wrapping. We intentionally approximate terminal width here:
             // - strip ANSI escape sequences (colors, cursor movement) since they do not
@@ -294,9 +297,7 @@ impl VirtualTerminal {
             let content_len = stripped.chars().count();
             let rows_needed = content_len.div_ceil(cols);
             rows_needed > 1 // If content needs >1 row, cursor-up-1 leaves orphans
-        } else {
-            false // Unbounded terminal, no wrapping
-        }
+        })
     }
 
     /// Get a debug summary of the terminal state for diagnostics.
@@ -312,7 +313,7 @@ impl VirtualTerminal {
     pub fn debug_summary(&self) -> String {
         let (row, col) = self.cursor_position();
         let geometry = match (self.cols, self.rows) {
-            (Some(c), Some(r)) => format!("{}x{}", c, r),
+            (Some(c), Some(r)) => format!("{c}x{r}"),
             _ => "unbounded".to_string(),
         };
 
@@ -356,9 +357,12 @@ impl VirtualTerminal {
     ///     "Should not have waterfall pattern with append-only streaming");
     /// ```
     pub fn has_waterfall_pattern(&self, prefix: &str) -> bool {
-        let lines = self.get_visible_lines();
-        let prefix_lines: Vec<_> = lines.iter().filter(|l| l.contains(prefix)).collect();
-        prefix_lines.len() > 1
+        self.get_visible_lines()
+            .iter()
+            .filter(|line| line.contains(prefix))
+            .take(2)
+            .count()
+            > 1
     }
 }
 

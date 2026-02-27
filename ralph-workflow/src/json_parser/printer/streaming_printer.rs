@@ -15,7 +15,7 @@ pub struct WriteCall {
     pub timestamp: std::time::Instant,
 }
 
-/// Record of a flush() call with metadata.
+/// Record of a `flush()` call with metadata.
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone)]
 pub struct FlushCall {
@@ -55,9 +55,9 @@ pub struct FlushCall {
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
 pub struct StreamingTestPrinter {
-    /// Each individual write() call recorded.
+    /// Each individual `write()` call recorded.
     write_calls: RefCell<Vec<WriteCall>>,
-    /// Each flush() call recorded.
+    /// Each `flush()` call recorded.
     flush_calls: RefCell<Vec<FlushCall>>,
     /// Simulated terminal status for testing different terminal modes.
     simulated_is_terminal: bool,
@@ -66,7 +66,8 @@ pub struct StreamingTestPrinter {
 #[cfg(any(test, feature = "test-utils"))]
 impl StreamingTestPrinter {
     /// Create a new streaming test printer (simulates non-terminal).
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             write_calls: RefCell::new(Vec::new()),
             flush_calls: RefCell::new(Vec::new()),
@@ -78,7 +79,8 @@ impl StreamingTestPrinter {
     ///
     /// # Arguments
     /// * `is_terminal` - Whether to simulate being connected to a terminal
-    pub fn new_with_terminal(is_terminal: bool) -> Self {
+    #[must_use]
+    pub const fn new_with_terminal(is_terminal: bool) -> Self {
         Self {
             write_calls: RefCell::new(Vec::new()),
             flush_calls: RefCell::new(Vec::new()),
@@ -91,7 +93,7 @@ impl StreamingTestPrinter {
         self.write_calls.borrow().clone()
     }
 
-    /// Get the number of write() calls made.
+    /// Get the number of `write()` calls made.
     pub fn write_count(&self) -> usize {
         self.write_calls.borrow().len()
     }
@@ -120,15 +122,18 @@ impl StreamingTestPrinter {
     ///
     /// # Returns
     /// `Ok(())` if at least `min_expected` writes occurred, `Err` with details otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn verify_incremental_writes(&self, min_expected: usize) -> Result<(), String> {
         let count = self.write_count();
         if count >= min_expected {
             Ok(())
         } else {
             Err(format!(
-                "Expected at least {} incremental writes, but only {} occurred. \
-                 This suggests output is batched rather than streamed.",
-                min_expected, count
+                "Expected at least {min_expected} incremental writes, but only {count} occurred. \
+                 This suggests output is batched rather than streamed."
             ))
         }
     }
@@ -146,6 +151,7 @@ impl StreamingTestPrinter {
     /// Strip ANSI escape sequences from a string.
     ///
     /// Uses a simple state machine approach to remove all ANSI codes.
+    #[must_use]
     pub fn strip_ansi(s: &str) -> String {
         let mut result = String::with_capacity(s.len());
         let mut chars = s.chars().peekable();
@@ -204,7 +210,7 @@ impl StreamingTestPrinter {
         self.flush_calls.borrow().clone()
     }
 
-    /// Get the number of flush() calls made.
+    /// Get the number of `flush()` calls made.
     pub fn flush_count(&self) -> usize {
         self.flush_calls.borrow().len()
     }
@@ -216,6 +222,10 @@ impl StreamingTestPrinter {
     ///
     /// # Returns
     /// `Ok(())` if at least one flush occurred after writes, `Err` with details otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn verify_flush_after_writes(&self) -> Result<(), String> {
         let writes = self.write_calls.borrow();
         let flushes = self.flush_calls.borrow();
@@ -240,15 +250,18 @@ impl StreamingTestPrinter {
     ///
     /// For true streaming, flush should be called after each delta event
     /// to push content to the user's terminal immediately.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn verify_flush_count(&self, min_expected: usize) -> Result<(), String> {
         let count = self.flush_count();
         if count >= min_expected {
             Ok(())
         } else {
             Err(format!(
-                "Expected at least {} flush() calls, but only {} occurred. \
-                 This suggests output is not being flushed frequently enough for streaming.",
-                min_expected, count
+                "Expected at least {min_expected} flush() calls, but only {count} occurred. \
+                 This suggests output is not being flushed frequently enough for streaming."
             ))
         }
     }

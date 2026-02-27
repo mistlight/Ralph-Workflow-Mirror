@@ -9,9 +9,9 @@
 //!
 //! # Test Organization
 //!
-//! - `formatting_tests` - Formatter methods (format_thinking, format_tool_input)
-//! - `text_renderer_tests` - TextDeltaRenderer implementation
-//! - `thinking_renderer_tests` - ThinkingDeltaRenderer implementation
+//! - `formatting_tests` - Formatter methods (`format_thinking`, `format_tool_input`)
+//! - `text_renderer_tests` - `TextDeltaRenderer` implementation
+//! - `thinking_renderer_tests` - `ThinkingDeltaRenderer` implementation
 //! - `streaming_tests` - Full streaming sequences and prefix display
 //! - `sanitize_tests` - Whitespace sanitization logic
 //! - `renderer_tests` - General renderer behavior (newlines, whitespace)
@@ -20,7 +20,7 @@
 use super::*;
 
 /// Helper function to create Colors with disabled ANSI colors for testing.
-pub(crate) fn test_colors() -> Colors {
+pub fn test_colors() -> Colors {
     Colors { enabled: false }
 }
 

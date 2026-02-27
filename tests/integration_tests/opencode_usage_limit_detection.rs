@@ -1,23 +1,23 @@
-//! Integration tests for OpenCode usage limit detection.
+//! Integration tests for `OpenCode` usage limit detection.
 //!
-//! Verifies end-to-end OpenCode usage limit detection flow:
-//! 1. OpenCode emits JSON error to logfile with usage_limit_exceeded code
+//! Verifies end-to-end `OpenCode` usage limit detection flow:
+//! 1. `OpenCode` emits JSON error to logfile with `usage_limit_exceeded` code
 //! 2. Error extraction from logfile identifies the error
-//! 3. Error classification detects it as RateLimit (not InternalError)
-//! 4. RateLimit event triggers agent fallback
+//! 3. Error classification detects it as `RateLimit` (not `InternalError`)
+//! 4. `RateLimit` event triggers agent fallback
 //!
 //! Observable behaviors tested:
-//! - Structured error codes (insufficient_quota, usage_limit_exceeded, quota_exceeded)
+//! - Structured error codes (`insufficient_quota`, `usage_limit_exceeded`, `quota_exceeded`)
 //! - Provider-specific errors (anthropic: usage limit, openai: usage limit)
-//! - OpenCode Zen branded errors (opencode usage limit, zen usage limit)
-//! - RateLimit event emission (not InternalError)
-//! - Agent fallback triggered after RateLimit detection
+//! - `OpenCode` Zen branded errors (opencode usage limit, zen usage limit)
+//! - `RateLimit` event emission (not `InternalError`)
+//! - Agent fallback triggered after `RateLimit` detection
 //!
 //! # Integration Test Compliance
 //!
 //! These tests follow [../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md):
 //! - Test observable behavior: error detection and agent fallback
-//! - Mock at architectural boundaries: MemoryWorkspace for filesystem
+//! - Mock at architectural boundaries: `MemoryWorkspace` for filesystem
 //! - Pure reducer tests require no mocks
 
 use crate::test_timeout::with_default_timeout;
@@ -27,9 +27,9 @@ use ralph_workflow::reducer::fault_tolerant_executor::classify_agent_error;
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::path::Path;
 
-/// Test that OpenCode structured error code `usage_limit_exceeded` is correctly extracted and classified.
+/// Test that `OpenCode` structured error code `usage_limit_exceeded` is correctly extracted and classified.
 ///
-/// This is the PRIMARY error format from OpenCode when usage limits are hit.
+/// This is the PRIMARY error format from `OpenCode` when usage limits are hit.
 /// The error code is more reliable than message text for detection.
 #[test]
 fn test_opencode_structured_code_usage_limit_exceeded() {
@@ -65,22 +65,21 @@ fn test_opencode_structured_code_usage_limit_exceeded() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "usage_limit_exceeded should be classified as RateLimit, got {:?}",
-            error_kind
+            "usage_limit_exceeded should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
 
-/// Test silent failure: OpenCode exits with non-zero code but no error logs.
+/// Test silent failure: `OpenCode` exits with non-zero code but no error logs.
 ///
-/// Simulates worst-case scenario where OpenCode usage limit causes immediate exit
+/// Simulates worst-case scenario where `OpenCode` usage limit causes immediate exit
 /// without writing to logfile or stderr. This can happen if:
-/// - Provider API returns 429 and OpenCode exits before writing error event
+/// - Provider API returns 429 and `OpenCode` exits before writing error event
 /// - Network interruption prevents error log from being written
 /// - Process killed during error emission
 ///
 /// **Expected behavior**: Without error signals, this cannot be detected as a usage
-/// limit error and will be classified as InternalError. This test documents the
+/// limit error and will be classified as `InternalError`. This test documents the
 /// current limitation. Future improvements may add heuristics or debug logging.
 #[test]
 fn test_silent_usage_limit_failure() {
@@ -106,8 +105,7 @@ fn test_silent_usage_limit_failure() {
         // Document current limitation: Cannot detect usage limit without error signals
         assert!(
             matches!(error_kind, AgentErrorKind::InternalError),
-            "Without error signals, classified as InternalError (expected limitation), got {:?}",
-            error_kind
+            "Without error signals, classified as InternalError (expected limitation), got {error_kind:?}"
         );
 
         // Scenario 2: Missing logfile (OpenCode exited immediately)
@@ -121,15 +119,14 @@ fn test_silent_usage_limit_failure() {
         let error_kind = classify_agent_error(1, "", None);
         assert!(
             matches!(error_kind, AgentErrorKind::InternalError),
-            "Missing logfile should be classified as InternalError, got {:?}",
-            error_kind
+            "Missing logfile should be classified as InternalError, got {error_kind:?}"
         );
     });
 }
 
 /// Test that specific exit codes alone do not indicate usage limits.
 ///
-/// OpenCode uses generic exit code 1 for all errors, so exit codes alone
+/// `OpenCode` uses generic exit code 1 for all errors, so exit codes alone
 /// cannot reliably detect usage limits. This test documents that exit code
 /// detection is NOT implemented because it would cause false positives.
 #[test]
@@ -149,17 +146,15 @@ fn test_exit_code_alone_insufficient_for_detection() {
             let error_kind = classify_agent_error(exit_code, "", None);
             assert!(
                 !matches!(error_kind, AgentErrorKind::RateLimit),
-                "Exit code {} alone should NOT be classified as RateLimit (prevents false positives), got {:?}",
-                exit_code,
-                error_kind
+                "Exit code {exit_code} alone should NOT be classified as RateLimit (prevents false positives), got {error_kind:?}"
             );
         }
     });
 }
 
-/// Test detection when OpenCode writes partial log before crashing.
+/// Test detection when `OpenCode` writes partial log before crashing.
 ///
-/// If OpenCode crashes after writing some content but before the error event,
+/// If `OpenCode` crashes after writing some content but before the error event,
 /// we should not detect a usage limit error (no false positives).
 #[test]
 fn test_partial_log_no_error_event() {
@@ -190,8 +185,7 @@ fn test_partial_log_no_error_event() {
         // Should not be classified as RateLimit without error signal
         assert!(
             !matches!(error_kind, AgentErrorKind::RateLimit),
-            "Partial log without error should not be RateLimit, got {:?}",
-            error_kind
+            "Partial log without error should not be RateLimit, got {error_kind:?}"
         );
     });
 }
@@ -209,8 +203,7 @@ fn test_detection_via_stderr_when_logfile_unavailable() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "Should detect usage limit from stderr when logfile unavailable, got {:?}",
-            error_kind
+            "Should detect usage limit from stderr when logfile unavailable, got {error_kind:?}"
         );
     });
 }
@@ -230,8 +223,7 @@ fn test_dual_source_error_detection() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "Should detect usage limit from stdout even with stderr error, got {:?}",
-            error_kind
+            "Should detect usage limit from stdout even with stderr error, got {error_kind:?}"
         );
 
         // Test 2: Usage limit in stderr, other error in stdout
@@ -241,13 +233,12 @@ fn test_dual_source_error_detection() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "Should detect usage limit from stderr even with stdout error, got {:?}",
-            error_kind
+            "Should detect usage limit from stderr even with stdout error, got {error_kind:?}"
         );
     });
 }
 
-/// Test that OpenCode error code `quota_exceeded` is correctly detected.
+/// Test that `OpenCode` error code `quota_exceeded` is correctly detected.
 ///
 /// Generic quota exhaustion code used by multiple providers.
 #[test]
@@ -272,15 +263,14 @@ fn test_opencode_quota_exceeded_code() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "quota_exceeded should be classified as RateLimit, got {:?}",
-            error_kind
+            "quota_exceeded should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
 
 /// Test provider-specific error: `anthropic: usage limit reached`.
 ///
-/// OpenCode multi-provider gateway forwards provider errors with provider context.
+/// `OpenCode` multi-provider gateway forwards provider errors with provider context.
 /// Format: `{"error": {"provider": "anthropic", "message": "usage limit reached"}}`
 #[test]
 fn test_opencode_provider_specific_anthropic_usage_limit() {
@@ -319,15 +309,14 @@ fn test_opencode_provider_specific_anthropic_usage_limit() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "Provider-specific usage limit should be classified as RateLimit, got {:?}",
-            error_kind
+            "Provider-specific usage limit should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
 
 /// Test provider-specific error: `openai: usage limit exceeded`.
 ///
-/// OpenAI provider emits usage limit errors through OpenCode multi-provider gateway.
+/// `OpenAI` provider emits usage limit errors through `OpenCode` multi-provider gateway.
 #[test]
 fn test_opencode_provider_specific_openai_usage_limit() {
     with_default_timeout(|| {
@@ -353,15 +342,14 @@ fn test_opencode_provider_specific_openai_usage_limit() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "OpenAI usage limit should be classified as RateLimit, got {:?}",
-            error_kind
+            "OpenAI usage limit should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
 
-/// Test OpenCode Zen branded error: `OpenCode Zen usage limit has been reached`.
+/// Test `OpenCode` Zen branded error: `OpenCode Zen usage limit has been reached`.
 ///
-/// OpenCode Zen (paid tier) emits branded usage limit messages.
+/// `OpenCode` Zen (paid tier) emits branded usage limit messages.
 #[test]
 fn test_opencode_zen_usage_limit_message() {
     with_default_timeout(|| {
@@ -388,15 +376,14 @@ fn test_opencode_zen_usage_limit_message() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "OpenCode Zen usage limit should be classified as RateLimit, got {:?}",
-            error_kind
+            "OpenCode Zen usage limit should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
 
-/// Test OpenCode usage limit message: `opencode usage limit reached`.
+/// Test `OpenCode` usage limit message: `opencode usage limit reached`.
 ///
-/// Generic OpenCode usage limit message (non-Zen).
+/// Generic `OpenCode` usage limit message (non-Zen).
 #[test]
 fn test_opencode_usage_limit_message() {
     with_default_timeout(|| {
@@ -420,8 +407,7 @@ fn test_opencode_usage_limit_message() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "OpenCode usage limit should be classified as RateLimit, got {:?}",
-            error_kind
+            "OpenCode usage limit should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
@@ -451,8 +437,7 @@ fn test_generic_usage_limit_reached_message() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "Generic usage limit should be classified as RateLimit, got {:?}",
-            error_kind
+            "Generic usage limit should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
@@ -483,15 +468,14 @@ fn test_usage_limit_has_been_reached_message() {
 
         assert!(
             matches!(error_kind, AgentErrorKind::RateLimit),
-            "usage limit has been reached should be classified as RateLimit, got {:?}",
-            error_kind
+            "usage limit has been reached should be classified as RateLimit, got {error_kind:?}"
         );
     });
 }
 
 /// Test that errors are extracted from the last 50 lines of logfile.
 ///
-/// OpenCode may emit multiple events to the same logfile.
+/// `OpenCode` may emit multiple events to the same logfile.
 /// Error extraction should search recent lines (last 50) in reverse order.
 #[test]
 fn test_error_extraction_searches_last_50_lines() {
@@ -501,11 +485,11 @@ fn test_error_extraction_searches_last_50_lines() {
         // Create logfile with 100 lines, error at line 80
         let mut lines = Vec::new();
         for i in 1..=79 {
-            lines.push(format!(r#"{{"type":"content","content":"Line {}"}}"#, i));
+            lines.push(format!(r#"{{"type":"content","content":"Line {i}"}}"#));
         }
         lines.push(r#"{"type":"error","error":{"code":"usage_limit_exceeded"}}"#.to_string());
         for i in 81..=100 {
-            lines.push(format!(r#"{{"type":"content","content":"Line {}"}}"#, i));
+            lines.push(format!(r#"{{"type":"content","content":"Line {i}"}}"#));
         }
 
         let logfile_content = lines.join("\n");
@@ -529,7 +513,7 @@ fn test_error_extraction_searches_last_50_lines() {
 
 /// Test that non-error JSON events are ignored.
 ///
-/// OpenCode emits multiple event types (content, thinking, etc.).
+/// `OpenCode` emits multiple event types (content, thinking, etc.).
 /// Only "error" type events should be extracted.
 #[test]
 fn test_non_error_events_ignored() {
@@ -621,12 +605,12 @@ fn test_missing_logfile_returns_none() {
     });
 }
 
-/// Test full pipeline: OpenCode usage limit → agent fallback via reducer.
+/// Test full pipeline: `OpenCode` usage limit → agent fallback via reducer.
 ///
 /// This test verifies the complete flow:
 /// 1. Agent invocation fails with usage limit error
-/// 2. Error is classified as RateLimit
-/// 3. Reducer emits RateLimit event
+/// 2. Error is classified as `RateLimit`
+/// 3. Reducer emits `RateLimit` event
 /// 4. Agent chain advances to next agent
 #[test]
 fn test_full_usage_limit_triggers_agent_fallback() {
@@ -683,7 +667,7 @@ fn test_full_usage_limit_triggers_agent_fallback() {
 
 /// Test that usage limit detection works with stderr fallback.
 ///
-/// If OpenCode error is not in logfile JSON, it may be in stderr.
+/// If `OpenCode` error is not in logfile JSON, it may be in stderr.
 /// Error classification should detect usage limit patterns in stderr.
 #[test]
 fn test_usage_limit_detection_in_stderr() {
@@ -707,16 +691,13 @@ fn test_usage_limit_detection_in_stderr() {
 
             assert!(
                 matches!(error_kind, k if k == expected_kind),
-                "stderr '{}' should be classified as {:?}, got {:?}",
-                stderr,
-                expected_kind,
-                error_kind
+                "stderr '{stderr}' should be classified as {expected_kind:?}, got {error_kind:?}"
             );
         }
     });
 }
 
-/// Test that non-usage-limit errors are NOT classified as RateLimit.
+/// Test that non-usage-limit errors are NOT classified as `RateLimit`.
 ///
 /// Ensure other error types are correctly distinguished from rate limit errors.
 #[test]
@@ -738,9 +719,7 @@ fn test_non_usage_limit_errors_not_classified_as_rate_limit() {
 
             assert!(
                 !matches!(error_kind, AgentErrorKind::RateLimit),
-                "stderr '{}' should NOT be RateLimit, got {:?}",
-                stderr,
-                error_kind
+                "stderr '{stderr}' should NOT be RateLimit, got {error_kind:?}"
             );
         }
     });

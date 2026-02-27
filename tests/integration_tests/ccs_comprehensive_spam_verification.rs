@@ -13,9 +13,9 @@
 //!
 //! **Implementation:** `ralph-workflow/src/json_parser/delta_display/renderer.rs`
 //!
-//! ## Layer 2: Accumulation in StreamingSession
+//! ## Layer 2: Accumulation in `StreamingSession`
 //!
-//! `StreamingSession` accumulates all content by (ContentType, index) across deltas.
+//! `StreamingSession` accumulates all content by (`ContentType`, index) across deltas.
 //! This state is preserved across all delta events for a single message.
 //!
 //! **Implementation:** `ralph-workflow/src/json_parser/streaming_state/session.rs`
@@ -23,8 +23,8 @@
 //! ## Layer 3: Flush at Completion Boundaries
 //!
 //! Parser layer flushes accumulated content ONCE at completion boundaries:
-//! - ClaudeParser: `handle_message_stop` in `claude/delta_handling.rs`
-//! - CodexParser: `item.completed` handlers in `codex/event_handlers/*.rs`
+//! - `ClaudeParser`: `handle_message_stop` in `claude/delta_handling.rs`
+//! - `CodexParser`: `item.completed` handlers in `codex/event_handlers/*.rs`
 //!
 //! This ensures:
 //! - **Full mode (TTY)**: In-place updates work normally with cursor positioning
@@ -34,20 +34,20 @@
 //!
 //! This architecture is validated by 53 regression tests across 8 test files:
 //!
-//! 1. **ccs_nuclear_spam_test.rs** (6 tests)
-//!    - 500+ deltas per block with HARD assertions (total_lines <= 2-5)
+//! 1. **`ccs_nuclear_spam_test.rs`** (6 tests)
+//!    - 500+ deltas per block with HARD assertions (`total_lines` <= 2-5)
 //!    - Tests ccs/glm and ccs/codex
 //!    - Covers text, thinking, tool input, and mixed deltas
 //!    - No consecutive duplicates allowed
 //!
-//! 2. **ccs_all_delta_types_spam_reproduction.rs** (7 tests)
+//! 2. **`ccs_all_delta_types_spam_reproduction.rs`** (7 tests)
 //!    - 1000+ deltas per block (ultra-extreme stress)
 //!    - Rapid successive deltas
 //!    - Interleaved blocks with many deltas
 //!    - Multi-item scenarios for Codex
 //!    - Same stream tested in different modes for consistency
 //!
-//! 3. **ccs_streaming_spam_all_deltas.rs** (15 tests)
+//! 3. **`ccs_streaming_spam_all_deltas.rs`** (15 tests)
 //!    - All delta types (text, thinking, tool input)
 //!    - Both agents (ccs/glm, ccs/codex)
 //!    - Both non-TTY modes (None and Basic)
@@ -56,27 +56,27 @@
 //!    - Extreme text deltas (200+ chunks)
 //!    - Two text blocks flushed independently
 //!
-//! 4. **ccs_nuclear_full_log_regression.rs** (5 tests)
+//! 4. **`ccs_nuclear_full_log_regression.rs`** (5 tests)
 //!    - Real production logs with 12,000+ deltas
 //!    - Per-block line count bounds (NUCLEAR assertions)
 //!    - Both agents in both non-TTY modes
 //!
-//! 5. **ccs_streaming_edge_cases.rs** (7 tests)
+//! 5. **`ccs_streaming_edge_cases.rs`** (7 tests)
 //!    - Empty deltas
 //!    - Rapid transitions between content types
 //!    - Malformed/incomplete deltas
 //!    - Cross-message contamination prevention
 //!
-//! 6. **ccs_extreme_streaming_regression.rs** (8 tests)
+//! 6. **`ccs_extreme_streaming_regression.rs`** (8 tests)
 //!    - 500+ deltas per block
 //!    - Multi-block scenarios
 //!    - Tool input streaming
 //!
-//! 7. **ccs_real_world_log_regression.rs** (3 tests)
+//! 7. **`ccs_real_world_log_regression.rs`** (3 tests)
 //!    - Production logs with 12,596 total deltas
 //!    - Complex multi-block streaming
 //!
-//! 8. **ccs_basic_mode_nuclear_test.rs** (2 tests)
+//! 8. **`ccs_basic_mode_nuclear_test.rs`** (2 tests)
 //!    - Basic mode (colors but no cursor positioning)
 //!    - 500+ deltas verification
 //!
@@ -106,6 +106,7 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
 
@@ -156,11 +157,9 @@ fn test_ccs_glm_architecture_verification_none_mode() {
 "#,
         );
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"t{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"t{i} "}}}}}}"#
+            ).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
@@ -173,11 +172,8 @@ fn test_ccs_glm_architecture_verification_none_mode() {
 "#,
         );
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":1}}
@@ -190,11 +186,8 @@ fn test_ccs_glm_architecture_verification_none_mode() {
 "#,
         );
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"c{} "}}}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"c{i} "}}}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":2}}
@@ -217,38 +210,32 @@ fn test_ccs_glm_architecture_verification_none_mode() {
         let total_lines = count_total_lines(&output);
         assert!(
             total_lines <= 4,
-            "Architecture verification FAILED: Expected <= 4 total lines for 300 deltas across 3 blocks, found {}.\n\n\
+            "Architecture verification FAILED: Expected <= 4 total lines for 300 deltas across 3 blocks, found {total_lines}.\n\n\
              This indicates the suppress-accumulate-flush architecture is broken!\n\n\
-             Output:\n{}",
-            total_lines,
-            output
+             Output:\n{output}"
         );
 
         // Verify no consecutive duplicates
         if let Some(dup) = has_consecutive_duplicates(&output) {
             panic!(
                 "Architecture verification FAILED: Found consecutive duplicate line.\n\
-                 Duplicate: '{}'\n\n\
-                 Output:\n{}",
-                dup, output
+                 Duplicate: '{dup}'\n\n\
+                 Output:\n{output}"
             );
         }
 
         // Verify all content types are present (not lost)
         assert!(
             output.contains("t0") && output.contains("t99"),
-            "Expected thinking content (t0...t99) to be present. Output:\n{}",
-            output
+            "Expected thinking content (t0...t99) to be present. Output:\n{output}"
         );
         assert!(
             output.contains("w0") && output.contains("w99"),
-            "Expected text content (w0...w99) to be present. Output:\n{}",
-            output
+            "Expected text content (w0...w99) to be present. Output:\n{output}"
         );
         assert!(
             output.contains("c0") && output.contains("c99"),
-            "Expected tool input content (c0...c99) to be present. Output:\n{}",
-            output
+            "Expected tool input content (c0...c99) to be present. Output:\n{output}"
         );
     });
 }
@@ -273,11 +260,8 @@ fn test_ccs_glm_architecture_verification_basic_mode() {
         );
 
         for i in 0..200 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -296,18 +280,15 @@ fn test_ccs_glm_architecture_verification_basic_mode() {
         let total_lines = count_total_lines(&output);
         assert!(
             total_lines <= 1,
-            "Architecture verification FAILED (Basic mode): Expected <= 1 total line for 200 text deltas, found {}.\n\n\
+            "Architecture verification FAILED (Basic mode): Expected <= 1 total line for 200 text deltas, found {total_lines}.\n\n\
              This indicates the suppress-accumulate-flush architecture is broken in Basic mode!\n\n\
-             Output:\n{}",
-            total_lines,
-            output
+             Output:\n{output}"
         );
 
         // Verify content is present
         assert!(
             output.contains("w0") && output.contains("w199"),
-            "Expected content (w0...w199) to be present. Output:\n{}",
-            output
+            "Expected content (w0...w199) to be present. Output:\n{output}"
         );
     });
 }
@@ -329,11 +310,11 @@ fn test_ccs_codex_architecture_verification_none_mode() {
 
         // 150 reasoning deltas
         for i in 0..150 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -342,11 +323,11 @@ fn test_ccs_codex_architecture_verification_none_mode() {
 
         // 150 agent_message deltas
         for i in 0..150 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}
@@ -363,33 +344,28 @@ fn test_ccs_codex_architecture_verification_none_mode() {
         let total_lines = count_total_lines(&output);
         assert!(
             total_lines <= 2,
-            "Architecture verification FAILED (Codex): Expected <= 2 total lines for 300 deltas, found {}.\n\n\
+            "Architecture verification FAILED (Codex): Expected <= 2 total lines for 300 deltas, found {total_lines}.\n\n\
              This indicates the suppress-accumulate-flush architecture is broken for Codex!\n\n\
-             Output:\n{}",
-            total_lines,
-            output
+             Output:\n{output}"
         );
 
         // Verify no consecutive duplicates
         if let Some(dup) = has_consecutive_duplicates(&output) {
             panic!(
                 "Architecture verification FAILED (Codex): Found consecutive duplicate line.\n\
-                 Duplicate: '{}'\n\n\
-                 Output:\n{}",
-                dup, output
+                 Duplicate: '{dup}'\n\n\
+                 Output:\n{output}"
             );
         }
 
         // Verify all content is present
         assert!(
             output.contains("r0") && output.contains("r149"),
-            "Expected reasoning content (r0...r149) to be present. Output:\n{}",
-            output
+            "Expected reasoning content (r0...r149) to be present. Output:\n{output}"
         );
         assert!(
             output.contains("m0") && output.contains("m149"),
-            "Expected agent_message content (m0...m149) to be present. Output:\n{}",
-            output
+            "Expected agent_message content (m0...m149) to be present. Output:\n{output}"
         );
     });
 }
@@ -410,11 +386,11 @@ fn test_ccs_codex_architecture_verification_basic_mode() {
         let mut stream = String::new();
 
         for i in 0..200 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"m{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}
@@ -431,18 +407,15 @@ fn test_ccs_codex_architecture_verification_basic_mode() {
         let total_lines = count_total_lines(&output);
         assert!(
             total_lines <= 1,
-            "Architecture verification FAILED (Codex Basic mode): Expected <= 1 total line for 200 deltas, found {}.\n\n\
+            "Architecture verification FAILED (Codex Basic mode): Expected <= 1 total line for 200 deltas, found {total_lines}.\n\n\
              This indicates the suppress-accumulate-flush architecture is broken for Codex in Basic mode!\n\n\
-             Output:\n{}",
-            total_lines,
-            output
+             Output:\n{output}"
         );
 
         // Verify content is present
         assert!(
             output.contains("m0") && output.contains("m199"),
-            "Expected content (m0...m199) to be present. Output:\n{}",
-            output
+            "Expected content (m0...m199) to be present. Output:\n{output}"
         );
     });
 }

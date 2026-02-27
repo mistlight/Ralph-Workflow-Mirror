@@ -18,7 +18,7 @@
 //!
 //! # Module Structure
 //!
-//! - `types` - Type definitions (ContextLevel, Role, Action)
+//! - `types` - Type definitions (`ContextLevel`, Role, Action)
 //! - `developer` - Developer prompts (iteration, planning)
 //! - [`reviewer`] - Reviewer prompts (review, comprehensive, security, incremental)
 //! - `commit` - Fix and commit message prompts

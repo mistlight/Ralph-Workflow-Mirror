@@ -5,7 +5,7 @@ use crate::reducer::ui_event::UIEvent;
 
 /// Result of executing an effect.
 ///
-/// Contains both the PipelineEvent (for reducer) and optional UIEvents (for display).
+/// Contains both the `PipelineEvent` (for reducer) and optional `UIEvents` (for display).
 /// This separation keeps UI concerns out of the reducer while allowing handlers
 /// to emit rich feedback during execution.
 ///
@@ -34,7 +34,8 @@ pub struct EffectResult {
 
 impl EffectResult {
     /// Create result with just a pipeline event (no UI events).
-    pub fn event(event: PipelineEvent) -> Self {
+    #[must_use]
+    pub const fn event(event: PipelineEvent) -> Self {
         Self {
             event,
             additional_events: Vec::new(),
@@ -43,7 +44,8 @@ impl EffectResult {
     }
 
     /// Create result with pipeline event and UI events.
-    pub fn with_ui(event: PipelineEvent, ui_events: Vec<UIEvent>) -> Self {
+    #[must_use]
+    pub const fn with_ui(event: PipelineEvent, ui_events: Vec<UIEvent>) -> Self {
         Self {
             event,
             additional_events: Vec::new(),
@@ -53,15 +55,17 @@ impl EffectResult {
 
     /// Add an additional event to process after the primary event.
     ///
-    /// Used for emitting separate events like SessionEstablished after
+    /// Used for emitting separate events like `SessionEstablished` after
     /// agent invocation completes. Each additional event is processed
     /// by the reducer in order.
+    #[must_use]
     pub fn with_additional_event(mut self, event: PipelineEvent) -> Self {
         self.additional_events.push(event);
         self
     }
 
     /// Add a UI event to the result.
+    #[must_use]
     pub fn with_ui_event(mut self, ui_event: UIEvent) -> Self {
         self.ui_events.push(ui_event);
         self

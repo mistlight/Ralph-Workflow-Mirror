@@ -15,7 +15,7 @@
 /// # Returns
 ///
 /// The string with ANSI sequences removed
-pub(crate) fn strip_ansi_sequences(s: &str) -> String {
+pub fn strip_ansi_sequences(s: &str) -> String {
     // Simple regex-free implementation: skip \x1b[...m and \x1b[...A/B/K sequences
     let mut result = String::new();
     let mut chars = s.chars().peekable();
@@ -37,7 +37,7 @@ pub(crate) fn strip_ansi_sequences(s: &str) -> String {
     result
 }
 
-pub(crate) fn apply_cr_overwrite_semantics(s: &str) -> String {
+pub fn apply_cr_overwrite_semantics(s: &str) -> String {
     // Simulate a log console that does NOT interpret ANSI escape codes, but DOES treat
     // carriage return as "return to start of current line" (common for progress output).
     //

@@ -249,7 +249,7 @@ fn test_format_branch_info_section() {
     assert!(section.contains("Branch Information"));
     assert!(section.contains("feature"));
     assert!(section.contains("main"));
-    assert!(section.contains("5"));
+    assert!(section.contains('5'));
     assert!(section.contains("abc123"));
     assert!(section.contains("def456"));
 }
@@ -286,7 +286,7 @@ fn test_enhanced_prompt_with_branch_info() {
     assert!(prompt.contains("Branch Information"));
     assert!(prompt.contains("feature"));
     assert!(prompt.contains("main"));
-    assert!(prompt.contains("3")); // diverging count
+    assert!(prompt.contains('3')); // diverging count
 
     // Should NOT mention rebase
     assert!(!prompt.to_lowercase().contains("rebase"));

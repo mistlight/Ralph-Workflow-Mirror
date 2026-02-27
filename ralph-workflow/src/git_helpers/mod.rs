@@ -20,8 +20,9 @@
 
 use std::io;
 
-/// Convert git2 errors to std::io errors for consistent error handling.
+/// Convert git2 errors to `std::io` errors for consistent error handling.
 #[cfg(any(test, feature = "test-utils"))]
+#[must_use]
 pub fn git2_to_io_error(err: &git2::Error) -> io::Error {
     git2_to_io_error_impl(err)
 }
@@ -34,13 +35,11 @@ pub(crate) fn git2_to_io_error(err: &git2::Error) -> io::Error {
 fn git2_to_io_error_impl(err: &git2::Error) -> io::Error {
     // Fall back to mapping git2 error codes to a best-effort io::ErrorKind.
     let kind = match err.code() {
-        git2::ErrorCode::NotFound => io::ErrorKind::NotFound,
+        git2::ErrorCode::NotFound | git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
         git2::ErrorCode::Exists => io::ErrorKind::AlreadyExists,
-        git2::ErrorCode::Auth => io::ErrorKind::PermissionDenied,
-        git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
+        git2::ErrorCode::Auth | git2::ErrorCode::Certificate => io::ErrorKind::PermissionDenied,
         git2::ErrorCode::Invalid => io::ErrorKind::InvalidInput,
         git2::ErrorCode::Eof => io::ErrorKind::UnexpectedEof,
-        git2::ErrorCode::UnbornBranch => io::ErrorKind::NotFound,
         _ => io::ErrorKind::Other,
     };
 
@@ -63,6 +62,9 @@ pub mod rebase_state_machine;
 
 mod repo;
 
+/// # Errors
+///
+/// Returns an error if the git repository cannot be found or hooks directory cannot be determined.
 pub fn get_hooks_dir() -> io::Result<std::path::PathBuf> {
     repo::get_hooks_dir_from(std::path::Path::new("."))
 }

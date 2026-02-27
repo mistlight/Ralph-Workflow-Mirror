@@ -5,16 +5,16 @@
 //!
 //! ## Development Phase Flow
 //!
-//! 1. **PrepareDevelopmentContext** - Set up context for development iteration
-//! 2. **MaterializeDevelopmentInputs** - Prepare prompt and plan inputs
-//! 3. **PrepareDevelopmentPrompt** - Generate development prompt
-//! 4. **CleanupDevelopmentXml** - Clean any existing XML
-//! 5. **InvokeDevelopmentAgent** - Execute development agent
-//! 6. **InvokeAnalysisAgent** - (Optional) Execute analysis agent for complex tasks
-//! 7. **ExtractDevelopmentXml** - Extract XML from agent output
-//! 8. **ValidateDevelopmentXml** - Validate XML and parse status (completed/partial/blocked)
-//! 9. **ArchiveDevelopmentXml** - Archive XML for audit trail
-//! 10. **ApplyDevelopmentOutcome** - Apply outcome to state
+//! 1. **`PrepareDevelopmentContext`** - Set up context for development iteration
+//! 2. **`MaterializeDevelopmentInputs`** - Prepare prompt and plan inputs
+//! 3. **`PrepareDevelopmentPrompt`** - Generate development prompt
+//! 4. **`CleanupDevelopmentXml`** - Clean any existing XML
+//! 5. **`InvokeDevelopmentAgent`** - Execute development agent
+//! 6. **`InvokeAnalysisAgent`** - (Optional) Execute analysis agent for complex tasks
+//! 7. **`ExtractDevelopmentXml`** - Extract XML from agent output
+//! 8. **`ValidateDevelopmentXml`** - Validate XML and parse status (completed/partial/blocked)
+//! 9. **`ArchiveDevelopmentXml`** - Archive XML for audit trail
+//! 10. **`ApplyDevelopmentOutcome`** - Apply outcome to state
 //!
 //! ## Development Status
 //!
@@ -44,10 +44,10 @@ impl MockEffectHandler {
     /// Returns appropriate mock events for each development effect without
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_development_effect(
-        &mut self,
-        effect: Effect,
+        &self,
+        effect: &Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
-        match effect {
+        match *effect {
             Effect::PrepareDevelopmentContext { iteration } => Some((
                 PipelineEvent::development_context_prepared(iteration),
                 vec![],
@@ -104,12 +104,12 @@ impl MockEffectHandler {
             )),
 
             Effect::ExtractDevelopmentXml { iteration } => {
-                let mock_dev_result_xml = r#"<ralph-development-result>
+                let mock_dev_result_xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Mock development iteration completed successfully</ralph-summary>
 <ralph-files-changed>src/test.rs
 src/lib.rs</ralph-files-changed>
-</ralph-development-result>"#;
+</ralph-development-result>";
                 let ui = vec![
                     UIEvent::IterationProgress {
                         current: iteration,

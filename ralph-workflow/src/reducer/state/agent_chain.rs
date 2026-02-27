@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 ///
 /// Uses Arc<[T]> for `agents` and `models_per_agent` collections to enable
 /// cheap cloning during state transitions. Since these collections are immutable
-/// after construction, Arc::clone only increments a reference count instead of
+/// after construction, `Arc::clone` only increments a reference count instead of
 /// deep copying the entire collection.
 #[derive(Clone, Serialize, Debug)]
 pub struct AgentChainState {
@@ -161,7 +161,7 @@ const fn default_max_backoff_ms() -> u64 {
     60000
 }
 
-fn agent_role_signature_tag(role: AgentRole) -> &'static [u8] {
+const fn agent_role_signature_tag(role: AgentRole) -> &'static [u8] {
     match role {
         AgentRole::Developer => b"developer\n",
         AgentRole::Reviewer => b"reviewer\n",
@@ -171,6 +171,7 @@ fn agent_role_signature_tag(role: AgentRole) -> &'static [u8] {
 }
 
 impl AgentChainState {
+    #[must_use] 
     pub fn initial() -> Self {
         Self {
             agents: Arc::from(vec![]),
@@ -189,6 +190,7 @@ impl AgentChainState {
         }
     }
 
+    #[must_use] 
     pub fn with_agents(
         mut self,
         agents: Vec<String>,
@@ -205,12 +207,14 @@ impl AgentChainState {
     ///
     /// A retry cycle is when all agents have been exhausted and we start
     /// over with exponential backoff.
-    pub fn with_max_cycles(mut self, max_cycles: u32) -> Self {
+    #[must_use] 
+    pub const fn with_max_cycles(mut self, max_cycles: u32) -> Self {
         self.max_cycles = max_cycles;
         self
     }
 
-    pub fn with_backoff_policy(
+    #[must_use] 
+    pub const fn with_backoff_policy(
         mut self,
         retry_delay_ms: u64,
         backoff_multiplier: f64,
@@ -222,6 +226,7 @@ impl AgentChainState {
         self
     }
 
+    #[must_use] 
     pub fn current_agent(&self) -> Option<&String> {
         self.agents.get(self.current_agent_index)
     }
@@ -234,17 +239,17 @@ impl AgentChainState {
     /// - retry cycles
     ///
     /// It changes only when the configured consumer set changes.
+    #[must_use] 
     pub fn consumer_signature_sha256(&self) -> String {
         let mut pairs: Vec<(&str, &[String])> = self
             .agents
             .iter()
             .enumerate()
             .map(|(idx, agent)| {
-                let models = self
+                let models: &[String] = self
                     .models_per_agent
                     .get(idx)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]);
+                    .map_or([].as_slice(), std::vec::Vec::as_slice);
                 (agent.as_str(), models)
             })
             .collect();
@@ -283,7 +288,11 @@ impl AgentChainState {
             hasher.update(b"\n");
         }
         let digest = hasher.finalize();
-        digest.iter().map(|b| format!("{b:02x}")).collect()
+        digest.iter().fold(String::new(), |mut s, b| {
+            use std::fmt::Write;
+            write!(&mut s, "{b:02x}").unwrap();
+            s
+        })
     }
 
     #[cfg(test)]
@@ -296,8 +305,7 @@ impl AgentChainState {
                 let models = self
                     .models_per_agent
                     .get(idx)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]);
+                    .map_or([].as_slice(), std::vec::Vec::as_slice);
                 format!("{}|{}", agent, models.join(","))
             })
             .collect();
@@ -311,7 +319,11 @@ impl AgentChainState {
             hasher.update(b"\n");
         }
         let digest = hasher.finalize();
-        digest.iter().map(|b| format!("{b:02x}")).collect()
+        digest.iter().fold(String::new(), |mut s, b| {
+            use std::fmt::Write;
+            write!(&mut s, "{b:02x}").unwrap();
+            s
+        })
     }
 
     /// Get the currently selected model for the current agent.
@@ -320,18 +332,21 @@ impl AgentChainState {
     /// - No models are configured
     /// - The current agent index is out of bounds
     /// - The current model index is out of bounds
+    #[must_use] 
     pub fn current_model(&self) -> Option<&String> {
         self.models_per_agent
             .get(self.current_agent_index)
             .and_then(|models| models.get(self.current_model_index))
     }
 
-    pub fn is_exhausted(&self) -> bool {
+    #[must_use] 
+    pub const fn is_exhausted(&self) -> bool {
         self.retry_cycle >= self.max_cycles
             && self.current_agent_index == 0
             && self.current_model_index == 0
     }
 
+    #[must_use] 
     pub fn advance_to_next_model(&self) -> Self {
         let start_agent_index = self.current_agent_index;
 
@@ -371,6 +386,7 @@ impl AgentChainState {
         next
     }
 
+    #[must_use] 
     pub fn switch_to_next_agent(&self) -> Self {
         if self.current_agent_index + 1 < self.agents.len() {
             // Advance to next agent
@@ -436,6 +452,7 @@ impl AgentChainState {
     ///
     /// If `to_agent` is unknown, falls back to `switch_to_next_agent()` to keep the
     /// reducer deterministic.
+    #[must_use] 
     pub fn switch_to_agent_named(&self, to_agent: &str) -> Self {
         let Some(target_index) = self.agents.iter().position(|a| a == to_agent) else {
             return self.switch_to_next_agent();
@@ -527,6 +544,7 @@ impl AgentChainState {
     /// retrying with the same agent (which would likely hit rate limits again),
     /// we switch to the next agent and preserve the prompt so the new agent
     /// can continue the same work.
+    #[must_use] 
     pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
         let base = self.switch_to_next_agent();
         // Back-compat: older callers didn't track role. Preserve prompt only.
@@ -551,6 +569,7 @@ impl AgentChainState {
     }
 
     /// Switch to next agent after rate limit, preserving prompt for continuation (role-scoped).
+    #[must_use] 
     pub fn switch_to_next_agent_with_prompt_for_role(
         &self,
         role: AgentRole,
@@ -579,6 +598,7 @@ impl AgentChainState {
     ///
     /// Called when an agent successfully completes its task, clearing any
     /// saved prompt context from previous rate-limited agents.
+    #[must_use] 
     pub fn clear_continuation_prompt(&self) -> Self {
         Self {
             agents: Arc::clone(&self.agents),
@@ -597,6 +617,7 @@ impl AgentChainState {
         }
     }
 
+    #[must_use] 
     pub fn reset_for_role(&self, role: AgentRole) -> Self {
         Self {
             agents: Arc::clone(&self.agents),
@@ -615,6 +636,7 @@ impl AgentChainState {
         }
     }
 
+    #[must_use] 
     pub fn reset(&self) -> Self {
         Self {
             agents: Arc::clone(&self.agents),
@@ -634,6 +656,7 @@ impl AgentChainState {
     }
 
     /// Store session ID from agent response for potential reuse.
+    #[must_use] 
     pub fn with_session_id(&self, session_id: Option<String>) -> Self {
         Self {
             agents: Arc::clone(&self.agents),
@@ -653,6 +676,7 @@ impl AgentChainState {
     }
 
     /// Clear session ID (e.g., when switching agents or starting new work).
+    #[must_use] 
     pub fn clear_session_id(&self) -> Self {
         Self {
             agents: Arc::clone(&self.agents),
@@ -671,6 +695,7 @@ impl AgentChainState {
         }
     }
 
+    #[must_use] 
     pub fn start_retry_cycle(&self) -> Self {
         let new_retry_cycle = self.retry_cycle + 1;
         let new_backoff_pending_ms = if new_retry_cycle >= self.max_cycles {
@@ -712,6 +737,7 @@ impl AgentChainState {
         }
     }
 
+    #[must_use] 
     pub fn clear_backoff_pending(&self) -> Self {
         Self {
             agents: Arc::clone(&self.agents),
@@ -788,11 +814,11 @@ mod consumer_signature_tests {
         hasher.update(b",");
         hasher.update(b"m2");
         hasher.update(b"\n");
-        let expected = hasher
-            .finalize()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
+        let expected = hasher.finalize().iter().fold(String::new(), |mut acc, b| {
+            use std::fmt::Write;
+            write!(acc, "{b:02x}").unwrap();
+            acc
+        });
 
         assert_eq!(
             state.consumer_signature_sha256(),

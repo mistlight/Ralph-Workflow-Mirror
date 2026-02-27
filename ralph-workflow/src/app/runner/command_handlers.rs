@@ -70,26 +70,26 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
             }) {
                 AppEffectResult::Ok => Ok(()),
                 AppEffectResult::Error(e) => anyhow::bail!(e),
-                other => anyhow::bail!("unexpected result from SetCurrentDir: {:?}", other),
+                other => anyhow::bail!("unexpected result from SetCurrentDir: {other:?}"),
             }
         } else {
             // Require git repo
             match handler.execute(AppEffect::GitRequireRepo) {
                 AppEffectResult::Ok => {}
                 AppEffectResult::Error(e) => anyhow::bail!(e),
-                other => anyhow::bail!("unexpected result from GitRequireRepo: {:?}", other),
+                other => anyhow::bail!("unexpected result from GitRequireRepo: {other:?}"),
             }
             // Get repo root
             let repo_root = match handler.execute(AppEffect::GitGetRepoRoot) {
                 AppEffectResult::Path(p) => p,
                 AppEffectResult::Error(e) => anyhow::bail!(e),
-                other => anyhow::bail!("unexpected result from GitGetRepoRoot: {:?}", other),
+                other => anyhow::bail!("unexpected result from GitGetRepoRoot: {other:?}"),
             };
             // Set current dir to repo root
             match handler.execute(AppEffect::SetCurrentDir { path: repo_root }) {
                 AppEffectResult::Ok => Ok(()),
                 AppEffectResult::Error(e) => anyhow::bail!(e),
-                other => anyhow::bail!("unexpected result from SetCurrentDir: {:?}", other),
+                other => anyhow::bail!("unexpected result from SetCurrentDir: {other:?}"),
             }
         }
     }
@@ -125,7 +125,7 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
             effect::AppEffectResult::String(oid) => {
                 // Simple case - just got the OID back
                 let short_oid = &oid[..8.min(oid.len())];
-                logger.success(&format!("Starting commit reference reset ({})", short_oid));
+                logger.success(&format!("Starting commit reference reset ({short_oid})"));
                 logger.info(".agent/start_commit has been updated");
                 Ok(true)
             }

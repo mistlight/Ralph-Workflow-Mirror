@@ -50,33 +50,22 @@ fn extract_issue_snippets(
     let gh_location_re = issue_gh_location_regex();
 
     for issue in issues {
-        let (file, line_start, line_end) = if let Some(cap) = location_re.captures(issue) {
-            let file = cap
-                .name("file")
-                .map(|m| m.as_str().trim().replace('\\', "/"));
-            let start = cap
-                .name("start")
-                .and_then(|m| m.as_str().parse::<u32>().ok());
-            let end = cap
-                .name("end")
-                .and_then(|m| m.as_str().parse::<u32>().ok())
-                .or(start);
-            (file, start, end)
-        } else if let Some(cap) = gh_location_re.captures(issue) {
-            let file = cap
-                .name("file")
-                .map(|m| m.as_str().trim().replace('\\', "/"));
-            let start = cap
-                .name("start")
-                .and_then(|m| m.as_str().parse::<u32>().ok());
-            let end = cap
-                .name("end")
-                .and_then(|m| m.as_str().parse::<u32>().ok())
-                .or(start);
-            (file, start, end)
-        } else {
-            (None, None, None)
-        };
+        let (file, line_start, line_end) = location_re
+            .captures(issue)
+            .or_else(|| gh_location_re.captures(issue))
+            .map_or((None, None, None), |cap| {
+                let file = cap
+                    .name("file")
+                    .map(|m| m.as_str().trim().replace('\\', "/"));
+                let start = cap
+                    .name("start")
+                    .and_then(|m| m.as_str().parse::<u32>().ok());
+                let end = cap
+                    .name("end")
+                    .and_then(|m| m.as_str().parse::<u32>().ok())
+                    .or(start);
+                (file, start, end)
+            });
 
         let Some(file) =
             file.and_then(|f| normalize_issue_file_path_to_workspace_relative(&f, workspace))
@@ -91,9 +80,8 @@ fn extract_issue_snippets(
             continue;
         }
 
-        let content = match workspace.read(Path::new(&file)) {
-            Ok(content) => content,
-            Err(_) => continue,
+        let Ok(content) = workspace.read(Path::new(&file)) else {
+            continue;
         };
 
         if let Some(snippet) = extract_snippet_lines(&content, start, end) {
@@ -206,7 +194,7 @@ fn is_safe_workspace_relative_path(path_str: &str) -> bool {
     true
 }
 
-/// Lazy-initialized regex for parsing standard file locations (file:line-line).
+/// Lazy-initialized regex for parsing standard file locations (<file:line-line>).
 fn issue_location_regex() -> &'static Regex {
     static LOCATION_RE: OnceLock<Regex> = OnceLock::new();
     LOCATION_RE.get_or_init(|| {
@@ -251,8 +239,8 @@ fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> 
     let end_idx = end_idx.min(lines.len().saturating_sub(1));
     let mut out = String::new();
     for (offset, line) in lines[start_idx..=end_idx].iter().enumerate() {
-        let line_no = start + offset as u32;
-        out.push_str(&format!("{line_no} | {line}\n"));
+        let line_no = u32::try_from(offset).ok().and_then(|o| start.checked_add(o))?;
+        writeln!(out, "{line_no} | {line}").unwrap();
     }
     Some(out.trim_end().to_string())
 }
@@ -297,8 +285,8 @@ fn render_issues_markdown(
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn write_issues_markdown(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use std::path::Path;
@@ -328,8 +316,8 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn extract_review_issue_snippets(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
@@ -375,36 +363,34 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn archive_review_issues_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
         archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::ISSUES_XML));
-        Ok(EffectResult::event(
+        EffectResult::event(
             PipelineEvent::review_issues_xml_archived(pass),
-        ))
+        )
     }
 
-    pub(in crate::reducer::handler) fn apply_review_outcome(
-        &mut self,
+    pub(in crate::reducer::handler) const fn apply_review_outcome(
         _ctx: &mut PhaseContext<'_>,
         pass: u32,
         issues_found: bool,
         clean_no_issues: bool,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         if clean_no_issues {
-            return Ok(EffectResult::event(
+            return EffectResult::event(
                 PipelineEvent::review_pass_completed_clean(pass),
-            ));
+            );
         }
-        Ok(EffectResult::event(PipelineEvent::review_completed(
+        EffectResult::event(PipelineEvent::review_completed(
             pass,
             issues_found,
-        )))
+        ))
     }
 }
 

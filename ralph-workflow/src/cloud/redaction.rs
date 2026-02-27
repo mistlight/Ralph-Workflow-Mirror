@@ -9,6 +9,7 @@
 ///
 /// This is intentionally conservative. It may redact non-secret strings if they
 /// resemble tokens.
+#[must_use]
 pub fn redact_secrets(input: &str) -> String {
     let mut s = input.to_string();
     s = redact_http_url_userinfo(&s);

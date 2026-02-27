@@ -9,13 +9,13 @@
 //! All paths are stored relative to the workspace root. Files include both content and
 //! modification time metadata.
 //!
-//! ## Thread Safety and RwLock Poisoning
+//! ## Thread Safety and `RwLock` Poisoning
 //!
 //! The workspace uses `RwLock` for interior mutability to allow concurrent reads while
 //! serializing writes. Lock operations use `.expect()` instead of `.unwrap()` with
 //! descriptive panic messages for clarity when failures occur.
 //!
-//! **RwLock Poisoning:** An `RwLock` becomes "poisoned" when a thread panics while holding
+//! **`RwLock` Poisoning:** An `RwLock` becomes "poisoned" when a thread panics while holding
 //! the lock. This prevents data corruption by ensuring no thread can access potentially
 //! inconsistent state left by the panicked thread.
 //!
@@ -69,14 +69,14 @@ impl MemoryFile {
         }
     }
 
-    fn with_modified(content: Vec<u8>, modified: std::time::SystemTime) -> Self {
+    const fn with_modified(content: Vec<u8>, modified: std::time::SystemTime) -> Self {
         Self { content, modified }
     }
 }
 
 /// In-memory workspace implementation for testing.
 ///
-/// All file operations are performed against an in-memory HashMap, allowing tests to:
+/// All file operations are performed against an in-memory `HashMap`, allowing tests to:
 /// - Verify what was written without touching real files
 /// - Control what reads return
 /// - Run in parallel without filesystem conflicts
@@ -92,6 +92,7 @@ impl MemoryWorkspace {
     /// Create a new in-memory workspace with the given virtual root path.
     ///
     /// The root path is used for path resolution but no real filesystem access occurs.
+    #[must_use]
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
@@ -101,6 +102,7 @@ impl MemoryWorkspace {
     }
 
     /// Create a new in-memory workspace with a default test root path.
+    #[must_use]
     pub fn new_test() -> Self {
         Self::new(PathBuf::from("/test/repo"))
     }

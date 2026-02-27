@@ -29,7 +29,8 @@ fn create_large_state(history_size: usize) -> PipelineState {
     let mut pool = StringPool::new();
 
     for i in 0..history_size {
-        let step = create_test_step_with_pool(i as u32, &mut pool);
+        let step =
+            create_test_step_with_pool(u32::try_from(i).expect("index fits in u32"), &mut pool);
         state.add_execution_step(step, history_size);
     }
 
@@ -51,8 +52,7 @@ fn regression_test_execution_step_memory_footprint() {
     // Total: ~60 bytes
     assert!(
         heap_size <= 60,
-        "Memory regression: {} bytes per entry exceeds 60 byte target",
-        heap_size
+        "Memory regression: {heap_size} bytes per entry exceeds 60 byte target"
     );
 }
 
@@ -99,8 +99,7 @@ fn regression_test_serialization_performance() {
     if std::env::var_os("RALPH_WORKFLOW_PERF_CEILINGS").is_some() {
         assert!(
             duration.as_millis() <= 10,
-            "Serialization regression: {:?} exceeds 10ms target",
-            duration
+            "Serialization regression: {duration:?} exceeds 10ms target"
         );
     }
 
@@ -126,8 +125,7 @@ fn regression_test_deserialization_performance() {
     if std::env::var_os("RALPH_WORKFLOW_PERF_CEILINGS").is_some() {
         assert!(
             duration.as_millis() <= 10,
-            "Deserialization regression: {:?} exceeds 10ms target",
-            duration
+            "Deserialization regression: {duration:?} exceeds 10ms target"
         );
     }
 }
@@ -150,8 +148,7 @@ fn regression_test_round_trip_performance() {
     if std::env::var_os("RALPH_WORKFLOW_PERF_CEILINGS").is_some() {
         assert!(
             total_duration.as_millis() <= 20,
-            "Round trip regression: {:?} exceeds 20ms target",
-            total_duration
+            "Round trip regression: {total_duration:?} exceeds 20ms target"
         );
     }
 }
@@ -160,7 +157,7 @@ fn regression_test_round_trip_performance() {
 fn regression_test_execution_history_bounded_growth() {
     // Verify that execution history respects the configured limit
     let limit = 500;
-    let mut state = PipelineState::initial(limit as u32, 5);
+    let mut state = PipelineState::initial(u32::try_from(limit).expect("limit fits in u32"), 5);
     let mut pool = StringPool::new();
 
     // Add more entries than the limit
@@ -263,21 +260,18 @@ fn regression_test_checkpoint_size_scaling() {
 
     assert!(
         (150..=450).contains(&bytes_per_entry_100_to_500),
-        "Checkpoint size scaling regression: {} bytes per entry for entries 101-500 (expected 150-450)",
-        bytes_per_entry_100_to_500
+        "Checkpoint size scaling regression: {bytes_per_entry_100_to_500} bytes per entry for entries 101-500 (expected 150-450)"
     );
     assert!(
         (150..=450).contains(&bytes_per_entry_500_to_1000),
-        "Checkpoint size scaling regression: {} bytes per entry for entries 501-1000 (expected 150-450)",
-        bytes_per_entry_500_to_1000
+        "Checkpoint size scaling regression: {bytes_per_entry_500_to_1000} bytes per entry for entries 501-1000 (expected 150-450)"
     );
 
     // Also enforce the band at 1000 entries, where overhead is amortized.
     let bytes_per_entry_at_1000 = len_1000 / 1000;
     assert!(
         (150..=450).contains(&bytes_per_entry_at_1000),
-        "Checkpoint size scaling regression: {} bytes per entry at size 1000 (expected 150-450)",
-        bytes_per_entry_at_1000
+        "Checkpoint size scaling regression: {bytes_per_entry_at_1000} bytes per entry at size 1000 (expected 150-450)"
     );
 }
 
@@ -315,8 +309,7 @@ fn regression_test_arc_str_vs_string_memory() {
     for i in 1..steps.len() {
         assert!(
             Arc::ptr_eq(&steps[0].phase, &steps[i].phase),
-            "Arc<str> memory regression: steps 0 and {} don't share phase allocation",
-            i
+            "Arc<str> memory regression: steps 0 and {i} don't share phase allocation"
         );
     }
 
@@ -518,15 +511,12 @@ fn regression_test_agent_chain_arc_optimization() {
     // Verify AgentChainState uses Arc for cheap cloning of immutable collections
     use crate::agents::AgentRole;
     use crate::reducer::state::AgentChainState;
+    use std::mem::size_of;
 
     let agents = vec!["agent1".to_string(), "agent2".to_string()];
     let models = vec![vec!["model1".to_string()], vec!["model2".to_string()]];
 
-    let state1 = AgentChainState::initial().with_agents(
-        agents.clone(),
-        models.clone(),
-        AgentRole::Developer,
-    );
+    let state1 = AgentChainState::initial().with_agents(agents, models, AgentRole::Developer);
 
     // Advance creates new state - agents Arc should be shared
     let state2 = state1.advance_to_next_model();
@@ -556,7 +546,6 @@ fn regression_test_agent_chain_arc_optimization() {
 
     // Verify memory savings: Arc::clone only increments reference count
     // No deep copy of the underlying Vec<String> occurs
-    use std::mem::size_of;
     let arc_size = size_of::<Arc<[String]>>();
     assert_eq!(arc_size, 2 * size_of::<usize>());
 }

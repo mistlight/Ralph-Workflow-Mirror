@@ -20,6 +20,10 @@ use crate::logger::Colors;
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or an error if config creation failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_init_global_with<R: ConfigEnvironment>(
     colors: Colors,
     env: &R,
@@ -96,6 +100,10 @@ pub fn handle_init_global_with<R: ConfigEnvironment>(
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or an error if config creation failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
     handle_init_global_with(colors, &RealConfigEnvironment)
 }

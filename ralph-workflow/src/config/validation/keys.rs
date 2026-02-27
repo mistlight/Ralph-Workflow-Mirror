@@ -67,7 +67,7 @@ pub const VALID_AGENT_CONFIG_KEYS: &[&str] = &[
     "display_name",
 ];
 
-/// Valid keys for CCS alias configurations (within [ccs_aliases.<name>]).
+/// Valid keys for CCS alias configurations (within [`ccs_aliases`.<name>]).
 pub const VALID_CCS_ALIAS_CONFIG_KEYS: &[&str] = &[
     "cmd",
     "output_flag",
@@ -81,9 +81,9 @@ pub const VALID_CCS_ALIAS_CONFIG_KEYS: &[&str] = &[
     "model_flag",
 ];
 
-/// Valid keys for the [agent_chain] section.
+/// Valid keys for the [`agent_chain`] section.
 ///
-/// This must match all fields in FallbackConfig from agents/fallback.rs.
+/// This must match all fields in `FallbackConfig` from agents/fallback.rs.
 pub const VALID_AGENT_CHAIN_KEYS: &[&str] = &[
     "developer",
     "reviewer",

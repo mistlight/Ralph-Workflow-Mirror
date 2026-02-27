@@ -28,6 +28,7 @@ pub const DEFAULT_UNIFIED_CONFIG_NAME: &str = "ralph-workflow.toml";
 ///     println!("Config path: {}", path.display());
 /// }
 /// ```
+#[must_use]
 pub fn unified_config_path() -> Option<PathBuf> {
     if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
         let xdg = xdg.trim();

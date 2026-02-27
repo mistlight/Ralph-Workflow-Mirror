@@ -49,7 +49,7 @@
 //! let content = ws.read(Path::new(".agent/test.txt"))?;
 //! ```
 //!
-//! # Testing with MemoryWorkspace
+//! # Testing with `MemoryWorkspace`
 //!
 //! The `test-utils` feature enables `MemoryWorkspace` for integration tests:
 //!
@@ -150,7 +150,8 @@ pub struct DirEntry {
 
 impl DirEntry {
     /// Create a new directory entry.
-    pub fn new(path: PathBuf, is_file: bool, is_dir: bool) -> Self {
+    #[must_use]
+    pub const fn new(path: PathBuf, is_file: bool, is_dir: bool) -> Self {
         Self {
             path,
             is_file,
@@ -160,7 +161,8 @@ impl DirEntry {
     }
 
     /// Create a new directory entry with modification time.
-    pub fn with_modified(
+    #[must_use]
+    pub const fn with_modified(
         path: PathBuf,
         is_file: bool,
         is_dir: bool,
@@ -175,27 +177,32 @@ impl DirEntry {
     }
 
     /// Get the path of this entry.
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
     /// Check if this entry is a file.
-    pub fn is_file(&self) -> bool {
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
         self.is_file
     }
 
     /// Check if this entry is a directory.
-    pub fn is_dir(&self) -> bool {
+    #[must_use]
+    pub const fn is_dir(&self) -> bool {
         self.is_dir
     }
 
     /// Get the file name of this entry.
+    #[must_use]
     pub fn file_name(&self) -> Option<&std::ffi::OsStr> {
         self.path.file_name()
     }
 
     /// Get the modification time of this entry, if available.
-    pub fn modified(&self) -> Option<std::time::SystemTime> {
+    #[must_use]
+    pub const fn modified(&self) -> Option<std::time::SystemTime> {
         self.modified
     }
 }
@@ -217,21 +224,41 @@ pub trait Workspace: Send + Sync {
     // =========================================================================
 
     /// Read a file relative to the repository root.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn read(&self, relative: &Path) -> io::Result<String>;
 
     /// Read a file as bytes relative to the repository root.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>>;
 
     /// Write content to a file relative to the repository root.
     /// Creates parent directories if they don't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn write(&self, relative: &Path, content: &str) -> io::Result<()>;
 
     /// Write bytes to a file relative to the repository root.
     /// Creates parent directories if they don't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()>;
 
     /// Append bytes to a file relative to the repository root.
     /// Creates the file if it doesn't exist. Creates parent directories if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()>;
 
     /// Check if a path exists relative to the repository root.
@@ -244,21 +271,41 @@ pub trait Workspace: Send + Sync {
     fn is_dir(&self, relative: &Path) -> bool;
 
     /// Remove a file relative to the repository root.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn remove(&self, relative: &Path) -> io::Result<()>;
 
     /// Remove a file if it exists, silently succeeding if it doesn't.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn remove_if_exists(&self, relative: &Path) -> io::Result<()>;
 
     /// Remove a directory and all its contents relative to the repository root.
     ///
     /// Similar to `std::fs::remove_dir_all`, this removes a directory and everything inside it.
     /// Returns an error if the directory doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn remove_dir_all(&self, relative: &Path) -> io::Result<()>;
 
     /// Remove a directory and all its contents if it exists, silently succeeding if it doesn't.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()>;
 
     /// Create a directory and all parent directories relative to the repository root.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn create_dir_all(&self, relative: &Path) -> io::Result<()>;
 
     /// List entries in a directory relative to the repository root.
@@ -266,12 +313,20 @@ pub trait Workspace: Send + Sync {
     /// Returns a vector of `DirEntry`-like information for each entry.
     /// For production, this wraps `std::fs::read_dir`.
     /// For testing, this returns entries from the in-memory filesystem.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>>;
 
     /// Rename/move a file from one path to another relative to the repository root.
     ///
     /// This is used for backup rotation where files are moved to new names.
     /// Returns an error if the source file doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
 
     /// Write content to a file atomically using temp file + rename pattern.
@@ -290,7 +345,7 @@ pub trait Workspace: Send + Sync {
     /// # When to use
     ///
     /// Use `write_atomic()` for critical files where corruption would be problematic:
-    /// - XML outputs (issues.xml, plan.xml, commit_message.xml)
+    /// - XML outputs (issues.xml, plan.xml, `commit_message.xml`)
     /// - Agent artifacts (PLAN.md, commit-message.txt)
     /// - Any file that must not have partial content
     ///
@@ -298,6 +353,10 @@ pub trait Workspace: Send + Sync {
     /// - Log files (append-only, partial is acceptable)
     /// - Temporary/debug files
     /// - Files where performance matters more than atomicity
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()>;
 
     /// Set a file to read-only permissions.
@@ -309,6 +368,10 @@ pub trait Workspace: Send + Sync {
     ///
     /// Returns Ok(()) on success or if the file doesn't exist (nothing to protect).
     /// Returns Err only if the file exists but permissions cannot be changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn set_readonly(&self, relative: &Path) -> io::Result<()>;
 
     /// Set a file to writable permissions.
@@ -319,6 +382,10 @@ pub trait Workspace: Send + Sync {
     /// In-memory implementations may no-op since permissions aren't relevant for testing.
     ///
     /// Returns Ok(()) on success or if the file doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn set_writable(&self, relative: &Path) -> io::Result<()>;
 
     // =========================================================================
@@ -411,17 +478,17 @@ pub trait Workspace: Send + Sync {
 
     /// Path to an XSD schema file in `.agent/tmp/`.
     fn xsd_path(&self, name: &str) -> PathBuf {
-        self.root().join(format!(".agent/tmp/{}.xsd", name))
+        self.root().join(format!(".agent/tmp/{name}.xsd"))
     }
 
     /// Path to an XML file in `.agent/tmp/`.
     fn xml_path(&self, name: &str) -> PathBuf {
-        self.root().join(format!(".agent/tmp/{}.xml", name))
+        self.root().join(format!(".agent/tmp/{name}.xml"))
     }
 
     /// Path to a log file in `.agent/logs/`.
     fn log_path(&self, name: &str) -> PathBuf {
-        self.root().join(format!(".agent/logs/{}", name))
+        self.root().join(format!(".agent/logs/{name}"))
     }
 }
 

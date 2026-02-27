@@ -31,6 +31,7 @@ pub struct DeltaDeduplicator {
 impl DeltaDeduplicator {
     /// Create a new delta deduplicator.
     #[cfg(test)]
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -84,6 +85,7 @@ impl DeltaDeduplicator {
     /// );
     /// ```
     #[cfg(test)]
+    #[must_use] 
     pub fn extract_new_content<'a>(delta: &'a str, accumulated: &str) -> Option<&'a str> {
         // Handle identical content (delta == accumulated) - return empty string
         if delta == accumulated {
@@ -129,6 +131,7 @@ impl DeltaDeduplicator {
     /// # Returns
     /// * `true` - Delta may be a snapshot (hash matches)
     /// * `false` - Delta is definitely not a snapshot (hash doesn't match)
+    #[must_use] 
     pub fn is_likely_snapshot(delta: &str, accumulated: &str) -> bool {
         // Handle identical content (duplicate delta)
         if delta == accumulated {
@@ -167,6 +170,7 @@ impl DeltaDeduplicator {
     /// # Returns
     /// * `true` - Delta is a snapshot meeting strong overlap criteria
     /// * `false` - Delta is either genuine or overlap is too weak
+    #[must_use] 
     pub fn is_likely_snapshot_with_thresholds(delta: &str, accumulated: &str) -> bool {
         let thresholds = get_overlap_thresholds();
 
@@ -210,6 +214,7 @@ impl DeltaDeduplicator {
     /// # Returns
     /// * `Some(new_portion)` - The overlap meets thresholds, returns new portion
     /// * `None` - The overlap is too weak or not a snapshot
+    #[must_use] 
     pub fn extract_new_content_with_thresholds<'a>(
         delta: &'a str,
         accumulated: &str,

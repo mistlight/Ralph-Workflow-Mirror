@@ -74,6 +74,7 @@ pub const UNLIMITED: usize = 999_999;
 /// # Returns
 ///
 /// The maximum number of characters to display for the given content type.
+#[must_use]
 pub fn get_limit(level: u8, content_type: &str) -> usize {
     match level {
         0 => match content_type {

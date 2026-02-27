@@ -34,7 +34,7 @@ fn ensure_nonblocking_or_terminate(
     fn terminate_child_best_effort(child: &mut std::process::Child) {
         use std::time::{Duration, Instant};
 
-        let pid = child.id() as i32;
+        let pid = child.id().min(i32::MAX as u32).cast_signed();
 
         // Prefer killing the process group first (agent is in its own pgid).
         unsafe {
@@ -84,8 +84,9 @@ fn ensure_nonblocking_or_terminate(
 pub struct RealProcessExecutor;
 
 impl RealProcessExecutor {
-    /// Create a new RealProcessExecutor.
-    pub fn new() -> Self {
+    /// Create a new `RealProcessExecutor`.
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -227,17 +228,11 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut exited = false;
         while Instant::now() < deadline {
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    exited = true;
-                    break;
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-                Err(_) => {
-                    exited = true;
-                    break;
-                }
+            if !matches!(child.try_wait(), Ok(None)) {
+                exited = true;
+                break;
             }
+            std::thread::sleep(Duration::from_millis(10));
         }
 
         // Ensure we don't leave a live subprocess behind even if the assertion fails.

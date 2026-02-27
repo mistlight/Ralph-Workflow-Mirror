@@ -10,7 +10,7 @@
 //! ## 1. Continuation Context and Budget System
 //!
 //! When agent work is incomplete (status "partial" or "failed" for development,
-//! "issues_remain" or "failed" for fix), the system can trigger a **continuation**
+//! "`issues_remain`" or "failed" for fix), the system can trigger a **continuation**
 //! to let the agent continue work in the same iteration.
 //!
 //! **Budget limits:**

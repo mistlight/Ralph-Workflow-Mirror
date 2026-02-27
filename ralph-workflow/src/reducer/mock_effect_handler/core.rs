@@ -1,15 +1,15 @@
-//! Core types and builder methods for MockEffectHandler.
+//! Core types and builder methods for `MockEffectHandler`.
 //!
 //! This module contains the `MockEffectHandler` struct definition, its builder
 //! pattern methods for configuration, and inspection helpers for verifying
 //! captured effects and UI events.
 
-use super::*;
+use super::{Effect, PipelineEvent, PipelineState, RefCell, UIEvent};
 
-/// Mock implementation of EffectHandler for testing.
+/// Mock implementation of `EffectHandler` for testing.
 ///
 /// This handler captures all executed effects for later inspection while
-/// returning appropriate mock PipelineEvents. It performs NO real side effects:
+/// returning appropriate mock `PipelineEvents`. It performs NO real side effects:
 /// - No git operations
 /// - No file I/O
 /// - No agent execution
@@ -43,7 +43,7 @@ pub struct MockEffectHandler {
     /// This records the primary event followed by any additional events returned
     /// in each [`EffectResult`].
     pub(super) captured_events: RefCell<Vec<PipelineEvent>>,
-    /// When true, PrepareCommitPrompt returns CommitSkipped instead of proceeding.
+    /// When true, `PrepareCommitPrompt` returns `CommitSkipped` instead of proceeding.
     pub(super) simulate_empty_diff: bool,
 
     /// Optional simulated error for `CheckCommitDiff`.
@@ -85,7 +85,8 @@ impl MockEffectHandler {
     /// # Returns
     ///
     /// A new `MockEffectHandler` with empty effect/event capture buffers
-    pub fn new(state: PipelineState) -> Self {
+    #[must_use]
+    pub const fn new(state: PipelineState) -> Self {
         Self {
             state,
             captured_effects: RefCell::new(Vec::new()),
@@ -111,24 +112,28 @@ impl MockEffectHandler {
     /// let handler = MockEffectHandler::new(state)
     ///     .with_empty_diff();
     /// ```
-    pub fn with_empty_diff(mut self) -> Self {
+    #[must_use]
+    pub const fn with_empty_diff(mut self) -> Self {
         self.simulate_empty_diff = true;
         self
     }
 
     /// Configure the mock to simulate a git diff error for `CheckCommitDiff`.
+    #[must_use]
     pub fn with_commit_diff_error(mut self, message: impl Into<String>) -> Self {
         self.simulate_commit_diff_error = Some(message.into());
         self
     }
 
     /// Configure the mock to return a specific diff content for `CheckCommitDiff`.
+    #[must_use]
     pub fn with_commit_diff_content(mut self, content: impl Into<String>) -> Self {
         self.simulate_commit_diff_content = Some(content.into());
         self
     }
 
     /// Configure the mock to use a specific commit message XML content for `ValidateCommitXml`.
+    #[must_use]
     pub fn with_commit_message_xml(mut self, xml: impl Into<String>) -> Self {
         self.simulate_commit_message_xml = Some(xml.into());
         self
@@ -136,19 +141,22 @@ impl MockEffectHandler {
 
     /// Configure the mock to simulate a clean working directory for the
     /// pre-termination safety check.
-    pub fn with_clean_pre_termination_snapshot(mut self) -> Self {
+    #[must_use]
+    pub const fn with_clean_pre_termination_snapshot(mut self) -> Self {
         self.pre_termination_snapshot = PreTerminationSnapshotMock::Clean;
         self
     }
 
     /// Configure the mock to simulate uncommitted changes for the pre-termination safety check.
-    pub fn with_dirty_pre_termination_snapshot(mut self, file_count: usize) -> Self {
+    #[must_use]
+    pub const fn with_dirty_pre_termination_snapshot(mut self, file_count: usize) -> Self {
         self.pre_termination_snapshot = PreTerminationSnapshotMock::Dirty { file_count };
         self
     }
 
     /// Configure the mock to simulate a git status/snapshot failure for the pre-termination safety check.
-    pub fn with_pre_termination_snapshot_error(
+    #[must_use]
+    pub const fn with_pre_termination_snapshot_error(
         mut self,
         kind: crate::reducer::event::WorkspaceIoErrorKind,
     ) -> Self {
@@ -159,7 +167,8 @@ impl MockEffectHandler {
     /// Configure the mock to panic on the next effect execution.
     ///
     /// This is used to test panic-unwind cleanup behavior in the event loop.
-    pub fn with_panic_on_next_execute(mut self) -> Self {
+    #[must_use]
+    pub const fn with_panic_on_next_execute(mut self) -> Self {
         self.panic_on_next_execute = true;
         self
     }

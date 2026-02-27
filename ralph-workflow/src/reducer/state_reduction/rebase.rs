@@ -1,7 +1,7 @@
 // NOTE: split from reducer/state_reduction.rs.
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::RebaseEvent;
+use crate::reducer::state::{PipelineState, RebaseState};
 
 pub(super) fn reduce_rebase_event(state: PipelineState, event: RebaseEvent) -> PipelineState {
     match event {

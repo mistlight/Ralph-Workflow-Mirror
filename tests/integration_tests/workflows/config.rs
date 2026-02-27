@@ -18,7 +18,7 @@
 //!
 //! The --init-legacy and --init-global commands write directly to the filesystem
 //! and are not fully mockable via the effect system. Tests for these commands
-//! use MemoryConfigEnvironment where possible but some legacy behavior tests
+//! use `MemoryConfigEnvironment` where possible but some legacy behavior tests
 //! may need to be in the system tests package instead.
 
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
@@ -29,19 +29,19 @@ use std::path::PathBuf;
 
 use crate::common::{
     create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_env,
-    run_ralph_cli_with_handlers,
+    run_ralph_cli_with_handler, run_ralph_cli_with_handlers,
 };
 use crate::test_timeout::with_default_timeout;
 
 /// Standard PROMPT.md content for config tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for config tests.
 fn create_config_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
@@ -64,7 +64,7 @@ fn create_config_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
 /// Test that ralph --init-global creates unified config file.
 ///
 /// This verifies that when ralph --init-global is run, the system
-/// creates ralph-workflow.toml using the injected ConfigEnvironment.
+/// creates ralph-workflow.toml using the injected `ConfigEnvironment`.
 #[test]
 fn test_init_global_creates_config() {
     with_default_timeout(|| {
@@ -104,7 +104,7 @@ fn test_init_global_creates_config() {
 /// Test that agent chain first entries are used as default agents.
 ///
 /// This verifies that when no explicit agent selection is made, the system
-/// uses the first entry in the agent_chain configuration.
+/// uses the first entry in the `agent_chain` configuration.
 #[test]
 fn test_uses_agent_chain_first_entries_as_defaults() {
     with_default_timeout(|| {
@@ -210,7 +210,7 @@ fn test_quick_mode_explicit_iters_override() {
 /// Test that rapid mode sets two developer iterations.
 ///
 /// This verifies that when --rapid flag is used, the system
-/// configures developer_iters=2 and reviewer_reviews=1.
+/// configures `developer_iters=2` and `reviewer_reviews=1`.
 #[test]
 fn test_rapid_mode_sets_two_iterations() {
     with_default_timeout(|| {
@@ -265,7 +265,7 @@ fn test_rapid_mode_short_flag_works() {
 
 /// Test that stack detection configuration is handled correctly.
 ///
-/// This verifies that when auto_detect_stack is enabled, the pipeline
+/// This verifies that when `auto_detect_stack` is enabled, the pipeline
 /// completes successfully without errors.
 #[test]
 fn test_stack_detection_config_enabled() {
@@ -295,7 +295,7 @@ fn test_stack_detection_config_enabled() {
 
 /// Test that stack detection can be disabled via configuration.
 ///
-/// This verifies that when auto_detect_stack is set to false,
+/// This verifies that when `auto_detect_stack` is set to false,
 /// the pipeline completes successfully.
 #[test]
 fn test_stack_detection_disabled() {
@@ -327,7 +327,7 @@ fn test_stack_detection_disabled() {
 
 /// Test that standard review depth configures the review process.
 ///
-/// This verifies that when review_depth is set to standard,
+/// This verifies that when `review_depth` is set to standard,
 /// the system uses standard-level review configurations.
 #[test]
 fn test_review_depth_standard() {
@@ -352,7 +352,7 @@ fn test_review_depth_standard() {
 
 /// Test that comprehensive review depth configures detailed review.
 ///
-/// This verifies that when review_depth is set to comprehensive,
+/// This verifies that when `review_depth` is set to comprehensive,
 /// the system uses thorough review configurations.
 #[test]
 fn test_review_depth_comprehensive() {
@@ -377,7 +377,7 @@ fn test_review_depth_comprehensive() {
 
 /// Test that security review depth configures security-focused review.
 ///
-/// This verifies that when review_depth is set to security,
+/// This verifies that when `review_depth` is set to security,
 /// the system uses security-oriented review configurations.
 #[test]
 fn test_review_depth_security() {
@@ -402,7 +402,7 @@ fn test_review_depth_security() {
 
 /// Test that incremental review depth focuses on git diff.
 ///
-/// This verifies that when review_depth is set to incremental,
+/// This verifies that when `review_depth` is set to incremental,
 /// the system configures review to focus on changed files only.
 #[test]
 fn test_review_depth_incremental() {
@@ -618,8 +618,7 @@ fn test_fail_fast_invalid_global_toml() {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Configuration validation failed") || err_msg.contains("TOML"),
-            "Error should mention config validation or TOML: {}",
-            err_msg
+            "Error should mention config validation or TOML: {err_msg}"
         );
     });
 }
@@ -660,8 +659,7 @@ fn test_fail_fast_invalid_local_toml() {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Configuration validation failed") || err_msg.contains("TOML"),
-            "Error should mention config validation or TOML: {}",
-            err_msg
+            "Error should mention config validation or TOML: {err_msg}"
         );
     });
 }
@@ -698,8 +696,7 @@ fn test_check_config_exits_nonzero_on_invalid_config() {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Configuration validation failed") || err_msg.contains("TOML"),
-            "Error should mention validation error or TOML: {}",
-            err_msg
+            "Error should mention validation error or TOML: {err_msg}"
         );
     });
 }
@@ -769,8 +766,7 @@ fn test_unknown_key_detection_with_suggestions() {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Configuration validation failed") || err_msg.contains("validation"),
-            "Error should mention configuration validation: {}",
-            err_msg
+            "Error should mention configuration validation: {err_msg}"
         );
     });
 }
@@ -808,8 +804,7 @@ fn test_invalid_type_detection() {
             err_msg.contains("Configuration validation failed")
                 || err_msg.contains("Invalid value")
                 || err_msg.contains("expected"),
-            "Error should mention validation or type error: {}",
-            err_msg
+            "Error should mention validation or type error: {err_msg}"
         );
     });
 }
@@ -929,5 +924,42 @@ fn test_config_discovery_outside_git_repo() {
         .is_ok();
 
         assert!(ok, "Config discovery should work outside git repo");
+    });
+}
+
+/// Regression test: prompt validation failures must abort pipeline startup.
+///
+/// This guards against accidentally swallowing `validate_prompt_and_setup_backup()`
+/// errors during `execution_core` refactors.
+#[test]
+fn test_pipeline_fails_fast_on_invalid_prompt_content() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            // Empty prompt is always a hard validation error (strict/non-strict)
+            .with_file("PROMPT.md", "")
+            .with_file(".agent/PLAN.md", "Test plan\n");
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        let result = run_ralph_cli_with_handler(&[], executor, config, &mut handler);
+
+        assert!(
+            result.is_err(),
+            "Pipeline should fail when PROMPT.md validation fails"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("PROMPT.md validation errors"),
+            "Error should include PROMPT.md validation failure: {err_msg}"
+        );
+
+        // Ensure backup creation was never reached after validation failure.
+        assert!(
+            !handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+            "Backup must not be created when validation fails"
+        );
     });
 }

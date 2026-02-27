@@ -1,6 +1,6 @@
 //! XML reading utilities for parsing and traversal.
 //!
-//! This module provides functions for reading XML content using quick_xml,
+//! This module provides functions for reading XML content using `quick_xml`,
 //! with proper handling of whitespace, CDATA sections, and entity escaping.
 //!
 //! ## Key Features
@@ -32,7 +32,7 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-/// Create a configured quick_xml reader with whitespace trimming enabled.
+/// Create a configured `quick_xml` reader with whitespace trimming enabled.
 ///
 /// The reader is configured with `trim_text(true)` which automatically
 /// handles whitespace between XML elements - solving the spacing issues
@@ -56,7 +56,7 @@ pub fn create_reader(content: &str) -> Reader<&[u8]> {
 ///
 /// # Arguments
 ///
-/// * `reader` - The quick_xml reader positioned after the opening tag
+/// * `reader` - The `quick_xml` reader positioned after the opening tag
 /// * `end_tag` - The closing tag name to read until (e.g., `b"root"`)
 ///
 /// # Returns
@@ -100,7 +100,7 @@ pub fn read_text_until_end(
             }
             Ok(_) => {} // Skip comments, processing instructions, nested elements
             Err(e) => {
-                return Err(make_parse_error(end_tag, e));
+                return Err(make_parse_error(end_tag, &e));
             }
         }
         buf.clear();
@@ -115,7 +115,7 @@ pub fn read_text_until_end(
 ///
 /// # Arguments
 ///
-/// * `reader` - The quick_xml reader positioned after the opening tag
+/// * `reader` - The `quick_xml` reader positioned after the opening tag
 /// * `end_tag` - The closing tag name to skip to (e.g., `b"element"`)
 ///
 /// # Returns
@@ -152,7 +152,7 @@ pub fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), Xsd
             }
             Ok(_) => {}
             Err(e) => {
-                return Err(make_parse_error(end_tag, e));
+                return Err(make_parse_error(end_tag, &e));
             }
         }
         buf.clear();
@@ -162,7 +162,7 @@ pub fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), Xsd
 }
 
 /// Create a parse error with CDATA suggestion if the element is code-related.
-fn make_parse_error(element: &[u8], error: quick_xml::Error) -> XsdValidationError {
+fn make_parse_error(element: &[u8], error: &quick_xml::Error) -> XsdValidationError {
     let element_name = String::from_utf8_lossy(element);
     let error_str = error.to_string();
 
@@ -170,10 +170,9 @@ fn make_parse_error(element: &[u8], error: quick_xml::Error) -> XsdValidationErr
     let is_code_element = element_name.contains("code");
     let suggestion = if is_code_element {
         format!(
-            "The <{}> element contains characters that break XML parsing. \
+            "The <{element_name}> element contains characters that break XML parsing. \
              Use CDATA to wrap code content:\n\
-             <{}><![CDATA[\n  your code with <, >, & here\n]]></{}>",
-            element_name, element_name, element_name
+             <{element_name}><![CDATA[\n  your code with <, >, & here\n]]></{element_name}>"
         )
     } else {
         "Check that all XML tags are properly formed and closed.".to_string()
@@ -183,7 +182,7 @@ fn make_parse_error(element: &[u8], error: quick_xml::Error) -> XsdValidationErr
         error_type: XsdErrorType::MalformedXml,
         element_path: element_name.to_string(),
         expected: "valid XML content".to_string(),
-        found: format!("parse error: {}", error_str),
+        found: format!("parse error: {error_str}"),
         suggestion,
         example: None,
     }
@@ -268,7 +267,7 @@ mod tests {
     #[test]
     fn test_make_parse_error_suggests_cdata_for_code_element() {
         let error = quick_xml::Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag);
-        let result = make_parse_error(b"code-block", error);
+        let result = make_parse_error(b"code-block", &error);
         // Should suggest CDATA for code-block element
         assert!(result.suggestion.contains("CDATA"));
         assert!(result.suggestion.contains("code-block"));

@@ -1,8 +1,8 @@
-//! OpenCode API catalog module.
+//! `OpenCode` API catalog module.
 //!
-//! This module handles fetching, caching, and querying the OpenCode model catalog
+//! This module handles fetching, caching, and querying the `OpenCode` model catalog
 //! from <https://models.dev/api.json>. The catalog contains available providers and models
-//! that OpenCode supports, enabling dynamic agent configuration.
+//! that `OpenCode` supports, enabling dynamic agent configuration.
 //!
 //! # Module Structure
 //!
@@ -23,7 +23,7 @@ mod types;
 pub use cache::{load_api_catalog, CacheError};
 pub use types::{ApiCatalog, Model, Provider};
 
-/// OpenCode API endpoint for model catalog.
+/// `OpenCode` API endpoint for model catalog.
 pub const API_URL: &str = "https://models.dev/api.json";
 
 /// Default cache TTL in seconds (24 hours).
@@ -32,7 +32,7 @@ pub const DEFAULT_CACHE_TTL_SECONDS: u64 = 24 * 60 * 60;
 /// Environment variable for customizing cache TTL.
 pub const CACHE_TTL_ENV_VAR: &str = "RALPH_OPENCODE_CACHE_TTL_SECONDS";
 
-/// Trait for loading the OpenCode API catalog.
+/// Trait for loading the `OpenCode` API catalog.
 ///
 /// This trait enables dependency injection for catalog loading, allowing
 /// tests to provide mock implementations that don't make network calls.
@@ -40,6 +40,10 @@ pub trait CatalogLoader: Send + Sync {
     /// Load the API catalog.
     ///
     /// Returns the catalog or an error if loading fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn load(&self) -> Result<ApiCatalog, CacheError>;
 }
 

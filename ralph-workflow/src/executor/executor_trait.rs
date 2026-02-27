@@ -1,4 +1,4 @@
-//! ProcessExecutor trait definition.
+//! `ProcessExecutor` trait definition.
 //!
 //! This module defines the trait abstraction for process execution,
 //! enabling dependency injection for testing.

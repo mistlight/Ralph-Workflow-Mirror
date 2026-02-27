@@ -1,7 +1,7 @@
 //! Apply CLI state to Config.
 //!
 //! This module handles the final step of the CLI processing pipeline:
-//! taking a CliState and applying its values to the actual Config struct.
+//! taking a `CliState` and applying its values to the actual Config struct.
 
 use super::state::CliState;
 use crate::config::{Config, ReviewDepth, Verbosity};
@@ -95,17 +95,11 @@ pub fn apply_cli_state_to_config(cli_state: &CliState, config: &mut Config) {
     // ===== Agent Presets =====
     // Handle named presets (default, opencode)
     if let Some(ref preset) = cli_state.agent_preset {
-        match preset.as_str() {
-            "default" => {
-                // No override - use agent_chain defaults from config
-            }
-            "opencode" => {
-                config.developer_agent = Some("opencode".to_string());
-                config.reviewer_agent = Some("opencode".to_string());
-            }
-            _ => {
-                // Unknown preset - ignore
-            }
+        if preset.as_str() == "opencode" {
+            config.developer_agent = Some("opencode".to_string());
+            config.reviewer_agent = Some("opencode".to_string());
+        } else {
+            // No override - use agent_chain defaults from config, or ignore unknown preset
         }
     }
 }
@@ -155,7 +149,7 @@ mod tests {
             max_xsd_retries: Some(10),
             max_same_agent_retries: Some(2),
             execution_history_limit: 1000,
-            cloud_config: crate::config::types::CloudConfig::disabled(),
+            cloud: crate::config::types::CloudConfig::disabled(),
         }
     }
 

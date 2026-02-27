@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 /// Test workspace that fails reads for a specific path with a configurable error kind.
 ///
 /// This helper enables testing of error handling when reading review inputs like
-/// DIFF.backup or DIFF.base fails with non-NotFound errors (e.g., PermissionDenied).
+/// DIFF.backup or DIFF.base fails with non-NotFound errors (e.g., `PermissionDenied`).
 #[derive(Debug, Clone)]
 pub(super) struct ReadFailingWorkspace {
     inner: MemoryWorkspace,

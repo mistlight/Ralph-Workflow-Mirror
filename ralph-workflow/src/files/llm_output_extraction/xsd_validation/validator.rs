@@ -10,7 +10,7 @@ const EXAMPLE_COMMIT_XML: &str = r"<ralph-commit>
 /// Validate XML content against the XSD schema.
 ///
 /// This function validates that the XML content conforms to the expected
-/// commit message format defined in commit_message.xsd:
+/// commit message format defined in `commit_message.xsd`:
 ///
 /// ```xml
 /// <ralph-commit>
@@ -42,13 +42,23 @@ const EXAMPLE_COMMIT_XML: &str = r"<ralph-commit>
 /// let result = validate_xml_against_xsd(xml);
 /// assert!(result.is_ok());
 /// ```
-pub(crate) fn validate_xml_against_xsd(
+pub fn validate_xml_against_xsd(
     xml_content: &str,
 ) -> Result<CommitMessageElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 6] = [
+        "ralph-subject",
+        "ralph-body",
+        "ralph-body-summary",
+        "ralph-body-details",
+        "ralph-body-footer",
+        "ralph-skip",
+    ];
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = create_reader(content);
@@ -65,14 +75,10 @@ pub(crate) fn validate_xml_against_xsd(
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-commit".to_string(),
                     expected: "<ralph-commit> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-commit> as the root element.".to_string(),
                     example: Some(EXAMPLE_COMMIT_XML.into()),
                 });
-            }
-            Ok(Event::Text(_)) => {
-                // Text before root element - continue to find root or reach EOF
-                // EOF will give a more informative "missing root element" error
             }
             Ok(Event::Eof) => {
                 return Err(XsdValidationError {
@@ -86,8 +92,11 @@ pub(crate) fn validate_xml_against_xsd(
                     example: Some(EXAMPLE_COMMIT_XML.into()),
                 });
             }
-            Ok(_) => {} // Skip XML declaration, comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Ok(Event::Text(_) | _) => {
+                // Text before root element or other events - continue to find root or reach EOF
+                // EOF will give a more informative "missing root element" error
+            }
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
         buf.clear();
     }
@@ -99,15 +108,6 @@ pub(crate) fn validate_xml_against_xsd(
     let mut body_details: Option<String> = None;
     let mut body_footer: Option<String> = None;
     let mut skip_reason: Option<String> = None;
-
-    const VALID_TAGS: [&str; 6] = [
-        "ralph-subject",
-        "ralph-body",
-        "ralph-body-summary",
-        "ralph-body-details",
-        "ralph-body-footer",
-        "ralph-skip",
-    ];
 
     loop {
         buf.clear();
@@ -330,7 +330,7 @@ pub(crate) fn validate_xml_against_xsd(
                 });
             }
             Ok(_) => {} // Skip comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
     }
 
@@ -419,7 +419,7 @@ pub(crate) fn validate_xml_against_xsd(
 /// This struct contains all the elements that were successfully
 /// extracted and validated from the XML content.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CommitMessageElements {
+pub struct CommitMessageElements {
     /// The commit subject line (required)
     /// Format: type(scope): description
     pub subject: String,

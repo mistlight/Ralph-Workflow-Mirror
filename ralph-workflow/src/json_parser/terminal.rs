@@ -90,6 +90,7 @@ impl TerminalMode {
     }
 
     /// Detect the current terminal mode from environment.
+    #[must_use]
     pub fn detect() -> Self {
         Self::detect_with_env(&RealTerminalEnvironment)
     }

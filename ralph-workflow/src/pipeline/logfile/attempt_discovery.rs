@@ -24,7 +24,7 @@ pub fn next_logfile_attempt_index(
     model_index: usize,
     workspace: &dyn Workspace,
 ) -> u32 {
-    let parent = log_prefix.parent().unwrap_or(Path::new("."));
+    let parent = log_prefix.parent().unwrap_or_else(|| Path::new("."));
     let prefix_filename = match log_prefix.file_name().and_then(|s| s.to_str()) {
         Some(s) if !s.is_empty() => s,
         _ => return 0,
@@ -42,7 +42,11 @@ pub fn next_logfile_attempt_index(
             let Some(filename) = entry.file_name().and_then(|s| s.to_str()) else {
                 continue;
             };
-            if !filename.starts_with(&start) || !filename.ends_with(".log") {
+            let has_log_ext = entry
+                .path()
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("log"));
+            if !filename.starts_with(&start) || !has_log_ext {
                 continue;
             }
 
@@ -51,10 +55,7 @@ pub fn next_logfile_attempt_index(
                 continue;
             }
             if let Ok(n) = attempt_digits.parse::<u32>() {
-                max_attempt = Some(match max_attempt {
-                    Some(prev) => prev.max(n),
-                    None => n,
-                });
+                max_attempt = Some(max_attempt.map_or(n, |prev| prev.max(n)));
             }
         }
     }
@@ -78,7 +79,7 @@ pub fn next_simplified_logfile_attempt_index(
     base_log_path: &Path,
     workspace: &dyn Workspace,
 ) -> u32 {
-    let parent = base_log_path.parent().unwrap_or(Path::new("."));
+    let parent = base_log_path.parent().unwrap_or_else(|| Path::new("."));
     let base_filename = match base_log_path.file_stem().and_then(|s| s.to_str()) {
         Some(s) if !s.is_empty() => s,
         _ => return 0,
@@ -106,7 +107,11 @@ pub fn next_simplified_logfile_attempt_index(
             }
 
             // Check if this is a file with attempt suffix
-            if !filename.starts_with(&start) || !filename.ends_with(".log") {
+            let has_log_ext = entry
+                .path()
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("log"));
+            if !filename.starts_with(&start) || !has_log_ext {
                 continue;
             }
 
@@ -115,10 +120,7 @@ pub fn next_simplified_logfile_attempt_index(
                 continue;
             }
             if let Ok(n) = attempt_digits.parse::<u32>() {
-                max_attempt = Some(match max_attempt {
-                    Some(prev) => prev.max(n),
-                    None => n,
-                });
+                max_attempt = Some(max_attempt.map_or(n, |prev| prev.max(n)));
             }
         }
     }
@@ -126,11 +128,5 @@ pub fn next_simplified_logfile_attempt_index(
     // If base file exists but no _aN files exist, return 1 (first retry)
     // If _aN files exist, return max(attempt) + 1
     // If neither exist, return 0 (first attempt)
-    if let Some(max) = max_attempt {
-        max.saturating_add(1)
-    } else if base_file_exists {
-        1
-    } else {
-        0
-    }
+    max_attempt.map_or_else(|| u32::from(base_file_exists), |max| max.saturating_add(1))
 }

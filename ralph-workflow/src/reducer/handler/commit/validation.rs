@@ -50,28 +50,24 @@ impl MainEffectHandler {
     /// - On failure: Writes error to `.agent/tmp/commit_xsd_error.txt`
     /// - On success: Removes `.agent/tmp/commit_xsd_error.txt` if present
     pub(in crate::reducer::handler) fn validate_commit_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+        &self,
+        ctx: &PhaseContext<'_>,
+    ) -> EffectResult {
         let attempt = current_commit_attempt(&self.state.commit);
         let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
 
-        let xml_content = match ctx.workspace.read(commit_xml) {
-            Ok(s) => s,
-            Err(_) => {
-                let reason =
-                    "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml";
-                let event =
-                    PipelineEvent::commit_xml_validation_failed(reason.to_string(), attempt);
-                return Ok(EffectResult::with_ui(
-                    event,
-                    vec![UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::CommitMessage,
-                        content: reason.to_string(),
-                        context: None,
-                    }],
-                ));
-            }
+        let Ok(xml_content) = ctx.workspace.read(commit_xml) else {
+            let reason =
+                "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml";
+            let event = PipelineEvent::commit_xml_validation_failed(reason.to_string(), attempt);
+            return EffectResult::with_ui(
+                event,
+                vec![UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::CommitMessage,
+                    content: reason.to_string(),
+                    context: None,
+                }],
+            );
         };
 
         let (message, skip_reason, detail) = try_extract_xml_commit_with_trace(&xml_content);
@@ -79,19 +75,18 @@ impl MainEffectHandler {
         // Check for skip first
         if let Some(reason) = skip_reason {
             // AI determined no commit needed - emit Skipped event
-            ctx.logger
-                .info(&format!("Commit skipped by AI: {}", reason));
+            ctx.logger.info(&format!("Commit skipped by AI: {reason}"));
             let _ = ctx
                 .workspace
                 .remove_if_exists(Path::new(COMMIT_XSD_ERROR_PATH));
-            return Ok(EffectResult::with_ui(
+            return EffectResult::with_ui(
                 PipelineEvent::commit_skipped(reason),
                 vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::CommitMessage,
                     content: xml_content,
                     context: None,
                 }],
-            ));
+            );
         }
 
         if message.is_none() {
@@ -104,19 +99,19 @@ impl MainEffectHandler {
                 .workspace
                 .remove_if_exists(Path::new(COMMIT_XSD_ERROR_PATH));
         }
-        let event = match message {
-            Some(msg) => PipelineEvent::commit_xml_validated(msg, attempt),
-            None => PipelineEvent::commit_xml_validation_failed(detail, attempt),
-        };
+        let event = message.map_or_else(
+            || PipelineEvent::commit_xml_validation_failed(detail, attempt),
+            |msg| PipelineEvent::commit_xml_validated(msg, attempt),
+        );
 
-        Ok(EffectResult::with_ui(
+        EffectResult::with_ui(
             event,
             vec![UIEvent::XmlOutput {
                 xml_type: XmlOutputType::CommitMessage,
                 content: xml_content,
                 context: None,
             }],
-        ))
+        )
     }
 
     /// Apply commit message outcome from validation.
@@ -134,7 +129,7 @@ impl MainEffectHandler {
     ///
     /// - `ValidatedCommitOutcomeMissing` - No validated outcome in state
     pub(in crate::reducer::handler) fn apply_commit_message_outcome(
-        &mut self,
+        &self,
         _ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);

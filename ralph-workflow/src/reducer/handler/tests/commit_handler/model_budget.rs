@@ -23,7 +23,7 @@ fn test_effective_model_budget_uses_min_across_agent_chain() {
     );
 }
 
-/// Test that consumer_signature_sha256 changes when agent chain configuration changes.
+/// Test that `consumer_signature_sha256` changes when agent chain configuration changes.
 ///
 /// This ensures that when the agent chain is modified (agents added/removed),
 /// the materialized inputs will be invalidated and re-materialized with
@@ -50,9 +50,9 @@ fn test_consumer_signature_changes_with_agent_chain() {
     );
 }
 
-/// Test that consumer_signature_sha256 is stable when only current_agent_index changes.
+/// Test that `consumer_signature_sha256` is stable when only `current_agent_index` changes.
 ///
-/// During XSD retry or fallback attempts, the current_agent_index changes but
+/// During XSD retry or fallback attempts, the `current_agent_index` changes but
 /// the overall chain configuration stays the same. The signature should be
 /// stable so we don't unnecessarily re-materialize.
 #[test]

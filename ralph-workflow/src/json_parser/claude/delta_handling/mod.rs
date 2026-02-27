@@ -16,10 +16,10 @@
 //!
 //! ### Fix Architecture
 //!
-//! 1. **Suppression:** Delta renderers (TextDeltaRenderer, ThinkingDeltaRenderer)
+//! 1. **Suppression:** Delta renderers (`TextDeltaRenderer`, `ThinkingDeltaRenderer`)
 //!    return empty strings in non-TTY modes (Basic/None) to suppress per-delta output.
 //!
-//! 2. **Accumulation:** StreamingSession accumulates content by (ContentType, index)
+//! 2. **Accumulation:** `StreamingSession` accumulates content by (`ContentType`, index)
 //!    across all deltas for text, thinking, and tool input.
 //!
 //! 3. **Flush:** `handle_message_stop` flushes accumulated content ONCE at

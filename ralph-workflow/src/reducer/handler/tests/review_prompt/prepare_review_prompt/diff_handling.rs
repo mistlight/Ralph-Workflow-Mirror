@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untracked() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -59,12 +59,12 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed (diff is optional for review)");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -98,7 +98,7 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
 
 #[test]
 fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let large_diff = "d".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 1);
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -139,12 +139,12 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -170,7 +170,7 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
 
 #[test]
 fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_instructions() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -209,14 +209,14 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
 
     // Materialize review inputs (should succeed despite missing DIFF.backup)
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
 
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
@@ -253,7 +253,7 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
 
 #[test]
 fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_fallback() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -291,14 +291,14 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
 
     // Materialize review inputs (should succeed despite missing DIFF.backup and baseline)
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with generic fallback");
 
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);

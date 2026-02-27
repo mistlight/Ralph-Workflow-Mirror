@@ -1,7 +1,7 @@
 //! Tests for git helper functions.
 //!
-//! Tests that require real git repositories have been moved to tests/system_tests/git/.
-//! This module contains only tests that can use MemoryWorkspace.
+//! Tests that require real git repositories have been moved to `tests/system_tests/git`/.
+//! This module contains only tests that can use `MemoryWorkspace`.
 
 use super::*;
 use crate::workspace::{MemoryWorkspace, Workspace};

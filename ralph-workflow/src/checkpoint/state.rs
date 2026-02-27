@@ -13,7 +13,7 @@
 //!
 //! The following legacy phases are also rejected:
 //! - "Fix" (use "Development" instead)
-//! - "ReviewAgain" (use "Review" instead)
+//! - "`ReviewAgain`" (use "Review" instead)
 //!
 //! # Backwards Compatibility
 //!

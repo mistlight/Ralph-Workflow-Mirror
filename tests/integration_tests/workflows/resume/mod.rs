@@ -9,7 +9,7 @@
 //! - rebase: Rebase-related resume tests
 //!
 //! All tests use `MockAppEffectHandler` for in-memory testing per
-//! INTEGRATION_TESTS.md requirements.
+//! `INTEGRATION_TESTS.md` requirements.
 
 mod basic;
 mod checkpoint;
@@ -19,27 +19,27 @@ mod rebase;
 mod v3;
 
 /// Mock repository path used consistently across resume tests.
-pub(crate) const MOCK_REPO_PATH: &str = "/mock/repo";
+pub const MOCK_REPO_PATH: &str = "/mock/repo";
 
 /// Standard prompt content for tests - matches the required PROMPT.md format.
-/// NOTE: If you change this, update STANDARD_PROMPT_CHECKSUM below!
-pub(crate) const STANDARD_PROMPT: &str = r#"## Goal
+/// NOTE: If you change this, update `STANDARD_PROMPT_CHECKSUM` below!
+pub const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
-/// SHA256 checksum of STANDARD_PROMPT above.
+/// SHA256 checksum of `STANDARD_PROMPT` above.
 /// Compute with: echo -n '<content>' | sha256sum
-pub(crate) const STANDARD_PROMPT_CHECKSUM: &str =
+pub const STANDARD_PROMPT_CHECKSUM: &str =
     "f3172db90fb9245992bd8ad018ed77821a8765c16d57ca889dc2aa8501953556";
 
 /// Helper function to create a valid v3 checkpoint JSON with all required fields.
-/// Always sets developer_iters and reviewer_reviews to 0 to prevent agent execution.
-pub(crate) fn make_checkpoint_json(
+/// Always sets `developer_iters` and `reviewer_reviews` to 0 to prevent agent execution.
+pub fn make_checkpoint_json(
     working_dir: &str,
     phase: &str,
     iteration: u32,
@@ -48,9 +48,9 @@ pub(crate) fn make_checkpoint_json(
     format!(
         r#"{{
             "version": 3,
-            "phase": "{}",
-            "iteration": {},
-            "total_iterations": {},
+            "phase": "{phase}",
+            "iteration": {iteration},
+            "total_iterations": {total_iterations},
             "reviewer_pass": 0,
             "total_reviewer_passes": 0,
             "timestamp": "2024-01-01 12:00:00",
@@ -85,25 +85,24 @@ pub(crate) fn make_checkpoint_json(
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
             "parent_run_id": null,
             "resume_count": 0,
-            "actual_developer_runs": {},
+            "actual_developer_runs": {iteration},
             "actual_reviewer_runs": 0,
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        phase, iteration, total_iterations, working_dir, STANDARD_PROMPT_CHECKSUM, iteration
+        }}"#
     )
 }
 
 /// Helper function to create a v3 checkpoint JSON with execution history.
-pub(crate) fn make_checkpoint_with_execution_history(
+pub fn make_checkpoint_with_execution_history(
     working_dir: &str,
     phase: &str,
     execution_history_json: &str,
@@ -111,7 +110,7 @@ pub(crate) fn make_checkpoint_with_execution_history(
     format!(
         r#"{{
             "version": 3,
-            "phase": "{}",
+            "phase": "{phase}",
             "iteration": 1,
             "total_iterations": 1,
             "reviewer_pass": 0,
@@ -148,8 +147,8 @@ pub(crate) fn make_checkpoint_with_execution_history(
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-123",
@@ -157,16 +156,15 @@ pub(crate) fn make_checkpoint_with_execution_history(
             "resume_count": 0,
             "actual_developer_runs": 1,
             "actual_reviewer_runs": 0,
-            "execution_history": {},
+            "execution_history": {execution_history_json},
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        phase, working_dir, STANDARD_PROMPT_CHECKSUM, execution_history_json
+        }}"#
     )
 }
 
 /// Helper function to create a v3 checkpoint JSON with file system state.
-pub(crate) fn make_checkpoint_with_file_system_state(
+pub fn make_checkpoint_with_file_system_state(
     working_dir: &str,
     phase: &str,
     file_system_state_json: &str,
@@ -174,7 +172,7 @@ pub(crate) fn make_checkpoint_with_file_system_state(
     format!(
         r#"{{
             "version": 3,
-            "phase": "{}",
+            "phase": "{phase}",
             "iteration": 1,
             "total_iterations": 1,
             "reviewer_pass": 0,
@@ -211,8 +209,8 @@ pub(crate) fn make_checkpoint_with_file_system_state(
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-123",
@@ -221,15 +219,14 @@ pub(crate) fn make_checkpoint_with_file_system_state(
             "actual_developer_runs": 0,
             "actual_reviewer_runs": 0,
             "execution_history": null,
-            "file_system_state": {},
+            "file_system_state": {file_system_state_json},
             "prompt_history": null
-        }}"#,
-        phase, working_dir, STANDARD_PROMPT_CHECKSUM, file_system_state_json
+        }}"#
     )
 }
 
 /// Helper function to create a v3 checkpoint JSON with prompt history.
-pub(crate) fn make_checkpoint_with_prompt_history(
+pub fn make_checkpoint_with_prompt_history(
     working_dir: &str,
     phase: &str,
     prompt_history_json: &str,
@@ -237,7 +234,7 @@ pub(crate) fn make_checkpoint_with_prompt_history(
     format!(
         r#"{{
             "version": 3,
-            "phase": "{}",
+            "phase": "{phase}",
             "iteration": 1,
             "total_iterations": 1,
             "reviewer_pass": 0,
@@ -274,8 +271,8 @@ pub(crate) fn make_checkpoint_with_prompt_history(
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-123",
@@ -285,8 +282,7 @@ pub(crate) fn make_checkpoint_with_prompt_history(
             "actual_reviewer_runs": 0,
             "execution_history": null,
             "file_system_state": null,
-            "prompt_history": {}
-        }}"#,
-        phase, working_dir, STANDARD_PROMPT_CHECKSUM, prompt_history_json
+            "prompt_history": {prompt_history_json}
+        }}"#
     )
 }

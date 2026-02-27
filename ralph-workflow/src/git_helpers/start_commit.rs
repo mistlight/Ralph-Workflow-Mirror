@@ -57,7 +57,7 @@ pub fn get_current_head_oid() -> io::Result<String> {
     get_current_head_oid_impl(&repo)
 }
 
-/// Implementation of get_current_head_oid.
+/// Implementation of `get_current_head_oid`.
 fn get_current_head_oid_impl(repo: &git2::Repository) -> io::Result<String> {
     let head = repo.head().map_err(|e| {
         // Handle UnbornBranch error consistently with git_diff()
@@ -109,7 +109,7 @@ pub fn save_start_commit() -> io::Result<()> {
     save_start_commit_impl(&repo, repo_root)
 }
 
-/// Implementation of save_start_commit.
+/// Implementation of `save_start_commit`.
 fn save_start_commit_impl(repo: &git2::Repository, repo_root: &Path) -> io::Result<()> {
     // If a start commit exists and is valid, preserve it across runs.
     // If it exists but is invalid/corrupt, automatically repair it.
@@ -157,6 +157,10 @@ fn write_start_point_with_workspace(
 ///
 /// This is the workspace-aware version for pipeline code where git operations
 /// are needed for validation.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_start_point_with_workspace(
     workspace: &dyn Workspace,
     repo: &git2::Repository,
@@ -181,8 +185,7 @@ pub fn load_start_point_with_workspace(
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "Invalid OID format in {}: '{}'. Run 'ralph --reset-start-commit' to fix.",
-                START_COMMIT_FILE, raw
+                "Invalid OID format in {START_COMMIT_FILE}: '{raw}'. Run 'ralph --reset-start-commit' to fix."
             ),
         )
     })?;
@@ -194,9 +197,8 @@ pub fn load_start_point_with_workspace(
             io::Error::new(
                 io::ErrorKind::NotFound,
                 format!(
-                    "Start commit '{}' no longer exists (history rewritten). \
-                     Run 'ralph --reset-start-commit' to fix.",
-                    raw
+                    "Start commit '{raw}' no longer exists (history rewritten). \
+                     Run 'ralph --reset-start-commit' to fix."
                 ),
             )
         } else {
@@ -211,6 +213,10 @@ pub fn load_start_point_with_workspace(
 ///
 /// This is the workspace-aware version for pipeline code where a workspace
 /// is available. If a valid start commit already exists, it is preserved.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn save_start_commit_with_workspace(
     workspace: &dyn Workspace,
     repo: &git2::Repository,
@@ -247,7 +253,7 @@ pub fn load_start_point() -> io::Result<StartPoint> {
     load_start_point_impl(&repo, repo_root)
 }
 
-/// Implementation of load_start_point.
+/// Implementation of `load_start_point`.
 fn load_start_point_impl(repo: &git2::Repository, repo_root: &Path) -> io::Result<StartPoint> {
     let workspace = WorkspaceFs::new(repo_root.to_path_buf());
     load_start_point_with_workspace(&workspace, repo)
@@ -256,7 +262,7 @@ fn load_start_point_impl(repo: &git2::Repository, repo_root: &Path) -> io::Resul
 /// Result of resetting the start commit.
 #[derive(Debug, Clone)]
 pub struct ResetStartCommitResult {
-    /// The OID that start_commit was set to.
+    /// The OID that `start_commit` was set to.
     pub oid: String,
     /// The default branch used for merge-base calculation (if applicable).
     pub default_branch: Option<String>,
@@ -288,7 +294,7 @@ pub fn reset_start_commit() -> io::Result<ResetStartCommitResult> {
     reset_start_commit_impl(&repo, repo_root)
 }
 
-/// Implementation of reset_start_commit.
+/// Implementation of `reset_start_commit`.
 fn reset_start_commit_impl(
     repo: &git2::Repository,
     repo_root: &Path,
@@ -319,24 +325,22 @@ fn reset_start_commit_impl(
     let default_branch = super::branch::get_default_branch_at(repo_root)?;
 
     // Find the default branch commit
-    let default_ref = format!("refs/heads/{}", default_branch);
-    let default_commit = match repo.find_reference(&default_ref) {
-        Ok(reference) => reference.peel_to_commit().map_err(|e| to_io_error(&e))?,
-        Err(_) => {
-            // Try origin/<default_branch> as fallback
-            let origin_ref = format!("refs/remotes/origin/{}", default_branch);
-            match repo.find_reference(&origin_ref) {
-                Ok(reference) => reference.peel_to_commit().map_err(|e| to_io_error(&e))?,
-                Err(_) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::NotFound,
-                        format!(
-                            "Default branch '{}' not found locally or in origin. \
-                             Make sure the branch exists.",
-                            default_branch
-                        ),
-                    ));
-                }
+    let default_ref = format!("refs/heads/{default_branch}");
+    let default_commit = if let Ok(reference) = repo.find_reference(&default_ref) {
+        reference.peel_to_commit().map_err(|e| to_io_error(&e))?
+    } else {
+        // Try origin/<default_branch> as fallback
+        let origin_ref = format!("refs/remotes/origin/{default_branch}");
+        match repo.find_reference(&origin_ref) {
+            Ok(reference) => reference.peel_to_commit().map_err(|e| to_io_error(&e))?,
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "Default branch '{default_branch}' not found locally or in origin. \
+                         Make sure the branch exists."
+                    ),
+                ));
             }
         }
     };
@@ -349,8 +353,7 @@ fn reset_start_commit_impl(
                 io::Error::new(
                     io::ErrorKind::NotFound,
                     format!(
-                        "No common ancestor between current branch and '{}' (unrelated branches)",
-                        default_branch
+                        "No common ancestor between current branch and '{default_branch}' (unrelated branches)"
                     ),
                 )
             } else {
@@ -384,8 +387,9 @@ pub struct StartCommitSummary {
 impl StartCommitSummary {
     /// Format a compact version for inline display.
     pub fn format_compact(&self) -> String {
-        match &self.start_oid {
-            Some(oid) => {
+        self.start_oid.as_ref().map_or_else(
+            || "Start: not set".to_string(),
+            |oid| {
                 let short_oid = &oid[..8.min(oid.len())];
                 if self.is_stale {
                     format!(
@@ -395,11 +399,10 @@ impl StartCommitSummary {
                 } else if self.commits_since > 0 {
                     format!("Start: {} (+{} commits)", short_oid, self.commits_since)
                 } else {
-                    format!("Start: {}", short_oid)
+                    format!("Start: {short_oid}")
                 }
-            }
-            None => "Start: not set".to_string(),
-        }
+            },
+        )
     }
 }
 
@@ -408,6 +411,10 @@ impl StartCommitSummary {
 /// Returns a `StartCommitSummary` containing information about the current
 /// start commit, commits since start, and staleness status.
 ///
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_start_commit_summary() -> io::Result<StartCommitSummary> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let repo_root = repo
@@ -416,7 +423,7 @@ pub fn get_start_commit_summary() -> io::Result<StartCommitSummary> {
     get_start_commit_summary_impl(&repo, repo_root)
 }
 
-/// Implementation of get_start_commit_summary.
+/// Implementation of `get_start_commit_summary`.
 fn get_start_commit_summary_impl(
     repo: &git2::Repository,
     repo_root: &Path,

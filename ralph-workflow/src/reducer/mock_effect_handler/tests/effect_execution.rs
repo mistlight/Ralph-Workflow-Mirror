@@ -8,7 +8,7 @@ fn mock_effect_handler_simulates_empty_diff() {
     let mut handler = MockEffectHandler::new(state).with_empty_diff();
 
     // CheckCommitDiff should mark empty diff
-    let result = handler.execute_mock(Effect::CheckCommitDiff);
+    let result = handler.execute_mock(&Effect::CheckCommitDiff);
 
     assert!(
         matches!(
@@ -28,7 +28,7 @@ fn mock_effect_handler_execute_mock_respects_pre_termination_snapshot_dirty() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state).with_dirty_pre_termination_snapshot(3);
 
-    let result = handler.execute_mock(Effect::CheckUncommittedChangesBeforeTermination);
+    let result = handler.execute_mock(&Effect::CheckUncommittedChangesBeforeTermination);
 
     assert!(matches!(
         result.event,
@@ -55,7 +55,7 @@ fn mock_effect_handler_normal_commit_generation() {
     let mut handler = MockEffectHandler::new(state); // No with_empty_diff()
 
     // ApplyCommitMessageOutcome should return CommitMessageGenerated normally
-    let result = handler.execute_mock(Effect::ApplyCommitMessageOutcome);
+    let result = handler.execute_mock(&Effect::ApplyCommitMessageOutcome);
 
     assert!(
         matches!(
@@ -72,7 +72,7 @@ fn mock_effect_handler_review_validation_emits_no_issues_outcome() {
     let state = PipelineState::initial(1, 1);
     let mut handler = MockEffectHandler::new(state);
 
-    let result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 0 });
+    let result = handler.execute_mock(&Effect::ValidateReviewIssuesXml { pass: 0 });
 
     assert!(matches!(
         result.event,
@@ -111,7 +111,7 @@ fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -132,7 +132,7 @@ fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -188,7 +188,7 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let mut ctx = PhaseContext {
         config: &config,
         registry: &registry,
@@ -209,7 +209,7 @@ fn mock_effect_handler_trigger_dev_fix_flow_emits_events_on_marker_write_failure
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -248,7 +248,7 @@ fn mock_attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_miss
     };
     let mut handler = MockEffectHandler::new(state);
 
-    let result = handler.execute_mock(Effect::AttemptRecovery {
+    let result = handler.execute_mock(&Effect::AttemptRecovery {
         level: 1,
         attempt_count: 1,
     });
@@ -274,7 +274,7 @@ fn mock_attempt_recovery_never_targets_awaiting_dev_fix() {
     };
     let mut handler = MockEffectHandler::new(state);
 
-    let result = handler.execute_mock(Effect::AttemptRecovery {
+    let result = handler.execute_mock(&Effect::AttemptRecovery {
         level: 1,
         attempt_count: 1,
     });
@@ -290,7 +290,7 @@ fn mock_attempt_recovery_never_targets_awaiting_dev_fix() {
     ));
 }
 
-/// Test that UIEvents do not affect pipeline state.
+/// Test that `UIEvents` do not affect pipeline state.
 #[test]
 fn ui_events_do_not_affect_state() {
     // This test verifies that UIEvents are purely display-only
@@ -299,22 +299,22 @@ fn ui_events_do_not_affect_state() {
     let state_clone = state.clone();
 
     // UIEvent exists but reducer never sees it
-    let _ui_event = UIEvent::PhaseTransition {
+    drop(UIEvent::PhaseTransition {
         from: None,
         to: PipelinePhase::Development,
-    };
+    });
 
     // State should be unchanged
     assert_eq!(state.phase, state_clone.phase);
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for plan validation.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for plan validation.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_plan() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 1 });
+    let _result = handler.execute_mock(&Effect::ValidatePlanningXml { iteration: 1 });
 
     // Verify XmlOutput event was emitted with DevelopmentPlan type
     assert!(
@@ -329,13 +329,13 @@ fn mock_effect_handler_emits_xml_output_for_plan() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for development extraction.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for development extraction.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_development() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+    let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
     // Verify XmlOutput event was emitted with DevelopmentResult type
     assert!(
@@ -350,13 +350,13 @@ fn mock_effect_handler_emits_xml_output_for_development() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for review pass.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for review pass.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_review_snippets() {
     let state = PipelineState::initial(1, 1);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ExtractReviewIssueSnippets { pass: 1 });
+    let _result = handler.execute_mock(&Effect::ExtractReviewIssueSnippets { pass: 1 });
 
     // Verify XmlOutput event was emitted with ReviewIssues type
     assert!(
@@ -371,13 +371,13 @@ fn mock_effect_handler_emits_xml_output_for_review_snippets() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for fix attempt.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for fix attempt.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_fix() {
     let state = PipelineState::initial(1, 1);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ValidateFixResultXml { pass: 1 });
+    let _result = handler.execute_mock(&Effect::ValidateFixResultXml { pass: 1 });
 
     // Verify XmlOutput event was emitted with FixResult type
     assert!(
@@ -392,13 +392,13 @@ fn mock_effect_handler_emits_xml_output_for_fix() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for commit message.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for commit message.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_commit() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ValidateCommitXml);
+    let _result = handler.execute_mock(&Effect::ValidateCommitXml);
 
     // Verify XmlOutput event was emitted with CommitMessage type
     assert!(
@@ -439,7 +439,7 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -461,7 +461,7 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut state = PipelineState::initial(1, 0);
@@ -489,7 +489,8 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid checkpoint json");
 
     assert_eq!(
-        v.get("interrupted_by_user").and_then(|v| v.as_bool()),
+        v.get("interrupted_by_user")
+            .and_then(serde_json::Value::as_bool),
         Some(true),
         "Mock checkpoint must persist interrupted_by_user=true for parity with real handler"
     );
@@ -521,7 +522,7 @@ fn mock_execute_save_checkpoint_captures_effect_once() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -543,7 +544,7 @@ fn mock_execute_save_checkpoint_captures_effect_once() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -594,7 +595,7 @@ fn mock_execute_emit_completion_marker_captures_effect_once() {
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new(repo_root.clone());
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let mut ctx = PhaseContext {
         config: &config,
@@ -616,7 +617,7 @@ fn mock_execute_emit_completion_marker_captures_effect_once() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = PipelineState::initial(1, 0);

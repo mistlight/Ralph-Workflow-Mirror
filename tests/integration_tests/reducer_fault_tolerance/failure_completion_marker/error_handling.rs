@@ -1,9 +1,9 @@
 //! Tests for error handling and recovery in failure completion flow.
 //!
 //! Verifies robust error handling when things go wrong during failure handling:
-//! - Max iterations reached in AwaitingDevFix phase
+//! - Max iterations reached in `AwaitingDevFix` phase
 //! - Completion marker write failures
-//! - SaveCheckpoint panics and errors
+//! - `SaveCheckpoint` panics and errors
 //! - Budget exhaustion scenarios
 
 use super::common::{FailingWorkspace, Fixture, SaveBehavior, StalledAwaitingDevFixHandler};

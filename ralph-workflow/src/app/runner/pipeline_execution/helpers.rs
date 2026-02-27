@@ -91,7 +91,7 @@ fn print_review_guidelines(
 /// Create the phase context with a modified config (for resume restoration).
 ///
 /// When resuming from a checkpoint, this function enforces the configured
-/// execution_history_limit by using `clone_bounded()` to drop oldest entries
+/// `execution_history_limit` by using `clone_bounded()` to drop oldest entries
 /// beyond the limit. This prevents legacy checkpoints with oversized history
 /// from reintroducing unbounded memory growth.
 fn create_phase_context_with_config<'ctx>(
@@ -107,20 +107,19 @@ fn create_phase_context_with_config<'ctx>(
     // IMPORTANT: When loading from checkpoint, we MUST enforce the configured
     // execution_history_limit using clone_bounded() to prevent oversized legacy
     // checkpoints from loading arbitrarily large history into memory.
-    let (execution_history, prompt_history) = if let Some(checkpoint) = resume_checkpoint {
-        let exec_history = checkpoint
-            .execution_history
-            .as_ref()
-            .map(|h| h.clone_bounded(config.execution_history_limit))
-            .unwrap_or_else(crate::checkpoint::execution_history::ExecutionHistory::new);
-        let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
-        (exec_history, prompt_hist)
-    } else {
-        (
+    let (execution_history, prompt_history) = resume_checkpoint.map_or_else(
+        || (
             crate::checkpoint::execution_history::ExecutionHistory::new(),
             std::collections::HashMap::new(),
-        )
-    };
+        ),
+        |checkpoint| {
+            let exec_history = checkpoint
+                .execution_history
+                .as_ref().map_or_else(crate::checkpoint::execution_history::ExecutionHistory::new, |h| h.clone_bounded(config.execution_history_limit));
+            let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
+            (exec_history, prompt_hist)
+        }
+    );
 
     PhaseContext {
         config,
@@ -141,12 +140,12 @@ fn create_phase_context_with_config<'ctx>(
         workspace: &*ctx.workspace,
         workspace_arc: std::sync::Arc::clone(&ctx.workspace),
         run_log_context: &ctx.run_log_context,
-        cloud_reporter: if config.cloud_config.enabled {
+        cloud_reporter: if config.cloud.enabled {
             Some(cloud_reporter)
         } else {
             None
         },
-        cloud_config: &config.cloud_config,
+        cloud: &config.cloud,
     }
 }
 
@@ -236,7 +235,7 @@ pub fn handle_rebase_only(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
+    executor: &std::sync::Arc<dyn ProcessExecutor>,
     repo_root: &std::path::Path,
 ) -> anyhow::Result<()> {
     // Check if we're on main/master branch
@@ -250,7 +249,7 @@ pub fn handle_rebase_only(
 
     logger.header("Rebase to default branch", Colors::cyan);
 
-    match run_rebase_to_default(logger, colors, &*executor) {
+    match run_rebase_to_default(logger, colors, &**executor) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
             Ok(())
@@ -268,7 +267,7 @@ pub fn handle_rebase_only(
             let conflicted_files = get_conflicted_files()?;
             if conflicted_files.is_empty() {
                 logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase(&*executor);
+                let _ = abort_rebase(&**executor);
                 return Ok(());
             }
 
@@ -284,20 +283,20 @@ pub fn handle_rebase_only(
                 template_context,
                 logger,
                 colors,
-                std::sync::Arc::clone(&executor),
+                executor,
                 repo_root,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase(&*executor) {
+                    match continue_rebase(&**executor) {
                         Ok(()) => {
                             logger.success("Rebase completed successfully after AI resolution");
                             Ok(())
                         }
                         Err(e) => {
                             logger.error(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase(&*executor);
+                            let _ = abort_rebase(&**executor);
                             anyhow::bail!("Rebase failed after conflict resolution")
                         }
                     }
@@ -305,12 +304,12 @@ pub fn handle_rebase_only(
                 Ok(false) => {
                     // AI resolution failed
                     logger.error("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase(&*executor);
+                    let _ = abort_rebase(&**executor);
                     anyhow::bail!("Rebase conflicts could not be resolved by AI")
                 }
                 Err(e) => {
                     logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase(&*executor);
+                    let _ = abort_rebase(&**executor);
                     anyhow::bail!("Rebase conflict resolution failed: {e}")
                 }
             }
@@ -322,7 +321,7 @@ pub fn handle_rebase_only(
     }
 }
 
-fn should_write_complete_checkpoint(final_phase: crate::reducer::event::PipelinePhase) -> bool {
+const fn should_write_complete_checkpoint(final_phase: crate::reducer::event::PipelinePhase) -> bool {
     matches!(final_phase, crate::reducer::event::PipelinePhase::Complete)
 }
 

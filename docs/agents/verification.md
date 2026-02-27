@@ -15,11 +15,22 @@ rg -n -U --pcre2 '(?m)^\s*#\s*!?\[\s*(?:(?:allow|expect)\s*\(|cfg_attr\s*\((?:[^
 # Format check
 cargo fmt --all --check
 
-# Lint main crate
-cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
+# Lint main crate (all targets: lib, tests, benchmarks, examples)
+# Note: Enforces clippy::all, clippy::pedantic, clippy::nursery
+# via #![deny(...)] attributes in lib.rs and main.rs
+# (clippy::cargo is not enabled as it flags ecosystem-level dependency conflicts)
+cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
 
 # Lint integration tests
+# Note: Enforces clippy::all, clippy::pedantic, clippy::nursery
+# via #![deny(...)] attributes in tests/integration_tests/main.rs and tests/system_tests/main.rs
+# (clippy::cargo is not enabled as it flags ecosystem-level dependency conflicts)
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
+
+# Lint test helpers
+# Enforces clippy::all, clippy::pedantic, clippy::nursery
+# via #![deny(...)] attributes in test-helpers/src/lib.rs
+cargo clippy -p test-helpers --all-targets -- -D warnings
 
 # Unit tests
 cargo test -p ralph-workflow --lib --all-features

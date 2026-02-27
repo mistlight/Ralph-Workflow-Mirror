@@ -8,7 +8,6 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,15 +25,15 @@ struct Fixture {
     timer: Timer,
     repo_root: PathBuf,
     run_log_context: crate::logging::RunLogContext,
-    cloud_config: CloudConfig,
+    cloud: CloudConfig,
 }
 
 impl Fixture {
-    fn new(cloud_config: CloudConfig) -> Self {
-        Self::new_with_executor(cloud_config, Arc::new(MockProcessExecutor::new()))
+    fn new(cloud: CloudConfig) -> Self {
+        Self::new_with_executor(cloud, Arc::new(MockProcessExecutor::new()))
     }
 
-    fn new_with_executor(cloud_config: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
+    fn new_with_executor(cloud: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
         let workspace = MemoryWorkspace::new_test();
         let workspace_arc = Arc::new(workspace.clone()) as Arc<dyn crate::workspace::Workspace>;
         let colors = Colors { enabled: false };
@@ -57,7 +56,7 @@ impl Fixture {
             timer,
             repo_root,
             run_log_context,
-            cloud_config,
+            cloud,
         }
     }
 
@@ -82,14 +81,14 @@ impl Fixture {
             workspace_arc: Arc::clone(&self.workspace_arc),
             run_log_context: &self.run_log_context,
             cloud_reporter: None,
-            cloud_config: &self.cloud_config,
+            cloud: &self.cloud,
         }
     }
 }
 
 #[test]
 fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -111,19 +110,15 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud_config);
-    let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let _ = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should succeed with mock executor");
+    let mut fixture = Fixture::new(cloud);
+    let ctx = fixture.ctx();
+    let _ = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     let calls = fixture.executor.execute_calls_for("git");
     assert_eq!(calls.len(), 1);
@@ -141,14 +136,13 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
     assert!(args.contains(&"origin".to_string()));
     assert!(
         args.iter().any(|a| a.contains("refs/heads/main")),
-        "expected refspec containing 'refs/heads/main', got {:?}",
-        args
+        "expected refspec containing 'refs/heads/main', got {args:?}"
     );
 }
 
 #[test]
 fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -169,19 +163,15 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud_config);
-    let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let _ = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should succeed with mock executor");
+    let mut fixture = Fixture::new(cloud);
+    let ctx = fixture.ctx();
+    let _ = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     let calls = fixture.executor.execute_calls_for("git");
     assert_eq!(calls.len(), 1);
@@ -194,7 +184,7 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
 
 #[test]
 fn test_push_to_remote_emits_ui_event_on_success() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -213,19 +203,15 @@ fn test_push_to_remote_emits_ui_event_on_success() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud_config);
-    let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let result = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should run");
+    let mut fixture = Fixture::new(cloud);
+    let ctx = fixture.ctx();
+    let result = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     assert!(
         result.ui_events.iter().any(|e| matches!(
@@ -242,7 +228,7 @@ fn test_push_to_remote_emits_ui_event_on_success() {
 
 #[test]
 fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         api_token: Some("secret".to_string()),
@@ -265,19 +251,15 @@ fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
         "git",
         "HTTP 401: Bearer SECRET_TOKEN https://user:pass@example.com?access_token=abc",
     ));
-    let mut fixture = Fixture::new_with_executor(cloud_config, executor);
-    let mut ctx = fixture.ctx();
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let result = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should run");
+    let mut fixture = Fixture::new_with_executor(cloud, executor);
+    let ctx = fixture.ctx();
+    let result = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     let mut saw = false;
     for e in &result.ui_events {

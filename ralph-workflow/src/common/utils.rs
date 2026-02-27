@@ -179,6 +179,7 @@ pub fn format_argv_for_log(argv: &[String]) -> String {
 /// assert_eq!(truncate_text("hello world", 8), "hello...");
 /// assert_eq!(truncate_text("short", 10), "short");
 /// ```
+#[must_use]
 pub fn truncate_text(text: &str, limit: usize) -> String {
     // Handle edge case where limit is too small for even "..."
     if limit <= 3 {

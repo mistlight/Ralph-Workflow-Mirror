@@ -101,9 +101,9 @@
 //! ## Unit Tests
 //!
 //! - **Pure reducer**: `reduce()` function has no side effects, 100% testable
-//! - **State transitions**: Each event → state transition tested in state_reduction.rs tests
-//! - **Agent chain**: Fallback logic tested via AgentChainState methods
-//! - **Error classification**: All error kinds tested in fault_tolerant_executor.rs
+//! - **State transitions**: Each event → state transition tested in `state_reduction.rs` tests
+//! - **Agent chain**: Fallback logic tested via `AgentChainState` methods
+//! - **Error classification**: All error kinds tested in `fault_tolerant_executor.rs`
 //!
 //! ## Integration Tests
 //!

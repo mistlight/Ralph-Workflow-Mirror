@@ -42,8 +42,7 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::CleanupPlanningXml { iteration } if iteration == pass),
-        "Retry should re-clean plan.xml before reinvoking agent, got {:?}",
-        effect
+        "Retry should re-clean plan.xml before reinvoking agent, got {effect:?}"
     );
 }
 
@@ -84,8 +83,7 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::CleanupDevelopmentXml { iteration: i } if i == iteration),
-        "Retry should re-clean development_result.xml before reinvoking agent, got {:?}",
-        effect
+        "Retry should re-clean development_result.xml before reinvoking agent, got {effect:?}"
     );
 }
 
@@ -126,8 +124,7 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::CleanupReviewIssuesXml { pass: p } if p == pass),
-        "Retry should re-clean issues.xml before reinvoking agent, got {:?}",
-        effect
+        "Retry should re-clean issues.xml before reinvoking agent, got {effect:?}"
     );
 }
 
@@ -168,8 +165,7 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::CleanupFixResultXml { pass: p } if p == pass),
-        "Retry should re-clean fix_result.xml before reinvoking agent, got {:?}",
-        effect
+        "Retry should re-clean fix_result.xml before reinvoking agent, got {effect:?}"
     );
 }
 
@@ -211,7 +207,6 @@ fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::CleanupCommitXml),
-        "Retry should re-clean commit_message.xml before reinvoking agent, got {:?}",
-        effect
+        "Retry should re-clean commit_message.xml before reinvoking agent, got {effect:?}"
     );
 }

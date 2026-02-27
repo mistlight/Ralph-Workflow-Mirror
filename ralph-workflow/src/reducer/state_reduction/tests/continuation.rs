@@ -4,6 +4,7 @@
 // and continuation state management during development iterations.
 
 use super::*;
+use crate::reducer::{determine_next_effect, effect::Effect};
 
 #[test]
 fn test_continuation_triggered_updates_state() {
@@ -359,6 +360,13 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
         state.continuation.continuation_attempt, 0,
         "Continuation attempt should be reset after iteration completion"
     );
+    // Orchestration should continue commit flow, possibly cleaning context first.
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::CheckCommitDiff)
+            || matches!(effect, Effect::CleanupContinuationContext),
+        "Should proceed with commit flow after iteration completion; got {effect:?}"
+    );
 }
 
 #[test]
@@ -375,7 +383,7 @@ fn test_continuation_budget_with_missing_config_key() {
         2,  // max_same_agent_retries
     );
 
-    let state = PipelineState::initial_with_continuation(1, 0, continuation);
+    let state = PipelineState::initial_with_continuation(1, 0, &continuation);
 
     // Verify default is applied correctly
     assert_eq!(
@@ -436,15 +444,15 @@ fn test_continuation_budget_with_missing_config_key() {
 
 /// Test that continuation cap is enforced at the reducer level.
 ///
-/// This test verifies that when the defensive check in trigger_continuation fires,
-/// the counter does not increment and continue_pending is cleared.
-/// The orchestration layer detects exhaustion via OutcomeApplied's (attempt + 1 >= max) check.
+/// This test verifies that when the defensive check in `trigger_continuation` fires,
+/// the counter does not increment and `continue_pending` is cleared.
+/// The orchestration layer detects exhaustion via `OutcomeApplied`'s (attempt + 1 >= max) check.
 #[test]
 fn test_orchestration_fires_budget_exhausted_at_cap() {
     use crate::reducer::state::DevelopmentStatus;
 
     let continuation = ContinuationState::with_limits(10, 3, 2);
-    let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+    let mut state = PipelineState::initial_with_continuation(1, 0, &continuation);
     state.phase = PipelinePhase::Development;
 
     // Simulate 2 continuation triggers (attempts 1, 2)
@@ -494,10 +502,10 @@ fn test_orchestration_fires_budget_exhausted_at_cap() {
     // ContinuationTriggered, preventing the defensive check from ever being reached.
 }
 
-/// Test that trigger_continuation defensive check prevents counter increment at boundary.
+/// Test that `trigger_continuation` defensive check prevents counter increment at boundary.
 ///
 /// This is a more focused test of the fix for the infinite loop bug (wt-39). It verifies
-/// that when trigger_continuation is called at the boundary (attempt 2 with max 3), the
+/// that when `trigger_continuation` is called at the boundary (attempt 2 with max 3), the
 /// defensive check prevents the counter from incrementing to 3, keeping it at 2 instead.
 ///
 /// # Why This Test Matters
@@ -519,7 +527,7 @@ fn test_trigger_continuation_at_boundary_does_not_increment() {
     use crate::reducer::state::DevelopmentStatus;
 
     let continuation = ContinuationState::with_limits(10, 3, 2);
-    let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+    let mut state = PipelineState::initial_with_continuation(1, 0, &continuation);
     state.phase = PipelinePhase::Development;
 
     // Simulate 2 continuation triggers (attempts 1, 2)
@@ -562,7 +570,7 @@ fn test_trigger_continuation_at_boundary_does_not_increment() {
     assert!(!state.continuation.context_write_pending);
 }
 
-/// Test that OutcomeApplied correctly detects exhaustion before triggering continuation.
+/// Test that `OutcomeApplied` correctly detects exhaustion before triggering continuation.
 ///
 /// This test verifies the orchestration-level exhaustion detection that prevents the
 /// infinite loop bug (wt-39). The `OutcomeApplied` event handler checks if the NEXT
@@ -586,7 +594,7 @@ fn test_outcome_applied_exhausts_before_triggering_third_continuation() {
     use crate::reducer::state::{DevelopmentStatus, DevelopmentValidatedOutcome};
 
     let continuation = ContinuationState::with_limits(10, 3, 2);
-    let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+    let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
     state.phase = PipelinePhase::Development;
     state = reduce(state, PipelineEvent::development_iteration_started(0));
 

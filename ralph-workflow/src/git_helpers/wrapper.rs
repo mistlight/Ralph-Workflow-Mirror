@@ -240,6 +240,10 @@ pub fn disable_git_wrapper(helpers: &mut GitHelpers) {
 }
 
 /// Start agent phase (creates marker file, installs hooks, enables wrapper).
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
     File::create(".no_agent_commit")?;
     install_hooks()?;
@@ -249,18 +253,16 @@ pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
 
 /// End agent phase (removes marker file).
 pub fn end_agent_phase() {
-    let repo_root = match crate::git_helpers::get_repo_root() {
-        Ok(root) => root,
-        Err(_) => return,
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
     };
     let marker_path = repo_root.join(".no_agent_commit");
     let _ = fs::remove_file(marker_path);
 }
 
 fn cleanup_git_wrapper_dir_silent() {
-    let repo_root = match crate::git_helpers::get_repo_root() {
-        Ok(root) => root,
-        Err(_) => return,
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
     };
     let track_file = repo_root.join(WRAPPER_DIR_TRACK_FILE);
     let wrapper_dir = match fs::read_to_string(&track_file) {
@@ -285,12 +287,11 @@ pub fn cleanup_agent_phase_silent() {
 /// Cleanup generated files silently without workspace.
 ///
 /// This is a minimal implementation for cleanup in signal handlers where
-/// workspace context is not available. Uses std::fs directly which is
+/// workspace context is not available. Uses `std::fs` directly which is
 /// acceptable for this emergency cleanup scenario.
 fn cleanup_generated_files_silent() {
-    let repo_root = match crate::git_helpers::get_repo_root() {
-        Ok(root) => root,
-        Err(_) => return,
+    let Ok(repo_root) = crate::git_helpers::get_repo_root() else {
+        return;
     };
     for file in crate::files::io::agent_files::GENERATED_FILES {
         let absolute_path = repo_root.join(file);
@@ -299,6 +300,10 @@ fn cleanup_generated_files_silent() {
 }
 
 /// Clean up orphaned .`no_agent_commit` marker.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
     let repo_root = get_repo_root()?;
     let marker_path = repo_root.join(".no_agent_commit");
@@ -329,6 +334,10 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success, or an error if the file cannot be created.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn create_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     workspace.write(Path::new(MARKER_FILE), "")
 }
@@ -345,6 +354,10 @@ pub fn create_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()>
 /// # Returns
 ///
 /// Returns `Ok(())` on success (including if file doesn't exist).
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn remove_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     workspace.remove_if_exists(Path::new(MARKER_FILE))
 }
@@ -378,6 +391,10 @@ pub fn marker_exists_with_workspace(workspace: &dyn Workspace) -> bool {
 /// # Returns
 ///
 /// Returns `Ok(())` on success.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn cleanup_orphaned_marker_with_workspace(
     workspace: &dyn Workspace,
     logger: &Logger,

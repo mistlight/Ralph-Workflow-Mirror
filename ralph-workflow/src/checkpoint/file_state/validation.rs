@@ -11,7 +11,7 @@ impl FileSystemState {
 
         // Validate each tracked file
         for (path, snapshot) in &self.files {
-            if let Err(e) = self.validate_file_with_workspace(workspace, path, snapshot) {
+            if let Err(e) = Self::validate_file_with_workspace(workspace, path, snapshot) {
                 errors.push(e);
             }
         }
@@ -28,7 +28,6 @@ impl FileSystemState {
 
     /// Validate a single file against its snapshot using a workspace.
     fn validate_file_with_workspace(
-        &self,
         workspace: &dyn Workspace,
         path: &str,
         snapshot: &FileSnapshot,

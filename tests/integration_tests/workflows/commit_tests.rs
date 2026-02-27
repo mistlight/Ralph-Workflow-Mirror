@@ -21,6 +21,7 @@
 
 use std::path::PathBuf;
 
+use ralph_workflow::app::effect::AppEffect;
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 
 use crate::common::{
@@ -29,14 +30,14 @@ use crate::common::{
 use crate::test_timeout::with_default_timeout;
 
 /// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test the Ralph workflow integration
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 // ============================================================================
 // Commit Behavior Tests
@@ -168,7 +169,6 @@ fn ralph_apply_commit_creates_commit() {
         run_ralph_cli_with_handler(&["--apply-commit"], executor, config, &mut handler).unwrap();
 
         // Verify the commit effect was triggered
-        use ralph_workflow::app::effect::AppEffect;
         let captured = handler.captured();
         assert!(
             captured

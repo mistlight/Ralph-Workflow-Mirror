@@ -69,19 +69,16 @@ fn test_ansi_stripping_no_spam() {
 
         assert!(
             newline_count <= 1,
-            "Expected <= 1 newline in ANSI-stripped output, found {}. \
+            "Expected <= 1 newline in ANSI-stripped output, found {newline_count}. \
              This indicates the Full mode pattern emits per-delta newlines that become \
              visible when ANSI cursor control is stripped.\n\
-             Stripped output:\n{}",
-            newline_count,
-            stripped
+             Stripped output:\n{stripped}"
         );
 
         // Verify content is present
         assert!(
             stripped.contains("Hello World!"),
-            "Content should be present. Stripped output:\n{}",
-            stripped
+            "Content should be present. Stripped output:\n{stripped}"
         );
     });
 }

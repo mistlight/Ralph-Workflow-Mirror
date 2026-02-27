@@ -207,6 +207,7 @@ impl FallbackConfig {
     /// Uses the formula: min(base * multiplier^cycle, `max_backoff`)
     ///
     /// Uses integer arithmetic to avoid floating-point casting issues.
+    #[must_use]
     pub fn calculate_backoff(&self, cycle: u32) -> u64 {
         // For common multiplier values, use direct integer computation
         // to avoid f64->u64 conversion and associated clippy lints.
@@ -265,6 +266,7 @@ impl FallbackConfig {
     }
 
     /// Get fallback agents for a role.
+    #[must_use]
     pub fn get_fallbacks(&self, role: AgentRole) -> &[String] {
         match role {
             AgentRole::Developer => &self.developer,
@@ -299,6 +301,7 @@ impl FallbackConfig {
     }
 
     /// Check if fallback is configured for a role.
+    #[must_use]
     pub fn has_fallbacks(&self, role: AgentRole) -> bool {
         !self.get_fallbacks(role).is_empty()
     }
@@ -314,6 +317,7 @@ impl FallbackConfig {
     }
 
     /// Check if provider-level fallback is configured for an agent.
+    #[must_use]
     pub fn has_provider_fallbacks(&self, agent_name: &str) -> bool {
         self.provider_fallback
             .get(agent_name)

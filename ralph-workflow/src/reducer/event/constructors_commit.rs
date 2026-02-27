@@ -2,159 +2,189 @@
 
 impl PipelineEvent {
     // Rebase constructors
-    /// Create a RebaseStarted event.
-    pub fn rebase_started(phase: RebasePhase, target_branch: String) -> Self {
+    /// Create a `RebaseStarted` event.
+    #[must_use] 
+    pub const fn rebase_started(phase: RebasePhase, target_branch: String) -> Self {
         Self::Rebase(RebaseEvent::Started {
             phase,
             target_branch,
         })
     }
 
-    /// Create a RebaseConflictDetected event.
-    pub fn rebase_conflict_detected(files: Vec<PathBuf>) -> Self {
+    /// Create a `RebaseConflictDetected` event.
+    #[must_use] 
+    pub const fn rebase_conflict_detected(files: Vec<PathBuf>) -> Self {
         Self::Rebase(RebaseEvent::ConflictDetected { files })
     }
 
-    /// Create a RebaseConflictResolved event.
-    pub fn rebase_conflict_resolved(files: Vec<PathBuf>) -> Self {
+    /// Create a `RebaseConflictResolved` event.
+    #[must_use] 
+    pub const fn rebase_conflict_resolved(files: Vec<PathBuf>) -> Self {
         Self::Rebase(RebaseEvent::ConflictResolved { files })
     }
 
-    /// Create a RebaseSucceeded event.
-    pub fn rebase_succeeded(phase: RebasePhase, new_head: String) -> Self {
+    /// Create a `RebaseSucceeded` event.
+    #[must_use] 
+    pub const fn rebase_succeeded(phase: RebasePhase, new_head: String) -> Self {
         Self::Rebase(RebaseEvent::Succeeded { phase, new_head })
     }
 
-    /// Create a RebaseFailed event.
-    pub fn rebase_failed(phase: RebasePhase, reason: String) -> Self {
+    /// Create a `RebaseFailed` event.
+    #[must_use] 
+    pub const fn rebase_failed(phase: RebasePhase, reason: String) -> Self {
         Self::Rebase(RebaseEvent::Failed { phase, reason })
     }
 
-    /// Create a RebaseAborted event.
-    pub fn rebase_aborted(phase: RebasePhase, restored_to: String) -> Self {
+    /// Create a `RebaseAborted` event.
+    #[must_use] 
+    pub const fn rebase_aborted(phase: RebasePhase, restored_to: String) -> Self {
         Self::Rebase(RebaseEvent::Aborted { phase, restored_to })
     }
 
-    /// Create a RebaseSkipped event.
-    pub fn rebase_skipped(phase: RebasePhase, reason: String) -> Self {
+    /// Create a `RebaseSkipped` event.
+    #[must_use] 
+    pub const fn rebase_skipped(phase: RebasePhase, reason: String) -> Self {
         Self::Rebase(RebaseEvent::Skipped { phase, reason })
     }
 
     // Commit constructors
-    /// Create a CommitGenerationStarted event.
-    pub fn commit_generation_started() -> Self {
+    /// Create a `CommitGenerationStarted` event.
+    #[must_use] 
+    pub const fn commit_generation_started() -> Self {
         Self::Commit(CommitEvent::GenerationStarted)
     }
 
-    /// Create a CommitDiffPrepared event.
-    pub fn commit_diff_prepared(empty: bool, content_id_sha256: String) -> Self {
+    /// Create a `CommitDiffPrepared` event.
+    #[must_use] 
+    pub const fn commit_diff_prepared(empty: bool, content_id_sha256: String) -> Self {
         Self::Commit(CommitEvent::DiffPrepared {
             empty,
             content_id_sha256,
         })
     }
 
-    /// Create a CommitDiffFailed event.
-    pub fn commit_diff_failed(error: String) -> Self {
+    /// Create a `CommitDiffFailed` event.
+    #[must_use] 
+    pub const fn commit_diff_failed(error: String) -> Self {
         Self::Commit(CommitEvent::DiffFailed { error })
     }
 
-    pub fn commit_diff_invalidated(reason: String) -> Self {
+    #[must_use] 
+    pub const fn commit_diff_invalidated(reason: String) -> Self {
         Self::Commit(CommitEvent::DiffInvalidated { reason })
     }
 
-    /// Create a CommitPromptPrepared event.
-    pub fn commit_prompt_prepared(attempt: u32) -> Self {
+    /// Create a `CommitPromptPrepared` event.
+    #[must_use] 
+    pub const fn commit_prompt_prepared(attempt: u32) -> Self {
         Self::Commit(CommitEvent::PromptPrepared { attempt })
     }
 
-    /// Create a CommitAgentInvoked event.
-    pub fn commit_agent_invoked(attempt: u32) -> Self {
+    /// Create a `CommitAgentInvoked` event.
+    #[must_use] 
+    pub const fn commit_agent_invoked(attempt: u32) -> Self {
         Self::Commit(CommitEvent::AgentInvoked { attempt })
     }
 
-    /// Create a CommitXmlExtracted event.
-    pub fn commit_xml_extracted(attempt: u32) -> Self {
+    /// Create a `CommitXmlExtracted` event.
+    #[must_use] 
+    pub const fn commit_xml_extracted(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlExtracted { attempt })
     }
 
-    /// Create a CommitXmlMissing event.
-    pub fn commit_xml_missing(attempt: u32) -> Self {
+    /// Create a `CommitXmlMissing` event.
+    #[must_use] 
+    pub const fn commit_xml_missing(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlMissing { attempt })
     }
 
-    /// Create a CommitXmlValidated event.
-    pub fn commit_xml_validated(message: String, attempt: u32) -> Self {
+    /// Create a `CommitXmlValidated` event.
+    #[must_use] 
+    pub const fn commit_xml_validated(message: String, attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlValidated { message, attempt })
     }
 
-    /// Create a CommitXmlValidationFailed event.
-    pub fn commit_xml_validation_failed(reason: String, attempt: u32) -> Self {
+    /// Create a `CommitXmlValidationFailed` event.
+    #[must_use] 
+    pub const fn commit_xml_validation_failed(reason: String, attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlValidationFailed { reason, attempt })
     }
 
-    /// Create a CommitXmlArchived event.
-    pub fn commit_xml_archived(attempt: u32) -> Self {
+    /// Create a `CommitXmlArchived` event.
+    #[must_use] 
+    pub const fn commit_xml_archived(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlArchived { attempt })
     }
 
-    pub fn commit_xml_cleaned(attempt: u32) -> Self {
+    #[must_use] 
+    pub const fn commit_xml_cleaned(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlCleaned { attempt })
     }
 
-    /// Create a CommitMessageGenerated event.
-    pub fn commit_message_generated(message: String, attempt: u32) -> Self {
+    /// Create a `CommitMessageGenerated` event.
+    #[must_use] 
+    pub const fn commit_message_generated(message: String, attempt: u32) -> Self {
         Self::Commit(CommitEvent::MessageGenerated { message, attempt })
     }
 
-    /// Create a CommitMessageValidationFailed event.
-    pub fn commit_message_validation_failed(reason: String, attempt: u32) -> Self {
+    /// Create a `CommitMessageValidationFailed` event.
+    #[must_use] 
+    pub const fn commit_message_validation_failed(reason: String, attempt: u32) -> Self {
         Self::Commit(CommitEvent::MessageValidationFailed { reason, attempt })
     }
 
-    /// Create a CommitCreated event.
-    pub fn commit_created(hash: String, message: String) -> Self {
+    /// Create a `CommitCreated` event.
+    #[must_use] 
+    pub const fn commit_created(hash: String, message: String) -> Self {
         Self::Commit(CommitEvent::Created { hash, message })
     }
 
-    /// Create a CommitGenerationFailed event.
-    pub fn commit_generation_failed(reason: String) -> Self {
+    /// Create a `CommitGenerationFailed` event.
+    #[must_use] 
+    pub const fn commit_generation_failed(reason: String) -> Self {
         Self::Commit(CommitEvent::GenerationFailed { reason })
     }
 
-    /// Create a CommitSkipped event.
-    pub fn commit_skipped(reason: String) -> Self {
+    /// Create a `CommitSkipped` event.
+    #[must_use] 
+    pub const fn commit_skipped(reason: String) -> Self {
         Self::Commit(CommitEvent::Skipped { reason })
     }
 
-    /// Create a PreTerminationSafetyCheckPassed event.
-    pub fn pre_termination_safety_check_passed() -> Self {
+    /// Create a `PreTerminationSafetyCheckPassed` event.
+    #[must_use] 
+    pub const fn pre_termination_safety_check_passed() -> Self {
         Self::Commit(CommitEvent::PreTerminationSafetyCheckPassed)
     }
 
-    /// Create a PreTerminationUncommittedChangesDetected event.
-    pub fn pre_termination_uncommitted_changes_detected(file_count: usize) -> Self {
+    /// Create a `PreTerminationUncommittedChangesDetected` event.
+    #[must_use] 
+    pub const fn pre_termination_uncommitted_changes_detected(file_count: usize) -> Self {
         Self::Commit(CommitEvent::PreTerminationUncommittedChangesDetected { file_count })
     }
 
     // Miscellaneous constructors
-    /// Create a ContextCleaned event.
-    pub fn context_cleaned() -> Self {
+    /// Create a `ContextCleaned` event.
+    #[must_use] 
+    pub const fn context_cleaned() -> Self {
         Self::ContextCleaned
     }
 
-    /// Create a CheckpointSaved event.
-    pub fn checkpoint_saved(trigger: CheckpointTrigger) -> Self {
+    /// Create a `CheckpointSaved` event.
+    #[must_use] 
+    pub const fn checkpoint_saved(trigger: CheckpointTrigger) -> Self {
         Self::CheckpointSaved { trigger }
     }
 
-    /// Create a FinalizingStarted event.
-    pub fn finalizing_started() -> Self {
+    /// Create a `FinalizingStarted` event.
+    #[must_use] 
+    pub const fn finalizing_started() -> Self {
         Self::FinalizingStarted
     }
 
-    /// Create a PromptPermissionsRestored event.
-    pub fn prompt_permissions_restored() -> Self {
+    /// Create a `PromptPermissionsRestored` event.
+    #[must_use] 
+    pub const fn prompt_permissions_restored() -> Self {
         Self::PromptPermissionsRestored
     }
 }

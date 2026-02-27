@@ -45,7 +45,7 @@ impl PipelineState {
 
         let cloud_state = checkpoint.cloud_state.take();
         let (
-            cloud_config,
+            cloud,
             pending_push_commit,
             git_auth_configured,
             pr_created,
@@ -56,33 +56,8 @@ impl PipelineState {
             last_push_error,
             unpushed_commits,
             last_pushed_commit,
-        ) = if let Some(cs) = cloud_state.as_ref() {
-            // Preserve checkpoint-safe cloud state for correct resume semantics.
-            // Note: git auth configuration can be re-run safely; however, restoring
-            // `git_auth_configured=true` for SSH key paths would skip the env-var
-            // setup in a new process. Reset it in that case.
-            let git_auth_configured = match &cs.cloud_config.git_remote.auth_method {
-                crate::config::GitAuthStateMethod::SshKey { key_path } if key_path.is_some() => {
-                    false
-                }
-                _ => cs.git_auth_configured,
-            };
-
-            (
-                cs.cloud_config.clone(),
-                cs.pending_push_commit.clone(),
-                git_auth_configured,
-                cs.pr_created,
-                cs.pr_url.clone(),
-                cs.pr_number,
-                cs.push_count,
-                cs.push_retry_count,
-                cs.last_push_error.clone(),
-                cs.unpushed_commits.clone(),
-                cs.last_pushed_commit.clone(),
-            )
-        } else {
-            (
+        ) = cloud_state.as_ref().map_or_else(
+            || (
                 crate::config::CloudStateConfig::disabled(),
                 None,
                 false,
@@ -94,10 +69,36 @@ impl PipelineState {
                 None,
                 Vec::new(),
                 None,
-            )
-        };
+            ),
+            |cs| {
+                // Preserve checkpoint-safe cloud state for correct resume semantics.
+                // Note: git auth configuration can be re-run safely; however, restoring
+                // `git_auth_configured=true` for SSH key paths would skip the env-var
+                // setup in a new process. Reset it in that case.
+                let git_auth_configured = match &cs.cloud.git_remote.auth_method {
+                    crate::config::GitAuthStateMethod::SshKey { key_path } if key_path.is_some() => {
+                        false
+                    }
+                    _ => cs.git_auth_configured,
+                };
 
-        let mut state = PipelineState {
+                (
+                    cs.cloud.clone(),
+                    cs.pending_push_commit.clone(),
+                    git_auth_configured,
+                    cs.pr_created,
+                    cs.pr_url.clone(),
+                    cs.pr_number,
+                    cs.push_count,
+                    cs.push_retry_count,
+                    cs.last_push_error.clone(),
+                    cs.unpushed_commits.clone(),
+                    cs.last_pushed_commit.clone(),
+                )
+            }
+        );
+
+        let mut state = Self {
             phase: map_checkpoint_phase(checkpoint.phase),
             previous_phase: None,
             // Restore iteration/pass counters from checkpoint.
@@ -191,7 +192,7 @@ impl PipelineState {
             termination_resume_phase: None,
             pre_termination_commit_checked: false,
             // Cloud mode fields (checkpoint-safe, credential-free)
-            cloud_config,
+            cloud,
             pending_push_commit,
             git_auth_configured,
             pr_created,
@@ -221,23 +222,21 @@ impl From<PipelineCheckpoint> for PipelineState {
         // `From` cannot accept configuration. Apply a conservative hard cap so
         // legacy checkpoints cannot load arbitrarily large execution history into memory.
         let limit = crate::config::Config::default().execution_history_limit;
-        PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, limit)
+        Self::from_checkpoint_with_execution_history_limit(checkpoint, limit)
     }
 }
 
-fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
+const fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
     match phase {
-        CheckpointPhase::Rebase => PipelinePhase::Planning,
-        CheckpointPhase::Planning => PipelinePhase::Planning,
+        CheckpointPhase::Rebase | CheckpointPhase::Planning | CheckpointPhase::PreRebase => {
+            PipelinePhase::Planning
+        }
         CheckpointPhase::Development => PipelinePhase::Development,
         CheckpointPhase::Review => PipelinePhase::Review,
-        CheckpointPhase::CommitMessage => PipelinePhase::CommitMessage,
+        CheckpointPhase::CommitMessage | CheckpointPhase::PostRebase | CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
         CheckpointPhase::FinalValidation => PipelinePhase::FinalValidation,
         CheckpointPhase::Complete => PipelinePhase::Complete,
-        CheckpointPhase::PreRebase => PipelinePhase::Planning,
         CheckpointPhase::PreRebaseConflict => PipelinePhase::Planning,
-        CheckpointPhase::PostRebase => PipelinePhase::CommitMessage,
-        CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
         CheckpointPhase::AwaitingDevFix => PipelinePhase::AwaitingDevFix,
         CheckpointPhase::Interrupted => PipelinePhase::Interrupted,
     }
@@ -246,20 +245,15 @@ fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
 fn map_checkpoint_rebase_state(rebase_state: &CheckpointRebaseState) -> RebaseState {
     match rebase_state {
         CheckpointRebaseState::NotStarted => RebaseState::NotStarted,
-        CheckpointRebaseState::PreRebaseInProgress { upstream_branch } => RebaseState::InProgress {
-            original_head: "HEAD".to_string(),
-            target_branch: upstream_branch.clone(),
-        },
-        CheckpointRebaseState::PreRebaseCompleted { commit_oid } => RebaseState::Completed {
-            new_head: commit_oid.clone(),
-        },
-        CheckpointRebaseState::PostRebaseInProgress { upstream_branch } => {
+        CheckpointRebaseState::PreRebaseInProgress { upstream_branch }
+        | CheckpointRebaseState::PostRebaseInProgress { upstream_branch } => {
             RebaseState::InProgress {
                 original_head: "HEAD".to_string(),
                 target_branch: upstream_branch.clone(),
             }
         }
-        CheckpointRebaseState::PostRebaseCompleted { commit_oid } => RebaseState::Completed {
+        CheckpointRebaseState::PreRebaseCompleted { commit_oid }
+        | CheckpointRebaseState::PostRebaseCompleted { commit_oid } => RebaseState::Completed {
             new_head: commit_oid.clone(),
         },
         CheckpointRebaseState::HasConflicts { files } => RebaseState::Conflicted {
@@ -508,7 +502,7 @@ mod tests {
             .expect("checkpoint should build");
 
         checkpoint.cloud_state = Some(CloudCheckpointState {
-            cloud_config: CloudStateConfig {
+            cloud: CloudStateConfig {
                 enabled: true,
                 api_url: Some("https://api.example.com".to_string()),
                 run_id: Some("run_123".to_string()),
@@ -539,7 +533,7 @@ mod tests {
 
         let state = PipelineState::from_checkpoint_with_execution_history_limit(checkpoint, 1000);
 
-        assert!(state.cloud_config.enabled);
+        assert!(state.cloud.enabled);
         assert_eq!(state.pending_push_commit.as_deref(), Some("abc123"));
         assert!(state.git_auth_configured);
         assert!(state.pr_created);

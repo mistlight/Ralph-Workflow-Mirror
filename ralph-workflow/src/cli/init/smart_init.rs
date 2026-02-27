@@ -17,6 +17,10 @@
 ///
 /// Returns `Ok(true)` if the flag was handled (program should exit after),
 /// or `Ok(false)` if not handled, or an error if initialization failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_smart_init_with<R: ConfigEnvironment>(
     template_arg: Option<&str>,
     force: bool,
@@ -40,6 +44,10 @@ pub fn handle_smart_init_with<R: ConfigEnvironment>(
 /// Handle the smart `--init` flag using the default path resolver.
 ///
 /// This is a convenience wrapper that uses [`RealConfigEnvironment`] internally.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_smart_init(
     template_arg: Option<&str>,
     force: bool,

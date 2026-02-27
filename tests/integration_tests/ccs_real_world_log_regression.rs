@@ -1,21 +1,21 @@
 //! Real-world log regression test for CCS streaming spam (all delta types).
 //!
-//! This test parses the full example_log.log (captured from production CCS usage)
+//! This test parses the full `example_log.log` (captured from production CCS usage)
 //! and verifies that repeated prefixed lines do not occur for ANY delta type in
 //! non-TTY modes (text deltas, thinking deltas, tool input deltas).
 //!
-//! Unlike codex_reasoning_spam_regression.rs which only checks for "Thinking:" spam,
+//! Unlike `codex_reasoning_spam_regression.rs` which only checks for "Thinking:" spam,
 //! this test validates that ALL streaming delta types are properly accumulated and
 //! flushed once at appropriate boundaries, not spammed per-delta.
 //!
-//! The example_log.log contains:
-//! - 9,515 thinking_delta events
-//! - 818 text_delta events
-//! - 2,263 input_json_delta (tool input) events
+//! The `example_log.log` contains:
+//! - 9,515 `thinking_delta` events
+//! - 818 `text_delta` events
+//! - 2,263 `input_json_delta` (tool input) events
 //!
 //! Expected behavior: In None/Basic modes, these thousands of deltas should NOT
 //! produce thousands of output lines. Instead, content should be accumulated and
-//! flushed at message boundaries (message_stop, content_block_stop).
+//! flushed at message boundaries (`message_stop`, `content_block_stop`).
 //!
 //! # Integration Test Style Guide
 //!

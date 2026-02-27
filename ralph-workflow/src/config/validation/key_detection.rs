@@ -3,17 +3,20 @@
 //! This module walks the parsed TOML structure to detect keys that don't
 //! match the expected configuration schema.
 
-use super::keys::*;
+use super::keys::{
+    DEPRECATED_GENERAL_KEYS, VALID_AGENT_CHAIN_KEYS, VALID_AGENT_CONFIG_KEYS,
+    VALID_CCS_ALIAS_CONFIG_KEYS, VALID_CCS_KEYS, VALID_GENERAL_KEYS,
+};
 
-/// Type alias for a list of (key_name, location) pairs.
+/// Type alias for a list of (`key_name`, location) pairs.
 /// Used for tracking unknown and deprecated keys found during validation.
 pub type KeyLocationList = Vec<(String, String)>;
 
 /// Detect unknown keys and deprecated keys in a parsed TOML value.
 ///
 /// Returns a tuple of:
-/// - KeyLocationList for unknown keys
-/// - KeyLocationList for deprecated keys
+/// - `KeyLocationList` for unknown keys
+/// - `KeyLocationList` for deprecated keys
 ///
 /// The location helps identify which section the key is in (e.g., "general.", "agents.claude.").
 pub fn detect_unknown_and_deprecated_keys(
@@ -30,7 +33,7 @@ pub fn detect_unknown_and_deprecated_keys(
                 "general" | "ccs" | "agents" | "ccs_aliases" | "agent_chain" => {
                     // Recursively check subsections
                     let (section_unknown, section_deprecated) =
-                        check_section(key.as_str(), value, &format!("{}.", key));
+                        check_section(key.as_str(), value, &format!("{key}."));
                     unknown.extend(section_unknown);
                     deprecated.extend(section_deprecated);
                 }
@@ -48,8 +51,8 @@ pub fn detect_unknown_and_deprecated_keys(
 /// Check a section for unknown and deprecated keys.
 ///
 /// Returns a tuple of:
-/// - KeyLocationList for unknown keys
-/// - KeyLocationList for deprecated keys
+/// - `KeyLocationList` for unknown keys
+/// - `KeyLocationList` for deprecated keys
 ///
 /// The location includes the section prefix.
 fn check_section(
@@ -91,7 +94,7 @@ fn check_section(
                     if let Some(agent_table) = agent_value.as_table() {
                         for key in agent_table.keys() {
                             if !VALID_AGENT_CONFIG_KEYS.contains(&key.as_str()) {
-                                unknown.push((key.clone(), format!("{}{}.", prefix, agent_name)));
+                                unknown.push((key.clone(), format!("{prefix}{agent_name}.")));
                             }
                         }
                     }
@@ -106,7 +109,7 @@ fn check_section(
                     if let Some(alias_table) = alias_value.as_table() {
                         for key in alias_table.keys() {
                             if !VALID_CCS_ALIAS_CONFIG_KEYS.contains(&key.as_str()) {
-                                unknown.push((key.clone(), format!("{}{}.", prefix, alias_name)));
+                                unknown.push((key.clone(), format!("{prefix}{alias_name}.")));
                             }
                         }
                     }

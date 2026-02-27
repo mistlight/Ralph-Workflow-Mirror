@@ -22,6 +22,7 @@ pub struct DiagnosticReport {
 ///
 /// This function gathers all diagnostic information without printing.
 /// The CLI handler is responsible for formatting and displaying the results.
+#[must_use]
 pub fn run_diagnostics(registry: &AgentRegistry) -> DiagnosticReport {
     let system = SystemInfo::gather();
     let agents = AgentDiagnostics::test(registry);

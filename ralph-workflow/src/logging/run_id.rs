@@ -17,36 +17,40 @@ pub struct RunId(String);
 impl RunId {
     /// Generate a new run ID based on current UTC timestamp.
     ///
-    /// Returns a RunId with format: YYYY-MM-DD_HH-mm-ss.SSSZ
+    /// Returns a `RunId` with format: YYYY-MM-DD_HH-mm-ss.SSSZ
+    #[must_use]
     pub fn new() -> Self {
         let now = Utc::now();
         let base = now.format("%Y-%m-%d_%H-%M-%S%.3fZ").to_string();
         Self(base)
     }
 
-    /// Create a RunId from a string value (for testing).
+    /// Create a `RunId` from a string value (for testing).
     ///
-    /// This is a test-only constructor that allows creating a RunId with
+    /// This is a test-only constructor that allows creating a `RunId` with
     /// a fixed timestamp value for deterministic testing of collision handling.
     ///
     /// # Warning
     ///
-    /// This is intended for testing only. Using a fixed run_id in production
+    /// This is intended for testing only. Using a fixed `run_id` in production
     /// could lead to directory collisions. Always use [`RunId::new`]
     /// or [`RunId::from_checkpoint`] in production code.
+    #[must_use]
     pub fn for_test(id: &str) -> Self {
         Self(id.to_string())
     }
 
-    /// Create a RunId from an existing string (for resume).
+    /// Create a `RunId` from an existing string (for resume).
     ///
     /// This is used when loading a checkpoint to continue using
-    /// the same run_id from the previous session.
+    /// the same `run_id` from the previous session.
+    #[must_use]
     pub fn from_checkpoint(id: &str) -> Self {
         Self(id.to_string())
     }
 
     /// Get the run ID as a string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -60,7 +64,8 @@ impl RunId {
     /// * `counter` - Collision counter (1-99)
     ///
     /// # Returns
-    /// A new RunId with format: YYYY-MM-DD_HH-mm-ss.SSSZ-NN
+    /// A new `RunId` with format: YYYY-MM-DD_HH-mm-ss.SSSZ-NN
+    #[must_use]
     pub fn with_collision_counter(&self, counter: u32) -> Self {
         Self(format!("{}-{:02}", self.0, counter))
     }
@@ -127,7 +132,7 @@ mod tests {
     #[test]
     fn test_run_id_display() {
         let run_id = RunId::new();
-        let displayed = format!("{}", run_id);
+        let displayed = format!("{run_id}");
         assert_eq!(displayed, run_id.as_str());
     }
 

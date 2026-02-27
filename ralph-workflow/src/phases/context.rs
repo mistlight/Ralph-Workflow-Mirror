@@ -30,8 +30,8 @@ use std::path::Path;
 /// When working with phase names (e.g., for log file naming), use **lowercase**
 /// identifiers with underscores for multi-word phases. The canonical phase names are:
 /// - `"planning"` - Planning phase
-/// - `"analysis"` - Analysis sub-phase of development (when role == AgentRole::Analysis)
-/// - `"developer"` - Development phase (when role == AgentRole::Developer)
+/// - `"analysis"` - Analysis sub-phase of development (when role == `AgentRole::Analysis`)
+/// - `"developer"` - Development phase (when role == `AgentRole::Developer`)
 /// - `"reviewer"` - Review phase
 /// - `"commit"` - Commit message generation phase
 /// - `"final_validation"` - Final validation phase
@@ -100,30 +100,30 @@ pub struct PhaseContext<'a> {
     /// Cloud reporter for progress updates (None in CLI mode).
     ///
     /// When cloud mode is disabled, this is None and no cloud reporting occurs.
-    /// When enabled, this is Some(&dyn CloudReporter) for API communication.
+    /// When enabled, this is Some(&dyn `CloudReporter`) for API communication.
     pub cloud_reporter: Option<&'a dyn crate::cloud::CloudReporter>,
     /// Cloud configuration.
     ///
     /// When cloud mode is disabled (enabled=false), all cloud-specific
     /// logic is skipped throughout the pipeline.
-    pub cloud_config: &'a crate::config::types::CloudConfig,
+    pub cloud: &'a crate::config::types::CloudConfig,
 }
 
 impl PhaseContext<'_> {
     /// Record a completed developer iteration.
-    pub fn record_developer_iteration(&mut self) {
+    pub const fn record_developer_iteration(&mut self) {
         self.run_context.record_developer_iteration();
     }
 
     /// Record a completed reviewer pass.
-    pub fn record_reviewer_pass(&mut self) {
+    pub const fn record_reviewer_pass(&mut self) {
         self.run_context.record_reviewer_pass();
     }
 
     /// Capture a prompt in the prompt history.
     ///
     /// This method stores a prompt with a key for later retrieval on resume.
-    /// The key should uniquely identify the prompt (e.g., "development_1", "review_2").
+    /// The key should uniquely identify the prompt (e.g., "`development_1`", "`review_2`").
     ///
     /// # Arguments
     ///
@@ -138,6 +138,7 @@ impl PhaseContext<'_> {
     ///
     /// This is used when building checkpoints to include the prompts
     /// while keeping them in the context for subsequent checkpoint saves.
+    #[must_use]
     pub fn clone_prompt_history(&self) -> std::collections::HashMap<String, String> {
         self.prompt_history.clone()
     }
@@ -148,6 +149,7 @@ impl PhaseContext<'_> {
 /// This function returns the name of the primary commit agent.
 /// If a commit-specific agent is configured, it uses that. Otherwise, it falls back
 /// to using the reviewer chain (since commit generation is typically done after review).
+#[must_use]
 pub fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
     let fallback_config = ctx.registry.fallback_config();
 
@@ -256,7 +258,7 @@ mod tests {
             workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
-            cloud_config: &crate::config::types::CloudConfig::disabled(),
+            cloud: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -301,7 +303,7 @@ mod tests {
             workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
-            cloud_config: &crate::config::types::CloudConfig::disabled(),
+            cloud: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -338,7 +340,7 @@ mod tests {
             workspace_arc: std::sync::Arc::clone(&fixture.workspace_arc),
             run_log_context: &fixture.run_log_context,
             cloud_reporter: None,
-            cloud_config: &crate::config::types::CloudConfig::disabled(),
+            cloud: &crate::config::types::CloudConfig::disabled(),
         };
 
         let result = get_primary_commit_agent(&ctx);

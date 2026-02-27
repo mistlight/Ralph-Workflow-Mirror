@@ -15,7 +15,7 @@ use crate::reducer::{reduce, EffectHandler};
 use std::path::Path;
 use std::time::Instant;
 
-/// Extract ErrorEvent from anyhow::Error if present.
+/// Extract `ErrorEvent` from `anyhow::Error` if present.
 ///
 /// # Error Event Processing Architecture
 ///
@@ -56,8 +56,8 @@ pub(super) fn extract_error_event(
 /// Result of guarded effect execution.
 ///
 /// Distinguishes between:
-/// - `Ok`: Effect executed successfully, returning an EffectResult
-/// - `Unrecoverable`: Handler returned an error that cannot be downcast to ErrorEvent
+/// - `Ok`: Effect executed successfully, returning an `EffectResult`
+/// - `Unrecoverable`: Handler returned an error that cannot be downcast to `ErrorEvent`
 /// - `Panic`: Handler panicked during execution
 pub(super) enum GuardedEffectResult {
     Ok(Box<EffectResult>),
@@ -84,8 +84,9 @@ where
         handler.execute(effect, ctx)
     })) {
         Ok(Ok(result)) => GuardedEffectResult::Ok(Box::new(result)),
-        Ok(Err(err)) => {
-            if let Some(error_event) = extract_error_event(&err) {
+        Ok(Err(err)) => extract_error_event(&err).map_or_else(
+            || GuardedEffectResult::Unrecoverable(err),
+            |error_event| {
                 GuardedEffectResult::Ok(Box::new(crate::reducer::effect::EffectResult::event(
                     crate::reducer::event::PipelineEvent::PromptInput(
                         crate::reducer::event::PromptInputEvent::HandlerError {
@@ -94,10 +95,8 @@ where
                         },
                     ),
                 )))
-            } else {
-                GuardedEffectResult::Unrecoverable(err)
-            }
-        }
+            },
+        ),
         Err(_) => GuardedEffectResult::Panic,
     }
 }
@@ -108,7 +107,7 @@ where
 /// the dev-fix flow cannot execute normally. Returns `true` if the marker was
 /// successfully written.
 pub(super) fn write_completion_marker_on_error(
-    ctx: &mut PhaseContext<'_>,
+    ctx: &PhaseContext<'_>,
     err: &anyhow::Error,
 ) -> bool {
     if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
@@ -150,8 +149,8 @@ where
 
 /// Handle an unrecoverable error from the effect handler.
 ///
-/// Routes the error through the reducer as a HandlerError event, transitioning
-/// to AwaitingDevFix phase. Dumps trace and writes completion marker as best-effort.
+/// Routes the error through the reducer as a `HandlerError` event, transitioning
+/// to `AwaitingDevFix` phase. Dumps trace and writes completion marker as best-effort.
 pub(super) fn handle_unrecoverable_error<'ctx, H>(
     recovery_ctx: &mut ErrorRecoveryContext<'_, '_, H>,
     err: &anyhow::Error,
@@ -196,8 +195,8 @@ where
             },
         });
 
-    let event_str = format!("{:?}", failure_event);
-    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let event_str = format!("{failure_event:?}");
+    let duration_ms = u64::try_from(start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
     let new_state = reduce(state.clone(), failure_event);
 
     // Log to event loop log (best-effort)
@@ -217,8 +216,8 @@ where
 
 /// Handle a panic from the effect handler.
 ///
-/// Routes the panic through the reducer as a HandlerError event, transitioning
-/// to AwaitingDevFix phase. Dumps trace and writes completion marker as best-effort.
+/// Routes the panic through the reducer as a `HandlerError` event, transitioning
+/// to `AwaitingDevFix` phase. Dumps trace and writes completion marker as best-effort.
 pub(super) fn handle_panic<'ctx, H>(
     recovery_ctx: &mut ErrorRecoveryContext<'_, '_, H>,
     events_processed: usize,
@@ -272,8 +271,8 @@ where
             },
         });
 
-    let event_str = format!("{:?}", failure_event);
-    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let event_str = format!("{failure_event:?}");
+    let duration_ms = u64::try_from(start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
     let new_state = reduce(state.clone(), failure_event);
 
     // Log to event loop log (best-effort)

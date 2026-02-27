@@ -84,9 +84,7 @@ fn end_to_end_escalation_progresses_levels() {
                 matches!(effect, Effect::TriggerDevFixFlow { .. })
                     || matches!(effect, Effect::AttemptRecovery { .. })
                     || matches!(effect, Effect::EmitRecoveryReset { .. }),
-                "Attempt {}: unexpected effect {:?}",
-                attempt,
-                effect
+                "Attempt {attempt}: unexpected effect {effect:?}"
             );
 
             state.dev_fix_triggered = true;
@@ -173,7 +171,7 @@ fn end_to_end_recovery_loop_with_multiple_attempts() {
         for i in 3..=4 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
                 success: true,
-                summary: Some(format!("Fix attempt {}", i)),
+                summary: Some(format!("Fix attempt {i}")),
             });
             state = reduce(state, event);
         }

@@ -63,6 +63,7 @@ impl GeminiParser {
     }
 
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -89,6 +90,7 @@ impl GeminiParser {
     ///
     /// This allows tests to verify log file content after parsing.
     #[cfg(feature = "test-utils")]
+    #[must_use]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
         self.log_path = Some(std::path::PathBuf::from(path));
         self
@@ -97,6 +99,10 @@ impl GeminiParser {
     /// Parse a stream for testing purposes.
     ///
     /// This exposes the internal `parse_stream` method for integration tests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stream parsing or file operations fail.
     #[cfg(feature = "test-utils")]
     pub fn parse_stream_for_test<R: std::io::BufRead>(
         &self,

@@ -10,7 +10,7 @@
 // Agent chain clearing on phase transition tests (BUG: agent chain not cleared)
 
 /// Test that verifies the agent chain is cleared when transitioning from Development
-/// to Review phase via CommitCreated.
+/// to Review phase via `CommitCreated`.
 ///
 /// This is a regression test for the bug where the developer agent chain was carried
 /// over to the Review phase, causing the wrong agent to be used for review.
@@ -79,17 +79,16 @@ fn test_commit_created_clears_agent_chain_when_transitioning_to_review() {
                 role: crate::agents::AgentRole::Reviewer
             }
         ),
-        "Orchestration should emit InitializeAgentChain for Reviewer, got {:?}",
-        effect
+        "Orchestration should emit InitializeAgentChain for Reviewer, got {effect:?}"
     );
 }
 
-/// Test that orchestration uses the correct agent from state.agent_chain for review,
-/// not ctx.reviewer_agent.
+/// Test that orchestration uses the correct agent from `state.agent_chain` for review,
+/// not `ctx.reviewer_agent`.
 ///
 /// This test simulates the full flow:
 /// 1. Initialize reviewer agent chain with specific agents
-/// 2. Verify that PrepareReviewContext is emitted (not InitializeAgentChain)
+/// 2. Verify that `PrepareReviewContext` is emitted (not `InitializeAgentChain`)
 /// 3. Verify the first agent in the chain is used (not a fallback)
 #[test]
 fn test_review_uses_agent_from_state_chain_not_context() {
@@ -132,8 +131,7 @@ fn test_review_uses_agent_from_state_chain_not_context() {
             effect,
             crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Orchestration should emit PrepareReviewContext, got {:?}",
-        effect
+        "Orchestration should emit PrepareReviewContext, got {effect:?}"
     );
 }
 
@@ -166,8 +164,7 @@ fn test_fix_attempt_reinitializes_chain_for_reviewer_role() {
                 role: crate::agents::AgentRole::Reviewer
             }
         ),
-        "Expected InitializeAgentChain for Reviewer before fix attempt, got {:?}",
-        effect
+        "Expected InitializeAgentChain for Reviewer before fix attempt, got {effect:?}"
     );
 }
 
@@ -245,10 +242,10 @@ fn test_auth_failure_during_review_advances_agent_chain() {
     assert_eq!(state.agent_chain.current_agent_index, 2);
 }
 
-/// Test that after ChainInitialized, the handler can read the correct agent from state.
+/// Test that after `ChainInitialized`, the handler can read the correct agent from state.
 ///
-/// This test simulates what the handler does when calling run_review_pass:
-/// it reads state.agent_chain.current_agent() to get the active reviewer agent.
+/// This test simulates what the handler does when calling `run_review_pass`:
+/// it reads `state.agent_chain.current_agent()` to get the active reviewer agent.
 #[test]
 fn test_handler_reads_correct_agent_from_state_after_chain_initialized() {
     // Simulate the state after ChainInitialized event is processed
@@ -284,8 +281,7 @@ fn test_handler_reads_correct_agent_from_state_after_chain_initialized() {
     assert_eq!(
         review_agent,
         Some("codex".to_string()),
-        "Handler should pass 'codex' to run_review_pass, not '{:?}'",
-        review_agent
+        "Handler should pass 'codex' to run_review_pass, not '{review_agent:?}'"
     );
 
     // Verify the chain is properly populated
@@ -339,8 +335,7 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
                 role: crate::agents::AgentRole::Reviewer
             }
         ),
-        "Should request reviewer chain initialization, got {:?}",
-        effect
+        "Should request reviewer chain initialization, got {effect:?}"
     );
 
     // Simulate initializing the reviewer chain with different agents
@@ -378,17 +373,16 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
             effect,
             crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Should emit PrepareReviewContext, got {:?}",
-        effect
+        "Should emit PrepareReviewContext, got {effect:?}"
     );
 }
 
 /// Test that simulates the exact event loop behavior to verify handler state consistency.
 ///
 /// This test simulates:
-/// 1. State after ChainInitialized is processed and stored in handler
-/// 2. Orchestration returns PrepareReviewContext
-/// 3. Handler reads current_agent() from its state
+/// 1. State after `ChainInitialized` is processed and stored in handler
+/// 2. Orchestration returns `PrepareReviewContext`
+/// 3. Handler reads `current_agent()` from its state
 ///
 /// The handler should have the updated state with populated agent chain.
 #[test]
@@ -419,8 +413,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
                 role: crate::agents::AgentRole::Reviewer
             }
         ),
-        "Expected InitializeAgentChain, got {:?}",
-        effect
+        "Expected InitializeAgentChain, got {effect:?}"
     );
 
     // Handler executes InitializeAgentChain, emits ChainInitialized event
@@ -453,8 +446,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             effect,
             crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Expected PrepareReviewContext, got {:?}",
-        effect
+        "Expected PrepareReviewContext, got {effect:?}"
     );
 
     // Simulate context prepared
@@ -467,8 +459,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             effect,
             crate::reducer::effect::Effect::MaterializeReviewInputs { pass: 0 }
         ),
-        "Expected MaterializeReviewInputs, got {:?}",
-        effect
+        "Expected MaterializeReviewInputs, got {effect:?}"
     );
 
     let sig = state.agent_chain.consumer_signature_sha256();
@@ -508,8 +499,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             effect,
             crate::reducer::effect::Effect::PrepareReviewPrompt { pass: 0, .. }
         ),
-        "Expected PrepareReviewPrompt, got {:?}",
-        effect
+        "Expected PrepareReviewPrompt, got {effect:?}"
     );
 
     // Simulate prompt prepared
@@ -522,8 +512,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             effect,
             crate::reducer::effect::Effect::CleanupReviewIssuesXml { pass: 0 }
         ),
-        "Expected CleanupReviewIssuesXml, got {:?}",
-        effect
+        "Expected CleanupReviewIssuesXml, got {effect:?}"
     );
 
     // Simulate cleanup
@@ -536,8 +525,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             effect,
             crate::reducer::effect::Effect::InvokeReviewAgent { pass: 0 }
         ),
-        "Expected InvokeReviewAgent, got {:?}",
-        effect
+        "Expected InvokeReviewAgent, got {effect:?}"
     );
 
     // Handler executes InvokeReviewAgent, reads current_agent from its state
@@ -553,9 +541,8 @@ fn test_event_loop_state_consistency_for_review_agent() {
     assert_eq!(
         review_agent,
         Some("codex".to_string()),
-        "Handler should pass 'codex' to InvokeReviewAgent, got {:?}. \
-        This means the wrong agent is being used.",
-        review_agent
+        "Handler should pass 'codex' to InvokeReviewAgent, got {review_agent:?}. \
+        This means the wrong agent is being used."
     );
 
     // Verify chain state is correct
@@ -567,7 +554,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
     );
 }
 
-/// Full integration test: Development -> CommitMessage -> Review
+/// Full integration test: Development -> `CommitMessage` -> Review
 ///
 /// This test simulates the complete flow from development through commit creation
 /// to review phase, verifying that the agent chain is correctly initialized.
@@ -589,7 +576,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
         iteration: 4, // Last iteration (0-indexed, total is 5)
         total_iterations: 5,
         total_reviewer_passes: 2,
-        agent_chain: dev_chain.clone(),
+        agent_chain: dev_chain,
         ..create_test_state()
     };
 
@@ -662,8 +649,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
                 role: crate::agents::AgentRole::Reviewer
             }
         ),
-        "Orchestration should request reviewer chain initialization, got {:?}",
-        effect
+        "Orchestration should request reviewer chain initialization, got {effect:?}"
     );
 
     // === STEP 5: Agent chain initialized with reviewer agents ===
@@ -702,8 +688,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
             effect,
             crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Should request PrepareReviewContext, got {:?}",
-        effect
+        "Should request PrepareReviewContext, got {effect:?}"
     );
 
     // Simulate context + prompt prepared, then cleanup before invoking agent
@@ -744,8 +729,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
             effect,
             crate::reducer::effect::Effect::CleanupReviewIssuesXml { pass: 0 }
         ),
-        "Should request CleanupReviewIssuesXml, got {:?}",
-        effect
+        "Should request CleanupReviewIssuesXml, got {effect:?}"
     );
     state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let effect = determine_next_effect(&state);
@@ -754,8 +738,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
             effect,
             crate::reducer::effect::Effect::InvokeReviewAgent { pass: 0 }
         ),
-        "Should request InvokeReviewAgent, got {:?}",
-        effect
+        "Should request InvokeReviewAgent, got {effect:?}"
     );
 
     // === STEP 7: Simulate what handler does ===

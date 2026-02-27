@@ -2,8 +2,8 @@
 //!
 //! This test implements the systematic debugging protocol required by the bug fix plan:
 //! - Reproduces spam for ALL delta types (text, thinking, tool input)
-//! - Tests BOTH ccs/glm (ClaudeParser) and ccs/codex (CodexParser)
-//! - Covers BOTH TerminalMode::None and TerminalMode::Basic
+//! - Tests BOTH ccs/glm (`ClaudeParser`) and ccs/codex (`CodexParser`)
+//! - Covers BOTH `TerminalMode::None` and `TerminalMode::Basic`
 //! - Uses hard assertions with failure excerpts
 //!
 //! Purpose: Serve as comprehensive regression coverage that validates the three-layer
@@ -11,7 +11,7 @@
 //!
 //! Architecture Validation:
 //! - Layer 1: Renderer suppression in non-TTY modes
-//! - Layer 2: StreamingSession accumulation across deltas
+//! - Layer 2: `StreamingSession` accumulation across deltas
 //! - Layer 3: Parser flush at completion boundaries
 //!
 //! # Integration Test Style Guide
@@ -28,6 +28,7 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
 
@@ -72,11 +73,9 @@ fn test_ccs_glm_text_delta_spam_reproduction_none_mode() {
         );
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#
+            ).unwrap();
         }
 
         stream.push_str(
@@ -104,8 +103,7 @@ fn test_ccs_glm_text_delta_spam_reproduction_none_mode() {
         // Verify content is present
         assert!(
             output.contains("word0") && output.contains("word99"),
-            "Expected accumulated content. Output:\n{}",
-            output
+            "Expected accumulated content. Output:\n{output}"
         );
     });
 }
@@ -129,11 +127,8 @@ fn test_ccs_glm_text_delta_spam_reproduction_basic_mode() {
         );
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -159,8 +154,7 @@ fn test_ccs_glm_text_delta_spam_reproduction_basic_mode() {
 
         assert!(
             output.contains("word0") && output.contains("word99"),
-            "Expected accumulated content. Output:\n{}",
-            output
+            "Expected accumulated content. Output:\n{output}"
         );
     });
 }
@@ -188,11 +182,8 @@ fn test_ccs_glm_thinking_delta_spam_reproduction_none_mode() {
 
         // 100 thinking deltas
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -218,8 +209,7 @@ fn test_ccs_glm_thinking_delta_spam_reproduction_none_mode() {
 
         assert!(
             output.contains("thought0") && output.contains("thought99"),
-            "Expected accumulated thinking content. Output:\n{}",
-            output
+            "Expected accumulated thinking content. Output:\n{output}"
         );
     });
 }
@@ -242,11 +232,8 @@ fn test_ccs_glm_thinking_delta_spam_reproduction_basic_mode() {
         );
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"thought{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -272,8 +259,7 @@ fn test_ccs_glm_thinking_delta_spam_reproduction_basic_mode() {
 
         assert!(
             output.contains("thought0") && output.contains("thought99"),
-            "Expected accumulated thinking content. Output:\n{}",
-            output
+            "Expected accumulated thinking content. Output:\n{output}"
         );
     });
 }
@@ -301,11 +287,8 @@ fn test_ccs_glm_tool_input_delta_spam_reproduction_none_mode() {
 
         // 50 tool input deltas (simulating partial JSON chunks)
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{} "}}}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{i} "}}}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -331,8 +314,7 @@ fn test_ccs_glm_tool_input_delta_spam_reproduction_none_mode() {
 
         assert!(
             output.contains("chunk0") && output.contains("chunk49"),
-            "Expected accumulated tool input content. Output:\n{}",
-            output
+            "Expected accumulated tool input content. Output:\n{output}"
         );
     });
 }
@@ -355,11 +337,8 @@ fn test_ccs_glm_tool_input_delta_spam_reproduction_basic_mode() {
         );
 
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{} "}}}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"chunk{i} "}}}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -385,8 +364,7 @@ fn test_ccs_glm_tool_input_delta_spam_reproduction_basic_mode() {
 
         assert!(
             output.contains("chunk0") && output.contains("chunk49"),
-            "Expected accumulated tool input content. Output:\n{}",
-            output
+            "Expected accumulated tool input content. Output:\n{output}"
         );
     });
 }
@@ -414,11 +392,8 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
 
         // Block 0: 50 text deltas
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"b0w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"b0w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -429,11 +404,8 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
 
         // Block 1: 50 text deltas
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"b1w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"b1w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -444,11 +416,8 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
 
         // Block 2: 50 text deltas
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"b2w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"b2w{i} "}}}}}}"#).unwrap();
         }
 
         stream.push_str(
@@ -475,18 +444,15 @@ fn test_ccs_glm_multi_block_spam_reproduction_none_mode() {
         // Verify all blocks are present
         assert!(
             output.contains("b0w0") && output.contains("b0w49"),
-            "Expected block 0 content. Output:\n{}",
-            output
+            "Expected block 0 content. Output:\n{output}"
         );
         assert!(
             output.contains("b1w0") && output.contains("b1w49"),
-            "Expected block 1 content. Output:\n{}",
-            output
+            "Expected block 1 content. Output:\n{output}"
         );
         assert!(
             output.contains("b2w0") && output.contains("b2w49"),
-            "Expected block 2 content. Output:\n{}",
-            output
+            "Expected block 2 content. Output:\n{output}"
         );
     });
 }
@@ -517,11 +483,8 @@ fn test_ccs_glm_mode_consistency_same_stream_none_vs_basic() {
             );
 
             for i in 0..100 {
-                stream.push_str(&format!(
-                    r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{} "}}}}}}
-"#,
-                    i
-                ));
+                writeln!(stream,
+                    r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#).unwrap();
             }
 
             stream.push_str(
@@ -543,15 +506,13 @@ fn test_ccs_glm_mode_consistency_same_stream_none_vs_basic() {
 
         assert_eq!(
             none_count, basic_count,
-            "Prefix count mismatch! None mode produced {} prefixes, Basic mode produced {}.\n\
-             Both non-TTY modes should suppress per-delta output identically.",
-            none_count, basic_count
+            "Prefix count mismatch! None mode produced {none_count} prefixes, Basic mode produced {basic_count}.\n\
+             Both non-TTY modes should suppress per-delta output identically."
         );
 
         assert!(
             none_count <= 1,
-            "Both modes produced spam: {} prefixes found",
-            none_count
+            "Both modes produced spam: {none_count} prefixes found"
         );
     });
 }
@@ -576,11 +537,11 @@ fn test_ccs_codex_agent_message_delta_spam_reproduction_none_mode() {
 
         // 100 agent message deltas
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{i} "}}}}"#
+            )
+            .unwrap();
         }
 
         stream.push_str(
@@ -605,8 +566,7 @@ fn test_ccs_codex_agent_message_delta_spam_reproduction_none_mode() {
 
         assert!(
             output.contains("word0") && output.contains("word99"),
-            "Expected accumulated content. Output:\n{}",
-            output
+            "Expected accumulated content. Output:\n{output}"
         );
     });
 }
@@ -625,11 +585,11 @@ fn test_ccs_codex_agent_message_delta_spam_reproduction_basic_mode() {
         let mut stream = String::new();
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"word{i} "}}}}"#
+            )
+            .unwrap();
         }
 
         stream.push_str(
@@ -654,8 +614,7 @@ fn test_ccs_codex_agent_message_delta_spam_reproduction_basic_mode() {
 
         assert!(
             output.contains("word0") && output.contains("word99"),
-            "Expected accumulated content. Output:\n{}",
-            output
+            "Expected accumulated content. Output:\n{output}"
         );
     });
 }
@@ -679,11 +638,11 @@ fn test_ccs_codex_reasoning_delta_spam_reproduction_none_mode() {
 
         // 100 reasoning deltas
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{i} "}}}}"#
+            )
+            .unwrap();
         }
 
         stream.push_str(
@@ -708,8 +667,7 @@ fn test_ccs_codex_reasoning_delta_spam_reproduction_none_mode() {
 
         assert!(
             output.contains("thought0") && output.contains("thought99"),
-            "Expected accumulated reasoning content. Output:\n{}",
-            output
+            "Expected accumulated reasoning content. Output:\n{output}"
         );
     });
 }
@@ -728,11 +686,11 @@ fn test_ccs_codex_reasoning_delta_spam_reproduction_basic_mode() {
         let mut stream = String::new();
 
         for i in 0..100 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"thought{i} "}}}}"#
+            )
+            .unwrap();
         }
 
         stream.push_str(
@@ -757,8 +715,7 @@ fn test_ccs_codex_reasoning_delta_spam_reproduction_basic_mode() {
 
         assert!(
             output.contains("thought0") && output.contains("thought99"),
-            "Expected accumulated reasoning content. Output:\n{}",
-            output
+            "Expected accumulated reasoning content. Output:\n{output}"
         );
     });
 }

@@ -166,7 +166,7 @@ fn test_planning_plan_xml_missing_resets_agent_invoked_iteration() {
 /// so the analysis agent gets re-invoked with the XSD retry.
 ///
 /// Note: Development XSD retry is for the ANALYSIS agent output, not the developer agent.
-/// So we preserve developer progress and only reset analysis_agent_invoked_iteration.
+/// So we preserve developer progress and only reset `analysis_agent_invoked_iteration`.
 #[test]
 fn test_development_output_validation_failed_resets_analysis_agent_invoked() {
     let state = PipelineState {
@@ -197,7 +197,7 @@ fn test_development_output_validation_failed_resets_analysis_agent_invoked() {
     );
 }
 
-/// Test that development_result.xml missing resets analysis agent invocation.
+/// Test that `development_result.xml` missing resets analysis agent invocation.
 #[test]
 fn test_development_xml_missing_resets_analysis_agent_invoked() {
     let state = PipelineState {

@@ -55,6 +55,7 @@ impl RollingHashWindow {
 
     /// Create a new rolling hash window.
     #[cfg(test)]
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -73,6 +74,7 @@ impl RollingHashWindow {
     /// ```ignore
     /// let hash = RollingHashWindow::compute_hash("Hello");
     /// ```
+    #[must_use] 
     pub fn compute_hash(text: &str) -> u64 {
         let mut hash: u64 = 0;
         for byte in text.bytes() {
@@ -208,12 +210,14 @@ impl RollingHashWindow {
 
     /// Get the current content length.
     #[cfg(test)]
+    #[must_use] 
     pub const fn len(&self) -> usize {
         self.content.len()
     }
 
     /// Check if the window is empty.
     #[cfg(test)]
+    #[must_use] 
     pub const fn is_empty(&self) -> bool {
         self.content.is_empty()
     }

@@ -1,9 +1,155 @@
 // Tool formatting.
 
 impl OpenCodeParser {
+    fn format_tool_event_header(
+        tool_name: &str,
+        status: &str,
+        prefix: &str,
+        c: crate::logger::Colors,
+    ) -> String {
+        // Status-specific icon and color based on ToolState variants from message-v2.ts
+        // Statuses: "pending", "running", "completed", "error"
+        let (icon, color) = match status {
+            "completed" => (CHECK, c.green()),
+            "error" => (CROSS, c.red()),
+            "running" => ('►', c.cyan()),
+            _ => ('…', c.yellow()), // "pending" or unknown
+        };
+
+        format!(
+            "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.magenta(),
+            c.reset(),
+            c.bold(),
+            tool_name,
+            c.reset(),
+            color,
+            icon,
+            c.reset()
+        )
+    }
+
+    fn append_tool_title(
+        &self,
+        out: &mut String,
+        title: Option<&str>,
+        prefix: &str,
+        c: crate::logger::Colors,
+    ) {
+        if let Some(t) = title {
+            let limit = self.verbosity.truncate_limit("text");
+            let preview = truncate_text(t, limit);
+            let _ = writeln!(
+                out,
+                "{}[{}]{} {}  └─ {}{}",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.dim(),
+                preview,
+                c.reset()
+            );
+        }
+    }
+
+    fn append_tool_input(
+        &self,
+        out: &mut String,
+        part: &OpenCodePart,
+        tool_name: &str,
+        prefix: &str,
+        c: crate::logger::Colors,
+    ) {
+        if !self.verbosity.show_tool_input() {
+            return;
+        }
+
+        if let Some(ref state) = part.state {
+            if let Some(ref input_val) = state.input {
+                let input_str = Self::format_tool_specific_input(tool_name, input_val);
+                let limit = self.verbosity.truncate_limit("tool_input");
+                let preview = truncate_text(&input_str, limit);
+                if !preview.is_empty() {
+                    let _ = writeln!(
+                        out,
+                        "{}[{}]{} {}  └─ {}{}",
+                        c.dim(),
+                        prefix,
+                        c.reset(),
+                        c.dim(),
+                        preview,
+                        c.reset()
+                    );
+                }
+            }
+        }
+    }
+
+    fn append_tool_error(
+        &self,
+        out: &mut String,
+        part: &OpenCodePart,
+        status: &str,
+        prefix: &str,
+        c: crate::logger::Colors,
+    ) {
+        if status != "error" {
+            return;
+        }
+
+        if let Some(ref state) = part.state {
+            if let Some(error_msg) = state.error.as_deref() {
+                let limit = self.verbosity.truncate_limit("tool_result");
+                let preview = truncate_text(error_msg, limit);
+                let _ = writeln!(
+                    out,
+                    "{}[{}]{} {}  └─ {}Error:{} {}{}{}",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.red(),
+                    c.bold(),
+                    c.reset(),
+                    c.red(),
+                    preview,
+                    c.reset()
+                );
+            }
+        }
+    }
+
+    fn append_tool_output(
+        &self,
+        out: &mut String,
+        part: &OpenCodePart,
+        status: &str,
+        prefix: &str,
+        c: crate::logger::Colors,
+    ) {
+        if !self.verbosity.show_tool_input() || status != "completed" {
+            return;
+        }
+
+        if let Some(ref state) = part.state {
+            if let Some(ref output_val) = state.output {
+                let output_str = match output_val {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                if !output_str.is_empty() {
+                    let limit = self.verbosity.truncate_limit("tool_result");
+                    Self::format_tool_output(out, &output_str, limit, prefix, c);
+                }
+            }
+        }
+    }
+
     /// Format a `tool_use` event
     ///
-    /// Based on OpenCode source (`run.ts` lines 163-174, `message-v2.ts` lines 221-287):
+    /// Based on `OpenCode` source (`run.ts` lines 163-174, `message-v2.ts` lines 221-287):
     /// - Shows tool name with status-specific icon and color
     /// - Status handling: pending (…), running (►), completed (✓), error (✗)
     /// - Title/description when available (from `state.title`)
@@ -11,7 +157,7 @@ impl OpenCodeParser {
     /// - Tool output/results shown at Normal+ verbosity
     /// - Error messages shown in red when status is "error"
     pub(super) fn format_tool_use_event(&self, event: &OpenCodeEvent) -> String {
-        let c = &self.colors;
+        let c = self.colors;
         let prefix = &self.display_name;
 
         event.part.as_ref().map_or_else(String::new, |part| {
@@ -23,109 +169,11 @@ impl OpenCodeParser {
                 .unwrap_or("pending");
             let title = part.state.as_ref().and_then(|s| s.title.as_deref());
 
-            // Status-specific icon and color based on ToolState variants from message-v2.ts
-            // Statuses: "pending", "running", "completed", "error"
-            let (icon, color) = match status {
-                "completed" => (CHECK, c.green()),
-                "error" => (CROSS, c.red()),
-                "running" => ('►', c.cyan()),
-                _ => ('…', c.yellow()), // "pending" or unknown
-            };
-
-            let mut out = format!(
-                "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
-                c.dim(),
-                prefix,
-                c.reset(),
-                c.magenta(),
-                c.reset(),
-                c.bold(),
-                tool_name,
-                c.reset(),
-                color,
-                icon,
-                c.reset()
-            );
-
-            // Show title if available (from state.title)
-            if let Some(t) = title {
-                let limit = self.verbosity.truncate_limit("text");
-                let preview = truncate_text(t, limit);
-                let _ = writeln!(
-                    out,
-                    "{}[{}]{} {}  └─ {}{}",
-                    c.dim(),
-                    prefix,
-                    c.reset(),
-                    c.dim(),
-                    preview,
-                    c.reset()
-                );
-            }
-
-            // Show tool input at Normal+ verbosity with tool-specific formatting
-            if self.verbosity.show_tool_input() {
-                if let Some(ref state) = part.state {
-                    if let Some(ref input_val) = state.input {
-                        let input_str = Self::format_tool_specific_input(tool_name, input_val);
-                        let limit = self.verbosity.truncate_limit("tool_input");
-                        let preview = truncate_text(&input_str, limit);
-                        if !preview.is_empty() {
-                            let _ = writeln!(
-                                out,
-                                "{}[{}]{} {}  └─ {}{}",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.dim(),
-                                preview,
-                                c.reset()
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Show error message when status is "error"
-            if status == "error" {
-                if let Some(ref state) = part.state {
-                    if let Some(ref error_msg) = state.error {
-                        let limit = self.verbosity.truncate_limit("tool_result");
-                        let preview = truncate_text(error_msg, limit);
-                        let _ = writeln!(
-                            out,
-                            "{}[{}]{} {}  └─ {}Error:{} {}{}{}",
-                            c.dim(),
-                            prefix,
-                            c.reset(),
-                            c.red(),
-                            c.bold(),
-                            c.reset(),
-                            c.red(),
-                            preview,
-                            c.reset()
-                        );
-                    }
-                }
-            }
-
-            // Show tool output at Normal+ verbosity when completed
-            // (Changed from verbose-only to match OpenCode's interactive mode behavior)
-            if self.verbosity.show_tool_input() && status == "completed" {
-                if let Some(ref state) = part.state {
-                    if let Some(ref output_val) = state.output {
-                        let output_str = match output_val {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        if !output_str.is_empty() {
-                            let limit = self.verbosity.truncate_limit("tool_result");
-                            // Format multi-line output with proper indentation
-                            self.format_tool_output(&mut out, &output_str, limit, prefix, *c);
-                        }
-                    }
-                }
-            }
+            let mut out = Self::format_tool_event_header(tool_name, status, prefix, c);
+            self.append_tool_title(&mut out, title, prefix, c);
+            self.append_tool_input(&mut out, part, tool_name, prefix, c);
+            self.append_tool_error(&mut out, part, status, prefix, c);
+            self.append_tool_output(&mut out, part, status, prefix, c);
             out
         })
     }
@@ -135,7 +183,6 @@ impl OpenCodeParser {
     /// For single-line outputs, shows inline. For multi-line outputs (like file contents),
     /// shows only the first few lines as a preview.
     pub(super) fn format_tool_output(
-        &self,
         out: &mut String,
         output: &str,
         limit: usize,
@@ -194,7 +241,7 @@ impl OpenCodeParser {
 
     /// Format tool input based on tool type
     ///
-    /// From OpenCode source, each tool has specific input fields:
+    /// From `OpenCode` source, each tool has specific input fields:
     /// - `read`: `filePath`, `offset?`, `limit?`
     /// - `bash`: `command`, `timeout?`
     /// - `write`: `filePath`, `content`
@@ -206,9 +253,8 @@ impl OpenCodeParser {
         tool_name: &str,
         input: &serde_json::Value,
     ) -> String {
-        let obj = match input.as_object() {
-            Some(o) => o,
-            None => return format_tool_input(input),
+        let Some(obj) = input.as_object() else {
+            return format_tool_input(input);
         };
 
         match tool_name {
@@ -216,11 +262,11 @@ impl OpenCodeParser {
                 // Primary: filePath, optional: offset, limit
                 let file_path = obj.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
                 let mut result = file_path.to_string();
-                if let Some(offset) = obj.get("offset").and_then(|v| v.as_u64()) {
-                    result.push_str(&format!(" (offset: {offset})"));
+                if let Some(offset) = obj.get("offset").and_then(serde_json::Value::as_u64) {
+                    write!(result, " (offset: {offset})").unwrap();
                 }
-                if let Some(limit) = obj.get("limit").and_then(|v| v.as_u64()) {
-                    result.push_str(&format!(" (limit: {limit})"));
+                if let Some(limit) = obj.get("limit").and_then(serde_json::Value::as_u64) {
+                    write!(result, " (limit: {limit})").unwrap();
                 }
                 result
             }
@@ -237,8 +283,7 @@ impl OpenCodeParser {
                 let content_len = obj
                     .get("content")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.len())
-                    .unwrap_or(0);
+                    .map_or(0, str::len);
                 if content_len > 0 {
                     format!("{file_path} ({content_len} bytes)")
                 } else {
@@ -256,21 +301,20 @@ impl OpenCodeParser {
                 // Primary: pattern, optional: path
                 let pattern = obj.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                 let path = obj.get("path").and_then(|v| v.as_str());
-                if let Some(p) = path {
-                    format!("{pattern} in {p}")
-                } else {
-                    pattern.to_string()
-                }
+                path.map_or_else(
+                    || pattern.to_string(),
+                    |p| format!("{pattern} in {p}")
+                )
             }
             "grep" => {
                 // Primary: pattern, optional: path, include
                 let pattern = obj.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
                 let mut result = format!("/{pattern}/");
                 if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
-                    result.push_str(&format!(" in {path}"));
+                    write!(result, " in {path}").unwrap();
                 }
                 if let Some(include) = obj.get("include").and_then(|v| v.as_str()) {
-                    result.push_str(&format!(" ({include})"));
+                    write!(result, " ({include})").unwrap();
                 }
                 result
             }
@@ -278,19 +322,19 @@ impl OpenCodeParser {
                 // Primary: url, optional: format
                 let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
                 let format = obj.get("format").and_then(|v| v.as_str());
-                if let Some(f) = format {
-                    format!("{url} ({f})")
-                } else {
-                    url.to_string()
-                }
+                format.map_or_else(
+                    || url.to_string(),
+                    |f| format!("{url} ({f})")
+                )
             }
             "todowrite" | "todoread" => {
                 // Show count of todos if available
-                if let Some(todos) = obj.get("todos").and_then(|v| v.as_array()) {
-                    format!("{} items", todos.len())
-                } else {
-                    format_tool_input(input)
-                }
+                obj.get("todos")
+                    .and_then(|v| v.as_array())
+                    .map_or_else(
+                        || format_tool_input(input),
+                        |todos| format!("{} items", todos.len())
+                    )
             }
             _ => {
                 // Fallback to generic formatting

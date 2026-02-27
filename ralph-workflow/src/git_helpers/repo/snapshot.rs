@@ -6,6 +6,10 @@ use std::path::Path;
 /// Get a snapshot of the current git status.
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_snapshot() -> io::Result<String> {
     git_snapshot_in_repo(Path::new("."))
 }
@@ -14,6 +18,10 @@ pub fn git_snapshot() -> io::Result<String> {
 ///
 /// Prefer this in pipeline code where `ctx.repo_root` is known, to avoid
 /// accidentally discovering/inspecting the wrong repository.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_snapshot_in_repo(repo_root: &Path) -> io::Result<String> {
     let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_snapshot_impl(&repo)

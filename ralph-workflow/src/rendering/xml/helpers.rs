@@ -3,6 +3,8 @@
 //! This module contains utilities used by multiple XML renderer modules.
 
 /// Action type for file changes.
+use std::fmt::Write;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeAction {
     Create,
@@ -22,8 +24,8 @@ pub struct DiffFileSection {
 ///
 /// Simple extraction for well-formed tags. Returns None if tag not found.
 pub fn extract_tag_content(content: &str, tag_name: &str) -> Option<String> {
-    let start_tag = format!("<{}>", tag_name);
-    let end_tag = format!("</{}>", tag_name);
+    let start_tag = format!("<{tag_name}>");
+    let end_tag = format!("</{tag_name}>");
 
     let start_pos = content.find(&start_tag)?;
     let content_start = start_pos + start_tag.len();
@@ -57,7 +59,7 @@ pub fn parse_unified_diff_files(diff: &str) -> Vec<DiffFileSection> {
         .collect()
 }
 
-/// Parse a single diff section into a DiffFileSection.
+/// Parse a single diff section into a `DiffFileSection`.
 fn parse_diff_section(lines: &[&str]) -> Option<DiffFileSection> {
     let header = *lines.first()?;
     // Example: "diff --git a/src/main.rs b/src/main.rs"
@@ -102,29 +104,33 @@ pub fn render_diff_sections(title: &str, sections: &[DiffFileSection]) -> String
     }
 
     let mut output = String::new();
-    output.push_str(&format!("\n{}:\n", title));
-    output.push_str(&format!(
-        "   Modified {} file(s): {}\n",
+    writeln!(output, "\n{title}:").unwrap();
+    writeln!(
+        output,
+        "   Modified {} file(s): {}",
         sections.len(),
         sections
             .iter()
             .map(|s| s.path.as_str())
             .collect::<Vec<&str>>()
             .join(", ")
-    ));
+    )
+    .unwrap();
 
     for section in sections {
-        output.push_str(&format!("\n   📄 {}\n", section.path));
-        output.push_str(&format!(
-            "      Action: {}\n",
+        writeln!(output, "\n   📄 {}", section.path).unwrap();
+        writeln!(
+            output,
+            "      Action: {}",
             match section.action {
                 ChangeAction::Create => "created",
                 ChangeAction::Modify => "modified",
                 ChangeAction::Delete => "deleted",
             }
-        ));
+        )
+        .unwrap();
         for line in section.diff.lines() {
-            output.push_str(&format!("      {}\n", line));
+            writeln!(output, "      {line}").unwrap();
         }
     }
 
@@ -196,12 +202,12 @@ index 1111111..2222222 100644
 
     #[test]
     fn test_parse_unified_diff_files_new_file() {
-        let diff = r#"diff --git a/src/new.rs b/src/new.rs
+        let diff = r"diff --git a/src/new.rs b/src/new.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/new.rs
 @@ -0,0 +1 @@
-+fn new() {}"#;
++fn new() {}";
 
         let sections = parse_unified_diff_files(diff);
         assert_eq!(sections.len(), 1);
@@ -211,12 +217,12 @@ new file mode 100644
 
     #[test]
     fn test_parse_unified_diff_files_deleted() {
-        let diff = r#"diff --git a/src/old.rs b/src/old.rs
+        let diff = r"diff --git a/src/old.rs b/src/old.rs
 deleted file mode 100644
 --- a/src/old.rs
 +++ /dev/null
 @@ -1 +0,0 @@
--fn old() {}"#;
+-fn old() {}";
 
         let sections = parse_unified_diff_files(diff);
         assert_eq!(sections.len(), 1);
@@ -226,9 +232,9 @@ deleted file mode 100644
 
     #[test]
     fn test_parse_files_changed_list_basic() {
-        let files = r#"src/main.rs
+        let files = r"src/main.rs
 src/lib.rs (created)
-src/old.rs (deleted)"#;
+src/old.rs (deleted)";
 
         let result = parse_files_changed_list(files);
         assert_eq!(result.len(), 3);

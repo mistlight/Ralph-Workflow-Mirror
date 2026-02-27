@@ -1,6 +1,6 @@
-//! OpenCode API catalog data structures.
+//! `OpenCode` API catalog data structures.
 //!
-//! Parses and represents the OpenCode model catalog (see <https://models.dev/api.json>), and a
+//! Parses and represents the `OpenCode` model catalog (see <https://models.dev/api.json>), and a
 //! simplified cache format used for local storage.
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -8,12 +8,12 @@ use std::collections::HashMap;
 
 use crate::agents::opencode_api::DEFAULT_CACHE_TTL_SECONDS;
 
-/// OpenCode API catalog containing all available providers and models.
+/// `OpenCode` API catalog containing all available providers and models.
 #[derive(Debug, Clone)]
 pub struct ApiCatalog {
-    /// All providers supported by OpenCode.
+    /// All providers supported by `OpenCode`.
     pub providers: HashMap<String, Provider>,
-    /// All models supported by OpenCode, indexed by provider name.
+    /// All models supported by `OpenCode`, indexed by provider name.
     pub models: HashMap<String, Vec<Model>>,
     /// When this catalog was cached (for TTL tracking).
     pub cached_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -34,7 +34,7 @@ impl<'de> Deserialize<'de> for ApiCatalog {
             // Cache format
             let cache_format: CacheFormat =
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-            Ok(ApiCatalog {
+            Ok(Self {
                 providers: cache_format.providers,
                 models: cache_format.models,
                 cached_at: None,
@@ -44,7 +44,7 @@ impl<'de> Deserialize<'de> for ApiCatalog {
             // API format - parse as provider entries
             let api_format: HashMap<String, RawProviderEntry> =
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-            Ok(ApiCatalog::from(api_format))
+            Ok(Self::from(api_format))
         }
     }
 }
@@ -129,24 +129,24 @@ impl From<HashMap<String, RawProviderEntry>> for ApiCatalog {
 }
 
 impl ApiCatalog {
-    /// Check if the catalog is expired based on its cached_at timestamp and TTL.
+    /// Check if the catalog is expired based on its `cached_at` timestamp and TTL.
+    #[must_use]
     pub fn is_expired(&self) -> bool {
-        if let Some(cached_at) = self.cached_at {
+        self.cached_at.is_none_or(|cached_at| {
             let now = chrono::Utc::now();
             let elapsed = now.signed_duration_since(cached_at);
-            elapsed.num_seconds() as u64 > self.ttl_seconds
-        } else {
-            // No cache timestamp means it should be refreshed
-            true
-        }
+            elapsed.num_seconds().cast_unsigned() > self.ttl_seconds
+        })
     }
 
     /// Check if a provider exists in the catalog.
+    #[must_use]
     pub fn has_provider(&self, provider: &str) -> bool {
         self.providers.contains_key(provider)
     }
 
     /// Check if a specific model exists for a provider.
+    #[must_use]
     pub fn has_model(&self, provider: &str, model: &str) -> bool {
         self.models
             .get(provider)
@@ -154,6 +154,7 @@ impl ApiCatalog {
     }
 
     /// Get all model IDs for a provider.
+    #[must_use]
     pub fn get_model_ids(&self, provider: &str) -> Vec<String> {
         self.models
             .get(provider)
@@ -162,15 +163,17 @@ impl ApiCatalog {
     }
 
     /// Get all provider names.
+    #[must_use]
     pub fn provider_names(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
 }
 
-/// Helper methods for ApiCatalog (test-only).
+/// Helper methods for `ApiCatalog` (test-only).
 #[cfg(test)]
 impl ApiCatalog {
     /// Get a model by provider and model ID.
+    #[must_use]
     pub fn get_model(&self, provider: &str, model_id: &str) -> Option<&Model> {
         self.models
             .get(provider)
@@ -178,6 +181,7 @@ impl ApiCatalog {
     }
 
     /// Find providers that start with the given prefix.
+    #[must_use]
     pub fn find_providers_by_prefix(&self, prefix: &str) -> Vec<String> {
         let prefix_lower = prefix.to_lowercase();
         self.provider_names()
@@ -187,6 +191,7 @@ impl ApiCatalog {
     }
 
     /// Find models for a provider that start with the given prefix.
+    #[must_use]
     pub fn find_models_by_prefix(&self, provider: &str, prefix: &str) -> Vec<String> {
         let prefix_lower = prefix.to_lowercase();
         self.get_model_ids(provider)
@@ -196,7 +201,7 @@ impl ApiCatalog {
     }
 }
 
-/// A provider supported by OpenCode.
+/// A provider supported by `OpenCode`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provider {
     /// Unique provider identifier.
@@ -254,13 +259,13 @@ mod tests {
                     id: "claude-sonnet-4-5".to_string(),
                     name: "Claude Sonnet 4.5".to_string(),
                     description: "Latest Claude Sonnet".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
                 Model {
                     id: "claude-opus-4".to_string(),
                     name: "Claude Opus 4".to_string(),
                     description: "Most capable Claude".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
             ],
         );
@@ -292,7 +297,8 @@ mod tests {
     fn test_catalog_expired_when_old() {
         let mut catalog = create_test_catalog();
         catalog.cached_at = Some(
-            chrono::Utc::now() - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS as i64 + 1),
+            chrono::Utc::now()
+                - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS.cast_signed() + 1),
         );
         assert!(catalog.is_expired());
     }

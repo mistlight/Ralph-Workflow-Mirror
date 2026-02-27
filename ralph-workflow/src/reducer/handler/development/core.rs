@@ -15,6 +15,7 @@ use crate::reducer::effect::{ContinuationContextData, EffectResult};
 use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::workspace::Workspace;
 use anyhow::Result;
+use std::fmt::Write;
 use std::path::Path;
 
 impl MainEffectHandler {
@@ -30,16 +31,13 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentContextPrepared event.
+    /// `EffectResult` with `DevelopmentContextPrepared` event.
     pub(in crate::reducer::handler) fn prepare_development_context(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let _ = crate::files::create_prompt_backup_with_workspace(ctx.workspace);
-        Ok(EffectResult::event(
-            PipelineEvent::development_context_prepared(iteration),
-        ))
+        EffectResult::event(PipelineEvent::development_context_prepared(iteration))
     }
 
     /// Invoke development agent.
@@ -48,7 +46,7 @@ impl MainEffectHandler {
     /// `.agent/tmp/development_prompt.txt`, selects the current agent from the chain
     /// (or falls back to default developer agent), and invokes the agent.
     ///
-    /// If invocation succeeds, emits an additional DevelopmentAgentInvoked event to
+    /// If invocation succeeds, emits an additional `DevelopmentAgentInvoked` event to
     /// track iteration-specific progress.
     ///
     /// # Agent Selection
@@ -63,8 +61,8 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with AgentEvent::InvocationSucceeded or AgentEvent::InvocationFailed,
-    /// plus DevelopmentAgentInvoked event on success.
+    /// `EffectResult` with `AgentEvent::InvocationSucceeded` or `AgentEvent::InvocationFailed`,
+    /// plus `DevelopmentAgentInvoked` event on success.
     pub(in crate::reducer::handler) fn invoke_development_agent(
         &mut self,
         ctx: &mut PhaseContext<'_>,
@@ -85,7 +83,7 @@ impl MainEffectHandler {
             .cloned()
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
-        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Developer, &agent, None, prompt)?;
         if result.additional_events.iter().any(|e| {
             matches!(
                 e,
@@ -110,17 +108,14 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentXmlCleaned event.
+    /// `EffectResult` with `DevelopmentXmlCleaned` event.
     pub(in crate::reducer::handler) fn cleanup_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
         let _ = ctx.workspace.remove_if_exists(result_xml);
-        Ok(EffectResult::event(PipelineEvent::development_xml_cleaned(
-            iteration,
-        )))
+        EffectResult::event(PipelineEvent::development_xml_cleaned(iteration))
     }
 
     /// Archive development XML.
@@ -136,27 +131,24 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentXmlArchived event.
+    /// `EffectResult` with `DevelopmentXmlArchived` event.
     pub(in crate::reducer::handler) fn archive_development_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
 
         archive_xml_file_with_workspace(
             ctx.workspace,
             Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
         );
-        Ok(EffectResult::event(
-            PipelineEvent::development_xml_archived(iteration),
-        ))
+        EffectResult::event(PipelineEvent::development_xml_archived(iteration))
     }
 
     /// Apply development outcome.
     ///
     /// Verifies that a validated development outcome exists in state for the given iteration,
-    /// then emits DevelopmentOutcomeApplied to signal the reducer to transition to the next
+    /// then emits `DevelopmentOutcomeApplied` to signal the reducer to transition to the next
     /// phase or iteration.
     ///
     /// This is a verification step ensuring the orchestrator doesn't proceed without validated
@@ -169,9 +161,9 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentOutcomeApplied event, or error if no validated outcome exists.
+    /// `EffectResult` with `DevelopmentOutcomeApplied` event, or error if no validated outcome exists.
     pub(in crate::reducer::handler) fn apply_development_outcome(
-        &mut self,
+        &self,
         _ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
@@ -227,11 +219,11 @@ impl MainEffectHandler {
 ///
 /// * `workspace` - Workspace for file operations
 /// * `logger` - Logger for info messages
-/// * `data` - Continuation context data (iteration, attempt, status, summary, files, next_steps)
+/// * `data` - Continuation context data (iteration, attempt, status, summary, files, `next_steps`)
 ///
 /// # Returns
 ///
-/// Ok on success, or ErrorEvent::WorkspaceWriteFailed if writing fails.
+/// Ok on success, or `ErrorEvent::WorkspaceWriteFailed` if writing fails.
 pub(in crate::reducer::handler) fn write_continuation_context_to_workspace(
     workspace: &dyn Workspace,
     logger: &crate::logger::Logger,
@@ -249,9 +241,9 @@ pub(in crate::reducer::handler) fn write_continuation_context_to_workspace(
 
     let mut content = String::new();
     content.push_str("# Development Continuation Context\n\n");
-    content.push_str(&format!("- Iteration: {}\n", data.iteration));
-    content.push_str(&format!("- Continuation attempt: {}\n", data.attempt));
-    content.push_str(&format!("- Previous status: {}\n\n", data.status));
+    writeln!(content, "- Iteration: {}", data.iteration).unwrap();
+    writeln!(content, "- Continuation attempt: {}", data.attempt).unwrap();
+    write!(content, "- Previous status: {}\n\n", data.status).unwrap();
 
     content.push_str("## Previous summary\n\n");
     content.push_str(&data.summary);

@@ -125,8 +125,7 @@ fn test_commit_phase_uses_xsd_retry_prompt_when_pending() {
                 prompt_mode: PromptMode::XsdRetry
             }
         ),
-        "Expected XSD retry prompt when xsd_retry_pending=true, got {:?}",
-        effect
+        "Expected XSD retry prompt when xsd_retry_pending=true, got {effect:?}"
     );
 }
 
@@ -182,7 +181,7 @@ fn test_determine_effect_commit_message_generated() {
         Effect::CreateCommit { message } => {
             assert_eq!(message, "test commit message");
         }
-        _ => panic!("Expected CreateCommit effect, got {:?}", effect),
+        _ => panic!("Expected CreateCommit effect, got {effect:?}"),
     }
 }
 
@@ -235,8 +234,7 @@ fn test_determine_effect_commit_message_rematerializes_when_consumer_signature_c
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::MaterializeCommitInputs { attempt: 1 }),
-        "Expected re-materialization when consumer signature changes, got {:?}",
-        effect
+        "Expected re-materialization when consumer signature changes, got {effect:?}"
     );
 
     // Changing current agent/model indices should not change the signature and should not
@@ -252,8 +250,7 @@ fn test_determine_effect_commit_message_rematerializes_when_consumer_signature_c
     let effect = determine_next_effect(&state);
     assert!(
         !matches!(effect, Effect::MaterializeCommitInputs { .. }),
-        "Expected no re-materialization when only current agent index changes, got {:?}",
-        effect
+        "Expected no re-materialization when only current agent index changes, got {effect:?}"
     );
 }
 

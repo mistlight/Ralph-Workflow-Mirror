@@ -24,7 +24,7 @@ pub use types::{PipelineRuntime, PromptCommand};
 const SIGTERM_EXIT_CODE: i32 = 143;
 
 #[cfg(test)]
-pub(crate) use agent_spawn_test::run_with_agent_spawn_with_monitor_config;
+pub use agent_spawn_test::run_with_agent_spawn_with_monitor_config;
 
 #[cfg(test)]
 use agent_spawn::run_with_agent_spawn;
@@ -58,7 +58,7 @@ use std::io::BufRead;
 
 /// Maximum safe prompt size in bytes for command-line arguments.
 ///
-/// The OS has a limit on total argument size (ARG_MAX), typically:
+/// The OS has a limit on total argument size (`ARG_MAX`), typically:
 /// - Linux: 2MB (but often limited to 128KB per argument)
 /// - macOS: ~1MB
 /// - Windows: 32KB
@@ -104,7 +104,7 @@ fn truncate_prompt_if_needed(prompt: &str, logger: &Logger) -> String {
                 if after_marker.len() > excess + 100 {
                     let keep_from = excess + 100;
                     let truncated_content = &after_marker[keep_from..];
-                    let clean_start = truncated_content.find('\n').map(|i| i + 1).unwrap_or(0);
+                    let clean_start = truncated_content.find('\n').map_or(0, |i| i + 1);
 
                     return format!(
                         "{}\n[... {} bytes truncated to fit CLI argument limit ...]\n{}",
@@ -122,8 +122,8 @@ fn truncate_prompt_if_needed(prompt: &str, logger: &Logger) -> String {
     let start_part = &prompt[..keep_start];
     let end_part = &prompt[prompt.len() - keep_end..];
 
-    let start_end = start_part.rfind('\n').map(|i| i + 1).unwrap_or(keep_start);
-    let end_start = end_part.find('\n').map(|i| i + 1).unwrap_or(0);
+    let start_end = start_part.rfind('\n').map_or(keep_start, |i| i + 1);
+    let end_start = end_part.find('\n').map_or(0, |i| i + 1);
 
     format!(
         "{}\n\n[... {} bytes truncated to fit CLI argument limit ...]\n\n{}",

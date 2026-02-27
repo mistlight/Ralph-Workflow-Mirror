@@ -3,7 +3,7 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for fix results.
 //!
-//! Uses quick_xml for robust XML parsing with proper whitespace handling.
+//! Uses `quick_xml` for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::xml_helpers::{
     create_reader, duplicate_element_error, format_content_preview, malformed_xml_error,
@@ -25,7 +25,7 @@ const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_
 /// Validate fix result XML content against the XSD schema.
 ///
 /// This function validates that the XML content conforms to the expected
-/// fix result format defined in fix_result.xsd:
+/// fix result format defined in `fix_result.xsd`:
 ///
 /// ```xml
 /// <ralph-fix-result>
@@ -42,11 +42,18 @@ const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_
 ///
 /// * `Ok(FixResultElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, XsdValidationError> {
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+
+    const VALID_TAGS: [&str; 2] = ["ralph-status", "ralph-summary"];
+
     let content = xml_content.trim();
 
     // Check for illegal XML characters BEFORE parsing
-    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
     check_for_illegal_xml_characters(content)?;
 
     let mut reader = create_reader(content);
@@ -63,14 +70,10 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-fix-result".to_string(),
                     expected: "<ralph-fix-result> as root element".to_string(),
-                    found: format!("<{}> (wrong root element)", tag_name),
+                    found: format!("<{tag_name}> (wrong root element)"),
                     suggestion: "Use <ralph-fix-result> as the root element.".to_string(),
                     example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
-            }
-            Ok(Event::Text(_)) => {
-                // Text before root element - continue to find root or reach EOF
-                // EOF will give a more informative "missing root element" error
             }
             Ok(Event::Eof) => {
                 return Err(XsdValidationError {
@@ -84,8 +87,11 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                     example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
             }
-            Ok(_) => {} // Skip XML declaration, comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Ok(Event::Text(_) | _) => {
+                // Text before root element or other events - continue to find root or reach EOF
+                // EOF will give a more informative "missing root element" error
+            }
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
         buf.clear();
     }
@@ -93,8 +99,6 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
     // Parse child elements
     let mut status: Option<String> = None;
     let mut summary: Option<String> = None;
-
-    const VALID_TAGS: [&str; 2] = ["ralph-status", "ralph-summary"];
 
     loop {
         buf.clear();
@@ -140,7 +144,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                 });
             }
             Ok(_) => {} // Skip comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
     }
 
@@ -194,7 +198,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixResultElements {
     /// The fix status (required)
-    /// Valid values: all_issues_addressed, issues_remain, no_issues_found
+    /// Valid values: `all_issues_addressed`, `issues_remain`, `no_issues_found`
     pub status: String,
     /// Optional summary of fixes applied
     pub summary: Option<String>,
@@ -202,16 +206,19 @@ pub struct FixResultElements {
 
 impl FixResultElements {
     /// Returns true if all issues have been addressed or no issues were found.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.status == "all_issues_addressed" || self.status == "no_issues_found"
     }
 
     /// Returns true if issues remain.
+    #[must_use]
     pub fn has_remaining_issues(&self) -> bool {
         self.status == "issues_remain"
     }
 
     /// Returns true if no issues were found.
+    #[must_use]
     pub fn is_no_issues(&self) -> bool {
         self.status == "no_issues_found"
     }
@@ -223,9 +230,9 @@ mod tests {
 
     #[test]
     fn test_validate_valid_all_issues_addressed() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -237,9 +244,9 @@ mod tests {
 
     #[test]
     fn test_validate_valid_issues_remain() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>issues_remain</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -251,9 +258,9 @@ mod tests {
 
     #[test]
     fn test_validate_valid_no_issues_found() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>no_issues_found</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -264,10 +271,10 @@ mod tests {
 
     #[test]
     fn test_validate_valid_with_summary() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>All reported issues have been fixed</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -281,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_validate_missing_root_element() {
-        let xml = r#"Some random text without proper XML tags"#;
+        let xml = r"Some random text without proper XML tags";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -291,9 +298,9 @@ mod tests {
 
     #[test]
     fn test_validate_missing_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-summary>No status</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -303,9 +310,9 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>invalid_status_value</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -315,9 +322,9 @@ mod tests {
 
     #[test]
     fn test_validate_empty_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>   </ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -325,10 +332,10 @@ mod tests {
 
     #[test]
     fn test_validate_duplicate_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-status>issues_remain</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());

@@ -17,6 +17,7 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
 
@@ -39,11 +40,9 @@ fn test_ccs_glm_basic_mode_500_text_deltas_must_produce_one_line() {
         );
 
         for i in 0..500 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#
+            ).unwrap();
         }
 
         stream.push_str(
@@ -62,11 +61,9 @@ fn test_ccs_glm_basic_mode_500_text_deltas_must_produce_one_line() {
         let total_lines = output.lines().count();
         assert!(
             total_lines <= 2,
-            "BASIC MODE NUCLEAR TEST FAILED: Expected ≤ 2 total lines for 500 text deltas, found {}.\n\n\
+            "BASIC MODE NUCLEAR TEST FAILED: Expected ≤ 2 total lines for 500 text deltas, found {total_lines}.\n\n\
              This proves per-delta spam is happening in Basic mode!\n\n\
-             Output:\n{}",
-            total_lines,
-            output
+             Output:\n{output}"
         );
 
         // Verify no consecutive duplicates
@@ -84,8 +81,7 @@ fn test_ccs_glm_basic_mode_500_text_deltas_must_produce_one_line() {
         // Verify content is present
         assert!(
             output.contains("w0") && output.contains("w499"),
-            "Expected content (w0...w499) to be present. Output:\n{}",
-            output
+            "Expected content (w0...w499) to be present. Output:\n{output}"
         );
     });
 }
@@ -105,11 +101,11 @@ fn test_ccs_codex_basic_mode_500_reasoning_deltas_must_produce_one_line() {
         let mut stream = String::new();
 
         for i in 0..500 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#
+            )
+            .unwrap();
         }
 
         stream.push_str(
@@ -127,11 +123,9 @@ fn test_ccs_codex_basic_mode_500_reasoning_deltas_must_produce_one_line() {
         let total_lines = output.lines().count();
         assert!(
             total_lines <= 2,
-            "BASIC MODE NUCLEAR TEST FAILED: Expected ≤ 2 total lines for 500 reasoning deltas, found {}.\n\n\
+            "BASIC MODE NUCLEAR TEST FAILED: Expected ≤ 2 total lines for 500 reasoning deltas, found {total_lines}.\n\n\
              This proves per-delta spam is happening in Basic mode!\n\n\
-             Output:\n{}",
-            total_lines,
-            output
+             Output:\n{output}"
         );
 
         // Verify no consecutive duplicates

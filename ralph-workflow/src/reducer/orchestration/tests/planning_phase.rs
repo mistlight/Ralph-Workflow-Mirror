@@ -96,8 +96,7 @@ fn test_determine_effect_planning_rematerializes_when_consumer_signature_changes
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::MaterializePlanningInputs { iteration: 2 }),
-        "Expected re-materialization when consumer signature changes, got {:?}",
-        effect
+        "Expected re-materialization when consumer signature changes, got {effect:?}"
     );
 
     // When signatures match, only changing current agent index should not trigger rematerialization.
@@ -112,8 +111,7 @@ fn test_determine_effect_planning_rematerializes_when_consumer_signature_changes
     let effect = determine_next_effect(&state);
     assert!(
         !matches!(effect, Effect::MaterializePlanningInputs { .. }),
-        "Expected no re-materialization when only current agent index changes, got {:?}",
-        effect
+        "Expected no re-materialization when only current agent index changes, got {effect:?}"
     );
 }
 
@@ -137,8 +135,7 @@ fn test_planning_phase_emits_single_task_effect() {
 
     assert!(
         matches!(effect, Effect::MaterializePlanningInputs { .. }),
-        "Planning should emit MaterializePlanningInputs, got {:?}",
-        effect
+        "Planning should emit MaterializePlanningInputs, got {effect:?}"
     );
 }
 
@@ -196,8 +193,7 @@ fn test_planning_phase_uses_xsd_retry_prompt_when_pending() {
                 prompt_mode: PromptMode::XsdRetry
             }
         ),
-        "Expected XSD retry prompt when xsd_retry_pending=true, got {:?}",
-        effect
+        "Expected XSD retry prompt when xsd_retry_pending=true, got {effect:?}"
     );
 }
 
@@ -230,8 +226,7 @@ fn test_planning_phase_transitions_to_development_after_completion() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-        "Expected PrepareDevelopmentContext, got {:?}",
-        effect
+        "Expected PrepareDevelopmentContext, got {effect:?}"
     );
 }
 

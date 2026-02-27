@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error_event() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -29,7 +29,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
@@ -52,7 +52,7 @@ fn test_apply_commit_message_outcome_surfaces_missing_validated_outcome_as_error
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));

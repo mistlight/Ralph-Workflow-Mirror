@@ -4,12 +4,16 @@
 ///
 /// This cleans up the rebase state and returns the repository to its
 /// pre-rebase condition.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn abort_rebase(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     abort_rebase_impl(&repo, executor)
 }
 
-/// Implementation of abort_rebase.
+/// Implementation of `abort_rebase`.
 fn abort_rebase_impl(
     repo: &git2::Repository,
     executor: &dyn crate::executor::ProcessExecutor,

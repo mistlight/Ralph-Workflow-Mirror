@@ -82,7 +82,7 @@ pub fn prompt_for_agent(
 
     // Prepend resume note if applicable
     if config.is_resume {
-        format!("{}{}", resume_note, base_prompt)
+        format!("{resume_note}{base_prompt}")
     } else {
         base_prompt
     }
@@ -97,13 +97,13 @@ pub fn prompt_for_agent(
 ///
 /// # Arguments
 ///
-/// * `prompt_key` - Unique key identifying this prompt (e.g., "development_1", "review_2")
+/// * `prompt_key` - Unique key identifying this prompt (e.g., "`development_1`", "`review_2`")
 /// * `prompt_history` - The prompt history from the checkpoint (if available)
 /// * `generator` - Function to generate the prompt if not found in history
 ///
 /// # Returns
 ///
-/// A tuple of (prompt, was_replayed) where:
+/// A tuple of (prompt, `was_replayed`) where:
 /// - `prompt` is the prompt string (either replayed or newly generated)
 /// - `was_replayed` is true if the prompt came from history, false if newly generated
 ///
@@ -119,19 +119,18 @@ pub fn prompt_for_agent(
 ///     logger.info("Using stored prompt from checkpoint for determinism");
 /// }
 /// ```
-pub fn get_stored_or_generate_prompt<F>(
+pub fn get_stored_or_generate_prompt<F, S: std::hash::BuildHasher>(
     prompt_key: &str,
-    prompt_history: &std::collections::HashMap<String, String>,
+    prompt_history: &std::collections::HashMap<String, String, S>,
     generator: F,
 ) -> (String, bool)
 where
     F: FnOnce() -> String,
 {
-    if let Some(stored_prompt) = prompt_history.get(prompt_key) {
-        (stored_prompt.clone(), true)
-    } else {
-        (generator(), false)
-    }
+    prompt_history.get(prompt_key).map_or_else(
+        || (generator(), false),
+        |stored_prompt| (stored_prompt.clone(), true),
+    )
 }
 
 #[cfg(test)]

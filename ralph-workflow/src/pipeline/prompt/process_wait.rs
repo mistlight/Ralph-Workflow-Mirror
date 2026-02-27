@@ -4,7 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 pub(super) fn wait_for_completion_and_collect_stderr(
-    child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>>,
+    child_arc: &Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>>,
     stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
     monitor_handle: &mut Option<std::thread::JoinHandle<MonitorResult>>,
     runtime: &PipelineRuntime<'_>,
@@ -22,10 +22,9 @@ pub(super) fn wait_for_completion_and_collect_stderr(
     fn try_take_monitor_result(
         monitor_handle: &mut Option<std::thread::JoinHandle<MonitorResult>>,
     ) -> Result<Option<MonitorResult>, String> {
-        let finished = match monitor_handle.as_ref() {
-            Some(h) => h.is_finished(),
-            None => false,
-        };
+        let finished = monitor_handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished);
         if !finished {
             return Ok(None);
         }
@@ -55,26 +54,23 @@ pub(super) fn wait_for_completion_and_collect_stderr(
         stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
         runtime: &PipelineRuntime<'_>,
     ) -> String {
-        let finished = match stderr_join_handle.as_ref() {
-            Some(h) => h.is_finished(),
-            None => false,
-        };
+        let finished = stderr_join_handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished);
         if !finished {
             return String::new();
         }
 
-        match stderr_join_handle.take() {
-            Some(handle) => match handle.join() {
-                Ok(result) => result.unwrap_or_else(|e| {
+        stderr_join_handle.take().map_or(String::new(), |handle| {
+            handle.join().map_or(String::new(), |result| {
+                result.unwrap_or_else(|e| {
                     runtime
                         .logger
                         .warn(&format!("Stderr collection failed after timeout: {e}"));
                     String::new()
-                }),
-                Err(_) => String::new(),
-            },
-            None => String::new(),
-        }
+                })
+            })
+        })
     }
 
     let check_interval = Duration::from_millis(100);
@@ -103,13 +99,11 @@ pub(super) fn wait_for_completion_and_collect_stderr(
         let mut child = child_arc
             .lock()
             .expect("child process mutex poisoned - indicates panic in another thread");
-        match child.try_wait()? {
-            Some(status) => break WaitOutcome::Completed(status),
-            None => {
-                drop(child);
-                std::thread::sleep(check_interval);
-            }
+        if let Some(status) = child.try_wait()? {
+            break WaitOutcome::Completed(status);
         }
+        drop(child);
+        std::thread::sleep(check_interval);
     };
 
     let status = match outcome {
@@ -235,7 +229,7 @@ mod tests {
 
         let start = Instant::now();
         let result = wait_for_completion_and_collect_stderr(
-            Arc::clone(&child_arc),
+            &child_arc,
             &mut stderr_join_handle,
             &mut monitor_handle,
             &runtime,
@@ -307,7 +301,7 @@ mod tests {
 
             let start = Instant::now();
             let result = wait_for_completion_and_collect_stderr(
-                Arc::clone(&child_arc),
+                &child_arc,
                 &mut stderr_join_handle,
                 &mut monitor_handle,
                 &runtime,

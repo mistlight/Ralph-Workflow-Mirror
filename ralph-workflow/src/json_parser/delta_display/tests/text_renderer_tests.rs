@@ -1,7 +1,7 @@
-//! Tests for TextDeltaRenderer implementation.
+//! Tests for `TextDeltaRenderer` implementation.
 //!
-//! This module tests the TextDeltaRenderer's render_first_delta,
-//! render_subsequent_delta, and render_completion methods across
+//! This module tests the `TextDeltaRenderer`'s `render_first_delta`,
+//! `render_subsequent_delta`, and `render_completion` methods across
 //! different terminal modes (Full, None, Basic).
 
 use super::*;

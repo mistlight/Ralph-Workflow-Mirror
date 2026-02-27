@@ -159,6 +159,101 @@ Comments must stand alone without external docs.
 
 ---
 
+## Linting
+
+All code (production and tests) must pass clippy with strict lint levels configured at the crate level.
+
+### Required Lint Configuration
+
+**Library and test code** (`ralph-workflow/src/lib.rs`, `tests/*/main.rs`):
+
+```rust
+#![deny(
+    warnings,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery
+)]
+```
+
+**Binary target** (`ralph-workflow/src/main.rs`) adds `unsafe_code` denial:
+
+```rust
+#![deny(
+    warnings,
+    unsafe_code,      // Binary should contain no unsafe operations
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery
+)]
+```
+
+**Custom lint crates** (`lints/file_too_long/src/lib.rs`):
+
+```rust
+#![deny(
+    warnings,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery
+)]
+```
+
+**Note on `clippy::cargo`**: The `clippy::cargo` lint group is not enabled because it flags transitive dependency version conflicts (e.g., `bitflags 1.3.2` from `inotify` vs `2.10.0` from other crates) which are ecosystem-level issues outside our control and don't reflect code quality problems.
+
+### Why Pedantic and Nursery
+
+- **`clippy::pedantic`**: Enforces idiomatic Rust patterns, API design, and documentation standards
+- **`clippy::nursery`**: Catches additional issues that may become pedantic in future releases
+- Both are configured as `deny` to maintain high code quality and catch issues early
+
+### Unsafe Code Policy
+
+- **Library and tests**: Unsafe code is permitted for legitimate low-level operations (POSIX syscalls, FFI)
+- **Binary target**: No unsafe code allowed
+- **All unsafe blocks**: Must have safety documentation explaining why they are safe
+- **Examples**: `fcntl`, `kill`, `setpgid` for process group management; `tzset` for timezone testing
+
+### Common Lint Fixes
+
+**Documentation:**
+- Add `# Errors` sections to functions returning `Result`
+- Add `# Panics` sections to functions that may panic
+- Add backticks around code items in docs (`` `PipelineState` ``, not `PipelineState`)
+
+**Attributes:**
+- Add `#[must_use]` to functions/methods with important return values
+- Prefer `const fn` when functions can be evaluated at compile time
+
+**Code Style:**
+- Use format string interpolation: `format!("{var}")` not `format!("{}", var)`
+- Use `write!()` instead of `format!()` when appending to existing `String`
+- Use field init shorthand: `State { phase }` not `State { phase: phase }`
+- Remove unnecessary `mut` from parameters that aren't mutated
+
+**Forbidden:**
+- **Never** use `#[allow(..)]` or `#[expect(..)]` attributes (see [AGENTS.md](AGENTS.md))
+- If a lint fires incorrectly, refactor to avoid triggering it rather than suppressing it
+
+### Verification
+
+Run clippy on all targets:
+
+```bash
+# Library + unit tests + benchmarks + examples
+cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
+
+# Integration tests
+cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
+
+# Test helpers
+cargo clippy -p test-helpers --all-targets -- -D warnings
+```
+
+All commands must produce **NO OUTPUT**.
+
+---
+
 ## Dead Code
 
 Dead code = not referenced by production, only by tests, "for future use", unused feature flags.

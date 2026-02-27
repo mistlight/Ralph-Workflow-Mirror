@@ -6,7 +6,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**.
 //!
 //! Before writing, modifying, or debugging any integration test, you MUST read
 //! that document. Key principles:
@@ -26,10 +26,10 @@ use crate::test_timeout::with_default_timeout;
 fn test_review_xml_valid_issues() {
     with_default_timeout(|| {
         // Setup: Create valid XML with issues (simple text descriptions)
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Variable unused in src/main.rs</ralph-issue>
 <ralph-issue>Missing error handling in src/utils.rs</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Validate the XML through the public API
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -56,18 +56,18 @@ fn test_review_xml_valid_issues() {
     });
 }
 
-/// Test that valid no_issues_found XML passes validation.
+/// Test that valid `no_issues_found` XML passes validation.
 ///
 /// This verifies that when the review agent produces valid XML with
-/// no_issues_found element, the validation succeeds and identifies
+/// `no_issues_found` element, the validation succeeds and identifies
 /// that no issues were found.
 #[test]
 fn test_review_xml_valid_no_issues_found() {
     with_default_timeout(|| {
         // Setup: Create valid XML with no_issues_found
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>No issues found during review</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -97,7 +97,7 @@ fn test_review_xml_valid_no_issues_found() {
 fn test_review_xml_missing_root_element_provides_specific_error() {
     with_default_timeout(|| {
         // Setup: Create content without proper XML tags
-        let content = r#"Some random text without proper XML tags"#;
+        let content = r"Some random text without proper XML tags";
 
         // Execute: Try to validate the content
         let result = ralph_workflow::validate_issues_xml(content);
@@ -127,13 +127,13 @@ fn test_review_xml_missing_root_element_provides_specific_error() {
 /// Test that empty issues list produces specific error.
 ///
 /// This verifies that when the review agent produces an issues element
-/// with no actual issues and no no_issues_found element, validation fails.
+/// with no actual issues and no `no_issues_found` element, validation fails.
 #[test]
 fn test_review_xml_empty_issues_list_produces_error() {
     with_default_timeout(|| {
         // Setup: Create XML with empty issues list (no issues, no no_issues_found)
-        let xml = r#"<ralph-issues>
-</ralph-issues>"#;
+        let xml = r"<ralph-issues>
+</ralph-issues>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -159,7 +159,7 @@ fn test_review_xml_empty_issues_list_produces_error() {
 fn test_review_xml_extraction_from_markdown_fence() {
     with_default_timeout(|| {
         // Setup: Create content with XML wrapped in markdown fence
-        let content = r#"Here's my review:
+        let content = r"Here's my review:
 
 ```xml
 <ralph-issues>
@@ -167,7 +167,7 @@ fn test_review_xml_extraction_from_markdown_fence() {
 </ralph-issues>
 ```
 
-That's all."#;
+That's all.";
 
         // Execute: Extract XML from the content
         let extracted = ralph_workflow::extract_issues_xml(content);
@@ -214,9 +214,9 @@ fn test_review_xml_extraction_from_json_string() {
 fn test_review_xml_formatted_for_display() {
     with_default_timeout(|| {
         // Setup: Create valid XML
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Variable unused in src/main.rs</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Format the XML for display
         let formatted = ralph_workflow::files::llm_output_extraction::format_xml_for_display(xml);
@@ -246,12 +246,12 @@ fn test_review_xml_formatted_for_display() {
 fn test_review_xml_multiple_issues_all_extracted() {
     with_default_timeout(|| {
         // Setup: Create XML with multiple issues
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Error 1</ralph-issue>
 <ralph-issue>Warning 1</ralph-issue>
 <ralph-issue>Info 1</ralph-issue>
 <ralph-issue>Note 1</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -272,18 +272,18 @@ fn test_review_xml_multiple_issues_all_extracted() {
     });
 }
 
-/// Test that issues and no_issues_found cannot coexist.
+/// Test that issues and `no_issues_found` cannot coexist.
 ///
-/// This verifies that when both issues and no_issues_found are present,
+/// This verifies that when both issues and `no_issues_found` are present,
 /// validation produces an appropriate error.
 #[test]
 fn test_review_xml_issues_and_no_issues_found_cannot_coexist() {
     with_default_timeout(|| {
         // Setup: Create XML with both issues and no_issues_found
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Some issue</ralph-issue>
 <ralph-no-issues-found>No issues found</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -302,18 +302,18 @@ fn test_review_xml_issues_and_no_issues_found_cannot_coexist() {
     });
 }
 
-/// Test that duplicate no_issues_found produces specific error.
+/// Test that duplicate `no_issues_found` produces specific error.
 ///
-/// This verifies that when the review agent includes multiple no_issues_found
+/// This verifies that when the review agent includes multiple `no_issues_found`
 /// elements, validation produces an appropriate error.
 #[test]
 fn test_review_xml_duplicate_no_issues_found_produces_error() {
     with_default_timeout(|| {
         // Setup: Create XML with duplicate no_issues_found
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>No issues</ralph-no-issues-found>
 <ralph-no-issues-found>Also no issues</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -344,9 +344,9 @@ fn test_review_xml_duplicate_no_issues_found_produces_error() {
 fn test_review_xml_unexpected_element_provides_valid_options() {
     with_default_timeout(|| {
         // Setup: Create XML with unexpected element
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-unknown-field>Some value</ralph-unknown-field>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -375,9 +375,9 @@ fn test_review_xml_unexpected_element_provides_valid_options() {
 fn test_review_xml_missing_closing_tag_produces_error() {
     with_default_timeout(|| {
         // Setup: Create XML without closing tag
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Some issue</ralph-issue>
-"#;
+";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -408,7 +408,7 @@ fn test_review_xml_missing_closing_tag_produces_error() {
 fn test_review_xsd_error_contains_all_required_information() {
     with_default_timeout(|| {
         // Setup: Create invalid XML (missing root element)
-        let xml = r#"Random text without proper XML"#;
+        let xml = r"Random text without proper XML";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -461,11 +461,11 @@ fn test_review_xsd_error_contains_all_required_information() {
 fn test_review_xml_whitespace_only_issues_are_filtered() {
     with_default_timeout(|| {
         // Setup: Create XML with whitespace-only issues
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>   </ralph-issue>
 <ralph-issue>Actual issue</ralph-issue>
 <ralph-issue>  </ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -485,18 +485,18 @@ fn test_review_xml_whitespace_only_issues_are_filtered() {
     });
 }
 
-/// Test that whitespace-only no_issues_found is filtered.
+/// Test that whitespace-only `no_issues_found` is filtered.
 ///
-/// This verifies that when the review agent includes no_issues_found with only
+/// This verifies that when the review agent includes `no_issues_found` with only
 /// whitespace, it's treated as missing and validation fails (since we need either
-/// issues or no_issues_found).
+/// issues or `no_issues_found`).
 #[test]
 fn test_review_xml_whitespace_only_no_issues_found_is_filtered() {
     with_default_timeout(|| {
         // Setup: Create XML with whitespace-only no_issues_found
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>   </ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_issues_xml(xml);
@@ -518,7 +518,7 @@ fn test_review_xml_whitespace_only_no_issues_found_is_filtered() {
 ///
 /// This is a regression test for the reported bug where a reviewer output
 /// containing a NUL byte (e.g., from `.replace("git diff", "git\0A0diff")`)
-/// would cause validation to fail silently, triggering AgentChainExhausted.
+/// would cause validation to fail silently, triggering `AgentChainExhausted`.
 ///
 /// The validation should now detect the NUL byte before parsing and provide
 /// a clear, actionable error message that guides the agent to fix it.
@@ -644,21 +644,18 @@ fn test_review_xsd_error_is_detailed_for_retry() {
         // Assert: Error detail should be specific and actionable
         assert!(
             error_detail.contains("NUL") || error_detail.contains("0x00"),
-            "Error detail should mention NUL byte, got: {}",
-            error_detail
+            "Error detail should mention NUL byte, got: {error_detail}"
         );
 
         assert!(
             error_detail.contains("How to fix") || error_detail.contains("fix:"),
-            "Error detail should provide fix guidance, got: {}",
-            error_detail
+            "Error detail should provide fix guidance, got: {error_detail}"
         );
 
         // The error should suggest the common NBSP typo fix
         assert!(
             error_detail.contains("\\u00A0") || error_detail.contains("non-breaking space"),
-            "Error should suggest NBSP as common cause, got: {}",
-            error_detail
+            "Error should suggest NBSP as common cause, got: {error_detail}"
         );
     });
 }
@@ -673,7 +670,7 @@ fn test_review_xsd_error_is_detailed_for_retry() {
 /// 4. Is actionable (has "How to fix" section)
 ///
 /// This is a regression test for the bug where review prints "Found N issue(s)"
-/// but validation fails with illegal characters, causing AgentChainExhausted.
+/// but validation fails with illegal characters, causing `AgentChainExhausted`.
 /// The error message must be detailed enough for XSD retry to converge.
 #[test]
 fn test_review_xsd_error_provides_convergence_context() {
@@ -695,8 +692,7 @@ fn test_review_xsd_error_provides_convergence_context() {
         // 1. Identifies the problem (NUL byte)
         assert!(
             formatted.contains("NUL") || formatted.contains("0x00"),
-            "Formatted error should identify NUL byte, got: {}",
-            formatted
+            "Formatted error should identify NUL byte, got: {formatted}"
         );
 
         // 2. Provides context (position/location)
@@ -709,15 +705,13 @@ fn test_review_xsd_error_provides_convergence_context() {
         // 3. Suggests the fix (NBSP typo)
         assert!(
             formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
-            "Formatted error should suggest NBSP as likely fix, got: {}",
-            formatted
+            "Formatted error should suggest NBSP as likely fix, got: {formatted}"
         );
 
         // 4. Is actionable (has "How to fix" section)
         assert!(
             formatted.contains("How to fix") || formatted.contains("fix:"),
-            "Formatted error should have actionable fix guidance, got: {}",
-            formatted
+            "Formatted error should have actionable fix guidance, got: {formatted}"
         );
 
         // The formatted error should be detailed enough for retry convergence
@@ -736,7 +730,7 @@ fn test_review_xsd_error_provides_convergence_context() {
 /// an agent to understand and fix the problem on retry.
 ///
 /// This addresses the bug where review prints "Found N issue(s)" but validation fails
-/// with illegal characters, causing retries until AgentChainExhausted.
+/// with illegal characters, causing retries until `AgentChainExhausted`.
 #[test]
 fn test_xsd_retry_error_message_for_nul_byte_is_actionable() {
     with_default_timeout(|| {
@@ -758,15 +752,13 @@ fn test_xsd_retry_error_message_for_nul_byte_is_actionable() {
             formatted.contains("ILLEGAL CHARACTER")
                 || formatted.contains("illegal character")
                 || formatted.contains("CRITICAL"),
-            "Error should prominently identify illegal character issue, got:\n{}",
-            formatted
+            "Error should prominently identify illegal character issue, got:\n{formatted}"
         );
 
         // 2. Identify the specific character (NUL/0x00)
         assert!(
             formatted.contains("NUL") || formatted.contains("0x00"),
-            "Error should identify NUL byte, got:\n{}",
-            formatted
+            "Error should identify NUL byte, got:\n{formatted}"
         );
 
         // 3. Provide actionable fix guidance
@@ -774,15 +766,13 @@ fn test_xsd_retry_error_message_for_nul_byte_is_actionable() {
             formatted.contains("How to fix")
                 || formatted.contains("FIX REQUIRED")
                 || formatted.contains("Solution"),
-            "Error should provide fix guidance, got:\n{}",
-            formatted
+            "Error should provide fix guidance, got:\n{formatted}"
         );
 
         // 4. Mention the common mistake (NBSP typo)
         assert!(
             formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
-            "Error should mention common NBSP typo, got:\n{}",
-            formatted
+            "Error should mention common NBSP typo, got:\n{formatted}"
         );
 
         // 5. Include position/context information for finding the error

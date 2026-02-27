@@ -109,8 +109,7 @@ fn test_planning_emits_prepare_prompt_effect() {
 
     assert!(
         matches!(effect, Effect::MaterializePlanningInputs { .. }),
-        "Planning should emit MaterializePlanningInputs, got {:?}",
-        effect
+        "Planning should emit MaterializePlanningInputs, got {effect:?}"
     );
 }
 
@@ -141,8 +140,7 @@ fn test_planning_transitions_to_development_after_completion() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-        "Expected PrepareDevelopmentContext, got {:?}",
-        effect
+        "Expected PrepareDevelopmentContext, got {effect:?}"
     );
 }
 

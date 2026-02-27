@@ -50,8 +50,8 @@ fn test_environment_tests_do_not_clobber_prior_env_values() {
     let _original = EnvVarGuard::set("EDITOR", "original");
 
     {
-        let _vim = EnvVarGuard::set("EDITOR", "vim");
-        drop(_vim);
+        let vim_guard = EnvVarGuard::set("EDITOR", "vim");
+        drop(vim_guard);
     }
 
     assert_eq!(
@@ -259,14 +259,12 @@ mod workspace_tests {
         let result = load_checkpoint_with_workspace(&workspace);
         assert!(
             result.is_err(),
-            "v1 checkpoint should be rejected: {:?}",
-            result
+            "v1 checkpoint should be rejected: {result:?}"
         );
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("no longer supported"),
-            "Error should mention legacy not supported: {}",
-            err
+            "Error should mention legacy not supported: {err}"
         );
     }
 
@@ -407,8 +405,7 @@ mod workspace_tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("newer") || err.to_string().contains("upgrade"),
-            "error should suggest upgrading: {}",
-            err
+            "error should suggest upgrading: {err}"
         );
     }
 
@@ -466,15 +463,12 @@ mod workspace_tests {
             let result = load_checkpoint_with_workspace(&workspace);
             assert!(
                 result.is_err(),
-                "Legacy phase '{}' should be rejected",
-                phase_label
+                "Legacy phase '{phase_label}' should be rejected"
             );
             let err = result.unwrap_err();
             assert!(
                 err.to_string().contains("no longer supported"),
-                "Error for '{}' should mention 'no longer supported': {}",
-                phase_label,
-                err
+                "Error for '{phase_label}' should mention 'no longer supported': {err}"
             );
         }
     }
@@ -486,8 +480,7 @@ mod workspace_tests {
         let err = fix_result.unwrap_err().to_string();
         assert!(
             err.contains("no longer supported"),
-            "Error should mention 'no longer supported': {}",
-            err
+            "Error should mention 'no longer supported': {err}"
         );
 
         let review_again_result: Result<PipelinePhase, _> = serde_json::from_str("\"ReviewAgain\"");
@@ -498,8 +491,7 @@ mod workspace_tests {
         let err = review_again_result.unwrap_err().to_string();
         assert!(
             err.contains("no longer supported"),
-            "Error should mention 'no longer supported': {}",
-            err
+            "Error should mention 'no longer supported': {err}"
         );
     }
 
@@ -531,8 +523,7 @@ mod workspace_tests {
         // Compact JSON should be just a few lines (not hundreds)
         assert!(
             line_count < 10,
-            "Compact JSON should have minimal lines, got {}",
-            line_count
+            "Compact JSON should have minimal lines, got {line_count}"
         );
     }
 
@@ -547,14 +538,14 @@ mod workspace_tests {
         let mut history = ExecutionHistory::new();
         for i in 0..10 {
             let outcome = StepOutcome::Success {
-                output: Some(format!("output{}", i).into()),
+                output: Some(format!("output{i}").into()),
                 files_modified: Some(vec![format!("file{}.rs", i)].into_boxed_slice()),
                 exit_code: Some(0),
             };
             let step =
-                ExecutionStep::new(&format!("Phase{}", i), i, &format!("step{}", i), outcome)
-                    .with_agent(&format!("agent{}", i))
-                    .with_duration(100 + i as u64);
+                ExecutionStep::new(&format!("Phase{i}"), i, &format!("step{i}"), outcome)
+                    .with_agent(&format!("agent{i}"))
+                    .with_duration(100 + u64::from(i));
             history.add_step_bounded(step, 1000);
         }
         checkpoint.execution_history = Some(history);
@@ -576,12 +567,12 @@ mod workspace_tests {
         assert_eq!(loaded_history.steps.len(), 10);
 
         for (i, step) in loaded_history.steps.iter().enumerate() {
-            assert_eq!(step.phase.as_ref(), format!("Phase{}", i));
-            assert_eq!(step.iteration, i as u32);
-            assert_eq!(step.step_type.as_ref(), format!("step{}", i));
+            assert_eq!(step.phase.as_ref(), format!("Phase{i}"));
+            assert_eq!(step.iteration, u32::try_from(i).expect("value fits in u32"));
+            assert_eq!(step.step_type.as_ref(), format!("step{i}"));
             assert_eq!(
-                step.agent.as_ref().map(|a| a.as_ref()),
-                Some(format!("agent{}", i).as_str())
+                step.agent.as_ref().map(std::convert::AsRef::as_ref),
+                Some(format!("agent{i}").as_str())
             );
             assert_eq!(step.duration_secs, Some(100 + i as u64));
 
@@ -592,14 +583,14 @@ mod workspace_tests {
             } = &step.outcome
             {
                 assert_eq!(
-                    output.as_ref().map(|o| o.as_ref()),
-                    Some(format!("output{}", i).as_str())
+                    output.as_ref().map(std::convert::AsRef::as_ref),
+                    Some(format!("output{i}").as_str())
                 );
                 assert_eq!(
                     files_modified
                         .as_ref()
-                        .map(|f| f.iter().map(|s| s.as_str()).collect::<Vec<_>>()),
-                    Some(vec![format!("file{}.rs", i).as_str()])
+                        .map(|f| f.iter().map(std::string::String::as_str).collect::<Vec<_>>()),
+                    Some(vec![format!("file{i}.rs").as_str()])
                 );
                 assert_eq!(*exit_code, Some(0));
             } else {
@@ -629,8 +620,7 @@ mod workspace_tests {
         // Base size should be within 50% of actual (conservative estimate)
         assert!(
             empty_size <= 15_000,
-            "Empty checkpoint should be < 15KB, got {}",
-            empty_size
+            "Empty checkpoint should be < 15KB, got {empty_size}"
         );
 
         // Test with 100 entries
@@ -1008,6 +998,50 @@ fn test_checkpoint_serialization() {
     assert_eq!(deserialized.run_id, run_id);
     assert_eq!(deserialized.actual_developer_runs, 3);
     assert_eq!(deserialized.actual_reviewer_runs, 1);
+}
+
+#[test]
+fn test_cloud_checkpoint_state_deserializes_legacy_cloud_config_field() {
+    let legacy_json = serde_json::json!({
+        "cloud_config": {
+            "enabled": true,
+            "api_url": "https://example.invalid",
+            "run_id": "run-legacy-1",
+            "heartbeat_interval_secs": 45,
+            "graceful_degradation": false,
+            "git_remote": {
+                "auth_method": { "SshKey": { "key_path": null } },
+                "push_branch": "feature/legacy",
+                "create_pr": true,
+                "pr_title_template": null,
+                "pr_body_template": null,
+                "pr_base_branch": "main",
+                "force_push": false,
+                "remote_name": "origin"
+            }
+        },
+        "pending_push_commit": "abc123",
+        "git_auth_configured": true,
+        "pr_created": true,
+        "pr_url": "https://example.invalid/pr/1",
+        "pr_number": 1,
+        "push_count": 2,
+        "push_retry_count": 1,
+        "last_push_error": null,
+        "unpushed_commits": ["abc123"],
+        "last_pushed_commit": "def456"
+    });
+
+    let deserialized: CloudCheckpointState = serde_json::from_value(legacy_json).unwrap();
+
+    assert!(deserialized.cloud.enabled);
+    assert_eq!(
+        deserialized.cloud.api_url.as_deref(),
+        Some("https://example.invalid")
+    );
+    assert_eq!(deserialized.pending_push_commit.as_deref(), Some("abc123"));
+    assert!(deserialized.git_auth_configured);
+    assert!(deserialized.pr_created);
 }
 
 #[test]

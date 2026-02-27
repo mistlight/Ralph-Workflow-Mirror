@@ -1,14 +1,14 @@
 //! Integration tests for git workflow with per-iteration commits.
 //!
 //! These tests verify that:
-//! - start_commit file tracking works
+//! - `start_commit` file tracking works
 //! - The --reset-start-commit flag works
-//! - ALL git operations go through AppEffectHandler (no real git calls in tests)
+//! - ALL git operations go through `AppEffectHandler` (no real git calls in tests)
 //!
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (effect execution, state changes)
@@ -21,6 +21,8 @@ use ralph_workflow::app::effectful::{
     get_head_oid, handle_reset_start_commit, is_on_main_branch, require_repo, save_start_commit,
 };
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 use crate::common::{create_test_config_struct, mock_executor_with_success};
@@ -92,7 +94,7 @@ fn ralph_reset_start_commit_on_main_uses_head() {
 ///
 /// This verifies that when a user invokes the reset-start-commit handler
 /// on a feature branch, the `.agent/start_commit` file is updated appropriately.
-/// (In the mock, GitResetStartCommit returns the HEAD OID, but in production
+/// (In the mock, `GitResetStartCommit` returns the HEAD OID, but in production
 /// it calculates merge-base).
 #[test]
 fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
@@ -134,9 +136,9 @@ fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
     });
 }
 
-/// Test that save_start_commit correctly saves the starting commit.
+/// Test that `save_start_commit` correctly saves the starting commit.
 ///
-/// This verifies that when the pipeline starts, save_start_commit
+/// This verifies that when the pipeline starts, `save_start_commit`
 /// creates the `.agent/start_commit` file with a valid OID.
 #[test]
 fn ralph_start_commit_created_during_pipeline() {
@@ -169,7 +171,7 @@ fn ralph_start_commit_created_during_pipeline() {
     });
 }
 
-/// Test that require_repo fails gracefully on an empty repository.
+/// Test that `require_repo` fails gracefully on an empty repository.
 ///
 /// This verifies that when a user invokes commands in a non-git directory,
 /// the command fails with an appropriate error.
@@ -207,7 +209,7 @@ fn ralph_save_start_commit_handles_empty_repo() {
     });
 }
 
-/// Test that is_on_main_branch correctly reports branch status.
+/// Test that `is_on_main_branch` correctly reports branch status.
 #[test]
 fn ralph_is_on_main_branch_detection() {
     with_default_timeout(|| {
@@ -228,7 +230,7 @@ fn ralph_is_on_main_branch_detection() {
     });
 }
 
-/// Test that get_head_oid returns the correct OID.
+/// Test that `get_head_oid` returns the correct OID.
 #[test]
 fn ralph_get_head_oid_returns_correct_value() {
     with_default_timeout(|| {
@@ -251,7 +253,7 @@ fn ralph_get_head_oid_returns_correct_value() {
     });
 }
 
-/// Test that reset_start_commit works with a working directory override.
+/// Test that `reset_start_commit` works with a working directory override.
 #[test]
 fn ralph_reset_start_commit_with_working_dir_override() {
     with_default_timeout(|| {
@@ -290,7 +292,7 @@ fn ralph_reset_start_commit_with_working_dir_override() {
 /// Test that --reset-start-commit CLI flag uses the effect handler.
 ///
 /// This is the key test that drives the refactor of app/mod.rs to use
-/// AppEffectHandler throughout. When this test passes, the CLI properly
+/// `AppEffectHandler` throughout. When this test passes, the CLI properly
 /// delegates git operations to the handler.
 #[test]
 fn cli_reset_start_commit_uses_effect_handler() {
@@ -312,7 +314,7 @@ fn cli_reset_start_commit_uses_effect_handler() {
             &mut handler,
         );
 
-        assert!(result.is_ok(), "CLI should succeed: {:?}", result);
+        assert!(result.is_ok(), "CLI should succeed: {result:?}");
 
         // Verify the handler captured the expected effects
         let effects = handler.captured();
@@ -348,18 +350,18 @@ fn cli_reset_start_commit_uses_effect_handler() {
 /// Test that the full pipeline uses handler for ALL git operations.
 ///
 /// **CRITICAL TDD TEST**: This test verifies that when running the full ralph pipeline,
-/// ALL git operations go through the AppEffectHandler. If this test passes with an
+/// ALL git operations go through the `AppEffectHandler`. If this test passes with an
 /// empty effects list, it means real git calls are being made instead of going through
 /// the handler - which is a BUG that causes real commits during tests.
 ///
 /// The test should capture at minimum:
-/// - GitRequireRepo (validate we're in a git repo)
-/// - GitGetRepoRoot (get repo root for setup)
-/// - SetCurrentDir (change to repo root)
+/// - `GitRequireRepo` (validate we're in a git repo)
+/// - `GitGetRepoRoot` (get repo root for setup)
+/// - `SetCurrentDir` (change to repo root)
 ///
 /// If additional pipeline operations occur, they should also be captured:
-/// - GitSaveStartCommit (save start commit for diff tracking)
-/// - GitAddAll / GitCommit (if committing changes)
+/// - `GitSaveStartCommit` (save start commit for diff tracking)
+/// - `GitAddAll` / `GitCommit` (if committing changes)
 #[test]
 fn full_pipeline_uses_handler_for_all_git_operations() {
     with_default_timeout(|| {
@@ -372,9 +374,6 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
                 "# Test\n\n## Goal\nTest goal\n\n## Acceptance Criteria\n- Test criterion",
             )
             .with_file(".agent/PLAN.md", "# Plan\nTest plan");
-
-        use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-        use ralph_workflow::reducer::PipelineState;
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
@@ -396,8 +395,7 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
             !effects.is_empty(),
             "CRITICAL: Effects list is empty! This means real git calls are being made \
              instead of going through the handler. All git operations MUST use the handler \
-             to prevent real commits during tests. Effects: {:?}",
-            effects
+             to prevent real commits during tests. Effects: {effects:?}"
         );
 
         // Validate setup phase used handler
@@ -405,16 +403,14 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
             effects
                 .iter()
                 .any(|e| matches!(e, AppEffect::GitRequireRepo)),
-            "validate_and_setup_agents should emit GitRequireRepo. Effects: {:?}",
-            effects
+            "validate_and_setup_agents should emit GitRequireRepo. Effects: {effects:?}"
         );
 
         assert!(
             effects
                 .iter()
                 .any(|e| matches!(e, AppEffect::GitGetRepoRoot)),
-            "validate_and_setup_agents should emit GitGetRepoRoot. Effects: {:?}",
-            effects
+            "validate_and_setup_agents should emit GitGetRepoRoot. Effects: {effects:?}"
         );
 
         // If pipeline runs, it should save start commit via handler
@@ -429,8 +425,7 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
         // At minimum, setup phase should set current dir
         assert!(
             has_set_dir || has_save_start,
-            "Pipeline should emit SetCurrentDir or GitSaveStartCommit. Effects: {:?}",
-            effects
+            "Pipeline should emit SetCurrentDir or GitSaveStartCommit. Effects: {effects:?}"
         );
     });
 }
@@ -441,14 +436,11 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
 /// by injecting both `MockAppEffectHandler` (CLI layer) and `MockEffectHandler` (reducer layer).
 ///
 /// When both handlers are used:
-/// - CLI-layer operations (GitRequireRepo, SetCurrentDir) are captured by MockAppEffectHandler
-/// - Reducer-layer operations (CreateCommit, RunRebase) are captured by MockEffectHandler
+/// - CLI-layer operations (`GitRequireRepo`, `SetCurrentDir`) are captured by `MockAppEffectHandler`
+/// - Reducer-layer operations (`CreateCommit`, `RunRebase`) are captured by `MockEffectHandler`
 /// - NO real git calls are made at any layer
 #[test]
 fn full_pipeline_with_both_handlers_makes_no_real_git_calls() {
-    use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-    use ralph_workflow::reducer::PipelineState;
-
     with_default_timeout(|| {
         let expected_oid = "a".repeat(40);
         let mut app_handler = MockAppEffectHandler::new()
@@ -491,8 +483,7 @@ fn full_pipeline_with_both_handlers_makes_no_real_git_calls() {
                 || app_effects
                     .iter()
                     .any(|e| matches!(e, AppEffect::SetCurrentDir { .. })),
-            "Should emit GitRequireRepo or SetCurrentDir. Effects: {:?}",
-            app_effects
+            "Should emit GitRequireRepo or SetCurrentDir. Effects: {app_effects:?}"
         );
 
         // If the pipeline ran to completion, reducer effects should be captured

@@ -19,8 +19,8 @@ use std::path::Path;
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn materialize_planning_inputs(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         let prompt_md = ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
@@ -65,7 +65,7 @@ impl MainEffectHandler {
         let input = MaterializedPromptInput {
             kind: PromptInputKind::Prompt,
             content_id_sha256: content_id_sha256.clone(),
-            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            consumer_signature_sha256,
             original_bytes,
             final_bytes: original_bytes,
             model_budget_bytes: None,

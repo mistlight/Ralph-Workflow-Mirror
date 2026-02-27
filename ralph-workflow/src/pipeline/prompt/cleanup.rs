@@ -34,24 +34,18 @@ pub(super) fn terminate_child_best_effort(
                     locked_child.try_wait()
                 };
 
-                match status {
-                    Ok(Some(_)) => return true,
-                    Ok(None) | Err(_) => {
-                        let now = Instant::now();
-                        let should_resend = match last_kill_sent_at {
-                            None => true,
-                            Some(t) => {
-                                now.duration_since(t) >= kill_config.sigkill_resend_interval()
-                            }
-                        };
-
-                        if should_resend {
-                            let _ = force_kill_best_effort(pid, executor);
-                            last_kill_sent_at = Some(now);
-                        }
-                        std::thread::sleep(kill_config.poll_interval());
-                    }
+                if let Ok(Some(_)) = status {
+                    return true;
                 }
+                let now = Instant::now();
+                let should_resend = last_kill_sent_at
+                    .is_none_or(|t| now.duration_since(t) >= kill_config.sigkill_resend_interval());
+
+                if should_resend {
+                    let _ = force_kill_best_effort(pid, executor);
+                    last_kill_sent_at = Some(now);
+                }
+                std::thread::sleep(kill_config.poll_interval());
             }
 
             false

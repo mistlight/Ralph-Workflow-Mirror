@@ -26,6 +26,10 @@ pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
 /// * `workspace` - The workspace for file operations
 /// * `path` - Relative path within the workspace
 /// * `content` - Content to write
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn write_file_atomic_with_workspace(
     workspace: &dyn Workspace,
     path: &Path,
@@ -45,6 +49,10 @@ pub fn write_file_atomic_with_workspace(
 ///
 /// * `workspace` - The workspace for file operations
 /// * `path` - Relative path within the workspace
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn verify_file_not_corrupted_with_workspace(
     workspace: &dyn Workspace,
     path: &Path,
@@ -57,9 +65,8 @@ pub fn verify_file_not_corrupted_with_workspace(
     }
 
     // Check if valid UTF-8
-    let text = match String::from_utf8(content) {
-        Ok(s) => s,
-        Err(_) => return Ok(false),
+    let Ok(text) = String::from_utf8(content) else {
+        return Ok(false);
     };
 
     // Null bytes are a simple indicator of binary corruption.
@@ -84,6 +91,10 @@ pub fn verify_file_not_corrupted_with_workspace(
 ///
 /// * `workspace` - The workspace for file operations
 /// * `path` - Relative path within the workspace to check
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn check_filesystem_ready_with_workspace(
     workspace: &dyn Workspace,
     path: &Path,
@@ -157,6 +168,10 @@ pub fn check_filesystem_ready_with_workspace(
 /// - `Ok(true)` - File exists and is writable
 /// - `Ok(false)` - File doesn't exist (not an error)
 /// - `Err(...)` - File access error
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn check_xml_file_writable_with_workspace(
     workspace: &dyn Workspace,
     xml_path: &Path,
@@ -191,6 +206,10 @@ pub fn check_xml_file_writable_with_workspace(
 ///
 /// `Ok(())` if file is writable or was successfully cleaned up.
 /// `Err(...)` if cleanup failed.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn check_and_cleanup_xml_before_retry_with_workspace(
     workspace: &dyn Workspace,
     xml_path: &Path,
@@ -239,6 +258,10 @@ pub fn check_and_cleanup_xml_before_retry_with_workspace(
 /// # Returns
 ///
 /// A summary of what was found and cleaned up.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn cleanup_stale_xml_files_with_workspace(
     workspace: &dyn Workspace,
     tmp_dir: &Path,
@@ -281,10 +304,10 @@ pub fn cleanup_stale_xml_files_with_workspace(
         writable, 0, cleaned
     );
 
-    if !report.is_empty() {
-        Ok(format!("{}\n{}", summary, report.join("\n")))
-    } else {
+    if report.is_empty() {
         Ok(summary)
+    } else {
+        Ok(format!("{}\n{}", summary, report.join("\n")))
     }
 }
 
@@ -453,8 +476,7 @@ mod tests {
                     .unwrap();
             assert!(
                 report.contains("2 writable"),
-                "Should find 2 XML files, got: {}",
-                report
+                "Should find 2 XML files, got: {report}"
             );
         }
 

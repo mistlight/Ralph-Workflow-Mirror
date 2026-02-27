@@ -38,6 +38,7 @@ impl<'a> PromptContentBuilder<'a> {
     ///
     /// If the content exceeds [`MAX_INLINE_CONTENT_SIZE`], the builder will
     /// create a reference to the backup file instead of embedding inline.
+    #[must_use]
     pub fn with_prompt(mut self, content: String) -> Self {
         let backup_path = self.workspace.prompt_backup();
         self.prompt_ref = Some(PromptContentReference::from_content(
@@ -52,6 +53,7 @@ impl<'a> PromptContentBuilder<'a> {
     ///
     /// If the content exceeds [`MAX_INLINE_CONTENT_SIZE`], the builder will
     /// create instructions to read from .agent/PLAN.md with optional XML fallback.
+    #[must_use]
     pub fn with_plan(mut self, content: String) -> Self {
         let plan_path = Path::new(".agent/PLAN.md");
         let xml_fallback = Path::new(".agent/tmp/plan.xml");
@@ -67,6 +69,7 @@ impl<'a> PromptContentBuilder<'a> {
     ///
     /// If the content exceeds [`MAX_INLINE_CONTENT_SIZE`], the builder will
     /// create instructions to use `git diff` instead of embedding inline.
+    #[must_use]
     pub fn with_diff(mut self, content: String, start_commit: &str) -> Self {
         // For oversize diffs, write the diff to .agent/tmp/diff.txt so agents can read it
         // without relying on git being available.
@@ -90,8 +93,9 @@ impl<'a> PromptContentBuilder<'a> {
 
     /// Build the references.
     ///
-    /// Note: Backup files should be created before calling build() if needed.
+    /// Note: Backup files should be created before calling `build()` if needed.
     /// This builder only determines how content should be referenced.
+    #[must_use]
     pub fn build(self) -> PromptContentReferences {
         PromptContentReferences {
             prompt: self.prompt_ref,
@@ -104,6 +108,7 @@ impl<'a> PromptContentBuilder<'a> {
     ///
     /// This is useful for logging or debugging to see when content
     /// will be referenced by file path instead of embedded inline.
+    #[must_use]
     pub fn has_oversize_content(&self) -> bool {
         let prompt_oversize = self.prompt_ref.as_ref().is_some_and(|r| !r.is_inline());
         let plan_oversize = self.plan_ref.as_ref().is_some_and(|r| !r.is_inline());
@@ -130,46 +135,58 @@ impl PromptContentReferences {
     /// Get the PROMPT content for template rendering.
     ///
     /// Returns the content directly if inline, or instructions to read from file.
+    #[must_use]
     pub fn prompt_for_template(&self) -> String {
         self.prompt
             .as_ref()
-            .map(|r| r.render_for_template())
+            .map(super::content_reference::PromptContentReference::render_for_template)
             .unwrap_or_default()
     }
 
     /// Get the PLAN content for template rendering.
     ///
     /// Returns the content directly if inline, or instructions to read from file.
+    #[must_use]
     pub fn plan_for_template(&self) -> String {
         self.plan
             .as_ref()
-            .map(|r| r.render_for_template())
+            .map(super::content_reference::PlanContentReference::render_for_template)
             .unwrap_or_default()
     }
 
     /// Get the DIFF content for template rendering.
     ///
     /// Returns the content directly if inline, or instructions to use git diff.
+    #[must_use]
     pub fn diff_for_template(&self) -> String {
         self.diff
             .as_ref()
-            .map(|r| r.render_for_template())
+            .map(super::content_reference::DiffContentReference::render_for_template)
             .unwrap_or_default()
     }
 
     /// Check if the PROMPT reference is inline.
+    #[must_use]
     pub fn prompt_is_inline(&self) -> bool {
-        self.prompt.as_ref().is_some_and(|r| r.is_inline())
+        self.prompt
+            .as_ref()
+            .is_some_and(super::content_reference::PromptContentReference::is_inline)
     }
 
     /// Check if the PLAN reference is inline.
+    #[must_use]
     pub fn plan_is_inline(&self) -> bool {
-        self.plan.as_ref().is_some_and(|r| r.is_inline())
+        self.plan
+            .as_ref()
+            .is_some_and(super::content_reference::PlanContentReference::is_inline)
     }
 
     /// Check if the DIFF reference is inline.
+    #[must_use]
     pub fn diff_is_inline(&self) -> bool {
-        self.diff.as_ref().is_some_and(|r| r.is_inline())
+        self.diff
+            .as_ref()
+            .is_some_and(super::content_reference::DiffContentReference::is_inline)
     }
 }
 

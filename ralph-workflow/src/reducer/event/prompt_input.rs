@@ -99,7 +99,7 @@ pub enum PromptInputEvent {
 
     /// PROMPT.md permissions locked (read-only) at pipeline startup.
     ///
-    /// Emitted by LockPromptPermissions effect handler when attempting to
+    /// Emitted by `LockPromptPermissions` effect handler when attempting to
     /// set PROMPT.md to read-only. If the operation fails, a warning is included
     /// but the pipeline continues (best-effort protection).
     PromptPermissionsLocked {
@@ -108,7 +108,7 @@ pub enum PromptInputEvent {
     },
     /// PROMPT.md permissions restore warning (best-effort).
     ///
-    /// Emitted by RestorePromptPermissions effect handler when attempting to
+    /// Emitted by `RestorePromptPermissions` effect handler when attempting to
     /// set PROMPT.md back to writable. The pipeline continues, but the warning
     /// is recorded for observability and resume diagnostics.
     PromptPermissionsRestoreWarning {
@@ -124,7 +124,7 @@ pub enum PromptInputEvent {
     TemplateRendered {
         /// Pipeline phase during which the template was rendered.
         phase: PipelinePhase,
-        /// Template name (e.g., "commit_message_xml").
+        /// Template name (e.g., "`commit_message_xml`").
         template_name: String,
         /// Detailed substitution log from rendering.
         log: crate::prompts::SubstitutionLog,

@@ -72,14 +72,14 @@ impl ClaudeParser {
 
     /// Extract content from assistant message for hash-based deduplication.
     ///
-    /// This includes both text and tool_use blocks, normalized for comparison.
-    /// Tool_use blocks are serialized in a deterministic way (name + sorted input JSON)
+    /// This includes both text and `tool_use` blocks, normalized for comparison.
+    /// `Tool_use` blocks are serialized in a deterministic way (name + sorted input JSON)
     /// to ensure semantically identical tool calls produce the same hash.
     ///
     /// # Returns
-    /// A tuple of (normalized_content, tool_names_by_index) where:
-    /// - normalized_content: The concatenated normalized content (text + tool_use markers)
-    /// - tool_names_by_index: Map from content block index to tool name (for tool_use blocks)
+    /// A tuple of (`normalized_content`, `tool_names_by_index`) where:
+    /// - `normalized_content`: The concatenated normalized content (text + `tool_use` markers)
+    /// - `tool_names_by_index`: Map from content block index to tool name (for `tool_use` blocks)
     fn extract_text_content_for_hash(
         message: Option<&crate::json_parser::types::AssistantMessage>,
     ) -> Option<(String, std::collections::HashMap<usize, String>)> {
@@ -113,7 +113,7 @@ impl ClaudeParser {
                                     if v.is_object() {
                                         serde_json::to_string(v).ok()
                                     } else if v.is_string() {
-                                        v.as_str().map(|s| s.to_string())
+                                        v.as_str().map(std::string::ToString::to_string)
                                     } else {
                                         serde_json::to_string(v).ok()
                                     }
@@ -312,7 +312,7 @@ impl ClaudeParser {
     /// Format an assistant event
     fn format_assistant_event(
         &self,
-        message: Option<crate::json_parser::types::AssistantMessage>,
+        message: Option<&crate::json_parser::types::AssistantMessage>,
     ) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -321,13 +321,13 @@ impl ClaudeParser {
         // the Assistant event should NOT display it again.
         // The Assistant event represents the "complete" message, but if we've
         // already shown the streaming deltas, showing it again causes duplication.
-        if self.is_duplicate_assistant_message(message.as_ref()) {
+        if self.is_duplicate_assistant_message(message) {
             return String::new();
         }
 
         let mut out = String::new();
-        if let Some(ref msg) = message {
-            if let Some(ref content) = msg.content {
+        if let Some(msg) = message {
+            if let Some(content) = msg.content.as_ref() {
                 self.format_content_blocks(&mut out, content, &self.display_name, self.colors);
 
                 // If we successfully rendered content, mark it as rendered
@@ -343,8 +343,7 @@ impl ClaudeParser {
 
                     // Mark the assistant content as rendered by hash to prevent duplicate
                     // assistant events with the same content but different message_ids
-                    if let Some((ref text_content, _)) =
-                        Self::extract_text_content_for_hash(message.as_ref())
+                    if let Some((text_content, _)) = Self::extract_text_content_for_hash(message)
                     {
                         if !text_content.is_empty() {
                             let mut hasher = DefaultHasher::new();

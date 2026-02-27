@@ -4,12 +4,16 @@
 ///
 /// This function queries libgit2's index to find all files that are
 /// currently in a conflicted state.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_conflicted_files() -> io::Result<Vec<String>> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     get_conflicted_files_impl(&repo)
 }
 
-/// Implementation of get_conflicted_files.
+/// Implementation of `get_conflicted_files`.
 fn get_conflicted_files_impl(repo: &git2::Repository) -> io::Result<Vec<String>> {
     let index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
@@ -43,6 +47,10 @@ fn get_conflicted_files_impl(repo: &git2::Repository) -> io::Result<Vec<String>>
 ///
 /// This function reads a file and returns the conflict sections,
 /// including both versions of the conflicted content.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_conflict_markers_for_file(path: &Path) -> io::Result<String> {
     use std::fs;
     use std::io::Read;

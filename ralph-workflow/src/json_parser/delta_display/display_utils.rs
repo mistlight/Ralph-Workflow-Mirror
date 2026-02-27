@@ -24,6 +24,7 @@ pub const CLEAR_LINE: &str = "\x1b[2K";
 ///
 /// # Returns
 /// A sanitized string suitable for single-line display, without truncation.
+#[must_use] 
 pub fn sanitize_for_display(content: &str) -> String {
     // Replace all whitespace (including \n, \r, \t) with spaces, then collapse multiple spaces
     let mut result = String::with_capacity(content.len());

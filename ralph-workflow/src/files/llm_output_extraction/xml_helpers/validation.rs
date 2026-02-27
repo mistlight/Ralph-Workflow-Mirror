@@ -40,15 +40,15 @@ use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValid
 /// See the unit tests in this module for working examples.
 pub fn check_for_illegal_xml_characters(content: &str) -> Result<(), XsdValidationError> {
     for (byte_index, ch) in content.char_indices() {
-        let is_illegal = match ch as u32 {
-            0x00 => true,            // NUL byte
-            0x01..=0x08 => true,     // Control characters
-            0x0B | 0x0C => true,     // Vertical tab, form feed
-            0x0E..=0x1F => true,     // Other control characters
-            0xD800..=0xDFFF => true, // UTF-16 surrogates
-            0xFFFE | 0xFFFF => true, // Non-characters
-            _ => false,
-        };
+        let is_illegal = matches!(
+            ch as u32,
+            0x00                // NUL byte
+            | 0x01..=0x08      // Control characters
+            | 0x0B | 0x0C      // Vertical tab, form feed
+            | 0x0E..=0x1F      // Other control characters
+            | 0xD800..=0xDFFF  // UTF-16 surrogates
+            | 0xFFFE | 0xFFFF  // Non-characters
+        );
         if is_illegal {
             return Err(illegal_character_error(ch, byte_index, content));
         }
@@ -75,26 +75,24 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
     let context_end = (byte_index + 50).min(content.len());
     let safe_start = floor_char_boundary(content, context_start);
     let safe_end = ceil_char_boundary(content, context_end.max(safe_start));
-    let ctx = content.get(safe_start..safe_end).unwrap_or(content);
-    let preview = truncate_text(ctx, 100);
+    let error_context = content.get(safe_start..safe_end).unwrap_or(content);
+    let preview = truncate_text(error_context, 100);
 
     // Provide specific suggestions based on character type
     let suggestion = if ch == '\0' {
         format!(
-            "NUL byte found at position {}. Common causes:\n\
+            "NUL byte found at position {byte_index}. Common causes:\n\
              - Intended to use non-breaking space (\\u00A0) but wrote \\u0000 instead\n\
              - Binary data mixed into text content\n\
              - Incorrect escape sequence\n\n\
-             Near: {}",
-            byte_index, preview
+             Near: {preview}"
         )
     } else {
         format!(
-            "Illegal character {} found at position {}. Options to fix:\n\
+            "Illegal character {char_display} found at position {byte_index}. Options to fix:\n\
              - Remove the illegal character\n\
              - Replace with a valid character (e.g., space or \u{00A0})\n\n\
-             Near: {}",
-            char_display, byte_index, preview
+             Near: {preview}"
         )
     };
 
@@ -102,17 +100,14 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
         error_type: XsdErrorType::MalformedXml,
         element_path: "xml".to_string(),
         expected: "valid XML 1.0 content (no illegal control characters)".to_string(),
-        found: format!(
-            "illegal character {} at byte position {}",
-            char_display, byte_index
-        ),
+        found: format!("illegal character {char_display} at byte position {byte_index}"),
         suggestion,
         example: None,
     }
 }
 
 /// Find the nearest character boundary at or before the given index.
-fn floor_char_boundary(content: &str, mut index: usize) -> usize {
+const fn floor_char_boundary(content: &str, mut index: usize) -> usize {
     while index > 0 && !content.is_char_boundary(index) {
         index -= 1;
     }
@@ -120,7 +115,7 @@ fn floor_char_boundary(content: &str, mut index: usize) -> usize {
 }
 
 /// Find the nearest character boundary at or after the given index.
-fn ceil_char_boundary(content: &str, mut index: usize) -> usize {
+const fn ceil_char_boundary(content: &str, mut index: usize) -> usize {
     while index < content.len() && !content.is_char_boundary(index) {
         index += 1;
     }
@@ -184,12 +179,11 @@ mod tests {
         ];
 
         for (invalid_str, expected_code) in test_cases {
-            let content = format!("text{}here", invalid_str);
+            let content = format!("text{invalid_str}here");
             let result = check_for_illegal_xml_characters(&content);
             assert!(
                 result.is_err(),
-                "Control character {} should be rejected",
-                expected_code
+                "Control character {expected_code} should be rejected"
             );
 
             let error = result.unwrap_err();
@@ -245,7 +239,7 @@ mod tests {
         prefix.push_str(&"b".repeat(remaining));
         assert_eq!(prefix.len(), 60);
 
-        let content = format!("{}\0tail", prefix);
+        let content = format!("{prefix}\0tail");
 
         let result = std::panic::catch_unwind(|| check_for_illegal_xml_characters(&content));
         assert!(result.is_ok(), "Should not panic on multibyte boundaries");

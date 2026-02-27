@@ -63,30 +63,26 @@ fn test_wrapping_no_waterfall_claude() {
         let prefix_count = screen_content.matches("[ccs/glm]").count();
         assert_eq!(
             prefix_count, 1,
-            "Expected prefix to appear exactly once, found {} times. \
+            "Expected prefix to appear exactly once, found {prefix_count} times. \
              This indicates waterfall bug where each delta repeats the prefix.\n\
-             Screen content:\n{}",
-            prefix_count, screen_content
+             Screen content:\n{screen_content}"
         );
 
         // Verify the full content is present
         assert!(
             screen_content.contains("This is a very long message"),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            "Content should be visible. Screen:\n{screen_content}"
         );
         assert!(
             screen_content.contains("final delta"),
-            "Final delta content should be visible. Screen:\n{}",
-            screen_content
+            "Final delta content should be visible. Screen:\n{screen_content}"
         );
 
         // Verify the content is actually present (not lost)
         let screen_content = term.get_visible_output();
         assert!(
             screen_content.contains("This is a very long message"),
-            "Content should be visible. Screen:\n{}",
-            screen_content
+            "Content should be visible. Screen:\n{screen_content}"
         );
     });
 }
@@ -129,27 +125,23 @@ fn test_wrapping_no_waterfall_codex() {
         let thinking_prefix_count = visible_output.matches("Thinking:").count();
         assert_eq!(
             thinking_prefix_count, 1,
-            "Expected 'Thinking:' prefix to appear exactly once, found {} times. \
+            "Expected 'Thinking:' prefix to appear exactly once, found {thinking_prefix_count} times. \
              This indicates waterfall bug where each delta repeats the prefix.\n\
-             Screen content:\n{}",
-            thinking_prefix_count, visible_output
+             Screen content:\n{visible_output}"
         );
 
         // Verify the full content is present (check for key phrases that won't be split by wrapping)
         assert!(
             visible_output.contains("This is extensive"),
-            "Content should be visible. Screen:\n{}",
-            visible_output
+            "Content should be visible. Screen:\n{visible_output}"
         );
         assert!(
             visible_output.contains("reasoning text"),
-            "Content should be visible. Screen:\n{}",
-            visible_output
+            "Content should be visible. Screen:\n{visible_output}"
         );
         assert!(
             visible_output.contains("even more"),
-            "Final delta content should be visible. Screen:\n{}",
-            visible_output
+            "Final delta content should be visible. Screen:\n{visible_output}"
         );
     });
 }
@@ -169,7 +161,7 @@ fn test_cursor_up_pattern_fails_with_wrapping() {
         // Content = 100 A's will wrap: row1=30 chars, row2=40 chars, row3=30 chars + newline
         let prefix = "[ccs/glm] ";
         let content = "A".repeat(100);
-        write!(term, "{}{}\n\x1b[1A", prefix, content).unwrap();
+        write!(term, "{prefix}{content}\n\x1b[1A").unwrap();
 
         // Verify content wrapped to multiple rows
         assert!(
@@ -197,7 +189,7 @@ fn test_cursor_up_pattern_fails_with_wrapping() {
         // Assert: VirtualTerminal can detect this failure mode.
         // NOTE: would_cursor_up_leave_orphans approximates display width; keep this test ASCII-only.
         assert!(
-            term.would_cursor_up_leave_orphans(&format!("{}{}", prefix, content)),
+            term.would_cursor_up_leave_orphans(&format!("{prefix}{content}")),
             "VirtualTerminal should detect cursor-up would leave orphans"
         );
     });

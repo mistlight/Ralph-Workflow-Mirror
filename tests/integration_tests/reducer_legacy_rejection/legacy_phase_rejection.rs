@@ -92,7 +92,7 @@ fn test_checkpoint_rejects_legacy_fix_phase() {
     });
 }
 
-/// Test that checkpoint with legacy "ReviewAgain" phase is rejected outright.
+/// Test that checkpoint with legacy "`ReviewAgain`" phase is rejected outright.
 ///
 /// The reducer-only architecture requires that legacy phases are rejected,
 /// not silently migrated. Users must delete old checkpoints and start fresh.

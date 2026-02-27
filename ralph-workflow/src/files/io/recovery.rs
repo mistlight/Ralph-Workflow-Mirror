@@ -33,14 +33,14 @@ struct StateValidation {
 fn validate_agent_state_with_workspace(
     workspace: &dyn Workspace,
     agent_dir: &Path,
-) -> io::Result<StateValidation> {
+) -> StateValidation {
     let mut issues = Vec::new();
 
     if !workspace.exists(agent_dir) {
-        return Ok(StateValidation {
+        return StateValidation {
             is_valid: false,
             issues: vec![".agent/ directory does not exist".to_string()],
-        });
+        };
     }
 
     // Detect unreadable files in the `.agent/` directory.
@@ -75,10 +75,10 @@ fn validate_agent_state_with_workspace(
         }
     }
 
-    Ok(StateValidation {
+    StateValidation {
         is_valid: issues.is_empty(),
         issues,
-    })
+    }
 }
 
 fn remove_zero_length_files_with_workspace(
@@ -112,6 +112,10 @@ fn remove_zero_length_files_with_workspace(
 /// Best-effort repair of common `.agent/` state issues using workspace.
 ///
 /// This is the workspace-based version for pipeline layer usage.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn auto_repair_with_workspace(
     workspace: &dyn Workspace,
     agent_dir: &Path,
@@ -121,7 +125,7 @@ pub fn auto_repair_with_workspace(
         return Ok(RecoveryStatus::Recovered);
     }
 
-    let validation = validate_agent_state_with_workspace(workspace, agent_dir)?;
+    let validation = validate_agent_state_with_workspace(workspace, agent_dir);
     if validation.is_valid {
         workspace.create_dir_all(&agent_dir.join("logs"))?;
         return Ok(RecoveryStatus::Valid);
@@ -131,7 +135,7 @@ pub fn auto_repair_with_workspace(
     remove_zero_length_files_with_workspace(workspace, agent_dir)?;
     workspace.create_dir_all(&agent_dir.join("logs"))?;
 
-    let post_validation = validate_agent_state_with_workspace(workspace, agent_dir)?;
+    let post_validation = validate_agent_state_with_workspace(workspace, agent_dir);
     if post_validation.is_valid {
         Ok(RecoveryStatus::Recovered)
     } else {

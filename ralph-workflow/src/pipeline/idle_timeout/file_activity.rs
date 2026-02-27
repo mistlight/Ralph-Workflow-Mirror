@@ -21,13 +21,14 @@ pub struct FileActivityTracker {
 
 impl FileActivityTracker {
     /// Create a new file activity tracker.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             last_seen: HashMap::new(),
         }
     }
 
-    /// Check if any AI-generated files have been modified within timeout_secs.
+    /// Check if any AI-generated files have been modified within `timeout_secs`.
     ///
     /// This method scans the `.agent/` directory for files that represent meaningful
     /// AI progress (PLAN.md, ISSUES.md, NOTES.md, commit-message.txt, .agent/tmp/*.xml)
@@ -49,6 +50,10 @@ impl FileActivityTracker {
     /// - `start_commit` - One-time initialization artifact
     /// - `review_baseline.txt` - One-time baseline tracking
     /// - `logs-*/` - Log directories
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn check_for_recent_activity(
         &mut self,
         workspace: &dyn Workspace,
@@ -142,8 +147,8 @@ impl FileActivityTracker {
     /// Excludes:
     /// - *.log (log files)
     /// - checkpoint.json (internal state)
-    /// - start_commit (initialization artifact)
-    /// - review_baseline.txt (baseline tracking)
+    /// - `start_commit` (initialization artifact)
+    /// - `review_baseline.txt` (baseline tracking)
     /// - Temporary/editor files (.swp, .tmp, ~, .bak)
     fn is_ai_generated_file(path: &Path) -> bool {
         let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
@@ -151,14 +156,18 @@ impl FileActivityTracker {
         };
 
         // Exclude patterns
-        if file_name.ends_with(".log")
+        let has_excluded_ext = path.extension().is_some_and(|ext| {
+            ext.eq_ignore_ascii_case("log")
+                || ext.eq_ignore_ascii_case("swp")
+                || ext.eq_ignore_ascii_case("tmp")
+                || ext.eq_ignore_ascii_case("bak")
+        });
+
+        if has_excluded_ext
             || file_name == "checkpoint.json"
             || file_name == "start_commit"
             || file_name == "review_baseline.txt"
-            || file_name.ends_with(".swp")
-            || file_name.ends_with(".tmp")
             || file_name.ends_with('~')
-            || file_name.ends_with(".bak")
         {
             return false;
         }

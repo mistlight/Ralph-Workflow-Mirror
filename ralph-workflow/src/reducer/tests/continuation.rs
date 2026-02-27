@@ -51,8 +51,7 @@ fn test_context_prepared_clears_continue_pending_to_prevent_infinite_loop() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-        "Expected PrepareDevelopmentContext when continue_pending=true, got {:?}",
-        effect
+        "Expected PrepareDevelopmentContext when continue_pending=true, got {effect:?}"
     );
 
     // Apply ContextPrepared event
@@ -68,12 +67,11 @@ fn test_context_prepared_clears_continue_pending_to_prevent_infinite_loop() {
     let next_effect = determine_next_effect(&new_state);
     assert!(
         matches!(next_effect, Effect::MaterializeDevelopmentInputs { .. }),
-        "Expected MaterializeDevelopmentInputs after ContextPrepared, got {:?}",
-        next_effect
+        "Expected MaterializeDevelopmentInputs after ContextPrepared, got {next_effect:?}"
     );
 }
 
-/// Verify that ContextPrepared still sets development_context_prepared_iteration correctly.
+/// Verify that `ContextPrepared` still sets `development_context_prepared_iteration` correctly.
 #[test]
 fn test_context_prepared_still_sets_iteration() {
     let state = PipelineState {
@@ -88,7 +86,7 @@ fn test_context_prepared_still_sets_iteration() {
     assert_eq!(new_state.development_context_prepared_iteration, Some(3));
 }
 
-/// Verify that ContextPrepared clears continue_pending even when it was not set.
+/// Verify that `ContextPrepared` clears `continue_pending` even when it was not set.
 /// This is a defensive check - clearing an already-false flag should be a no-op.
 #[test]
 fn test_context_prepared_is_idempotent_on_continue_pending() {
@@ -148,8 +146,7 @@ fn test_fix_prompt_prepared_clears_fix_continue_pending_to_prevent_infinite_loop
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareFixPrompt { .. }),
-        "Expected PrepareFixPrompt when fix_continue_pending=true, got {:?}",
-        effect
+        "Expected PrepareFixPrompt when fix_continue_pending=true, got {effect:?}"
     );
 
     // Apply FixPromptPrepared event
@@ -165,12 +162,11 @@ fn test_fix_prompt_prepared_clears_fix_continue_pending_to_prevent_infinite_loop
     let next_effect = determine_next_effect(&new_state);
     assert!(
         matches!(next_effect, Effect::CleanupFixResultXml { .. }),
-        "Expected CleanupFixResultXml after FixPromptPrepared, got {:?}",
-        next_effect
+        "Expected CleanupFixResultXml after FixPromptPrepared, got {next_effect:?}"
     );
 }
 
-/// Verify that FixPromptPrepared still sets fix_prompt_prepared_pass correctly.
+/// Verify that `FixPromptPrepared` still sets `fix_prompt_prepared_pass` correctly.
 #[test]
 fn test_fix_prompt_prepared_still_sets_pass() {
     let state = PipelineState {
@@ -185,7 +181,7 @@ fn test_fix_prompt_prepared_still_sets_pass() {
     assert_eq!(new_state.fix_prompt_prepared_pass, Some(1));
 }
 
-/// Verify that FixPromptPrepared clears fix_continue_pending even when it was not set.
+/// Verify that `FixPromptPrepared` clears `fix_continue_pending` even when it was not set.
 #[test]
 fn test_fix_prompt_prepared_is_idempotent_on_fix_continue_pending() {
     let state = PipelineState {
@@ -247,12 +243,9 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
         // Track consecutive repeats of the same effect type
         if Some(current_discriminant) == last_effect_discriminant {
             repeat_count += 1;
-            if repeat_count > 5 {
-                panic!(
-                    "Potential infinite loop detected at iteration {}: effect {:?} repeated {} times",
-                    i, effect, repeat_count
-                );
-            }
+            assert!(repeat_count <= 5,
+                "Potential infinite loop detected at iteration {i}: effect {effect:?} repeated {repeat_count} times"
+            );
         } else {
             repeat_count = 1;
             last_effect_discriminant = Some(current_discriminant);
@@ -380,12 +373,9 @@ fn test_fix_continuation_does_not_cause_infinite_loop_in_event_loop_simulation()
         // Track consecutive repeats of the same effect type
         if Some(current_discriminant) == last_effect_discriminant {
             repeat_count += 1;
-            if repeat_count > 5 {
-                panic!(
-                    "Potential infinite loop at iteration {}: effect {:?} repeated {} times",
-                    i, effect, repeat_count
-                );
-            }
+            assert!(repeat_count <= 5,
+                "Potential infinite loop at iteration {i}: effect {effect:?} repeated {repeat_count} times"
+            );
         } else {
             repeat_count = 1;
             last_effect_discriminant = Some(current_discriminant);

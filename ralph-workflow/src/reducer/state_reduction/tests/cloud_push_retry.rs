@@ -5,7 +5,7 @@ use crate::reducer::{reduce, PipelineEvent};
 #[test]
 fn test_push_failed_keeps_pending_push_commit_for_retry() {
     let mut state = super::create_test_state();
-    state.cloud_config = CloudStateConfig {
+    state.cloud = CloudStateConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         run_id: Some("run_1".to_string()),
@@ -43,7 +43,7 @@ fn test_push_failed_keeps_pending_push_commit_for_retry() {
 #[test]
 fn test_push_failed_eventually_records_unpushed_commit_and_clears_pending() {
     let mut state = super::create_test_state();
-    state.cloud_config = CloudStateConfig {
+    state.cloud = CloudStateConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         run_id: Some("run_1".to_string()),
@@ -86,7 +86,7 @@ fn test_push_failed_eventually_records_unpushed_commit_and_clears_pending() {
 #[test]
 fn test_push_failed_error_is_redacted_before_storing_in_state() {
     let mut state = super::create_test_state();
-    state.cloud_config = CloudStateConfig {
+    state.cloud = CloudStateConfig {
         enabled: true,
         api_url: Some("https://api.example.com".to_string()),
         run_id: Some("run_1".to_string()),

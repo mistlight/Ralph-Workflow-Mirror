@@ -14,14 +14,14 @@ impl MainEffectHandler {
     /// Invoke analysis agent to verify development results.
     ///
     /// TIMING: This handler runs after EVERY development iteration where
-    /// InvokeDevelopmentAgent completed, regardless of iteration count.
+    /// `InvokeDevelopmentAgent` completed, regardless of iteration count.
     ///
     /// This handler:
     /// 1. Reads PLAN.md content
     /// 2. Generates git diff since pipeline start
     /// 3. Builds analysis prompt with both inputs
-    /// 4. Invokes agent to produce development_result.xml
-    /// 5. Emits AnalysisAgentInvoked event
+    /// 4. Invokes agent to produce `development_result.xml`
+    /// 5. Emits `AnalysisAgentInvoked` event
     ///
     /// The analysis agent has NO context from development execution,
     /// ensuring an objective assessment based purely on observable changes.
@@ -110,7 +110,7 @@ Then produce a corrected development_result.xml that conforms to the schema.\n\n
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
         // Invoke agent with analysis role
-        let mut result = self.invoke_agent(ctx, AgentRole::Analysis, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Analysis, &agent, None, prompt)?;
 
         // Emit AnalysisAgentInvoked event if agent invocation succeeded
         if result.additional_events.iter().any(|e| {

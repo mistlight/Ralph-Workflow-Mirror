@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -25,7 +25,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -58,7 +58,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let result = handler
@@ -73,7 +73,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
 
 #[test]
 fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -82,7 +82,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -115,7 +115,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let result = handler
@@ -130,7 +130,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
 
 #[test]
 fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -139,7 +139,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -172,7 +172,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let result = handler
@@ -187,7 +187,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
 
 #[test]
 fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_reached() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -196,7 +196,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -231,7 +231,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let result = handler
@@ -246,7 +246,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
 
 #[test]
 fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -255,12 +255,12 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut ctx = crate::phases::PhaseContext {
@@ -283,7 +283,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let err = handler

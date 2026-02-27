@@ -46,9 +46,7 @@ fn test_intentional_repetition_preserved() {
         let count = vterm_ref.count_visible_pattern("echo");
         assert!(
             count >= 2,
-            "Intentional repetition should be preserved. 'echo' appears only {} times. Output: {}",
-            count,
-            visible
+            "Intentional repetition should be preserved. 'echo' appears only {count} times. Output: {visible}"
         );
     });
 }
@@ -77,8 +75,7 @@ fn test_alternating_pattern_preserved() {
         // Should contain "PingPongPingPong"
         assert!(
             visible.contains("PingPongPingPong"),
-            "Alternating pattern should be preserved. Got: {}",
-            visible
+            "Alternating pattern should be preserved. Got: {visible}"
         );
     });
 }
@@ -110,20 +107,17 @@ fn test_example_log_renders_without_thinking_corruption() {
         // so we assert on *visible* output rather than individual write history entries.
         assert!(
             visible.contains("Need read complete file contents"),
-            "Expected streamed assistant text missing from visible output. Visible output: {}",
-            visible
+            "Expected streamed assistant text missing from visible output. Visible output: {visible}"
         );
         assert!(
             visible.contains("Not allowed to explore beyond direct"),
-            "Expected streamed assistant text missing from visible output. Visible output: {}",
-            visible
+            "Expected streamed assistant text missing from visible output. Visible output: {visible}"
         );
 
         // Regression: ensure system status output doesn't leave remnants from the streamed line.
         assert!(
             !visible.contains("statusead"),
-            "System output corrupted the streamed line. Output: {}",
-            visible
+            "System output corrupted the streamed line. Output: {visible}"
         );
 
         // Regression: ensure thinking prefix never appears on the same line as critical text.
@@ -168,8 +162,7 @@ fn test_multiple_deltas_accumulate_correctly() {
         // All content should be accumulated
         assert!(
             visible.contains("First") && visible.contains("Second") && visible.contains("Third"),
-            "All deltas should accumulate. Got: {:?}",
-            visible
+            "All deltas should accumulate. Got: {visible:?}"
         );
 
         // No duplicate lines
@@ -184,17 +177,17 @@ fn test_multiple_deltas_accumulate_correctly() {
 // Real Log File Test
 // =============================================================================
 
-/// Test GLM bug: assistant event arrives AFTER MessageStart but BEFORE streaming deltas.
+/// Test GLM bug: assistant event arrives AFTER `MessageStart` but BEFORE streaming deltas.
 ///
 /// This reproduces a specific GLM bug where:
-/// 1. MessageStart arrives (setting the message_id)
-/// 2. ContentBlockStart arrives with tool_use but no input
-/// 3. Assistant event arrives with full content (BEFORE any ToolUseDelta)
-/// 4. ToolUseDelta arrives after the assistant event
+/// 1. `MessageStart` arrives (setting the `message_id`)
+/// 2. `ContentBlockStart` arrives with `tool_use` but no input
+/// 3. Assistant event arrives with full content (BEFORE any `ToolUseDelta`)
+/// 4. `ToolUseDelta` arrives after the assistant event
 ///
 /// The bug: When the assistant event arrives BEFORE any streaming deltas,
 /// `has_any_streamed_content()` returns false, so the assistant event is rendered.
-/// Then when the ToolUseDelta arrives, it's ALSO rendered, causing duplication.
+/// Then when the `ToolUseDelta` arrives, it's ALSO rendered, causing duplication.
 #[test]
 fn test_glm_assistant_event_before_streaming_deltas() {
     with_default_timeout(|| {
@@ -223,37 +216,33 @@ fn test_glm_assistant_event_before_streaming_deltas() {
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Assistant event before streaming deltas should not cause duplication. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Assistant event before streaming deltas should not cause duplication. Output: {visible}"
         );
 
         // Pattern should appear only once
         let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
         assert!(
             pattern_count <= 2,
-            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
-            pattern_count,
-            visible
+            "GLM BUG: Pattern '**/*.rs' appears {pattern_count} times. Output: {visible}"
         );
     });
 }
 
-/// Test GLM bug: assistant event arrives BEFORE tool name is tracked, with DIFFERENT message_id.
+/// Test GLM bug: assistant event arrives BEFORE tool name is tracked, with DIFFERENT `message_id`.
 ///
 /// This reproduces a specific GLM bug where:
-/// 1. MessageStart arrives with empty content
-/// 2. ContentBlockStart arrives with tool_use that has no input (input is None)
+/// 1. `MessageStart` arrives with empty content
+/// 2. `ContentBlockStart` arrives with `tool_use` that has no input (input is None)
 ///    - The pattern `ContentBlock::ToolUse { name, input: Some(i) }` doesn't match
-///    - So set_tool_name is NOT called
-/// 3. ToolUseDelta arrives WITHOUT name field (so name is still not tracked)
-/// 4. Assistant event arrives with DIFFERENT message_id (CCS layer transformation)
-///    and full tool_use content
+///    - So `set_tool_name` is NOT called
+/// 3. `ToolUseDelta` arrives WITHOUT name field (so name is still not tracked)
+/// 4. Assistant event arrives with DIFFERENT `message_id` (CCS layer transformation)
+///    and full `tool_use` content
 ///
 /// The bug: When the assistant event arrives, `tool_names` doesn't have the tool name,
-/// so `is_duplicate_tool_use` produces "TOOL_USE::" instead of "TOOL_USE:Glob:...",
+/// so `is_duplicate_tool_use` produces "`TOOL_USE::`" instead of "`TOOL_USE:Glob`:...",
 /// causing the hash comparison to fail and the assistant event to be rendered again.
-/// Since the message_id is different, the message_id check also fails to deduplicate.
+/// Since the `message_id` is different, the `message_id` check also fails to deduplicate.
 #[test]
 fn test_glm_assistant_event_before_tool_name_tracked_different_id() {
     with_default_timeout(|| {
@@ -285,18 +274,14 @@ fn test_glm_assistant_event_before_tool_name_tracked_different_id() {
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Assistant event should not duplicate streaming output even when tool name wasn't tracked before and message_id differs. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Assistant event should not duplicate streaming output even when tool name wasn't tracked before and message_id differs. Output: {visible}"
         );
 
         // Pattern should appear only once (or few times for in-place updates)
         let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
         assert!(
             pattern_count <= 2,
-            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
-            pattern_count,
-            visible
+            "GLM BUG: Pattern '**/*.rs' appears {pattern_count} times. Output: {visible}"
         );
     });
 }
@@ -304,15 +289,15 @@ fn test_glm_assistant_event_before_tool_name_tracked_different_id() {
 /// Test GLM bug: assistant event arrives BEFORE tool name is tracked.
 ///
 /// This reproduces a specific GLM bug where:
-/// 1. MessageStart arrives with empty content
-/// 2. ContentBlockStart arrives with tool_use that has no input (input is None)
+/// 1. `MessageStart` arrives with empty content
+/// 2. `ContentBlockStart` arrives with `tool_use` that has no input (input is None)
 ///    - The pattern `ContentBlock::ToolUse { name, input: Some(i) }` doesn't match
-///    - So set_tool_name is NOT called
-/// 3. ToolUseDelta arrives WITHOUT name field (so name is still not tracked)
-/// 4. Assistant event arrives with full tool_use content
+///    - So `set_tool_name` is NOT called
+/// 3. `ToolUseDelta` arrives WITHOUT name field (so name is still not tracked)
+/// 4. Assistant event arrives with full `tool_use` content
 ///
 /// The bug: When the assistant event arrives, `tool_names` doesn't have the tool name,
-/// so `is_duplicate_tool_use` produces "TOOL_USE::" instead of "TOOL_USE:Glob:...",
+/// so `is_duplicate_tool_use` produces "`TOOL_USE::`" instead of "`TOOL_USE:Glob`:...",
 /// causing the hash comparison to fail and the assistant event to be rendered again.
 #[test]
 fn test_glm_assistant_event_before_tool_name_tracked() {
@@ -344,18 +329,14 @@ fn test_glm_assistant_event_before_tool_name_tracked() {
         let tool_count = vterm_ref.count_visible_pattern("Tool");
         assert!(
             tool_count <= 1,
-            "GLM BUG: Tool appears {} times. Assistant event should not duplicate streaming output even when tool name wasn't tracked before. Output: {}",
-            tool_count,
-            visible
+            "GLM BUG: Tool appears {tool_count} times. Assistant event should not duplicate streaming output even when tool name wasn't tracked before. Output: {visible}"
         );
 
         // Pattern should appear only once (or few times for in-place updates)
         let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
         assert!(
             pattern_count <= 2,
-            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
-            pattern_count,
-            visible
+            "GLM BUG: Pattern '**/*.rs' appears {pattern_count} times. Output: {visible}"
         );
     });
 }
@@ -373,7 +354,7 @@ fn test_glm_assistant_event_before_tool_name_tracked() {
 ///
 /// This causes the reconstructed content to have blocks in the wrong order,
 /// making hash-based deduplication fail. The fix uses numeric sorting
-/// (k.1.parse::<u64>()) instead of lexicographic string sorting.
+/// (`k.1.parse::`<u64>()) instead of lexicographic string sorting.
 #[test]
 fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
     with_default_timeout(|| {
@@ -411,43 +392,34 @@ fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
 
         // Each block should appear only once (or very few times for in-place updates)
         // The bug causes duplication because the hash comparison fails
-        let block_0_count = vterm_ref.count_visible_pattern("Block 0");
+        let first_block_count = vterm_ref.count_visible_pattern("Block 0");
         let block_1_count = vterm_ref.count_visible_pattern("Block 1");
         let block_2_count = vterm_ref.count_visible_pattern("Block 2");
-        let block_10_count = vterm_ref.count_visible_pattern("Block 10");
+        let tenth_block_count = vterm_ref.count_visible_pattern("Block 10");
 
         // Each block should appear at most 2 times (once for streaming, once for in-place update)
         // The bug causes 3+ appearances when lexicographic sort breaks deduplication
         assert!(
-            block_0_count <= 2,
-            "GLM BUG: 'Block 0' appears {} times (expected <= 2). Lexicographic sort bug causes duplication. Output: {}",
-            block_0_count,
-            visible
+            first_block_count <= 2,
+            "GLM BUG: 'Block 0' appears {first_block_count} times (expected <= 2). Lexicographic sort bug causes duplication. Output: {visible}"
         );
         assert!(
             block_1_count <= 2,
-            "GLM BUG: 'Block 1' appears {} times (expected <= 2). Output: {}",
-            block_1_count,
-            visible
+            "GLM BUG: 'Block 1' appears {block_1_count} times (expected <= 2). Output: {visible}"
         );
         assert!(
             block_2_count <= 2,
-            "GLM BUG: 'Block 2' appears {} times (expected <= 2). Output: {}",
-            block_2_count,
-            visible
+            "GLM BUG: 'Block 2' appears {block_2_count} times (expected <= 2). Output: {visible}"
         );
         assert!(
-            block_10_count <= 2,
-            "GLM BUG: 'Block 10' appears {} times (expected <= 2). Output: {}",
-            block_10_count,
-            visible
+            tenth_block_count <= 2,
+            "GLM BUG: 'Block 10' appears {tenth_block_count} times (expected <= 2). Output: {visible}"
         );
 
         // Verify no duplicate lines overall
         assert!(
             !vterm_ref.has_duplicate_lines(),
-            "Lexicographic sort bug causes duplicate visible lines. Output: {}",
-            visible
+            "Lexicographic sort bug causes duplicate visible lines. Output: {visible}"
         );
     });
 }

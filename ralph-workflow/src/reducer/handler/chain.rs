@@ -4,14 +4,12 @@ use crate::phases::{get_primary_commit_agent, PhaseContext};
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{PipelineEvent, PipelinePhase};
 use crate::reducer::ui_event::UIEvent;
-use anyhow::Result;
-
 impl MainEffectHandler {
     pub(super) fn initialize_agent_chain(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         role: AgentRole,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let fallback_config = ctx.registry.fallback_config();
 
         // Get the full fallback chain for this role from the FallbackConfig
@@ -20,23 +18,22 @@ impl MainEffectHandler {
         // If no fallbacks configured, fall back to context agent
         if agents.is_empty() {
             let fallback_agent = match role {
-                AgentRole::Developer => ctx.developer_agent.to_string(),
                 AgentRole::Reviewer => ctx.reviewer_agent.to_string(),
                 AgentRole::Commit => {
                     if let Some(commit_agent) = get_primary_commit_agent(ctx) {
                         commit_agent
                     } else {
-                        return Ok(EffectResult::event(PipelineEvent::agent_chain_initialized(
+                        return EffectResult::event(PipelineEvent::agent_chain_initialized(
                             role,
                             vec![],
                             fallback_config.max_cycles,
                             fallback_config.retry_delay_ms,
                             fallback_config.backoff_multiplier,
                             fallback_config.max_backoff_ms,
-                        )));
+                        ));
                     }
                 }
-                AgentRole::Analysis => ctx.developer_agent.to_string(),
+                AgentRole::Developer | AgentRole::Analysis => ctx.developer_agent.to_string(),
             };
             agents.push(fallback_agent);
         }
@@ -70,6 +67,6 @@ impl MainEffectHandler {
             _ => vec![],
         };
 
-        Ok(EffectResult::with_ui(event, ui_events))
+        EffectResult::with_ui(event, ui_events)
     }
 }

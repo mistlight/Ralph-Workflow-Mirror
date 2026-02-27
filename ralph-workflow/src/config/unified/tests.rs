@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::path_resolver::MemoryConfigEnvironment;
 use crate::config::types::Verbosity;
+use std::collections::HashMap;
 use std::path::Path;
 
 fn get_ccs_alias_cmd(config: &UnifiedConfig, alias: &str) -> Option<String> {
@@ -9,12 +10,12 @@ fn get_ccs_alias_cmd(config: &UnifiedConfig, alias: &str) -> Option<String> {
 
 #[test]
 fn test_load_with_env_reads_from_config_environment() {
-    let toml_str = r#"
+    let toml_str = r"
 [general]
 verbosity = 3
 interactive = false
 developer_iters = 10
-"#;
+";
     let env = MemoryConfigEnvironment::new()
         .with_unified_config_path("/test/config/ralph-workflow.toml")
         .with_file("/test/config/ralph-workflow.toml", toml_str);
@@ -49,10 +50,10 @@ fn test_load_with_env_returns_none_when_file_missing() {
 
 #[test]
 fn test_load_from_path_with_env() {
-    let toml_str = r#"
+    let toml_str = r"
 [general]
 verbosity = 4
-"#;
+";
     let env = MemoryConfigEnvironment::new().with_file("/custom/path.toml", toml_str);
 
     let config =
@@ -302,7 +303,7 @@ fn test_merge_with_agent_chain_local_replaces_global() {
             reviewer: vec!["claude".to_string()],
             commit: vec!["claude".to_string()],
             analysis: vec![],
-            provider_fallback: Default::default(),
+            provider_fallback: HashMap::default(),
             max_retries: 3,
             retry_delay_ms: 1000,
             backoff_multiplier: 2.0,
@@ -318,7 +319,7 @@ fn test_merge_with_agent_chain_local_replaces_global() {
             reviewer: vec!["codex".to_string()],
             commit: vec!["codex".to_string()],
             analysis: vec![],
-            provider_fallback: Default::default(),
+            provider_fallback: HashMap::default(),
             max_retries: 3,
             retry_delay_ms: 1000,
             backoff_multiplier: 2.0,
@@ -345,7 +346,7 @@ fn test_merge_with_local_none_agent_chain_preserves_global() {
             reviewer: vec!["claude".to_string()],
             commit: vec!["claude".to_string()],
             analysis: vec![],
-            provider_fallback: Default::default(),
+            provider_fallback: HashMap::default(),
             max_retries: 3,
             retry_delay_ms: 1000,
             backoff_multiplier: 2.0,
@@ -454,16 +455,16 @@ fn test_merge_with_ccs_empty_string_preserves_global() {
     let local = UnifiedConfig {
         ccs: CcsConfig {
             // Empty string should preserve global value
-            output_flag: "".to_string(),
+            output_flag: String::new(),
             // Non-empty string should override
             yolo_flag: "--yolo".to_string(),
             // Empty string should preserve global value
-            verbose_flag: "".to_string(),
+            verbose_flag: String::new(),
             // Empty string should preserve global value
-            print_flag: "".to_string(),
-            streaming_flag: "".to_string(),
-            json_parser: "".to_string(),
-            session_flag: "".to_string(),
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            json_parser: String::new(),
+            session_flag: String::new(),
             can_commit: false, // Boolean overrides normally
         },
         ..Default::default()
@@ -503,13 +504,13 @@ fn test_merge_with_ccs_all_empty_preserves_all_global() {
 
     let local = UnifiedConfig {
         ccs: CcsConfig {
-            output_flag: "".to_string(),
-            yolo_flag: "".to_string(),
-            verbose_flag: "".to_string(),
-            print_flag: "".to_string(),
-            streaming_flag: "".to_string(),
-            json_parser: "".to_string(),
-            session_flag: "".to_string(),
+            output_flag: String::new(),
+            yolo_flag: String::new(),
+            verbose_flag: String::new(),
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            json_parser: String::new(),
+            session_flag: String::new(),
             can_commit: true,
         },
         ..Default::default()
@@ -689,10 +690,10 @@ fn test_workflow_flags_default() {
 fn test_toml_deserialization_with_workflow() {
     // NOTE: workflow and execution fields are FLATTENED into [general], not separate tables.
     // So the correct TOML structure is [general] with checkpoint_enabled, not [general.workflow].
-    let toml = r#"
+    let toml = r"
 [general]
 checkpoint_enabled = true
-"#;
+";
     let config: UnifiedConfig = toml::from_str(toml).unwrap();
     println!(
         "Deserialized config.general.workflow.checkpoint_enabled = {}",
@@ -719,10 +720,10 @@ fn test_merge_with_content_workflow_checkpoint_enabled_at_default() {
         ..Default::default()
     };
 
-    let local_toml = r#"
+    let local_toml = r"
 [general]
 checkpoint_enabled = true
-"#;
+";
 
     let local = UnifiedConfig::load_from_content(local_toml).unwrap();
     let merged = global.merge_with_content(local_toml, &local);
@@ -750,10 +751,10 @@ fn test_merge_with_content_execution_isolation_mode_at_default() {
         ..Default::default()
     };
 
-    let local_toml = r#"
+    let local_toml = r"
 [general]
 isolation_mode = true
-"#;
+";
 
     let local = UnifiedConfig::load_from_content(local_toml).unwrap();
     let merged = global.merge_with_content(local_toml, &local);
@@ -781,10 +782,10 @@ fn test_merge_with_content_execution_force_universal_prompt_preserves_global() {
         ..Default::default()
     };
 
-    let local_toml = r#"
+    let local_toml = r"
 [general]
 isolation_mode = false
-"#;
+";
 
     let local = UnifiedConfig::load_from_content(local_toml).unwrap();
     let merged = global.merge_with_content(local_toml, &local);
@@ -824,13 +825,13 @@ fn test_merge_with_content_nested_fields_independent() {
         ..Default::default()
     };
 
-    let local_toml = r#"
+    let local_toml = r"
 [general.behavior]
 interactive = true
 
 [general]
 isolation_mode = true
-"#;
+";
 
     let local = UnifiedConfig::load_from_content(local_toml).unwrap();
     let merged = global.merge_with_content(local_toml, &local);
@@ -892,7 +893,7 @@ fn test_merge_with_content_all_nested_sections_with_defaults() {
         ..Default::default()
     };
 
-    let local_toml = r#"
+    let local_toml = r"
 [general.behavior]
 interactive = true
 auto_detect_stack = true
@@ -902,7 +903,7 @@ strict_validation = false
 checkpoint_enabled = true
 isolation_mode = true
 force_universal_prompt = false
-"#;
+";
 
     let local = UnifiedConfig::load_from_content(local_toml).unwrap();
     let merged = global.merge_with_content(local_toml, &local);

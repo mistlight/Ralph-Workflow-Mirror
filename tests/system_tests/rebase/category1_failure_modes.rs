@@ -37,14 +37,14 @@ fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
 fn get_default_branch_name(repo: &git2::Repository) -> String {
     repo.head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().map(std::string::ToString::to_string))
         .unwrap_or_else(|| "main".to_string())
 }
 
 /// Test that rebasing onto an invalid revision produces appropriate error.
 ///
 /// This verifies that when the target branch does not exist, the system
-/// returns a Failed result with InvalidRevision error details.
+/// returns a Failed result with `InvalidRevision` error details.
 #[test]
 fn rebase_with_invalid_revision_returns_error() {
     with_default_timeout(|| {
@@ -77,7 +77,7 @@ fn rebase_with_invalid_revision_returns_error() {
 /// Test that rebasing with dirty working tree is handled appropriately.
 ///
 /// This verifies that when there are uncommitted changes, the system
-/// handles the situation gracefully (either fails with DirtyWorkingTree
+/// handles the situation gracefully (either fails with `DirtyWorkingTree`
 /// error or uses autostash if available).
 #[test]
 fn rebase_with_dirty_working_tree_fails() {
@@ -115,14 +115,11 @@ fn rebase_with_dirty_working_tree_fails() {
                             || err.description().contains("changes")
                     );
                 }
-                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) => {
-                    // Git may have used autostash, which is acceptable
-                }
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // Conflicts are acceptable if git tried to proceed
-                }
-                Err(_) => {
-                    // Error result is also acceptable
+                Ok(
+                    RebaseResult::Success | RebaseResult::NoOp { .. } | RebaseResult::Conflicts(_),
+                )
+                | Err(_) => {
+                    // All outcomes acceptable - git may autostash, conflict, or error
                 }
             }
         });
@@ -132,7 +129,7 @@ fn rebase_with_dirty_working_tree_fails() {
 /// Test that rebasing with staged changes is handled appropriately.
 ///
 /// This verifies that when there are staged changes, the system
-/// handles the situation gracefully (either fails with DirtyWorkingTree
+/// handles the situation gracefully (either fails with `DirtyWorkingTree`
 /// error or uses autostash if available).
 #[test]
 fn rebase_with_staged_changes_fails() {
@@ -174,14 +171,11 @@ fn rebase_with_staged_changes_fails() {
                             || err.description().contains("changes")
                     );
                 }
-                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) => {
-                    // Git may have used autostash, which is acceptable
-                }
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // Conflicts are acceptable if git tried to proceed
-                }
-                Err(_) => {
-                    // Error result is also acceptable
+                Ok(
+                    RebaseResult::Success | RebaseResult::NoOp { .. } | RebaseResult::Conflicts(_),
+                )
+                | Err(_) => {
+                    // All outcomes acceptable - git may autostash, conflict, or error
                 }
             }
         });
@@ -237,23 +231,12 @@ fn rebase_detects_merge_in_progress() {
             fs::write(merge_head, "abc123\n").unwrap();
 
             // Try to rebase - should detect the merge in progress or fail gracefully
-            let result = rebase_onto(&default_branch, executor.as_ref());
+            let _result = rebase_onto(&default_branch, executor.as_ref());
 
             // The system should detect this and handle appropriately
             // Git may actually proceed since we're rebasing onto the current branch
-            match result {
-                Err(_) => {
-                    // Error is expected - can't rebase during merge
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. }) | Ok(RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake merge state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
+            {
+                // All outcomes acceptable - can't reliably rebase during merge
             }
         });
     });
@@ -283,7 +266,7 @@ fn rebase_handles_missing_git_config() {
     });
 }
 
-/// Test that corrupt object database is represented by RepositoryCorrupt error.
+/// Test that corrupt object database is represented by `RepositoryCorrupt` error.
 ///
 /// This verifies that when the repository object database is corrupted,
 /// the system has an error kind to represent this failure.
@@ -333,21 +316,8 @@ fn rebase_detects_cherry_pick_in_progress() {
             // Try to rebase - should detect the cherry-pick in progress or handle gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // The system should handle this appropriately
-            match result {
-                Err(_) => {
-                    // Error is acceptable - can't rebase during cherry-pick
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. }) | Ok(RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake cherry-pick state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
-            }
+            // Any outcome is acceptable here; this test verifies graceful handling only.
+            let _ = result;
         });
     });
 }
@@ -411,21 +381,8 @@ fn rebase_detects_revert_in_progress() {
             // Try to rebase - should detect the revert in progress or handle gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // The system should handle this appropriately
-            match result {
-                Err(_) => {
-                    // Error is acceptable
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. }) | Ok(RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake revert state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
-            }
+            // Any outcome is acceptable here; this test verifies graceful handling only.
+            let _ = result;
         });
     });
 }
@@ -451,26 +408,13 @@ fn rebase_detects_bisect_in_progress() {
             // Try to rebase - should detect the bisect in progress or handle gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // The system should handle this appropriately
-            match result {
-                Err(_) => {
-                    // Error is acceptable
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. }) | Ok(RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake bisect state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
-            }
+            // Any outcome is acceptable here; this test verifies graceful handling only.
+            let _ = result;
         });
     });
 }
 
-/// Test that worktree conflicts are represented by ConcurrentOperation error.
+/// Test that worktree conflicts are represented by `ConcurrentOperation` error.
 ///
 /// This verifies that when a branch is checked out in another worktree,
 /// the system has an error kind to represent this concurrent operation.

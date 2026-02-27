@@ -180,7 +180,7 @@ pub fn post_flight_review_check(
         Ok(content) => {
             // Log the file size for debugging
             let size = content.len() as u64;
-            logger.info(&format!("ISSUES.md created ({} bytes)", size));
+            logger.info(&format!("ISSUES.md created ({size} bytes)"));
             size
         }
         Err(e) => {

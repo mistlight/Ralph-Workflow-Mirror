@@ -9,7 +9,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** via effect capture
@@ -29,14 +29,14 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for diff failure tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Test that git diff failure uses fallback instructions instead of terminating.
 ///
@@ -183,9 +183,9 @@ fn test_ai_can_skip_commit_after_diff_failure() {
     });
 }
 
-/// Test that DiffFailed event is no longer emitted in new code paths.
+/// Test that `DiffFailed` event is no longer emitted in new code paths.
 ///
-/// This verifies backward compatibility: the DiffFailed reducer still exists
+/// This verifies backward compatibility: the `DiffFailed` reducer still exists
 /// (for old checkpoints) but is never emitted by new handler code.
 #[test]
 fn test_diff_failed_event_not_emitted_by_new_code() {

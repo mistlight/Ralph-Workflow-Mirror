@@ -39,8 +39,8 @@
 //! - Put side effects in handlers/middleware (effects), not in reducers
 //!
 //! References (official Redux docs):
-//! - Actions are events: https://redux.js.org/tutorials/fundamentals/part-2-concepts-data-flow
-//! - Event-based actions vs setters: https://redux.js.org/style-guide/
+//! - Actions are events: <https://redux.js.org/tutorials/fundamentals/part-2-concepts-data-flow>
+//! - Event-based actions vs setters: <https://redux.js.org/style-guide>/
 //!
 //! # Design
 //!

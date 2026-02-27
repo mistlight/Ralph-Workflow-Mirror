@@ -17,7 +17,7 @@ use ralph_workflow::reducer::state_reduction::reduce;
 
 use crate::test_timeout::with_default_timeout;
 
-/// Test that AnalysisAgentInvoked event does NOT increment iteration counter.
+/// Test that `AnalysisAgentInvoked` event does NOT increment iteration counter.
 ///
 /// This is CRITICAL: analysis is verification only, not a development iteration.
 #[test]
@@ -32,7 +32,7 @@ fn test_analysis_agent_does_not_increment_iteration() {
         // When: AnalysisAgentInvoked event is processed
         let event =
             PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 });
-        let new_state = reduce(state.clone(), event);
+        let new_state = reduce(state, event);
 
         // Then: Iteration counter should NOT change
         assert_eq!(
@@ -42,7 +42,7 @@ fn test_analysis_agent_does_not_increment_iteration() {
     });
 }
 
-/// Test that ContinuationTriggered event does NOT increment iteration counter.
+/// Test that `ContinuationTriggered` event does NOT increment iteration counter.
 ///
 /// Continuation is retrying the same iteration, not advancing to a new one.
 #[test]
@@ -61,7 +61,7 @@ fn test_continuation_does_not_increment_iteration() {
             files_changed: None,
             next_steps: None,
         });
-        let new_state = reduce(state.clone(), event);
+        let new_state = reduce(state, event);
 
         // Then: Iteration counter should NOT change
         assert_eq!(
@@ -94,8 +94,7 @@ fn test_multiple_analyses_do_not_increment_iteration() {
             // Verify iteration didn't change
             assert_eq!(
                 state.iteration, iteration_before,
-                "Analysis at iteration {} must not increment counter",
-                iter
+                "Analysis at iteration {iter} must not increment counter"
             );
         }
 
@@ -104,7 +103,7 @@ fn test_multiple_analyses_do_not_increment_iteration() {
     });
 }
 
-/// Test that ContinuationSucceeded event does NOT increment iteration counter.
+/// Test that `ContinuationSucceeded` event does NOT increment iteration counter.
 ///
 /// When continuation finally succeeds, we stay on the same iteration.
 #[test]
@@ -120,7 +119,7 @@ fn test_continuation_succeeded_does_not_increment_iteration() {
             iteration: 0,
             total_continuation_attempts: 2,
         });
-        let new_state = reduce(state.clone(), event);
+        let new_state = reduce(state, event);
 
         // Then: Iteration counter should NOT change
         assert_eq!(
@@ -130,7 +129,7 @@ fn test_continuation_succeeded_does_not_increment_iteration() {
     });
 }
 
-/// Test that XmlExtracted event does NOT increment iteration counter.
+/// Test that `XmlExtracted` event does NOT increment iteration counter.
 ///
 /// XML extraction is just reading files, not advancing iterations.
 #[test]
@@ -143,7 +142,7 @@ fn test_xml_extracted_does_not_increment_iteration() {
 
         // When: XmlExtracted event is processed
         let event = PipelineEvent::Development(DevelopmentEvent::XmlExtracted { iteration: 1 });
-        let new_state = reduce(state.clone(), event);
+        let new_state = reduce(state, event);
 
         // Then: Iteration counter should NOT change
         assert_eq!(
@@ -153,7 +152,7 @@ fn test_xml_extracted_does_not_increment_iteration() {
     });
 }
 
-/// Test that XmlValidated event with completed status does NOT increment iteration counter.
+/// Test that `XmlValidated` event with completed status does NOT increment iteration counter.
 ///
 /// Even when work is complete, iteration counter shouldn't change until commit phase.
 #[test]
@@ -172,7 +171,7 @@ fn test_xml_validated_completed_does_not_increment_iteration() {
             files_changed: Some(vec!["src/main.rs".to_string()]),
             next_steps: None,
         });
-        let new_state = reduce(state.clone(), event);
+        let new_state = reduce(state, event);
 
         // Then: Iteration counter should NOT change
         assert_eq!(
@@ -218,8 +217,7 @@ fn test_analysis_after_every_iteration_preserves_d_flag_semantics() {
             // Verify analysis did NOT increment iteration
             assert_eq!(
                 state.iteration, iteration_before_analysis,
-                "Analysis at iteration {} must not increment counter",
-                iter
+                "Analysis at iteration {iter} must not increment counter"
             );
         }
 
@@ -227,8 +225,7 @@ fn test_analysis_after_every_iteration_preserves_d_flag_semantics() {
         // The iteration counter only increments when transitioning between Planning phases
         assert!(
             state.iteration < total_iterations,
-            "Should have processed {} iterations without incrementing beyond",
-            total_iterations
+            "Should have processed {total_iterations} iterations without incrementing beyond"
         );
     });
 }
@@ -248,7 +245,7 @@ fn test_analysis_does_not_affect_continuation_budget() {
         // When: AnalysisAgentInvoked event is processed
         let event =
             PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 });
-        let new_state = reduce(state.clone(), event);
+        let new_state = reduce(state, event);
 
         // Then: Continuation attempt count should NOT change
         assert_eq!(
@@ -262,7 +259,7 @@ fn test_analysis_does_not_affect_continuation_budget() {
 // Step 14: Edge-case nesting rules (dev iterations vs continuations)
 // ============================================================================
 
-/// Test that continuations do NOT increment dev_iterations_started counter.
+/// Test that continuations do NOT increment `dev_iterations_started` counter.
 ///
 /// CRITICAL: Continuations are attempts within the same iteration, not new iterations.
 #[test]
@@ -387,7 +384,7 @@ fn test_analysis_attempts_reset_per_iteration() {
     });
 }
 
-/// Test that pipeline completes exactly at total_iterations, not before.
+/// Test that pipeline completes exactly at `total_iterations`, not before.
 #[test]
 fn test_exactly_completes_at_total_iterations() {
     with_default_timeout(|| {

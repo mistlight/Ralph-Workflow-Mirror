@@ -22,7 +22,7 @@ fn mock_effect_handler_returns_commit_created_for_create_commit() {
     assert_eq!(handler.effect_count(), 0);
 }
 
-/// TDD test: MockEffectHandler must implement EffectHandler trait
+/// TDD test: `MockEffectHandler` must implement `EffectHandler` trait
 /// and return appropriate events without making real git calls.
 #[test]
 fn mock_effect_handler_implements_effect_handler_trait() {
@@ -37,7 +37,7 @@ fn mock_effect_handler_implements_effect_handler_trait() {
 
     // Create a minimal mock PhaseContext - this requires test-utils
     // For now we test that the handler implements the trait by calling execute_mock
-    let result = handler.execute_mock(effect.clone());
+    let result = handler.execute_mock(&effect);
 
     // Effect should be captured
     assert!(
@@ -56,12 +56,11 @@ fn mock_effect_handler_implements_effect_handler_trait() {
     );
 }
 
-/// Test that MockEffectHandler properly implements the EffectHandler trait
-/// with a real PhaseContext. This proves it can be a drop-in replacement
-/// for MainEffectHandler in tests.
+/// Test that `MockEffectHandler` properly implements the `EffectHandler` trait
+/// with a real `PhaseContext`. This proves it can be a drop-in replacement
+/// for `MainEffectHandler` in tests.
 #[test]
 fn mock_effect_handler_trait_execute_with_phase_context() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -73,6 +72,8 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     // Create test fixtures
     let config = Config::default();
@@ -108,7 +109,7 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     // Create handler and execute effect via trait method
@@ -132,7 +133,7 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
             assert_eq!(hash, "mock_commit_hash_abc123");
             assert_eq!(message, "test via trait");
         }
-        other => panic!("Expected CommitCreated, got {:?}", other),
+        other => panic!("Expected CommitCreated, got {other:?}"),
     }
 
     // Effect should be captured
@@ -140,14 +141,14 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
     assert_eq!(handler.effect_count(), 1);
 }
 
-/// Test that MockEffectHandler captures UI events for development extraction.
+/// Test that `MockEffectHandler` captures UI events for development extraction.
 #[test]
 fn mock_effect_handler_captures_iteration_progress_ui() {
     let state = PipelineState::initial(3, 1);
     let mut handler = MockEffectHandler::new(state);
 
     // Simulate development XML extraction
-    let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+    let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
     // Verify UI event was emitted
     assert!(handler.was_ui_event_emitted(|e| {
@@ -161,14 +162,14 @@ fn mock_effect_handler_captures_iteration_progress_ui() {
     }));
 }
 
-/// Test that MockEffectHandler captures phase transition UI events.
+/// Test that `MockEffectHandler` captures phase transition UI events.
 #[test]
 fn mock_effect_handler_captures_phase_transition_ui() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
     // ValidateFinalState should emit phase transition to Finalizing
-    let _result = handler.execute_mock(Effect::ValidateFinalState);
+    let _result = handler.execute_mock(&Effect::ValidateFinalState);
 
     // Verify UI event was emitted
     assert!(
@@ -189,7 +190,7 @@ fn mock_effect_handler_restore_prompt_permissions_skips_phase_transition_outside
     state.phase = PipelinePhase::Interrupted;
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::RestorePromptPermissions);
+    let _result = handler.execute_mock(&Effect::RestorePromptPermissions);
 
     assert!(
         !handler.was_ui_event_emitted(|e| matches!(

@@ -6,11 +6,11 @@
 // WorkspaceFs write_atomic interrupt-skipping tests
 // =========================================================================
 
-/// Verify that write_atomic succeeds (writes content correctly) even when
-/// user_interrupted_occurred() returns true.
+/// Verify that `write_atomic` succeeds (writes content correctly) even when
+/// `user_interrupted_occurred()` returns true.
 ///
-/// During interrupt-triggered shutdown, write_atomic skips the expensive
-/// sync_all() call to avoid hanging indefinitely in F_FULLFSYNC on macOS.
+/// During interrupt-triggered shutdown, `write_atomic` skips the expensive
+/// `sync_all()` call to avoid hanging indefinitely in `F_FULLFSYNC` on macOS.
 /// The file must still be written correctly despite the skipped sync.
 #[test]
 fn write_atomic_succeeds_when_user_interrupted_occurred() {
@@ -38,8 +38,7 @@ fn write_atomic_succeeds_when_user_interrupted_occurred() {
     // write_atomic must still succeed and produce readable content
     assert!(
         result.is_ok(),
-        "write_atomic must succeed even when interrupted: {:?}",
-        result
+        "write_atomic must succeed even when interrupted: {result:?}"
     );
     assert_eq!(
         ws.read(Path::new("checkpoint.json"))

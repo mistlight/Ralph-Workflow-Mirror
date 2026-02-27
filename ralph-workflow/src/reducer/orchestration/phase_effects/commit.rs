@@ -15,17 +15,17 @@
 //!    f. Validate commit XML
 //!    g. Archive commit XML
 //!    h. Create commit
-//! 5. Save checkpoint (transition to FinalValidation)
+//! 5. Save checkpoint (transition to `FinalValidation`)
 //!
 //! XSD retry handling:
 //! - On attempt > 1 (XSD retry), skip cleanup to preserve invalid XML
 //! - The agent reads the invalid output before overwriting it
-//! - See commit_xsd_retry prompt for details
+//! - See `commit_xsd_retry` prompt for details
 //!
 //! Diff content ID:
-//! - commit_diff_content_id_sha256 tracks the diff content hash
-//! - Re-run CheckCommitDiff if content_id is missing (backward compatibility)
-//! - Invalidate materialized inputs if content_id changes
+//! - `commit_diff_content_id_sha256` tracks the diff content hash
+//! - Re-run `CheckCommitDiff` if `content_id` is missing (backward compatibility)
+//! - Invalidate materialized inputs if `content_id` changes
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::Effect;
@@ -112,12 +112,12 @@ pub(super) fn determine_commit_effect(state: &PipelineState) -> Effect {
             Effect::ValidateCommitXml
         }
         CommitState::Generated { ref message } => {
-            if !state.commit_xml_archived {
-                Effect::ArchiveCommitXml
-            } else {
+            if state.commit_xml_archived {
                 Effect::CreateCommit {
                     message: message.clone(),
                 }
+            } else {
+                Effect::ArchiveCommitXml
             }
         }
         CommitState::Skipped | CommitState::Committed { .. } => Effect::SaveCheckpoint {

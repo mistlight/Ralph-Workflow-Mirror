@@ -137,7 +137,7 @@ pub fn with_timeout<F>(f: F, timeout: Duration)
 where
     F: FnOnce() + Send + 'static,
 {
-    with_timeout_ctx(|_ctx| f(), timeout)
+    with_timeout_ctx(|_ctx| f(), timeout);
 }
 
 /// Run a closure with a timeout, passing a `TimeoutContext` for cooperative cancellation.
@@ -266,16 +266,14 @@ where
     f();
     let after = SPAWNED_PROCESSES.load(Ordering::Acquire);
 
-    if after > before {
-        panic!(
-            "INTEGRATION TEST VIOLATION: Test spawned {} external process(es). \
-            Integration tests MUST NOT spawn ANY external processes (no git, ls, cargo, ralph binary, or any subprocess). \
-            For CLI testing, use run_ralph_cli() which calls app::run() directly instead of spawning a binary process. \
-            All external dependencies MUST be mocked at architectural boundaries. \
-            See tests/INTEGRATION_TESTS.md Rule 1.5 for details.",
-            after - before
-        );
-    }
+    assert!(after <= before,
+        "INTEGRATION TEST VIOLATION: Test spawned {} external process(es). \
+        Integration tests MUST NOT spawn ANY external processes (no git, ls, cargo, ralph binary, or any subprocess). \
+        For CLI testing, use run_ralph_cli() which calls app::run() directly instead of spawning a binary process. \
+        All external dependencies MUST be mocked at architectural boundaries. \
+        See tests/INTEGRATION_TESTS.md Rule 1.5 for details.",
+        after - before
+    );
 }
 
 #[cfg(test)]
@@ -352,7 +350,7 @@ mod tests {
             let error = TimeoutError {
                 timeout: Duration::from_secs(10),
             };
-            let msg = format!("{}", error);
+            let msg = format!("{error}");
             // Duration debug format is "10s", not "10 seconds"
             assert!(msg.contains("10s"));
             assert!(msg.contains("external I/O"));

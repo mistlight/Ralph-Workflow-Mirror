@@ -3,9 +3,172 @@
 //! Generates rich context notes for resumed sessions to help agents understand
 //! where they are in the pipeline when resuming from a checkpoint.
 
+use std::fmt::Write;
+
 use crate::checkpoint::execution_history::StepOutcome;
 use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::state::PipelinePhase;
+
+fn append_phase_header(note: &mut String, context: &ResumeContext) {
+    match context.phase {
+        PipelinePhase::Development => {
+            writeln!(
+                note,
+                "Resuming DEVELOPMENT phase (iteration {} of {})",
+                context.iteration + 1,
+                context.total_iterations
+            )
+            .unwrap();
+        }
+        PipelinePhase::Review => {
+            writeln!(
+                note,
+                "Resuming REVIEW phase (pass {} of {})",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            )
+            .unwrap();
+        }
+        _ => {
+            writeln!(note, "Resuming from phase: {}", context.phase_name()).unwrap();
+        }
+    }
+}
+
+fn append_resume_and_rebase_state(note: &mut String, context: &ResumeContext) {
+    if context.resume_count > 0 {
+        writeln!(
+            note,
+            "This session has been resumed {} time(s)",
+            context.resume_count
+        )
+        .unwrap();
+    }
+
+    if !matches!(
+        context.rebase_state,
+        crate::checkpoint::state::RebaseState::NotStarted
+    ) {
+        writeln!(note, "Rebase state: {:?}", context.rebase_state).unwrap();
+    }
+
+    note.push('\n');
+}
+
+fn append_modified_files_summary(
+    note: &mut String,
+    detail: &crate::checkpoint::execution_history::ModifiedFilesDetail,
+) {
+    let added_count = detail.added.as_ref().map_or(0, |v| v.len());
+    let modified_count = detail.modified.as_ref().map_or(0, |v| v.len());
+    let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
+    let total_files = added_count + modified_count + deleted_count;
+    if total_files == 0 {
+        return;
+    }
+
+    write!(note, "  Files: {total_files} changed").unwrap();
+    if added_count > 0 {
+        write!(note, " ({added_count} added)").unwrap();
+    }
+    if modified_count > 0 {
+        write!(note, " ({modified_count} modified)").unwrap();
+    }
+    if deleted_count > 0 {
+        write!(note, " ({deleted_count} deleted)").unwrap();
+    }
+    note.push('\n');
+}
+
+fn append_issues_summary(
+    note: &mut String,
+    issues: &crate::checkpoint::execution_history::IssuesSummary,
+) {
+    if issues.found == 0 && issues.fixed == 0 {
+        return;
+    }
+
+    write!(
+        note,
+        "  Issues: {} found, {} fixed",
+        issues.found, issues.fixed
+    )
+    .unwrap();
+    if let Some(ref desc) = issues.description {
+        write!(note, " ({desc})").unwrap();
+    }
+    note.push('\n');
+}
+
+fn append_recent_step(
+    note: &mut String,
+    step: &crate::checkpoint::execution_history::ExecutionStep,
+) {
+    writeln!(
+        note,
+        "- [{}] {} (iteration {}): {}",
+        step.step_type,
+        step.phase,
+        step.iteration,
+        step.outcome.brief_description()
+    )
+    .unwrap();
+
+    if let Some(ref detail) = step.modified_files_detail {
+        append_modified_files_summary(note, detail);
+    }
+
+    if let Some(ref issues) = step.issues_summary {
+        append_issues_summary(note, issues);
+    }
+
+    if let Some(ref oid) = step.git_commit_oid {
+        writeln!(note, "  Commit: {oid}").unwrap();
+    }
+}
+
+fn append_recent_activity(note: &mut String, context: &ResumeContext) {
+    let Some(ref history) = context.execution_history else {
+        return;
+    };
+    if history.steps.is_empty() {
+        return;
+    }
+
+    note.push_str("RECENT ACTIVITY:\n");
+    note.push_str("----------------\n");
+
+    let recent_steps: Vec<_> = history
+        .steps
+        .iter()
+        .rev()
+        .take(5)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    for step in &recent_steps {
+        append_recent_step(note, step);
+    }
+
+    note.push('\n');
+}
+
+fn append_guidance(note: &mut String, phase: PipelinePhase) {
+    note.push_str("\nGUIDANCE:\n");
+    note.push_str("--------\n");
+    match phase {
+        PipelinePhase::Development => {
+            note.push_str("Continue working on the implementation tasks from your plan.\n");
+        }
+        PipelinePhase::Review => {
+            note.push_str("Review the code changes and provide feedback.\n");
+        }
+        _ => {}
+    }
+    note.push('\n');
+}
 
 /// Generate a rich resume note from resume context.
 ///
@@ -17,136 +180,17 @@ use crate::checkpoint::state::PipelinePhase;
 /// - Recent execution history (files modified, issues found/fixed)
 /// - Git commits made during the session
 /// - Guidance on what to focus on
+#[must_use]
 pub fn generate_resume_note(context: &ResumeContext) -> String {
     let mut note = String::from("SESSION RESUME CONTEXT\n");
     note.push_str("====================\n\n");
 
-    // Add phase information with specific context based on phase type
-    match context.phase {
-        PipelinePhase::Development => {
-            note.push_str(&format!(
-                "Resuming DEVELOPMENT phase (iteration {} of {})\n",
-                context.iteration + 1,
-                context.total_iterations
-            ));
-        }
-        PipelinePhase::Review => {
-            note.push_str(&format!(
-                "Resuming REVIEW phase (pass {} of {})\n",
-                context.reviewer_pass + 1,
-                context.total_reviewer_passes
-            ));
-        }
-        _ => {
-            note.push_str(&format!("Resuming from phase: {}\n", context.phase_name()));
-        }
-    }
-
-    // Add resume count if this has been resumed before
-    if context.resume_count > 0 {
-        note.push_str(&format!(
-            "This session has been resumed {} time(s)\n",
-            context.resume_count
-        ));
-    }
-
-    // Add rebase state if applicable
-    if !matches!(
-        context.rebase_state,
-        crate::checkpoint::state::RebaseState::NotStarted
-    ) {
-        note.push_str(&format!("Rebase state: {:?}\n", context.rebase_state));
-    }
-
-    note.push('\n');
-
-    // Add execution history summary if available
-    if let Some(ref history) = context.execution_history {
-        if !history.steps.is_empty() {
-            note.push_str("RECENT ACTIVITY:\n");
-            note.push_str("----------------\n");
-
-            // Show recent execution steps (last 5)
-            let recent_steps: Vec<_> = history
-                .steps
-                .iter()
-                .rev()
-                .take(5)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-
-            for step in &recent_steps {
-                note.push_str(&format!(
-                    "- [{}] {} (iteration {}): {}\n",
-                    step.step_type,
-                    step.phase,
-                    step.iteration,
-                    step.outcome.brief_description()
-                ));
-
-                // Add files modified count if available
-                if let Some(ref detail) = step.modified_files_detail {
-                    let added_count = detail.added.as_ref().map_or(0, |v| v.len());
-                    let modified_count = detail.modified.as_ref().map_or(0, |v| v.len());
-                    let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
-                    let total_files = added_count + modified_count + deleted_count;
-                    if total_files > 0 {
-                        note.push_str(&format!("  Files: {} changed", total_files));
-                        if added_count > 0 {
-                            note.push_str(&format!(" ({} added)", added_count));
-                        }
-                        if modified_count > 0 {
-                            note.push_str(&format!(" ({} modified)", modified_count));
-                        }
-                        if deleted_count > 0 {
-                            note.push_str(&format!(" ({} deleted)", deleted_count));
-                        }
-                        note.push('\n');
-                    }
-                }
-
-                // Add issues summary if available
-                if let Some(ref issues) = step.issues_summary {
-                    if issues.found > 0 || issues.fixed > 0 {
-                        note.push_str(&format!(
-                            "  Issues: {} found, {} fixed",
-                            issues.found, issues.fixed
-                        ));
-                        if let Some(ref desc) = issues.description {
-                            note.push_str(&format!(" ({})", desc));
-                        }
-                        note.push('\n');
-                    }
-                }
-
-                // Add git commit if available
-                if let Some(ref oid) = step.git_commit_oid {
-                    note.push_str(&format!("  Commit: {}\n", oid));
-                }
-            }
-
-            note.push('\n');
-        }
-    }
+    append_phase_header(&mut note, context);
+    append_resume_and_rebase_state(&mut note, context);
+    append_recent_activity(&mut note, context);
 
     note.push_str("Previous progress is preserved in git history.\n");
-
-    // Add helpful guidance about what the agent should focus on
-    note.push_str("\nGUIDANCE:\n");
-    note.push_str("--------\n");
-    match context.phase {
-        PipelinePhase::Development => {
-            note.push_str("Continue working on the implementation tasks from your plan.\n");
-        }
-        PipelinePhase::Review => {
-            note.push_str("Review the code changes and provide feedback.\n");
-        }
-        _ => {}
-    }
-
-    note.push('\n');
+    append_guidance(&mut note, context.phase);
     note
 }
 
@@ -173,29 +217,25 @@ impl BriefDescription for StepOutcome {
                 files_modified,
                 output,
                 ..
-            } => {
-                if let Some(ref out) = output {
-                    if !out.is_empty() {
-                        format!("Success - {}", out.lines().next().unwrap_or(""))
-                    } else if let Some(ref files) = files_modified {
-                        if !files.is_empty() {
-                            format!("Success - {} files modified", files.len())
+            } => output
+                .as_ref()
+                .and_then(|out| {
+                    if out.is_empty() {
+                        None
+                    } else {
+                        Some(format!("Success - {}", out.lines().next().unwrap_or("")))
+                    }
+                })
+                .or_else(|| {
+                    files_modified.as_ref().and_then(|files| {
+                        if files.is_empty() {
+                            None
                         } else {
-                            "Success".to_string()
+                            Some(format!("Success - {} files modified", files.len()))
                         }
-                    } else {
-                        "Success".to_string()
-                    }
-                } else if let Some(ref files) = files_modified {
-                    if !files.is_empty() {
-                        format!("Success - {} files modified", files.len())
-                    } else {
-                        "Success".to_string()
-                    }
-                } else {
-                    "Success".to_string()
-                }
-            }
+                    })
+                })
+                .unwrap_or_else(|| "Success".to_string()),
             Self::Failure {
                 error, recoverable, ..
             } => {
@@ -212,10 +252,10 @@ impl BriefDescription for StepOutcome {
             } => {
                 let completed = one_line_truncated(completed, PARTIAL_FIELD_MAX_CHARS);
                 let remaining = one_line_truncated(remaining, PARTIAL_FIELD_MAX_CHARS);
-                format!("Partial - {} done, {}", completed, remaining)
+                format!("Partial - {completed} done, {remaining}")
             }
             Self::Skipped { reason } => {
-                format!("Skipped - {}", reason)
+                format!("Skipped - {reason}")
             }
         }
     }

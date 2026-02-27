@@ -84,9 +84,13 @@ fmt-check:
 	$(CARGO) fmt -- --check
 	echo "Format check passed"
 
-# Run clippy lints
+# Run clippy lints (per-package, matching verification.md)
+# Enforces clippy::all, clippy::pedantic, clippy::nursery via #![deny(...)] in crate roots
+# NOTE: When adding a new workspace member, add its clippy check here AND in docs/agents/verification.md
 lint:
-	$(CARGO) clippy $(CARGO_FLAGS) --all-targets -- -D warnings
+	$(CARGO) clippy -p ralph-workflow $(CARGO_FLAGS) --all-targets --all-features -- -D warnings
+	$(CARGO) clippy -p ralph-workflow-tests $(CARGO_FLAGS) --all-targets -- -D warnings
+	$(CARGO) clippy -p test-helpers $(CARGO_FLAGS) --all-targets -- -D warnings
 	echo "Lint check passed"
 
 # Run custom dylint lints (safe default: lib only)

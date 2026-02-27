@@ -1,3 +1,4 @@
+
 // System prompt template and generation (planning).
 //
 // Contains functions for generating planning prompts and XSD retry prompts.
@@ -12,7 +13,12 @@
 /// from Claude Code's plan mode implementation.
 ///
 /// Reference: <https://github.com/Piebald-AI/claude-code-system-prompts>
+///
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined.
 #[cfg(test)]
+#[must_use]
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     use crate::workspace::{Workspace, WorkspaceFs};
     use std::env;
@@ -168,10 +174,10 @@ pub fn prompt_planning_xml_with_references_and_log(
             };
 
             let prompt = prompt_ref.render_for_template();
-            let content =
+            let prompt_content =
                 format!("PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt}\n");
             RenderedTemplate {
-                content,
+                content: prompt_content,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![SubstitutionEntry {
@@ -261,18 +267,14 @@ pub fn prompt_planning_xsd_retry_with_context_files(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Schema file: {} (workspace.root() = {})\n",
+            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/plan.xsd"),
-                workspace.root().display()
-            ));
+                workspace.root().display()).unwrap();
         }
         if !last_output_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Last output: {} (workspace.root() = {})\n",
+            writeln!(diagnostic_prefix, "  - Last output: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/last_output.xml"),
-                workspace.root().display()
-            ));
+                workspace.root().display()).unwrap();
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
@@ -281,12 +283,11 @@ pub fn prompt_planning_xsd_retry_with_context_files(
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
         return format!(
-            "{}XSD VALIDATION FAILED - CREATE IMPLEMENTATION PLAN\n\n\
-             Error: {}\n\n\
+            "{diagnostic_prefix}XSD VALIDATION FAILED - CREATE IMPLEMENTATION PLAN\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please create an implementation plan for the requirements in PROMPT.md.\n\n\
-             Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
         );
     }
 
@@ -315,18 +316,17 @@ pub fn prompt_planning_xsd_retry_with_context_files(
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
-                "Your previous plan failed XSD validation.\n\nError: {}\n\n\
+                "Your previous plan failed XSD validation.\n\nError: {xsd_error}\n\n\
                  Read .agent/tmp/plan.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your plan in valid XML format conforming to the XSD schema.\n",
-                xsd_error
+                 Please resend your plan in valid XML format conforming to the XSD schema.\n"
             )
         });
 
     // Prepend diagnostic prefix if files were missing but we continued anyway
-    if !diagnostic_prefix.is_empty() {
-        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
-    } else {
+    if diagnostic_prefix.is_empty() {
         rendered_prompt
+    } else {
+        format!("{diagnostic_prefix}\n{rendered_prompt}")
     }
 }
 
@@ -358,18 +358,14 @@ pub fn prompt_planning_xsd_retry_with_context_files_and_log(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Schema file: {} (workspace.root() = {})\n",
+            writeln!(diagnostic_prefix, "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/plan.xsd"),
-                workspace.root().display()
-            ));
+                workspace.root().display()).unwrap();
         }
         if !last_output_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Last output: {} (workspace.root() = {})\n",
+            writeln!(diagnostic_prefix, "  - Last output: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/last_output.xml"),
-                workspace.root().display()
-            ));
+                workspace.root().display()).unwrap();
         }
         diagnostic_prefix
             .push_str("This likely indicates CWD != workspace.root() path mismatch.\n\n");
@@ -377,16 +373,15 @@ pub fn prompt_planning_xsd_retry_with_context_files_and_log(
 
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
-        let content = format!(
-            "{}XSD VALIDATION FAILED - CREATE IMPLEMENTATION PLAN\n\n\
-             Error: {}\n\n\
+        let prompt_content = format!(
+            "{diagnostic_prefix}XSD VALIDATION FAILED - CREATE IMPLEMENTATION PLAN\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please create an implementation plan for the requirements in PROMPT.md.\n\n\
-             Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
         );
         return RenderedTemplate {
-            content,
+            content: prompt_content,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![SubstitutionEntry {
@@ -420,31 +415,27 @@ pub fn prompt_planning_xsd_retry_with_context_files_and_log(
     ]);
 
     let template = Template::new(&template_content);
-    match template.render_with_log(template_name, &variables, &partials) {
-        Ok(mut rendered) => {
-            if !diagnostic_prefix.is_empty() {
-                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
-            }
-            rendered
+    if let Ok(mut rendered) = template.render_with_log(template_name, &variables, &partials) {
+        if !diagnostic_prefix.is_empty() {
+            rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
         }
-        Err(_) => {
-            let content = format!(
-                "Your previous plan failed XSD validation.\n\nError: {}\n\n\
-                 Read .agent/tmp/plan.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your plan in valid XML format conforming to the XSD schema.\n",
-                xsd_error
-            );
-            RenderedTemplate {
-                content,
-                log: SubstitutionLog {
-                    template_name: template_name.to_string(),
-                    substituted: vec![SubstitutionEntry {
-                        name: "XSD_ERROR".to_string(),
-                        source: SubstitutionSource::Value,
-                    }],
-                    unsubstituted: vec![],
-                },
-            }
+        rendered
+    } else {
+        let prompt_content = format!(
+            "Your previous plan failed XSD validation.\n\nError: {xsd_error}\n\n\
+             Read .agent/tmp/plan.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+             Please resend your plan in valid XML format conforming to the XSD schema.\n"
+        );
+        RenderedTemplate {
+            content: prompt_content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: vec![],
+            },
         }
     }
 }

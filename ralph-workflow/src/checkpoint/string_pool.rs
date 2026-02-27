@@ -38,6 +38,7 @@ impl StringPool {
     ///
     /// Pre-allocates capacity for 16 unique strings, which is typical for
     /// most pipeline runs (phase names, agent names, step types).
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(16)
     }
@@ -46,6 +47,7 @@ impl StringPool {
     ///
     /// Use this when you know the expected number of unique strings to avoid
     /// hash table resizing during initial population.
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             pool: HashSet::with_capacity(capacity),
@@ -99,11 +101,13 @@ impl StringPool {
     }
 
     /// Get the number of unique strings in the pool.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.pool.len()
     }
 
     /// Check if the pool is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.pool.is_empty()
     }

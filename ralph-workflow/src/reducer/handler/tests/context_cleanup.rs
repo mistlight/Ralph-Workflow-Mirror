@@ -8,7 +8,6 @@ use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
 use crate::workspace::{DirEntry, MemoryWorkspace, Workspace};
 use std::collections::HashMap;
 use std::io;
@@ -234,7 +233,7 @@ impl Workspace for ReadDirFailingWorkspace {
 
 #[test]
 fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "# Issues\n")
@@ -257,7 +256,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -277,12 +276,10 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let err = handler
-        .cleanup_context(&mut ctx)
+    let err = MainEffectHandler::cleanup_context(&ctx)
         .expect_err("cleanup_context should surface remove failures as typed error event");
 
     let error_event = err
@@ -302,7 +299,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
 
 #[test]
 fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp")
@@ -324,7 +321,7 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -344,12 +341,10 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let err = handler
-        .cleanup_context(&mut ctx)
+    let err = MainEffectHandler::cleanup_context(&ctx)
         .expect_err("cleanup_context should surface read_dir failures as typed error event");
 
     let error_event = err

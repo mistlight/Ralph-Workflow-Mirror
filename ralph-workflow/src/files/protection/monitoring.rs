@@ -10,7 +10,7 @@
 //! This is a documented exception to the effect system architecture because:
 //!
 //! 1. **Real-time filesystem monitoring**: The `notify` crate requires watching
-//!    the actual filesystem for events (inotify, FSEvents, ReadDirectoryChangesW).
+//!    the actual filesystem for events (inotify, `FSEvents`, `ReadDirectoryChangesW`).
 //! 2. **Background thread operation**: The monitor runs in a separate thread
 //!    that cannot share `PhaseContext` or workspace references.
 //! 3. **OS-level event handling**: File system events are inherently tied to
@@ -86,6 +86,10 @@ impl PromptMonitor {
     ///
     /// Returns an error if the current directory cannot be accessed or
     /// if PROMPT.md doesn't exist (we need to know what to watch for).
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn new() -> std::io::Result<Self> {
         // Verify we're in a valid directory with PROMPT.md
         let prompt_path = Path::new("PROMPT.md");
@@ -111,6 +115,10 @@ impl PromptMonitor {
     ///
     /// The monitor will automatically restore PROMPT.md from backup if
     /// deletion is detected.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn start(&mut self) -> std::io::Result<()> {
         if self.monitor_thread.is_some() {
             return Err(std::io::Error::new(
@@ -149,7 +157,7 @@ impl PromptMonitor {
         // events because PROMPT.md deletion protection is best-effort and repeated
         // events are coalescable (the polling fallback also covers missed events).
         let (tx, rx) = bounded_event_queue();
-        let event_sender = tx.clone();
+        let event_sender = tx;
 
         // Create a watcher for the current directory
         let mut watcher = match notify::recommended_watcher(move |res| {
@@ -312,11 +320,13 @@ impl PromptMonitor {
     ///     println!("PROMPT.md was restored during this phase!");
     /// }
     /// ```
+    #[must_use]
     pub fn check_and_restore(&self) -> bool {
         self.restoration_detected.swap(false, Ordering::AcqRel)
     }
 
     /// Drain any warnings produced by the monitor thread.
+    #[must_use]
     pub fn drain_warnings(&self) -> Vec<String> {
         drain_warnings(&self.warnings)
     }
@@ -324,6 +334,7 @@ impl PromptMonitor {
     /// Stop monitoring and cleanup resources.
     ///
     /// Signals the monitor thread to stop and waits for it to complete.
+    #[must_use]
     pub fn stop(mut self) -> Vec<String> {
         // Signal the thread to stop
         self.stop_signal.store(true, Ordering::Release);
@@ -546,7 +557,7 @@ mod tests {
         let (tx, _rx) = bounded_event_queue::<u8>();
 
         for i in 0..NOTIFY_EVENT_QUEUE_CAPACITY {
-            tx.try_send((i % 255) as u8)
+            tx.try_send(u8::try_from(i % 255).expect("value fits in u8"))
                 .expect("expected send within capacity");
         }
 

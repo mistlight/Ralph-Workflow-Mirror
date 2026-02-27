@@ -1,11 +1,53 @@
 //! Error event reduction.
 //!
-//! Handles error events returned through Err() from effect handlers.
+//! Handles error events returned through `Err()` from effect handlers.
 //! Each error type has a specific recovery strategy decided by the reducer.
 
 use crate::reducer::event::ErrorEvent;
 use crate::reducer::event::PipelinePhase;
 use crate::reducer::state::PipelineState;
+
+fn compute_failed_phase_for_recovery(
+    state: &PipelineState,
+    explicit_failed_phase: Option<PipelinePhase>,
+) -> PipelinePhase {
+    if let Some(phase) = explicit_failed_phase {
+        return phase;
+    }
+
+    if state.phase == PipelinePhase::AwaitingDevFix {
+        // Errors can occur while executing AwaitingDevFix effects (marker emission,
+        // dev-fix invocation, etc.). Never clobber the recovery target to AwaitingDevFix.
+        return state
+            .failed_phase_for_recovery
+            .or(state.previous_phase)
+            .unwrap_or(PipelinePhase::Development);
+    }
+
+    state.phase
+}
+
+fn route_to_awaiting_dev_fix(
+    state: &PipelineState,
+    explicit_failed_phase: Option<PipelinePhase>,
+) -> PipelineState {
+    let failed_phase_for_recovery = compute_failed_phase_for_recovery(state, explicit_failed_phase);
+    let in_recovery_loop = state.phase == PipelinePhase::AwaitingDevFix
+        || state.previous_phase == Some(PipelinePhase::AwaitingDevFix);
+
+    let mut new_state = state.clone();
+    new_state.previous_phase = Some(state.phase);
+    new_state.phase = PipelinePhase::AwaitingDevFix;
+    new_state.dev_fix_triggered = false;
+    new_state.failed_phase_for_recovery = Some(failed_phase_for_recovery);
+
+    if !in_recovery_loop {
+        new_state.dev_fix_attempt_count = 0;
+        new_state.recovery_escalation_level = 0;
+    }
+
+    new_state
+}
 
 /// Reduce error events.
 ///
@@ -23,49 +65,6 @@ use crate::reducer::state::PipelineState;
 ///   required preconditions being met. These are routed through `PipelinePhase::AwaitingDevFix`
 ///   so unattended remediation can proceed instead of terminating early.
 pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> PipelineState {
-    fn compute_failed_phase_for_recovery(
-        state: &PipelineState,
-        explicit_failed_phase: Option<PipelinePhase>,
-    ) -> PipelinePhase {
-        if let Some(phase) = explicit_failed_phase {
-            return phase;
-        }
-
-        if state.phase == PipelinePhase::AwaitingDevFix {
-            // Errors can occur while executing AwaitingDevFix effects (marker emission,
-            // dev-fix invocation, etc.). Never clobber the recovery target to AwaitingDevFix.
-            return state
-                .failed_phase_for_recovery
-                .or(state.previous_phase)
-                .unwrap_or(PipelinePhase::Development);
-        }
-
-        state.phase
-    }
-
-    fn route_to_awaiting_dev_fix(
-        state: &PipelineState,
-        explicit_failed_phase: Option<PipelinePhase>,
-    ) -> PipelineState {
-        let failed_phase_for_recovery =
-            compute_failed_phase_for_recovery(state, explicit_failed_phase);
-        let in_recovery_loop = state.phase == PipelinePhase::AwaitingDevFix
-            || state.previous_phase == Some(PipelinePhase::AwaitingDevFix);
-
-        let mut new_state = state.clone();
-        new_state.previous_phase = Some(state.phase);
-        new_state.phase = PipelinePhase::AwaitingDevFix;
-        new_state.dev_fix_triggered = false;
-        new_state.failed_phase_for_recovery = Some(failed_phase_for_recovery);
-
-        if !in_recovery_loop {
-            new_state.dev_fix_attempt_count = 0;
-            new_state.recovery_escalation_level = 0;
-        }
-
-        new_state
-    }
-
     match error {
         ErrorEvent::UserInterruptRequested => {
             // External termination request: transition to Interrupted so orchestration
@@ -169,14 +168,11 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
 
         // Agent chain exhausted - transition to AwaitingDevFix for remediation attempt
         // instead of immediately terminating
-        ErrorEvent::AgentChainExhausted { .. } => {
+        ErrorEvent::AgentChainExhausted { phase, .. } => {
             // Transition to AwaitingDevFix phase
             // This signals orchestration to invoke the development agent to diagnose
             // and fix the pipeline failure before deciding whether to proceed or terminate
-            if let ErrorEvent::AgentChainExhausted { phase, .. } = error {
-                return route_to_awaiting_dev_fix(state, Some(*phase));
-            }
-            route_to_awaiting_dev_fix(state, None)
+            route_to_awaiting_dev_fix(state, Some(*phase))
         }
     }
 }
@@ -188,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_reduce_continuation_not_supported_errors_route_to_awaiting_dev_fix() {
-        let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        let state = PipelineState::initial_with_continuation(1, 1, &ContinuationState::default());
 
         let errors = vec![
             ErrorEvent::PlanningContinuationNotSupported,
@@ -212,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_reduce_missing_inputs_errors_route_to_awaiting_dev_fix() {
-        let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        let state = PipelineState::initial_with_continuation(1, 1, &ContinuationState::default());
 
         let errors = vec![ErrorEvent::ReviewInputsNotMaterialized { pass: 1 }];
 
@@ -234,7 +230,7 @@ mod tests {
         use crate::reducer::event::PipelinePhase;
 
         let mut state =
-            PipelineState::initial_with_continuation(0, 1, ContinuationState::default());
+            PipelineState::initial_with_continuation(0, 1, &ContinuationState::default());
         state.phase = PipelinePhase::Review;
         state.fix_prompt_prepared_pass = Some(0);
 
@@ -251,7 +247,7 @@ mod tests {
         use crate::reducer::state::AgentChainState;
 
         let mut state =
-            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 0, &ContinuationState::default());
         state.phase = PipelinePhase::Development;
         state.agent_chain = AgentChainState::initial().with_agents(
             vec!["missing".to_string(), "fallback".to_string()],
@@ -275,7 +271,7 @@ mod tests {
         use crate::agents::AgentRole;
         use crate::reducer::event::PipelinePhase;
 
-        let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        let state = PipelineState::initial_with_continuation(1, 1, &ContinuationState::default());
         assert_eq!(state.phase, PipelinePhase::Planning);
 
         let error = ErrorEvent::AgentChainExhausted {
@@ -300,7 +296,7 @@ mod tests {
         use crate::reducer::event::{PipelinePhase, WorkspaceIoErrorKind};
 
         let mut state =
-            PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 1, &ContinuationState::default());
         state.phase = PipelinePhase::Review;
 
         let error = ErrorEvent::WorkspaceWriteFailed {
@@ -328,7 +324,7 @@ mod tests {
 
         // Set up state that's already in recovery loop
         let mut state =
-            PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 1, &ContinuationState::default());
         state.phase = PipelinePhase::Development;
         state.previous_phase = Some(PipelinePhase::AwaitingDevFix); // Key: already in recovery
         state.dev_fix_attempt_count = 2;
@@ -365,7 +361,7 @@ mod tests {
 
         // Set up state that's NOT in recovery (first failure)
         let mut state =
-            PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 1, &ContinuationState::default());
         state.phase = PipelinePhase::Development;
         state.previous_phase = Some(PipelinePhase::Planning); // Not AwaitingDevFix
                                                               // Simulate stale recovery state from previous recovery
@@ -402,7 +398,7 @@ mod tests {
         use crate::reducer::event::PipelinePhase;
 
         let mut state =
-            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 0, &ContinuationState::default());
         state.phase = PipelinePhase::CommitMessage;
         state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
         state.failed_phase_for_recovery = Some(PipelinePhase::CommitMessage);
@@ -430,7 +426,7 @@ mod tests {
         use crate::reducer::event::PipelinePhase;
 
         let mut state =
-            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 0, &ContinuationState::default());
         state.phase = PipelinePhase::CommitMessage;
         state.previous_phase = Some(PipelinePhase::Planning);
 
@@ -455,7 +451,7 @@ mod tests {
         use crate::reducer::event::PipelinePhase;
 
         let mut state =
-            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 0, &ContinuationState::default());
         state.phase = PipelinePhase::Review;
         state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
 
@@ -479,7 +475,7 @@ mod tests {
         use crate::reducer::event::{PipelinePhase, WorkspaceIoErrorKind};
 
         let mut state =
-            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+            PipelineState::initial_with_continuation(1, 0, &ContinuationState::default());
         state.phase = PipelinePhase::AwaitingDevFix;
         state.previous_phase = Some(PipelinePhase::Review);
         state.failed_phase_for_recovery = Some(PipelinePhase::Review);

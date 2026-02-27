@@ -6,7 +6,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../INTEGRATION_TESTS.md)**.
 //!
 //! Before writing, modifying, or debugging any integration test, you MUST read
 //! that document. Key principles:
@@ -26,10 +26,10 @@ use crate::test_timeout::with_default_timeout;
 fn test_development_xml_valid_completed_status() {
     with_default_timeout(|| {
         // Setup: Create valid XML with completed status
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented the feature successfully</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Validate the XML through the public API
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -60,12 +60,12 @@ fn test_development_xml_valid_completed_status() {
 fn test_development_xml_valid_partial_status() {
     with_default_timeout(|| {
         // Setup: Create valid XML with partial status
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Started implementation, more work needed</ralph-summary>
 <ralph-files-changed>- src/main.rs
 - src/utils.rs</ralph-files-changed>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -93,11 +93,11 @@ fn test_development_xml_valid_partial_status() {
 fn test_development_xml_valid_failed_status() {
     with_default_timeout(|| {
         // Setup: Create valid XML with failed status
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>failed</ralph-status>
 <ralph-summary>Could not complete the task due to errors</ralph-summary>
 <ralph-next-steps>Review error logs and retry</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -126,9 +126,9 @@ fn test_development_xml_valid_failed_status() {
 fn test_development_xml_invalid_format_provides_specific_error() {
     with_default_timeout(|| {
         // Setup: Create XML with missing required element (no summary)
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -176,10 +176,10 @@ fn test_development_xml_invalid_format_provides_specific_error() {
 fn test_development_xml_invalid_status_provides_valid_options() {
     with_default_timeout(|| {
         // Setup: Create XML with invalid status value
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>invalid_status</ralph-status>
 <ralph-summary>Some summary</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -214,7 +214,7 @@ fn test_development_xml_invalid_status_provides_valid_options() {
 fn test_development_xml_extraction_from_markdown_fence() {
     with_default_timeout(|| {
         // Setup: Create content with XML wrapped in markdown fence
-        let content = r#"Here's my status:
+        let content = r"Here's my status:
 
 ```xml
 <ralph-development-result>
@@ -223,7 +223,7 @@ fn test_development_xml_extraction_from_markdown_fence() {
 </ralph-development-result>
 ```
 
-That's all."#;
+That's all.";
 
         // Execute: Extract XML from the content
         let extracted = ralph_workflow::extract_development_result_xml(content);
@@ -270,13 +270,13 @@ fn test_development_xml_extraction_from_json_string() {
 fn test_development_xml_formatted_for_display() {
     with_default_timeout(|| {
         // Setup: Create valid XML
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented feature X</ralph-summary>
 <ralph-files-changed>- src/main.rs
 - src/utils.rs</ralph-files-changed>
 <ralph-next-steps>Continue with testing</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Format the XML for display
         let formatted = ralph_workflow::files::llm_output_extraction::format_xml_for_display(xml);
@@ -304,10 +304,10 @@ fn test_development_xml_formatted_for_display() {
 fn test_development_xml_optional_fields_can_be_omitted() {
     with_default_timeout(|| {
         // Setup: Create minimal valid XML (only required fields)
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -335,11 +335,11 @@ fn test_development_xml_optional_fields_can_be_omitted() {
 fn test_development_xml_duplicate_elements_produce_specific_error() {
     with_default_timeout(|| {
         // Setup: Create XML with duplicate status element
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Some summary</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -372,11 +372,11 @@ fn test_development_xml_duplicate_elements_produce_specific_error() {
 fn test_development_xml_unexpected_element_provides_valid_options() {
     with_default_timeout(|| {
         // Setup: Create XML with unexpected element
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Some summary</ralph-summary>
 <ralph-unknown-element>Some value</ralph-unknown-element>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -405,11 +405,11 @@ fn test_development_xml_unexpected_element_provides_valid_options() {
 fn test_development_xml_text_outside_child_tags_produces_error() {
     with_default_timeout(|| {
         // Setup: Create XML with text inside root element but outside child elements
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 Some loose text that shouldn't be here
 <ralph-status>completed</ralph-status>
 <ralph-summary>Some summary</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);
@@ -437,7 +437,7 @@ Some loose text that shouldn't be here
 fn test_development_xsd_error_contains_all_required_information() {
     with_default_timeout(|| {
         // Setup: Create invalid XML (missing root element)
-        let xml = r#"Random text without proper XML"#;
+        let xml = r"Random text without proper XML";
 
         // Execute: Try to validate the XML
         let result = ralph_workflow::validate_development_result_xml(xml);

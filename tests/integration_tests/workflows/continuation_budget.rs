@@ -25,7 +25,7 @@ use crate::test_timeout::with_default_timeout;
 fn test_dev_continuation_budget_enforced() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Attempt 0 (initial) - already happened, continuation_attempt = 0
@@ -37,7 +37,7 @@ fn test_dev_continuation_budget_enforced() {
                 PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("Attempt {}", attempt),
+                    summary: format!("Attempt {attempt}"),
                     files_changed: None,
                     next_steps: None,
                 }),
@@ -75,7 +75,7 @@ fn test_fix_continuation_budget_enforced() {
     with_default_timeout(|| {
         let mut continuation = ContinuationState::with_limits(99, 3, 2);
         continuation.max_fix_continue_count = 2; // Set fix budget explicitly to 2
-        let mut state = PipelineState::initial_with_continuation(0, 3, continuation);
+        let mut state = PipelineState::initial_with_continuation(0, 3, &continuation);
 
         // Simulate fix continuations (max_fix_continue_count = 2)
         // Attempt 0 is initial, attempts 1 and 2 are continuations
@@ -85,7 +85,7 @@ fn test_fix_continuation_budget_enforced() {
                 PipelineEvent::Review(ReviewEvent::FixContinuationTriggered {
                     pass: 0,
                     status: FixStatus::IssuesRemain,
-                    summary: Some(format!("Fix continuation {}", i)),
+                    summary: Some(format!("Fix continuation {i}")),
                 }),
             );
             assert_eq!(state.continuation.fix_continuation_attempt, i);
@@ -127,7 +127,7 @@ fn test_continuation_state_resets_across_iterations() {
 fn test_continuation_budget_exhaustion_completes_iteration_and_resets_continuation() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 2, 2); // max_continue_count = 2
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Trigger 2 continuations (reach budget)
@@ -171,7 +171,7 @@ fn test_continuation_budget_exhaustion_completes_iteration_and_resets_continuati
 fn test_fix_continuation_budget_exhaustion_proceeds_to_commit() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 1); // max_fix_continue_count = 1
-        let mut state = PipelineState::initial_with_continuation(0, 3, continuation);
+        let mut state = PipelineState::initial_with_continuation(0, 3, &continuation);
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
         state.reviewer_pass = 1;
 
@@ -262,14 +262,14 @@ fn test_continuation_metrics_track_correctly() {
 // Step 18: Verify metrics match continuation state
 // ============================================================================
 
-/// Test that dev_continuation_attempt metric stays in sync with ContinuationState.
+/// Test that `dev_continuation_attempt` metric stays in sync with `ContinuationState`.
 ///
 /// CRITICAL: Metrics must be consistent with the source-of-truth continuation state.
 #[test]
 fn test_dev_continuation_metrics_match_state() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(3, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Initial: no continuations yet
@@ -312,12 +312,12 @@ fn test_dev_continuation_metrics_match_state() {
     });
 }
 
-/// Test that fix_continuation_attempt metric stays in sync with ContinuationState.
+/// Test that `fix_continuation_attempt` metric stays in sync with `ContinuationState`.
 #[test]
 fn test_fix_continuation_metrics_match_state() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(0, 1, continuation);
+        let mut state = PipelineState::initial_with_continuation(0, 1, &continuation);
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
         state.reviewer_pass = 0;
 
@@ -362,7 +362,7 @@ fn test_fix_continuation_metrics_match_state() {
 fn test_continuation_exhaustion_matches_metrics() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(3, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Trigger 2 continuations (attempts 1, 2)
@@ -372,7 +372,7 @@ fn test_continuation_exhaustion_matches_metrics() {
                 PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("attempt {}", i),
+                    summary: format!("attempt {i}"),
                     files_changed: None,
                     next_steps: None,
                 }),
@@ -405,10 +405,10 @@ fn test_continuation_exhaustion_matches_metrics() {
     });
 }
 
-/// Test that missing max_dev_continuations config key applies default value.
+/// Test that missing `max_dev_continuations` config key applies default value.
 ///
-/// This test verifies that when max_dev_continuations is omitted from the config file,
-/// the system applies the serde default of 2, resulting in max_continue_count of 3
+/// This test verifies that when `max_dev_continuations` is omitted from the config file,
+/// the system applies the serde default of 2, resulting in `max_continue_count` of 3
 /// (1 initial + 2 continuations).
 #[test]
 fn test_missing_max_dev_continuations_applies_default() {
@@ -421,7 +421,7 @@ fn test_missing_max_dev_continuations_applies_default() {
             2,  // max_same_agent_retries
         );
 
-        let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(1, 0, &continuation);
 
         // Verify default is applied correctly
         assert_eq!(
@@ -484,13 +484,13 @@ fn test_missing_max_dev_continuations_applies_default() {
     });
 }
 
-/// Test that continuation budget is properly capped at 3 when max_dev_continuations could be None.
+/// Test that continuation budget is properly capped at 3 when `max_dev_continuations` could be None.
 ///
-/// This regression test verifies that even when Config.max_dev_continuations is None
-/// (e.g., from Config::default() or Config::test_default()), the system enforces
-/// the unwrap_or(2) fallback, resulting in a cap of 3 total attempts.
+/// This regression test verifies that even when `Config.max_dev_continuations` is None
+/// (e.g., from `Config::default()` or `Config::test_default()`), the system enforces
+/// the `unwrap_or(2)` fallback, resulting in a cap of 3 total attempts.
 ///
-/// Without the unwrap_or(2) defensive fallback in create_initial_state_with_config(),
+/// Without the `unwrap_or(2)` defensive fallback in `create_initial_state_with_config()`,
 /// this test would fail by allowing indefinite continuations.
 #[test]
 fn test_missing_config_key_caps_continuations_at_three() {
@@ -504,7 +504,7 @@ fn test_missing_config_key_caps_continuations_at_three() {
             2,  // max_same_agent_retries
         );
 
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Initial attempt (continuation_attempt = 0)
@@ -567,11 +567,11 @@ fn test_missing_config_key_caps_continuations_at_three() {
     });
 }
 
-/// NEW REGRESSION TEST: Test continuation behavior with default limit from unwrap_or(2).
+/// NEW REGRESSION TEST: Test continuation behavior with default limit from `unwrap_or(2)`.
 ///
 /// CRITICAL: This test verifies the infinite loop bug is prevented.
-/// The event_loop config loader applies unwrap_or(2) when max_dev_continuations is None,
-/// resulting in max_continue_count = 3 (1 initial + 2 continuations).
+/// The `event_loop` config loader applies `unwrap_or(2)` when `max_dev_continuations` is None,
+/// resulting in `max_continue_count` = 3 (1 initial + 2 continuations).
 ///
 /// This test simulates the expected state after that default application and verifies
 /// continuation stops at attempt 3, preventing infinite continuation loops.
@@ -587,7 +587,7 @@ fn test_continuation_stops_with_unwrap_or_default() {
             2,  // max_same_agent_retries
         );
 
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
 
         // Verify the default was applied correctly
         assert_eq!(
@@ -656,23 +656,23 @@ fn test_continuation_stops_with_unwrap_or_default() {
     });
 }
 
-/// Regression test: Verify OutcomeApplied exhausts at the correct boundary.
+/// Regression test: Verify `OutcomeApplied` exhausts at the correct boundary.
 ///
-/// With max_continue_count = 3, attempts 0, 1, 2 should be allowed (3 total).
-/// OutcomeApplied at attempt 2 with Partial status should exhaust the budget
-/// (because attempt 2 + 1 = 3 would reach max_continue_count).
+/// With `max_continue_count` = 3, attempts 0, 1, 2 should be allowed (3 total).
+/// `OutcomeApplied` at attempt 2 with Partial status should exhaust the budget
+/// (because attempt 2 + 1 = 3 would reach `max_continue_count`).
 ///
 /// BEFORE FIX: Current code allowed attempt 2 to continue to attempt 3,
 /// then exhausted at attempt 3, allowing 4 total attempts (bug).
 ///
-/// AFTER FIX: OutcomeApplied at attempt 2 correctly exhausts without
+/// AFTER FIX: `OutcomeApplied` at attempt 2 correctly exhausts without
 /// triggering attempt 3, allowing exactly 3 attempts as configured.
 #[test]
 fn test_outcome_applied_exhausts_too_early() {
     with_default_timeout(|| {
         // max_continue_count = 3 means attempts 0, 1, 2 should be allowed (3 total)
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Simulate attempt 0 completing with Partial outcome
@@ -740,21 +740,21 @@ fn test_outcome_applied_exhausts_too_early() {
     });
 }
 
-/// NEW REGRESSION TEST: Verify OutcomeApplied checks exhaustion BEFORE triggering continuation.
+/// NEW REGRESSION TEST: Verify `OutcomeApplied` checks exhaustion BEFORE triggering continuation.
 ///
-/// CRITICAL: With max_continue_count = 3, attempts 0, 1, 2 should be allowed (3 total).
-/// When OutcomeApplied fires at attempt 2 with Partial status:
-/// - continuation_attempt = 2
-/// - continuation_attempt + 1 = 3 (would reach max_continue_count)
-/// - Should emit ContinuationBudgetExhausted, NOT ContinuationTriggered
+/// CRITICAL: With `max_continue_count` = 3, attempts 0, 1, 2 should be allowed (3 total).
+/// When `OutcomeApplied` fires at attempt 2 with Partial status:
+/// - `continuation_attempt` = 2
+/// - `continuation_attempt` + 1 = 3 (would reach `max_continue_count`)
+/// - Should emit `ContinuationBudgetExhausted`, NOT `ContinuationTriggered`
 ///
 /// This is the core bug: current code triggers continuation first (incrementing to 3),
-/// then checks exhaustion on the NEXT OutcomeApplied, allowing attempt 3 to run.
+/// then checks exhaustion on the NEXT `OutcomeApplied`, allowing attempt 3 to run.
 #[test]
 fn test_outcome_applied_exhausts_at_correct_boundary() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Attempt 0 (initial) completes with Partial
@@ -824,9 +824,9 @@ fn test_outcome_applied_exhausts_at_correct_boundary() {
     });
 }
 
-/// Integration test: Verify default max_dev_continuations prevents infinite loops.
+/// Integration test: Verify default `max_dev_continuations` prevents infinite loops.
 ///
-/// This test simulates the production scenario where max_dev_continuations is missing
+/// This test simulates the production scenario where `max_dev_continuations` is missing
 /// from config, and every attempt returns Partial status. The system MUST stop after
 /// exactly 3 attempts (the default), not continue indefinitely.
 ///
@@ -836,7 +836,7 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
     with_default_timeout(|| {
         // Simulate config with default: max_dev_continuations = 2 → max_continue_count = 3
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Simulate a scenario where EVERY attempt returns Partial
@@ -898,7 +898,7 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
                 iteration: 0,
                 status: DevelopmentStatus::Partial,
                 summary: "Still not fully satisfied".to_string(),
-                files_changed: Some(["src/file5.rs"].into_iter().map(String::from).collect()),
+                files_changed: Some(vec!["src/file5.rs".to_string()].into_boxed_slice()),
                 next_steps: Some("Provide explicit evidence".to_string()),
             },
         );
@@ -946,7 +946,7 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
 
 /// Test that continuation attempts are numbered correctly and exhaustion happens at the right boundary.
 ///
-/// With max_continue_count = 3:
+/// With `max_continue_count` = 3:
 /// - Attempt 0 (initial): NOT exhausted (0 < 3)
 /// - Attempt 1 (first continuation): NOT exhausted (1 < 3)
 /// - Attempt 2 (second continuation): NOT exhausted (2 < 3)
@@ -955,7 +955,7 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
 fn test_continuation_attempt_numbering_and_boundary() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Initial attempt (attempt 0)
@@ -1019,27 +1019,27 @@ fn test_continuation_attempt_numbering_and_boundary() {
     });
 }
 
-/// Regression test: Verify trigger_continuation defensive check doesn't increment counter.
+/// Regression test: Verify `trigger_continuation` defensive check doesn't increment counter.
 ///
-/// CRITICAL BUG: trigger_continuation sets continuation_attempt = next_attempt EVEN when
+/// CRITICAL BUG: `trigger_continuation` sets `continuation_attempt` = `next_attempt` EVEN when
 /// the defensive check triggers (line 128 in budget.rs). This allows the counter to reach
 /// the boundary value (3) instead of staying below it (2).
 ///
-/// BEFORE FIX: At attempt 2, next_attempt = 3, check `3 >= 3` is true, BUT line 128 still
+/// BEFORE FIX: At attempt 2, `next_attempt` = 3, check `3 >= 3` is true, BUT line 128 still
 /// executes `self.continuation_attempt = 3` before returning. The counter reaches 3, which
-/// is AT the boundary, not over it. continuations_exhausted() returns true (3 >= 3), but
+/// is AT the boundary, not over it. `continuations_exhausted()` returns true (3 >= 3), but
 /// the counter shouldn't have reached 3 in the first place.
 ///
-/// AFTER FIX: At attempt 2, next_attempt = 3, check `3 >= 3` is true, counter stays at 2,
+/// AFTER FIX: At attempt 2, `next_attempt` = 3, check `3 >= 3` is true, counter stays at 2,
 /// method returns without updating the counter. This prevents the off-by-one bug.
 ///
-/// This test directly simulates the scenario where trigger_continuation's defensive check
+/// This test directly simulates the scenario where `trigger_continuation`'s defensive check
 /// is reached (which shouldn't happen in normal flow, but this tests the safety mechanism).
 #[test]
 fn test_trigger_continuation_defensive_check_prevents_counter_increment() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Manually trigger continuations to test trigger_continuation's defensive check.
@@ -1125,7 +1125,7 @@ fn test_trigger_continuation_defensive_check_prevents_counter_increment() {
 /// # Bug Description
 ///
 /// When `max_dev_continuations` is missing from config (relying on default value of 2,
-/// yielding max_continue_count = 3), the system allowed continuations to proceed indefinitely
+/// yielding `max_continue_count` = 3), the system allowed continuations to proceed indefinitely
 /// when work status remained non-Complete (e.g., always Partial or Failed).
 ///
 /// # Root Cause
@@ -1144,7 +1144,7 @@ fn test_trigger_continuation_defensive_check_prevents_counter_increment() {
 /// # Test Strategy
 ///
 /// This test simulates the exact scenario from the bug report:
-/// 1. Config has max_dev_continuations = None, defaulting to 2 (max_continue_count = 3)
+/// 1. Config has `max_dev_continuations` = None, defaulting to 2 (`max_continue_count` = 3)
 /// 2. Every attempt returns Partial status (never Complete)
 /// 3. Verify continuation stops after exactly 3 attempts (0, 1, 2), not indefinitely
 ///
@@ -1154,16 +1154,17 @@ fn test_trigger_continuation_defensive_check_prevents_counter_increment() {
 #[test]
 fn test_missing_max_dev_continuations_prevents_infinite_loop() {
     with_default_timeout(|| {
+        const MAX_SAFE_ATTEMPTS: usize = 10;
+
         // Reproduce the infinite loop bug from user report:
         // Config.max_dev_continuations is None (missing from config)
         // After unwrap_or(2) in create_initial_state_with_config, max_continue_count = 3
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Track total attempt count to detect infinite loop
         let mut total_attempts = 0;
-        const MAX_SAFE_ATTEMPTS: usize = 10; // Safety limit to prevent actual infinite loop in test
 
         // Simulate the scenario from logs: every attempt returns Partial (never Complete)
         for attempt in 0..MAX_SAFE_ATTEMPTS {
@@ -1172,7 +1173,7 @@ fn test_missing_max_dev_continuations_prevents_infinite_loop() {
                 ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work attempt {}", attempt),
+                    summary: format!("Partial work attempt {attempt}"),
                     files_changed: None,
                     next_steps: Some("Continue work".to_string()),
                 },
@@ -1197,13 +1198,11 @@ fn test_missing_max_dev_continuations_prevents_infinite_loop() {
             }
 
             // If we reach more than 3 attempts without exhaustion, the bug persists
-            if total_attempts > 3 {
-                panic!(
-                    "INFINITE LOOP BUG REPRODUCED: Continuation continued past 3 attempts (attempt {}). \
-                     Expected exhaustion at attempt 3 with max_continue_count=3.",
-                    total_attempts
-                );
-            }
+            assert!(
+                total_attempts <= 3,
+                "INFINITE LOOP BUG REPRODUCED: Continuation continued past 3 attempts (attempt {total_attempts}). \
+                 Expected exhaustion at attempt 3 with max_continue_count=3."
+            );
         }
 
         // Verify we stopped at exactly 3 attempts
@@ -1220,7 +1219,7 @@ fn test_missing_max_dev_continuations_prevents_infinite_loop() {
 ///
 /// When continuation budget is exhausted but agents remain available, the system
 /// switches to the next agent and stays in Development phase with reset continuation
-/// state (continuation_attempt=0). If status remains non-Complete, this creates an
+/// state (`continuation_attempt=0`). If status remains non-Complete, this creates an
 /// infinite loop pattern: attempt 1→2→exhaust→switch agent→restart→attempt 1→2→exhaust...
 ///
 /// # Reproduction from Logs
@@ -1234,13 +1233,15 @@ fn test_missing_max_dev_continuations_prevents_infinite_loop() {
 ///
 /// After continuation budget exhaustion with non-Complete status, the system should:
 /// 1. Complete the current iteration (even with incomplete work)
-/// 2. Advance to the next iteration if dev_iters remain
-/// 3. Transition to AwaitingDevFix if both continuations AND iterations are exhausted
+/// 2. Advance to the next iteration if `dev_iters` remain
+/// 3. Transition to `AwaitingDevFix` if both continuations AND iterations are exhausted
 ///
 /// The system MUST NOT restart the continuation cycle with a fresh agent within the same iteration.
 #[test]
 fn test_continuation_budget_exhaustion_completes_iteration() {
     with_default_timeout(|| {
+        const MAX_CYCLES: usize = 5;
+
         // Set up state with default continuation limit (max_continue_count = 3)
         // and multiple agents in the chain
         use ralph_workflow::agents::fallback::AgentRole;
@@ -1255,13 +1256,12 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
             AgentRole::Developer,
         );
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state.agent_chain = agent_chain;
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Track cycle restarts to detect the infinite loop pattern
         let mut cycle_count = 0;
-        const MAX_CYCLES: usize = 5;
 
         for cycle in 0..MAX_CYCLES {
             // Simulate attempt 0 (initial): Partial status
@@ -1269,7 +1269,7 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
                 ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work cycle {} attempt 0", cycle),
+                    summary: format!("Partial work cycle {cycle} attempt 0"),
                     files_changed: None,
                     next_steps: Some("Continue".to_string()),
                 },
@@ -1290,7 +1290,7 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
                 ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work cycle {} attempt 1", cycle),
+                    summary: format!("Partial work cycle {cycle} attempt 1"),
                     files_changed: None,
                     next_steps: Some("Continue".to_string()),
                 },
@@ -1311,7 +1311,7 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
                 ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
                     iteration: 0,
                     status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work cycle {} attempt 2", cycle),
+                    summary: format!("Partial work cycle {cycle} attempt 2"),
                     files_changed: None,
                     next_steps: Some("Continue".to_string()),
                 },
@@ -1341,15 +1341,13 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
             }
 
             // BUG: Still in Development phase, iteration 0, with reset continuation counter
-            if state.continuation.continuation_attempt == 0 && state.iteration == 0 {
-                panic!(
-                    "INFINITE LOOP BUG: After continuation budget exhaustion at cycle {}, \
-                     continuation_attempt reset to 0 but still in Development phase iteration 0. \
-                     Expected iteration to advance or phase to change. \
-                     This reproduces the log pattern: 1→2→cleanup→1→2→cleanup...",
-                    cycle_count
-                );
-            }
+            assert!(
+                !(state.continuation.continuation_attempt == 0 && state.iteration == 0),
+                "INFINITE LOOP BUG: After continuation budget exhaustion at cycle {cycle_count}, \
+                 continuation_attempt reset to 0 but still in Development phase iteration 0. \
+                 Expected iteration to advance or phase to change. \
+                 This reproduces the log pattern: 1→2→cleanup→1→2→cleanup..."
+            );
         }
 
         // Verify we either advanced iteration or changed phase (not stuck in iteration 0)

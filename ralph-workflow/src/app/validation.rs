@@ -31,6 +31,10 @@ pub struct ValidatedAgents {
 /// # Returns
 ///
 /// Returns the validated agent names or an error if agents are not configured.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn resolve_required_agents(config: &Config) -> anyhow::Result<ValidatedAgents> {
     let developer_agent = config.developer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
@@ -67,6 +71,10 @@ pub fn resolve_required_agents(config: &Config) -> anyhow::Result<ValidatedAgent
 /// # Returns
 ///
 /// Returns `Ok(())` if validation passes, or an error with details.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_agent_commands(
     config: &Config,
     registry: &AgentRegistry,
@@ -132,6 +140,10 @@ pub fn validate_agent_commands(
 /// # Returns
 ///
 /// Returns `Ok(())` if validation passes, or an error with details.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_can_commit(
     config: &Config,
     registry: &AgentRegistry,

@@ -1,6 +1,6 @@
 //! Configuration, git identity, and model override preservation tests.
 //!
-//! These tests use MockAppEffectHandler for in-memory testing without
+//! These tests use `MockAppEffectHandler` for in-memory testing without
 //! real filesystem or git operations.
 
 use std::path::PathBuf;
@@ -15,16 +15,16 @@ use crate::test_timeout::with_default_timeout;
 use super::{make_checkpoint_json, make_checkpoint_with_prompt_history, MOCK_REPO_PATH};
 
 /// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Test resume functionality.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
-/// SHA256 checksum of STANDARD_PROMPT above.
+/// SHA256 checksum of `STANDARD_PROMPT` above.
 const STANDARD_PROMPT_CHECKSUM: &str =
     "e10f15e8e6da0c359d9d266370dcefe7e11270c48b63144f1d443249b9eb5738";
 
@@ -124,12 +124,12 @@ fn ralph_checkpoint_preserves_model_overrides() {
 
 #[test]
 fn ralph_checkpoint_records_prompt_md_checksum() {
+    use sha2::{Digest, Sha256};
     with_default_timeout(|| {
         // Create PROMPT.md with known content
         let prompt_content = "# Test Prompt\n\nDo something.";
 
         // Calculate PROMPT.md checksum
-        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(prompt_content.as_bytes());
         let prompt_checksum = format!("{:x}", hasher.finalize());
@@ -165,12 +165,12 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 
 #[test]
 fn ralph_resume_warns_on_prompt_md_change() {
+    use sha2::{Digest, Sha256};
     with_default_timeout(|| {
         // Write initial PROMPT.md
         let original_content = "# Original Task\nDo something.";
 
         // Calculate checksum of original PROMPT.md
-        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(original_content.as_bytes());
         let original_checksum = format!("{:x}", hasher.finalize());
@@ -285,8 +285,8 @@ fn make_checkpoint_json_with_git_identity(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": "Checkpoint User",
             "git_user_email": "checkpoint@example.com",
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -297,8 +297,7 @@ fn make_checkpoint_json_with_git_identity(working_dir: &str) -> String {
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -343,8 +342,8 @@ fn make_checkpoint_json_with_model_overrides(working_dir: &str) -> String {
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{STANDARD_PROMPT_CHECKSUM}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -355,8 +354,7 @@ fn make_checkpoint_json_with_model_overrides(working_dir: &str) -> String {
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        working_dir, STANDARD_PROMPT_CHECKSUM
+        }}"#
     )
 }
 
@@ -401,8 +399,8 @@ fn make_checkpoint_json_with_checksum(working_dir: &str, checksum: &str) -> Stri
             "rebase_state": "NotStarted",
             "config_path": null,
             "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": "{}",
+            "working_dir": "{working_dir}",
+            "prompt_md_checksum": "{checksum}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -413,7 +411,6 @@ fn make_checkpoint_json_with_checksum(working_dir: &str, checksum: &str) -> Stri
             "execution_history": null,
             "file_system_state": null,
             "prompt_history": null
-        }}"#,
-        working_dir, checksum
+        }}"#
     )
 }

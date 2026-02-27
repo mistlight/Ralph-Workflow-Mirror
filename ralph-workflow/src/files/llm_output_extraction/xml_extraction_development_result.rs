@@ -22,6 +22,7 @@ use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggress
 ///
 /// * `Some(xml_content)` - The extracted XML content including tags
 /// * `None` - No valid XML development result found
+#[must_use]
 pub fn extract_development_result_xml(content: &str) -> Option<String> {
     // Strategy 1: Direct XML at start (most efficient)
     if let Some(xml) = try_extract_direct_xml(content) {

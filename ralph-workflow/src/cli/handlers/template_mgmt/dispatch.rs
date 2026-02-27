@@ -1,4 +1,8 @@
 /// Handle all template commands.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_template_commands(commands: &TemplateCommands, colors: Colors) -> anyhow::Result<()> {
     if commands.init_templates_enabled() {
         handle_template_init(commands.force, colors)?;

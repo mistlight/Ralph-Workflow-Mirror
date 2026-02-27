@@ -1,4 +1,4 @@
-//! ContinuationState struct definition.
+//! `ContinuationState` struct definition.
 //!
 //! Contains the core state structure for tracking continuation and retry attempts
 //! across development and fix iterations.
@@ -13,17 +13,17 @@ use serde::{Deserialize, Serialize};
 ///
 /// # When Fields Are Populated
 ///
-/// - `previous_status`: Set when DevelopmentIterationContinuationTriggered event fires
-/// - `previous_summary`: Set when DevelopmentIterationContinuationTriggered event fires
-/// - `previous_files_changed`: Set when DevelopmentIterationContinuationTriggered event fires
-/// - `previous_next_steps`: Set when DevelopmentIterationContinuationTriggered event fires
+/// - `previous_status`: Set when `DevelopmentIterationContinuationTriggered` event fires
+/// - `previous_summary`: Set when `DevelopmentIterationContinuationTriggered` event fires
+/// - `previous_files_changed`: Set when `DevelopmentIterationContinuationTriggered` event fires
+/// - `previous_next_steps`: Set when `DevelopmentIterationContinuationTriggered` event fires
 /// - `continuation_attempt`: Incremented on each continuation within same iteration
 ///
 /// # Reset Triggers
 ///
 /// The continuation state is reset (cleared) when:
-/// - A new iteration starts (DevelopmentIterationStarted event)
-/// - Status becomes "completed" (ContinuationSucceeded event)
+/// - A new iteration starts (`DevelopmentIterationStarted` event)
+/// - Status becomes "completed" (`ContinuationSucceeded` event)
 /// - Phase transitions away from Development
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContinuationState {
@@ -56,7 +56,7 @@ pub struct ContinuationState {
     pub xsd_retry_count: u32,
     /// Whether an XSD retry is pending (validation failed, need to retry).
     ///
-    /// Set to true when XsdValidationFailed event fires.
+    /// Set to true when `XsdValidationFailed` event fires.
     /// Cleared when retry attempt starts or max retries exceeded.
     #[serde(default)]
     pub xsd_retry_pending: bool,
@@ -146,7 +146,7 @@ pub struct ContinuationState {
     pub fix_continuation_attempt: u32,
     /// Whether a fix continuation is pending (output valid but work incomplete).
     ///
-    /// Set to true when fix output indicates status is "issues_remain".
+    /// Set to true when fix output indicates status is "`issues_remain`".
     /// Cleared when continuation attempt starts or max continuations exceeded.
     #[serde(default)]
     pub fix_continue_pending: bool,
@@ -236,11 +236,13 @@ impl Default for ContinuationState {
 
 impl ContinuationState {
     /// Create a new empty continuation state.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Create continuation state with custom limits (for config loading).
+    #[must_use]
     pub fn with_limits(
         max_xsd_retry_count: u32,
         max_continue_count: u32,
@@ -258,7 +260,8 @@ impl ContinuationState {
     /// Builder: set max XSD retry count.
     ///
     /// Use 0 to disable XSD retries (immediate agent fallback on validation failure).
-    pub fn with_max_xsd_retry(mut self, max_xsd_retry_count: u32) -> Self {
+    #[must_use]
+    pub const fn with_max_xsd_retry(mut self, max_xsd_retry_count: u32) -> Self {
         self.max_xsd_retry_count = max_xsd_retry_count;
         self
     }
@@ -266,21 +269,23 @@ impl ContinuationState {
     /// Builder: set max same-agent retry count for transient invocation failures.
     ///
     /// Use 0 to disable same-agent retries (immediate agent fallback on timeout/internal error).
-    pub fn with_max_same_agent_retry(mut self, max_same_agent_retry_count: u32) -> Self {
+    #[must_use]
+    pub const fn with_max_same_agent_retry(mut self, max_same_agent_retry_count: u32) -> Self {
         self.max_same_agent_retry_count = max_same_agent_retry_count;
         self
     }
 
     /// Check if this is a continuation attempt (not the first attempt).
-    pub fn is_continuation(&self) -> bool {
+    #[must_use]
+    pub const fn is_continuation(&self) -> bool {
         self.continuation_attempt > 0
     }
 
     /// Reset the continuation state for a new iteration or phase transition.
     ///
     /// This performs a **hard reset** of ALL continuation and retry state,
-    /// preserving only the configured limits (max_xsd_retry_count, max_continue_count,
-    /// max_fix_continue_count).
+    /// preserving only the configured limits (`max_xsd_retry_count`, `max_continue_count`,
+    /// `max_fix_continue_count`).
     ///
     /// # What gets reset
     ///
@@ -301,6 +306,7 @@ impl ContinuationState {
     /// where prior continuation/retry state should not carry over. For partial
     /// resets (e.g., resetting only fix continuation while preserving development
     /// continuation state), use field-level updates instead.
+    #[must_use]
     pub fn reset(self) -> Self {
         // Preserve configured limits, reset everything else including loop detection counters.
         // The struct initialization below explicitly preserves max_* fields,

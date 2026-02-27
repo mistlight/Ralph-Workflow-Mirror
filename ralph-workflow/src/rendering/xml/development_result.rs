@@ -12,52 +12,50 @@ use super::helpers::{
 };
 use crate::files::llm_output_extraction::validate_development_result_xml;
 use crate::reducer::ui_event::XmlOutputContext;
+use std::fmt::Write;
 
 /// Render development result XML with semantic formatting.
-pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: Option<&XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with optional iteration context
-    if let Some(ctx) = context {
+    if let Some(ctx) = output_context {
         if let Some(iter) = ctx.iteration {
-            output.push_str(&format!("\n╔═══ Development Iteration {} ═══╗\n\n", iter));
+            writeln!(output, "\n╔═══ Development Iteration {iter} ═══╗\n").unwrap();
         }
     }
 
-    match validate_development_result_xml(content) {
-        Ok(elements) => {
-            // Status with emoji and label
-            let (status_emoji, status_label) = match elements.status.as_str() {
-                "completed" => ("✅", "Completed"),
-                "partial" => ("🔄", "In Progress"),
-                "failed" => ("❌", "Failed"),
-                _ => ("❓", "Unknown"),
-            };
-            output.push_str(&format!("{} Status: {}\n\n", status_emoji, status_label));
+    if let Ok(elements) = validate_development_result_xml(content) {
+        // Status with emoji and label
+        let (status_emoji, status_label) = match elements.status.as_str() {
+            "completed" => ("✅", "Completed"),
+            "partial" => ("🔄", "In Progress"),
+            "failed" => ("❌", "Failed"),
+            _ => ("❓", "Unknown"),
+        };
+        writeln!(output, "{status_emoji} Status: {status_label}\n").unwrap();
 
-            // Summary with proper formatting for multiline
-            output.push_str("📋 Summary:\n");
-            for line in elements.summary.lines() {
-                output.push_str(&format!("   {}\n", line));
-            }
+        // Summary with proper formatting for multiline
+        output.push_str("📋 Summary:\n");
+        for line in elements.summary.lines() {
+            writeln!(output, "   {line}").unwrap();
+        }
 
-            // Files changed: prefer diff-like rendering when unified diff is present.
-            if let Some(ref files) = elements.files_changed {
-                output.push_str(&render_files_changed_as_diff_like_view(files));
-            }
+        // Files changed: prefer diff-like rendering when unified diff is present.
+        if let Some(ref files) = elements.files_changed {
+            output.push_str(&render_files_changed_as_diff_like_view(files));
+        }
 
-            // Next steps with proper formatting
-            if let Some(ref next) = elements.next_steps {
-                output.push_str("\n➡️  Next Steps:\n");
-                for line in next.lines() {
-                    output.push_str(&format!("   {}\n", line));
-                }
+        // Next steps with proper formatting
+        if let Some(ref next) = elements.next_steps {
+            output.push_str("\n➡️  Next Steps:\n");
+            for line in next.lines() {
+                writeln!(output, "   {line}").unwrap();
             }
         }
-        Err(_) => {
-            output.push_str("⚠️  Unable to parse development result XML\n\n");
-            output.push_str(content);
-        }
+    } else {
+        output.push_str("⚠️  Unable to parse development result XML\n\n");
+        output.push_str(content);
     }
 
     output
@@ -82,22 +80,26 @@ fn render_files_changed_as_diff_like_view(files_changed: &str) -> String {
     let file_list: Vec<&str> = items.iter().map(|(p, _)| p.as_str()).collect();
     let mut output = String::new();
     output.push_str("\n📁 Files Changed:\n");
-    output.push_str(&format!(
-        "   Modified {} file(s): {}\n",
+    writeln!(
+        output,
+        "   Modified {} file(s): {}",
         file_list.len(),
         file_list.join(", ")
-    ));
+    )
+    .unwrap();
 
     for (path, action) in items {
-        output.push_str(&format!("\n   📄 {}\n", path));
-        output.push_str(&format!(
-            "      Action: {}\n",
+        writeln!(output, "\n   📄 {path}").unwrap();
+        writeln!(
+            output,
+            "      Action: {}",
             match action {
                 ChangeAction::Create => "created",
                 ChangeAction::Modify => "modified",
                 ChangeAction::Delete => "deleted",
             }
-        ));
+        )
+        .unwrap();
         output.push_str("      (no diff provided)\n");
     }
 
@@ -110,14 +112,14 @@ mod tests {
 
     #[test]
     fn test_render_development_result_completed() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented feature X</ralph-summary>
 <ralph-files-changed>src/main.rs
 src/lib.rs</ralph-files-changed>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("✅"), "Should have completed emoji");
         assert!(
@@ -152,7 +154,7 @@ new file mode 100644
 </ralph-files-changed>
 </ralph-development-result>"#;
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(
             output.contains("Modified 2 file") || output.contains("2 file"),
@@ -174,13 +176,13 @@ new file mode 100644
 
     #[test]
     fn test_render_development_result_partial() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Started work on feature</ralph-summary>
 <ralph-next-steps>Continue with implementation</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("🔄"), "Should have partial emoji");
         assert!(
@@ -191,17 +193,17 @@ new file mode 100644
 
     #[test]
     fn test_render_development_result_with_iteration() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let ctx = Some(XmlOutputContext {
             iteration: Some(2),
             pass: None,
             snippets: Vec::new(),
         });
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(
             output.contains("Development Iteration 2"),
@@ -212,7 +214,7 @@ new file mode 100644
     #[test]
     fn test_render_development_result_malformed_fallback() {
         let bad_xml = "not valid xml at all";
-        let output = render(bad_xml, &None);
+        let output = render(bad_xml, None);
 
         assert!(output.contains("⚠️"), "Should show warning");
         assert!(
@@ -223,14 +225,14 @@ new file mode 100644
 
     #[test]
     fn test_development_result_multiline_summary() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>First line of summary
 Second line of summary
 Third line of summary</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
         assert!(
             output.contains("First line"),
             "Should show first line of summary"
@@ -247,15 +249,15 @@ Third line of summary</ralph-summary>
 
     #[test]
     fn test_development_result_file_action_icons() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Changes made</ralph-summary>
 <ralph-files-changed>src/new_file.rs (created)
 src/existing.rs
 src/old.rs (deleted)</ralph-files-changed>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
         assert!(
             output.contains("src/new_file.rs") && output.contains("Action: created"),
             "Should show created action for new file"

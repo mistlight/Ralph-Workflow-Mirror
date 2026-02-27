@@ -21,6 +21,7 @@
 //! - `key_detection`: TOML structure traversal for unknown key detection
 //! - `error_formatting`: User-friendly error message generation
 
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -65,12 +66,16 @@ pub type ValidationResult = Result<Vec<String>, Vec<ConfigValidationError>>;
 ///
 /// This validates:
 /// - TOML syntax
-/// - Type checking against UnifiedConfig schema
+/// - Type checking against `UnifiedConfig` schema
 /// - Unknown keys with typo suggestions
 /// - Deprecated keys (returns as warnings, not errors)
 ///
 /// Returns Ok((warnings)) on success with optional deprecation warnings,
 /// or Err(errors) on validation failure.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn validate_config_file(
     path: &Path,
     content: &str,
@@ -101,14 +106,14 @@ pub fn validate_config_file(
         let suggestion = levenshtein::suggest_key(&key, &valid_keys);
         errors.push(ConfigValidationError::UnknownKey {
             file: path.to_path_buf(),
-            key: format!("{}{}", location, key),
+            key: format!("{location}{key}"),
             suggestion,
         });
     }
 
     // Deprecated keys are warnings
     for (key, location) in deprecated_keys {
-        let full_key = format!("{}{}", location, key);
+        let full_key = format!("{location}{key}");
         warnings.push(format!(
             "Deprecated key '{}' in {} - this key is no longer used and can be safely removed",
             full_key,
@@ -155,18 +160,19 @@ pub fn validate_config_file(
 }
 
 /// Format validation errors for user display.
+#[must_use]
 pub fn format_validation_errors(errors: &[ConfigValidationError]) -> String {
     let mut output = String::new();
 
     for error in errors {
-        output.push_str(&format!("  {}\n", error));
+        writeln!(output, "  {error}").unwrap();
 
         if let ConfigValidationError::UnknownKey {
             suggestion: Some(s),
             ..
         } = error
         {
-            output.push_str(&format!("    Did you mean '{}'?\n", s));
+            writeln!(output, "    Did you mean '{s}'?").unwrap();
         }
     }
 
@@ -179,21 +185,21 @@ mod tests {
 
     #[test]
     fn test_validate_config_file_valid_toml() {
-        let content = r#"
+        let content = r"
 [general]
 verbosity = 2
 developer_iters = 5
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_validate_config_file_invalid_toml() {
-        let content = r#"
+        let content = r"
 [general
 verbosity = 2
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_err());
 
@@ -259,11 +265,11 @@ verbosity = 2
 
     #[test]
     fn test_validate_config_file_unknown_key() {
-        let content = r#"
+        let content = r"
 [general]
 develper_iters = 5
 verbosity = 2
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         // Unknown keys are now detected via custom validation
         assert!(result.is_err());
@@ -412,12 +418,12 @@ opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
 
     #[test]
     fn test_validate_config_file_deprecated_key_warning() {
-        let content = r#"
+        let content = r"
 [general]
 verbosity = 2
 auto_rebase = true
 max_recovery_attempts = 3
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok(), "Deprecated keys should not cause errors");
 
@@ -436,11 +442,11 @@ max_recovery_attempts = 3
 
     #[test]
     fn test_validate_config_file_no_warnings_without_deprecated() {
-        let content = r#"
+        let content = r"
 [general]
 verbosity = 2
 developer_iters = 5
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok(), "Valid config should pass");
 

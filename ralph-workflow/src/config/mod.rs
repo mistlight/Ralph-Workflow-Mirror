@@ -20,7 +20,7 @@
 //!
 //! # Module Structure
 //!
-//! - [`types`] - Core configuration types (Config, ReviewDepth, Verbosity)
+//! - [`types`] - Core configuration types (Config, `ReviewDepth`, Verbosity)
 //! - [`truncation`] - Truncation limits for verbosity levels
 //! - [`parser`] - Environment variable parsing (legacy)
 //! - [`unified`] - Unified configuration format types

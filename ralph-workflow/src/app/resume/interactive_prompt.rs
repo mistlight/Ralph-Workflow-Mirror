@@ -111,16 +111,15 @@ pub fn offer_resume_if_checkpoint_exists(
 
     check_rebase_state_on_resume(&checkpoint, logger);
 
-    let validation_outcome = if let Some(ref file_system_state) = checkpoint.file_system_state {
-        validate_file_system_state(
+    let validation_outcome = checkpoint.file_system_state.as_ref().map_or(
+        ValidationOutcome::Passed,
+        |file_system_state| validate_file_system_state(
             file_system_state,
             logger,
             args.recovery.recovery_strategy.into(),
             workspace,
         )
-    } else {
-        ValidationOutcome::Passed
-    };
+    );
 
     if matches!(validation_outcome, ValidationOutcome::Failed(_)) {
         return None;

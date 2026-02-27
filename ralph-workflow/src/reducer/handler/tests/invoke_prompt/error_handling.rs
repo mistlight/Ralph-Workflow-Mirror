@@ -1,15 +1,15 @@
-//! Error handling tests for invoke_prompt
+//! Error handling tests for `invoke_prompt`
 //!
 //! Tests error scenarios when prompts are missing or unreadable:
-//! - Missing prompt files (NotFound errors)
-//! - Non-NotFound I/O errors (PermissionDenied, etc.)
+//! - Missing prompt files (`NotFound` errors)
+//! - Non-NotFound I/O errors (`PermissionDenied`, etc.)
 //! - Agent invocation failures don't mark agent as invoked
 
 use super::*;
 
 #[test]
 fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
     let _run_log_context = RunLogContext::new(&workspace).unwrap();
     let colors = Colors { enabled: false };
@@ -23,7 +23,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -45,7 +45,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -61,7 +61,7 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
@@ -80,7 +80,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -102,7 +102,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -127,7 +127,7 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
 
 #[test]
 fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
     let colors = Colors { enabled: false };
@@ -144,7 +144,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -166,7 +166,7 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
@@ -188,10 +188,12 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
         result.additional_events.iter().any(|e| {
             matches!(
                 e,
-                PipelineEvent::Agent(AgentEvent::InvocationFailed { .. })
-                    | PipelineEvent::Agent(AgentEvent::RateLimited { .. })
-                    | PipelineEvent::Agent(AgentEvent::AuthFailed { .. })
-                    | PipelineEvent::Agent(AgentEvent::TimedOut { .. })
+                PipelineEvent::Agent(
+                    AgentEvent::InvocationFailed { .. }
+                        | AgentEvent::RateLimited { .. }
+                        | AgentEvent::AuthFailed { .. }
+                        | AgentEvent::TimedOut { .. }
+                )
             )
         }),
         "invoke_agent should emit a failure fact event after InvocationStarted"

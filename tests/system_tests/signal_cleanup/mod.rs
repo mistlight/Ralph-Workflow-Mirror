@@ -215,9 +215,9 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
             // Best-effort emergency cleanup on system test timeout.
             // Avoid killing a recycled PID: only SIGKILL if we can still signal the process.
             unsafe {
-                let check = libc::kill(child_id as i32, 0);
+                let check = libc::kill(child_id.cast_signed(), 0);
                 if check == 0 {
-                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
+                    let _ = libc::kill(child_id.cast_signed(), libc::SIGKILL);
                 }
             }
         }
@@ -261,7 +261,7 @@ fn wait_for_marker_size(repo_dir: &Path, timeout: Duration, expected_size: u64) 
 
 /// Send SIGINT to process.
 fn send_sigint(child: &Child) {
-    let rc = unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+    let rc = unsafe { libc::kill(child.id().cast_signed(), libc::SIGINT) };
     assert_eq!(rc, 0, "expected SIGINT delivery via kill() to succeed");
 }
 
@@ -272,8 +272,7 @@ fn assert_prompt_writable(prompt_path: &Path) {
     assert_ne!(
         mode & 0o200,
         0,
-        "PROMPT.md should be writable after cleanup (mode={:o})",
-        mode
+        "PROMPT.md should be writable after cleanup (mode={mode:o})"
     );
 }
 
@@ -436,7 +435,11 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
             // with an increased delay if we didn't observe the conventional 130 exit.
             let (status, stdout, stderr) = collect_output(child);
 
-            if status.code() != Some(130) {
+            if status.code() == Some(130) {
+                // Even for the first attempt, accept raw signal termination as long as we got SIGINT.
+                // This keeps the assertion aligned with Unix process semantics.
+                assert_signal_killed_or_exited_sigint(status, &stdout, &stderr);
+            } else {
                 // If SIGINT was delivered before the Ctrl+C handler was installed, the OS may
                 // terminate the process directly (signal exit) and our cleanup won't run. The goal
                 // of this test is to validate the *handled* early-interrupt path, so we retry with
@@ -446,10 +449,6 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
                 send_sigint(&child);
                 let (status, stdout, stderr) = collect_output(child);
                 assert_status_is_sigint_130(status, &stdout, &stderr);
-            } else {
-                // Even for the first attempt, accept raw signal termination as long as we got SIGINT.
-                // This keeps the assertion aligned with Unix process semantics.
-                assert_signal_killed_or_exited_sigint(status, &stdout, &stderr);
             }
 
             // Key assertion: PROMPT.md must be writable after exit.
@@ -462,7 +461,7 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
 
 /// Test: Ctrl+C removes `.no_agent_commit` marker.
 ///
-/// Verify the .no_agent_commit marker is removed after Ctrl+C so git
+/// Verify the .`no_agent_commit` marker is removed after Ctrl+C so git
 /// operations are unblocked.
 ///
 /// # Test Steps
@@ -730,7 +729,7 @@ mod tests {
         );
     }
 
-    /// Verify contains_ralph_marker detection.
+    /// Verify `contains_ralph_marker` detection.
     #[test]
     fn test_contains_ralph_marker() {
         let temp_dir = TempDir::new().expect("create temp dir");

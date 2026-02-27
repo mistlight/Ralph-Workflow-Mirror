@@ -24,8 +24,20 @@ where
     })
 }
 
+fn serialize_option_boxed_string_slice_empty_if_none_field<S, V>(
+    value: V,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+    V: std::ops::Deref<Target = Option<Box<[String]>>>,
+{
+    let values = (*value).as_deref();
+    serialize_option_boxed_string_slice_empty_if_none(values, serializer)
+}
+
 fn serialize_option_boxed_string_slice_empty_if_none<S>(
-    value: &Option<Box<[String]>>,
+    value: Option<&[String]>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -33,12 +45,11 @@ where
 {
     use serde::ser::SerializeSeq;
 
-    match value {
-        Some(values) => values.serialize(serializer),
-        None => {
-            let seq = serializer.serialize_seq(Some(0))?;
-            seq.end()
-        }
+    if let Some(values) = value {
+        values.serialize(serializer)
+    } else {
+        let seq = serializer.serialize_seq(Some(0))?;
+        seq.end()
     }
 }
 
@@ -57,7 +68,7 @@ pub enum StepOutcome {
         #[serde(
             default,
             deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty",
-            serialize_with = "serialize_option_boxed_string_slice_empty_if_none"
+            serialize_with = "serialize_option_boxed_string_slice_empty_if_none_field"
         )]
         files_modified: Option<Box<[String]>>,
         #[serde(default)]
@@ -72,7 +83,7 @@ pub enum StepOutcome {
         #[serde(
             default,
             deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty",
-            serialize_with = "serialize_option_boxed_string_slice_empty_if_none"
+            serialize_with = "serialize_option_boxed_string_slice_empty_if_none_field"
         )]
         signals: Option<Box<[String]>>,
     },
@@ -102,6 +113,7 @@ impl StepOutcome {
     }
 
     /// Create a Failure outcome with default values.
+    #[must_use]
     pub fn failure(error: String, recoverable: bool) -> Self {
         Self::Failure {
             error: error.into_boxed_str(),
@@ -112,6 +124,7 @@ impl StepOutcome {
     }
 
     /// Create a Partial outcome with default values.
+    #[must_use]
     pub fn partial(completed: String, remaining: String) -> Self {
         Self::Partial {
             completed: completed.into_boxed_str(),
@@ -121,6 +134,7 @@ impl StepOutcome {
     }
 
     /// Create a Skipped outcome.
+    #[must_use]
     pub fn skipped(reason: String) -> Self {
         Self::Skipped {
             reason: reason.into_boxed_str(),
@@ -225,8 +239,9 @@ impl ExecutionStep {
     /// # Performance Note
     ///
     /// For optimal memory usage, use `new_with_pool` to intern repeated phase
-    /// and agent names via a StringPool. This constructor creates new Arc<str>
+    /// and agent names via a `StringPool`. This constructor creates new Arc<str>
     /// allocations for each call.
+    #[must_use]
     pub fn new(phase: &str, iteration: u32, step_type: &str, outcome: StepOutcome) -> Self {
         Self {
             phase: Arc::from(phase),
@@ -244,9 +259,9 @@ impl ExecutionStep {
         }
     }
 
-    /// Create a new execution step using a StringPool for interning.
+    /// Create a new execution step using a `StringPool` for interning.
     ///
-    /// This is the preferred constructor when creating many ExecutionSteps,
+    /// This is the preferred constructor when creating many `ExecutionSteps`,
     /// as it reduces memory usage by sharing allocations for repeated phase
     /// and agent names.
     pub fn new_with_pool(
@@ -273,12 +288,14 @@ impl ExecutionStep {
     }
 
     /// Set the agent that executed this step.
+    #[must_use]
     pub fn with_agent(mut self, agent: &str) -> Self {
         self.agent = Some(Arc::from(agent));
         self
     }
 
-    /// Set the agent using a StringPool for interning.
+    /// Set the agent using a `StringPool` for interning.
+    #[must_use]
     pub fn with_agent_pooled(
         mut self,
         agent: &str,
@@ -289,12 +306,14 @@ impl ExecutionStep {
     }
 
     /// Set the duration of this step.
-    pub fn with_duration(mut self, duration_secs: u64) -> Self {
+    #[must_use]
+    pub const fn with_duration(mut self, duration_secs: u64) -> Self {
         self.duration_secs = Some(duration_secs);
         self
     }
 
     /// Set the git commit OID created during this step.
+    #[must_use]
     pub fn with_git_commit_oid(mut self, oid: &str) -> Self {
         self.git_commit_oid = Some(oid.to_string());
         self
@@ -309,7 +328,7 @@ const DEFAULT_CONTENT_THRESHOLD: u64 = 10 * 1024;
 
 /// Maximum file size that will be compressed in snapshots (100KB).
 ///
-/// Files between DEFAULT_CONTENT_THRESHOLD and this size that are key files
+/// Files between `DEFAULT_CONTENT_THRESHOLD` and this size that are key files
 /// (PROMPT.md, PLAN.md, ISSUES.md) will be compressed before storing.
 const MAX_COMPRESS_SIZE: u64 = 100 * 1024;
 
@@ -333,8 +352,9 @@ pub struct FileSnapshot {
 impl FileSnapshot {
     /// Create a new file snapshot with the default content threshold (10KB).
     ///
-    /// This version does not capture file content (content and compressed_content will be None).
+    /// This version does not capture file content (content and `compressed_content` will be None).
     /// Use `from_workspace` to create a snapshot with content from a workspace.
+    #[must_use]
     pub fn new(path: &str, checksum: String, size: u64, exists: bool) -> Self {
         Self {
             path: path.to_string(),
@@ -372,7 +392,7 @@ impl FileSnapshot {
     ///
     /// Files smaller than `max_size` bytes will have their content stored.
     /// Key files (PROMPT.md, PLAN.md, ISSUES.md, NOTES.md) may be compressed if they
-    /// are between max_size and MAX_COMPRESS_SIZE.
+    /// are between `max_size` and `MAX_COMPRESS_SIZE`.
     pub fn from_workspace(
         workspace: &dyn Workspace,
         path: &str,
@@ -414,17 +434,17 @@ impl FileSnapshot {
     }
 
     /// Get the file content, decompressing if necessary.
+    #[must_use]
     pub fn get_content(&self) -> Option<String> {
-        if let Some(ref content) = self.content {
-            Some(content.clone())
-        } else if let Some(ref compressed) = self.compressed_content {
-            decompress_data(compressed).ok()
-        } else {
-            None
-        }
+        self.content.clone().or_else(|| {
+            self.compressed_content
+                .as_ref()
+                .and_then(|compressed| decompress_data(compressed).ok())
+        })
     }
 
     /// Create a snapshot for a non-existent file.
+    #[must_use]
     pub fn not_found(path: &str) -> Self {
         Self {
             path: path.to_string(),
@@ -476,7 +496,7 @@ fn compress_data(data: &[u8]) -> Result<String, std::io::Error> {
 
 const MAX_DECOMPRESSED_SNAPSHOT_BYTES: usize = 1024 * 1024;
 
-/// Decompress data that was compressed with compress_data.
+/// Decompress data that was compressed with `compress_data`.
 fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use flate2::read::GzDecoder;
@@ -485,7 +505,7 @@ fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
     let compressed = STANDARD.decode(encoded).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Base64 decode error: {}", e),
+            format!("Base64 decode error: {e}"),
         )
     })?;
 
@@ -503,8 +523,7 @@ fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "Decompressed payload exceeds max size ({} bytes)",
-                    MAX_DECOMPRESSED_SNAPSHOT_BYTES
+                    "Decompressed payload exceeds max size ({MAX_DECOMPRESSED_SNAPSHOT_BYTES} bytes)"
                 ),
             ));
         }
@@ -515,7 +534,7 @@ fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
     String::from_utf8(decompressed).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("UTF-8 decode error: {}", e),
+            format!("UTF-8 decode error: {e}"),
         )
     })
 }
@@ -546,6 +565,7 @@ impl ExecutionHistory {
     /// history.add_step(step);
     /// ```
     /// Create a new execution history.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -569,6 +589,7 @@ impl ExecutionHistory {
     /// This is intended for resume paths where a legacy checkpoint may contain an
     /// oversized `steps` buffer. Cloning only the tail avoids allocating memory
     /// proportional to the checkpoint's full history.
+    #[must_use]
     pub fn clone_bounded(&self, limit: usize) -> Self {
         if limit == 0 {
             return Self {

@@ -4,7 +4,7 @@
 //!
 //! # Source Code Reference
 //!
-//! This parser is based on analysis of the OpenCode source code from:
+//! This parser is based on analysis of the `OpenCode` source code from:
 //! - **Repository**: <https://github.com/anomalyco/opencode>
 //! - **Key source files**:
 //!   - `/packages/opencode/src/cli/cmd/run.ts` - NDJSON output generation
@@ -12,7 +12,7 @@
 //!
 //! # NDJSON Event Format
 //!
-//! OpenCode outputs NDJSON (newline-delimited JSON) events via `--format json`.
+//! `OpenCode` outputs NDJSON (newline-delimited JSON) events via `--format json`.
 //! Each event has the structure:
 //!
 //! ```json
@@ -35,7 +35,7 @@
 //!
 //! # Part Type Definitions
 //!
-//! ## StepStartPart (`message-v2.ts` lines 194-200)
+//! ## `StepStartPart` (`message-v2.ts` lines 194-200)
 //!
 //! ```typescript
 //! {
@@ -47,7 +47,7 @@
 //! }
 //! ```
 //!
-//! ## StepFinishPart (`message-v2.ts` lines 202-219)
+//! ## `StepFinishPart` (`message-v2.ts` lines 202-219)
 //!
 //! ```typescript
 //! {
@@ -67,7 +67,7 @@
 //! }
 //! ```
 //!
-//! ## TextPart (`message-v2.ts` lines 62-77)
+//! ## `TextPart` (`message-v2.ts` lines 62-77)
 //!
 //! ```typescript
 //! {
@@ -83,7 +83,7 @@
 //! }
 //! ```
 //!
-//! ## ToolPart (`message-v2.ts` lines 289-298)
+//! ## `ToolPart` (`message-v2.ts` lines 289-298)
 //!
 //! ```typescript
 //! {
@@ -98,7 +98,7 @@
 //! }
 //! ```
 //!
-//! ## ToolState Variants (`message-v2.ts` lines 221-287)
+//! ## `ToolState` Variants (`message-v2.ts` lines 221-287)
 //!
 //! The `state` field is a discriminated union based on `status`:
 //!

@@ -2,14 +2,14 @@
 //!
 //! These tests verify that before pipeline termination:
 //! 1. `CheckUncommittedChangesBeforeTermination` effect is derived
-//! 2. Uncommitted changes route back through `CommitMessage` (not AwaitingDevFix)
+//! 2. Uncommitted changes route back through `CommitMessage` (not `AwaitingDevFix`)
 //! 3. Clean working directory allows termination to proceed
 //! 4. User-initiated interrupts (Ctrl+C) skip the safety check
 //!
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** via effect capture and state transitions
@@ -29,21 +29,21 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for safety check tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
-/// Test that CheckUncommittedChangesBeforeTermination effect is derived before Complete.
+/// Test that `CheckUncommittedChangesBeforeTermination` effect is derived before Complete.
 ///
 /// This verifies that when pipeline is about to complete:
 /// 1. Phase transitions to Complete
-/// 2. pre_termination_commit_checked flag is initially false
-/// 3. Orchestration derives CheckUncommittedChangesBeforeTermination effect
+/// 2. `pre_termination_commit_checked` flag is initially false
+/// 3. Orchestration derives `CheckUncommittedChangesBeforeTermination` effect
 #[test]
 fn test_safety_check_effect_derived_before_complete() {
     with_default_timeout(|| {
@@ -85,7 +85,7 @@ fn test_safety_check_effect_derived_before_complete() {
 /// This verifies that when git snapshot shows no uncommitted changes:
 /// 1. Handler emits `PreTerminationSafetyCheckPassed` event
 /// 2. Reducer sets `pre_termination_commit_checked = true`
-/// 3. Pipeline proceeds to termination (SaveCheckpoint)
+/// 3. Pipeline proceeds to termination (`SaveCheckpoint`)
 #[test]
 fn test_clean_working_directory_allows_termination() {
     with_default_timeout(|| {
@@ -158,12 +158,12 @@ fn test_uncommitted_changes_route_back_through_commit_phase() {
     });
 }
 
-/// Test that Ctrl+C (interrupted_by_user=true) exception is handled correctly.
+/// Test that Ctrl+C (`interrupted_by_user=true`) exception is handled correctly.
 ///
 /// Note: This is a unit test disguised as an integration test because we cannot
 /// trigger actual SIGINT in the integration test harness. The behavior is tested
-/// via unit tests in orchestration/phase_effects/mod.rs which verify that when
-/// interrupted_by_user=true, the safety check effect is NOT derived.
+/// via unit tests in `orchestration/phase_effects/mod.rs` which verify that when
+/// `interrupted_by_user=true`, the safety check effect is NOT derived.
 ///
 /// This test documents that in normal pipeline flow (not user-interrupted),
 /// the safety check DOES execute, establishing the baseline for comparison.
@@ -208,7 +208,7 @@ fn test_user_interrupt_exception_is_documented() {
 
 /// Test that safety check prevents termination on programmatic interrupt.
 ///
-/// This verifies that non-user interrupts (like AwaitingDevFix exhaustion)
+/// This verifies that non-user interrupts (like `AwaitingDevFix` exhaustion)
 /// still go through the safety check.
 #[test]
 fn test_programmatic_interrupt_requires_safety_check() {
@@ -251,10 +251,10 @@ fn test_programmatic_interrupt_requires_safety_check() {
 /// Test that safety check is only executed once per termination.
 ///
 /// This verifies the flag prevents infinite loops:
-/// 1. First cycle: pre_termination_commit_checked=false → derives effect
-/// 2. Effect executes → emits PreTerminationSafetyCheckPassed
-/// 3. Reducer sets pre_termination_commit_checked=true
-/// 4. Second cycle: pre_termination_commit_checked=true → skips effect
+/// 1. First cycle: `pre_termination_commit_checked=false` → derives effect
+/// 2. Effect executes → emits `PreTerminationSafetyCheckPassed`
+/// 3. Reducer sets `pre_termination_commit_checked=true`
+/// 4. Second cycle: `pre_termination_commit_checked=true` → skips effect
 #[test]
 fn test_safety_check_executes_only_once() {
     with_default_timeout(|| {
@@ -293,9 +293,9 @@ fn test_safety_check_executes_only_once() {
 
 /// Test that git snapshot failure routes to error handling.
 ///
-/// This verifies that if git_snapshot() fails during safety check:
-/// 1. GitStatusFailed error event is emitted
-/// 2. Pipeline routes to AwaitingDevFix phase
+/// This verifies that if `git_snapshot()` fails during safety check:
+/// 1. `GitStatusFailed` error event is emitted
+/// 2. Pipeline routes to `AwaitingDevFix` phase
 /// 3. Does not silently allow termination
 #[test]
 fn test_git_snapshot_failure_routes_to_error() {
@@ -330,7 +330,7 @@ fn test_git_snapshot_failure_routes_to_error() {
 /// 4. Safety check MUST execute before termination
 /// 5. If uncommitted changes exist, termination is prevented
 ///
-/// Note: The MockAppEffectHandler doesn't support simulating actual uncommitted
+/// Note: The `MockAppEffectHandler` doesn't support simulating actual uncommitted
 /// changes in git state, so this test verifies the safety check executes.
 /// The uncommitted changes error path is tested in unit tests.
 #[test]

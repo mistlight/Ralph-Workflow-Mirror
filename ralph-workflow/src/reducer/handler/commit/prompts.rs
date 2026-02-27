@@ -10,8 +10,8 @@
 //! ## Prompt Modes
 //!
 //! - **Normal** - Standard commit message generation prompt
-//! - **XsdRetry** - Retry prompt after XML validation failure
-//! - **SameAgentRetry** - Retry prompt with retry guidance preamble
+//! - **`XsdRetry`** - Retry prompt after XML validation failure
+//! - **`SameAgentRetry`** - Retry prompt with retry guidance preamble
 //! - **Continuation** - Not supported for commit phase (returns error)
 //!
 //! ## Template Validation
@@ -58,7 +58,7 @@ impl MainEffectHandler {
     /// - `CommitContinuationNotSupported` - Continuation mode not supported for commit
     /// - `CommitInputsNotMaterialized` - Inputs not materialized for this attempt
     pub(in crate::reducer::handler) fn prepare_commit_prompt(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
@@ -110,7 +110,9 @@ impl MainEffectHandler {
 
             // Re-validate if this is a freshly generated prompt (not replayed)
             // For replayed prompts, we trust they were valid when originally generated
-            let rendered_log = if !was_replayed {
+            let rendered_log = if was_replayed {
+                None
+            } else {
                 // Generate again to get the log for validation
                 let rendered = crate::prompts::prompt_commit_xsd_retry_with_log(
                     ctx.template_context,
@@ -139,8 +141,6 @@ impl MainEffectHandler {
 
                 ctx.capture_prompt(&prompt_key, &prompt);
                 Some(rendered.log)
-            } else {
-                None
             };
 
             let tmp_dir = Path::new(".agent/tmp");
@@ -162,8 +162,7 @@ impl MainEffectHandler {
                 .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
             {
                 ctx.logger.warn(&format!(
-                    "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                    err
+                    "Failed to write commit prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
                 ));
             }
 
@@ -219,7 +218,7 @@ impl MainEffectHandler {
                     )));
                 }
                 DiffContentReference::ReadFromFile {
-                    path: path.to_path_buf(),
+                    path: path.clone(),
                     start_commit: String::new(),
                     description: format!(
                         "Diff is {} bytes (exceeds {} limit)",
@@ -234,20 +233,20 @@ impl MainEffectHandler {
 
     /// Prepare commit prompt with pre-loaded diff content and mode.
     ///
-    /// This handles Normal and SameAgentRetry modes. XsdRetry mode is handled
+    /// This handles Normal and `SameAgentRetry` modes. `XsdRetry` mode is handled
     /// in `prepare_commit_prompt` which returns early.
     ///
     /// # Prompt Modes
     ///
     /// - **Normal** - Generate fresh prompt from template
-    /// - **SameAgentRetry** - Prepend retry guidance to last prompt
+    /// - **`SameAgentRetry`** - Prepend retry guidance to last prompt
     ///
     /// # Template Validation
     ///
     /// Validates that all template placeholders are resolved. If validation fails,
     /// emits `agent_template_variables_invalid` event.
     pub(in crate::reducer::handler) fn prepare_commit_prompt_with_diff_and_mode(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         diff_for_prompt: &str,
         prompt_mode: PromptMode,
@@ -261,28 +260,27 @@ impl MainEffectHandler {
                 // phase (preserves XSD retry context if present).
                 let retry_preamble =
                     super::super::retry_guidance::same_agent_retry_preamble(continuation_state);
-                let (base_prompt, should_validate) = match ctx
+                let (base_prompt, should_validate) = if let Ok(previous_prompt) = ctx
                     .workspace
                     .read(Path::new(".agent/tmp/commit_prompt.txt"))
                 {
-                    Ok(previous_prompt) => (
+                    (
                         super::super::retry_guidance::strip_existing_same_agent_retry_preamble(
                             &previous_prompt,
                         )
                         .to_string(),
                         false,
-                    ),
-                    Err(_) => {
-                        // Use log-based rendering
-                        let rendered =
-                            crate::prompts::prompt_generate_commit_message_with_diff_with_log(
-                                ctx.template_context,
-                                diff_for_prompt,
-                                ctx.workspace,
-                                "commit_message_xml",
-                            );
-                        (rendered.content, true)
-                    }
+                    )
+                } else {
+                    // Use log-based rendering
+                    let rendered =
+                        crate::prompts::prompt_generate_commit_message_with_diff_with_log(
+                            ctx.template_context,
+                            diff_for_prompt,
+                            ctx.workspace,
+                            "commit_message_xml",
+                        );
+                    (rendered.content, true)
                 };
                 let prompt = format!("{retry_preamble}\n{base_prompt}");
                 let prompt_key = format!(
@@ -374,8 +372,7 @@ impl MainEffectHandler {
             .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
         {
             ctx.logger.warn(&format!(
-                "Failed to write commit prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
+                "Failed to write commit prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
             ));
         }
 

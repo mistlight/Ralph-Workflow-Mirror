@@ -1,3 +1,4 @@
+
 impl GeminiParser {
     /// Parse and display a single Gemini JSON event
     ///
@@ -82,6 +83,8 @@ impl GeminiParser {
         content: Option<String>,
         delta: Option<bool>,
     ) -> String {
+        use crate::json_parser::terminal::TerminalMode;
+
         let c = &self.colors;
         let prefix = &self.display_name;
 
@@ -115,8 +118,6 @@ impl GeminiParser {
 
                     (show_prefix, accumulated_text, has_prefix)
                 };
-
-                use crate::json_parser::terminal::TerminalMode;
 
                 let terminal_mode = *self.terminal_mode.borrow();
                 let key = "text:0";
@@ -207,18 +208,16 @@ impl GeminiParser {
 
                             match terminal_mode {
                                 TerminalMode::Basic => {
-                                    out.push_str(&format!(
-                                        "{}[{}]{} {}{}{}\n",
+                                    writeln!(out, "{}[{}]{} {}{}{}",
                                         c.dim(),
                                         prefix,
                                         c.reset(),
                                         c.white(),
                                         sanitized,
-                                        c.reset()
-                                    ));
+                                        c.reset()).unwrap();
                                 }
                                 TerminalMode::None => {
-                                    out.push_str(&format!("[{}] {}\n", prefix, sanitized));
+                                    writeln!(out, "[{prefix}] {sanitized}").unwrap();
                                 }
                                 TerminalMode::Full => unreachable!(),
                             }
@@ -235,7 +234,7 @@ impl GeminiParser {
                     if show_metrics {
                         return format!("{}{}\n{}", text_flush_non_tty, completion, metrics.format(*c));
                     }
-                    return format!("{}{}", text_flush_non_tty, completion);
+                    return format!("{text_flush_non_tty}{completion}");
                 }
 
                 // Otherwise, show the full content (non-streaming path)

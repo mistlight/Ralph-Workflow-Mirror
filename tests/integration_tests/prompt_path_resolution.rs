@@ -1,6 +1,6 @@
 //! Integration test for workspace-rooted prompt path resolution.
 //!
-//! Verifies that prompts use workspace.root() for absolute paths, not process CWD.
+//! Verifies that prompts use `workspace.root()` for absolute paths, not process CWD.
 //! This prevents the bug where reviewers write XML to the wrong directory in
 //! multi-worktree or isolation mode scenarios.
 //!
@@ -9,13 +9,14 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use ralph_workflow::prompts::content_reference::{DiffContentReference, PlanContentReference};
 use ralph_workflow::prompts::{
     prompt_generate_commit_message_with_diff_with_context, prompt_planning_xml_with_references,
     prompt_planning_xsd_retry_with_context_files, prompt_review_xml_with_references,
     PromptContentReference, TemplateContext,
 };
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::test_timeout::with_default_timeout;
 
@@ -24,7 +25,7 @@ use crate::test_timeout::with_default_timeout;
 fn test_planning_prompts_use_workspace_root() {
     with_default_timeout(|| {
         let workspace_root = PathBuf::from("/tmp/test_workspace");
-        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let workspace = MemoryWorkspace::new(workspace_root);
         let template_context = TemplateContext::default();
         let prompt_ref = PromptContentReference::inline("Test prompt".to_string());
 
@@ -36,8 +37,7 @@ fn test_planning_prompts_use_workspace_root() {
         let expected_path = workspace.absolute_str(".agent/tmp/plan.xml");
         assert!(
             prompt.contains(&expected_path),
-            "Planning prompt should contain workspace-rooted path: {}",
-            expected_path
+            "Planning prompt should contain workspace-rooted path: {expected_path}"
         );
     });
 }
@@ -47,14 +47,10 @@ fn test_planning_prompts_use_workspace_root() {
 fn test_review_prompts_use_workspace_root() {
     with_default_timeout(|| {
         let workspace_root = PathBuf::from("/tmp/test_workspace");
-        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let workspace = MemoryWorkspace::new(workspace_root);
         let template_context = TemplateContext::default();
 
         // Generate review prompt
-        use ralph_workflow::prompts::content_reference::{
-            DiffContentReference, PlanContentReference,
-        };
-        use std::path::Path;
         let plan_ref = PlanContentReference::from_plan(
             "Test plan".to_string(),
             Path::new(".agent/PLAN.md"),
@@ -76,8 +72,7 @@ fn test_review_prompts_use_workspace_root() {
         let expected_path = workspace.absolute_str(".agent/tmp/issues.xml");
         assert!(
             prompt.contains(&expected_path),
-            "Review prompt should contain workspace-rooted path: {}",
-            expected_path
+            "Review prompt should contain workspace-rooted path: {expected_path}"
         );
     });
 }
@@ -87,7 +82,7 @@ fn test_review_prompts_use_workspace_root() {
 fn test_xsd_retry_missing_schema_includes_workspace_root() {
     with_default_timeout(|| {
         let workspace_root = PathBuf::from("/tmp/test_workspace");
-        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let workspace = MemoryWorkspace::new(workspace_root);
         let template_context = TemplateContext::default();
 
         // Generate XSD retry prompt when schema file is missing
@@ -111,7 +106,7 @@ fn test_xsd_retry_missing_schema_includes_workspace_root() {
 fn test_commit_prompts_use_workspace_root() {
     with_default_timeout(|| {
         let workspace_root = PathBuf::from("/tmp/test_workspace");
-        let workspace = MemoryWorkspace::new(workspace_root.clone());
+        let workspace = MemoryWorkspace::new(workspace_root);
         let template_context = TemplateContext::default();
 
         // Generate commit prompt
@@ -125,8 +120,7 @@ fn test_commit_prompts_use_workspace_root() {
         let expected_path = workspace.absolute_str(".agent/tmp/commit_message.xml");
         assert!(
             prompt.contains(&expected_path),
-            "Commit prompt should contain workspace-rooted path: {}",
-            expected_path
+            "Commit prompt should contain workspace-rooted path: {expected_path}"
         );
     });
 }

@@ -85,7 +85,7 @@ fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
 fn get_default_branch_name(repo: &git2::Repository) -> String {
     repo.head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().map(std::string::ToString::to_string))
         .unwrap_or_else(|| "main".to_string())
 }
 
@@ -139,8 +139,7 @@ fn test_detect_multiple_file_conflicts() {
             for file in &files {
                 assert!(
                     has_conflict_markers(file),
-                    "Should detect conflict markers in {:?}",
-                    file
+                    "Should detect conflict markers in {file:?}"
                 );
             }
         });
@@ -294,7 +293,7 @@ fn test_validate_complete_conflict_resolution() {
 
 /// Test that rebase conflict result type exists and can be constructed.
 ///
-/// This verifies that the RebaseResult::Conflicts variant exists and
+/// This verifies that the `RebaseResult::Conflicts` variant exists and
 /// can represent the scenario where a rebase encounters conflicting changes.
 ///
 /// Note: This test verifies the type system can represent conflicts.
@@ -372,10 +371,10 @@ fn test_recovery_action_decision_logic() {
     });
 }
 
-/// Test that rebasing an up-to-date branch returns NoOp result.
+/// Test that rebasing an up-to-date branch returns `NoOp` result.
 ///
 /// This verifies that when a feature branch has no unique commits,
-/// the system skips rebase and returns NoOp or immediate Success.
+/// the system skips rebase and returns `NoOp` or immediate Success.
 #[test]
 fn test_rebase_already_up_to_date() {
     with_default_timeout(|| {
@@ -397,16 +396,13 @@ fn test_rebase_already_up_to_date() {
             let executor = mock_executor_for_git_success();
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // Should be NoOp since there's nothing to rebase
+            // Up-to-date rebase should either no-op or report success.
             match result {
-                Ok(RebaseResult::NoOp { .. }) => {
-                    // Expected
+                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
+                    // Expected outcome
                 }
-                Ok(RebaseResult::Success) => {
-                    // Also acceptable - some Git versions treat this as success
-                }
-                _ => {
-                    // Also acceptable
+                other => {
+                    panic!("Unexpected result for up-to-date rebase: {other:?}");
                 }
             }
         });
@@ -416,7 +412,7 @@ fn test_rebase_already_up_to_date() {
 /// Test that rebasing without common ancestor produces appropriate error.
 ///
 /// This verifies that when branches have no common ancestor or the target
-/// branch doesn't exist, the system returns Failed or NoOp result.
+/// branch doesn't exist, the system returns Failed or `NoOp` result.
 #[test]
 fn test_rebase_no_common_ancestor() {
     with_default_timeout(|| {
@@ -429,17 +425,11 @@ fn test_rebase_no_common_ancestor() {
 
             // Should fail or return NoOp
             match result {
-                Ok(RebaseResult::Failed(_)) => {
-                    // Expected outcome
-                }
-                Ok(RebaseResult::NoOp { .. }) => {
-                    // Also acceptable
-                }
-                Err(_) => {
-                    // Also acceptable
+                Ok(RebaseResult::Failed(_) | RebaseResult::NoOp { .. }) | Err(_) => {
+                    // Expected outcome (Failed, NoOp, or Err all acceptable)
                 }
                 other => {
-                    panic!("Unexpected result: {:?}", other);
+                    panic!("Unexpected result: {other:?}");
                 }
             }
         });
@@ -622,8 +612,8 @@ fn test_stale_lock_is_cleaned_up() {
 /// Test that conflict resolution continues when JSON parsing fails.
 ///
 /// This verifies the system's resilience: when the AI agent doesn't provide
-/// valid JSON output, the system should still verify conflicts via LibGit2
-/// state rather than failing. LibGit2 is the authoritative source for
+/// valid JSON output, the system should still verify conflicts via `LibGit2`
+/// state rather than failing. `LibGit2` is the authoritative source for
 /// conflict verification, not JSON parsing.
 #[test]
 fn test_conflict_resolution_continues_without_json() {
@@ -661,7 +651,7 @@ fn test_conflict_resolution_continues_without_json() {
             let obj = repo.revparse_single(&default_branch).unwrap();
             let commit = obj.peel_to_commit().unwrap();
             repo.checkout_tree(commit.as_object(), None).unwrap();
-            repo.set_head(&format!("refs/heads/{}", default_branch))
+            repo.set_head(&format!("refs/heads/{default_branch}"))
                 .unwrap();
 
             create_conflict_file(&conflict_file, "main updated\n");
@@ -696,22 +686,15 @@ fn test_conflict_resolution_continues_without_json() {
                     // Should be resolved since we manually fixed it
                     assert!(
                         conflicted.is_empty(),
-                        "Conflicts should be resolved after manual fix, verified via LibGit2. Found conflicts: {:?}",
-                        conflicted
+                        "Conflicts should be resolved after manual fix, verified via LibGit2. Found conflicts: {conflicted:?}"
                     );
 
                     // Clean up
                     let executor = mock_executor_for_git_success();
                     let _ = abort_rebase(executor.as_ref());
                 }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Rebase failed - acceptable
-                }
-                Err(_) => {
-                    // Rebase error - acceptable
-                }
-                Ok(RebaseResult::Success) => {
-                    // Rebase succeeded without conflicts - also acceptable
+                Ok(RebaseResult::Failed(_) | RebaseResult::Success) | Err(_) => {
+                    // Rebase failed, error, or success - all acceptable
                 }
                 _ => {
                     // Clean up any other state

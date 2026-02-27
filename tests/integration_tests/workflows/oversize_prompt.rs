@@ -6,7 +6,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests follow the integration test style guide defined in
-//! **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Tests verify observable behavior:
 //! - Generated prompts contain file references for large content
@@ -24,7 +24,7 @@ use crate::test_timeout::with_default_timeout;
 
 /// Test that oversize PROMPT uses backup file reference.
 ///
-/// When PROMPT.md content exceeds MAX_INLINE_CONTENT_SIZE, the generated
+/// When PROMPT.md content exceeds `MAX_INLINE_CONTENT_SIZE`, the generated
 /// prompt should tell the agent to read from .agent/PROMPT.md.backup.
 #[test]
 fn oversize_prompt_uses_backup_reference() {
@@ -58,7 +58,7 @@ fn oversize_prompt_uses_backup_reference() {
 
 /// Test that oversize DIFF is written to `.agent/tmp/diff.txt` and referenced.
 ///
-/// When diff content exceeds MAX_INLINE_CONTENT_SIZE, the generated
+/// When diff content exceeds `MAX_INLINE_CONTENT_SIZE`, the generated
 /// prompt should tell the agent to read from `.agent/tmp/diff.txt`.
 #[test]
 fn oversize_diff_writes_tmp_file_and_references_it() {
@@ -91,7 +91,7 @@ fn oversize_diff_writes_tmp_file_and_references_it() {
 
 /// Test that oversize PLAN uses file reference with XML fallback.
 ///
-/// When PLAN.md content exceeds MAX_INLINE_CONTENT_SIZE, the generated
+/// When PLAN.md content exceeds `MAX_INLINE_CONTENT_SIZE`, the generated
 /// prompt should tell the agent to read from .agent/PLAN.md with
 /// plan.xml as fallback.
 #[test]
@@ -126,7 +126,7 @@ fn oversize_plan_uses_file_reference() {
 
 /// Test that small content is embedded inline.
 ///
-/// Content below MAX_INLINE_CONTENT_SIZE should be embedded directly
+/// Content below `MAX_INLINE_CONTENT_SIZE` should be embedded directly
 /// in the prompt without file references.
 #[test]
 fn small_content_is_embedded_inline() {
@@ -166,7 +166,7 @@ fn small_content_is_embedded_inline() {
     });
 }
 
-/// Test that exactly MAX_INLINE_CONTENT_SIZE is embedded inline.
+/// Test that exactly `MAX_INLINE_CONTENT_SIZE` is embedded inline.
 ///
 /// Content exactly at the limit should be embedded, not referenced.
 #[test]
@@ -189,7 +189,7 @@ fn exactly_max_size_is_embedded_inline() {
     });
 }
 
-/// Test that one byte over MAX_INLINE_CONTENT_SIZE triggers file reference.
+/// Test that one byte over `MAX_INLINE_CONTENT_SIZE` triggers file reference.
 ///
 /// Content one byte over the limit should be referenced by file path.
 #[test]
@@ -214,7 +214,7 @@ fn one_byte_over_max_triggers_file_reference() {
     });
 }
 
-/// Test that DiffContentReference handles empty start commit.
+/// Test that `DiffContentReference` handles empty start commit.
 ///
 /// Even with an empty start commit, the git diff command should be generated.
 #[test]
@@ -236,7 +236,7 @@ fn diff_with_empty_start_commit() {
     });
 }
 
-/// Test that PlanContentReference without XML fallback works correctly.
+/// Test that `PlanContentReference` without XML fallback works correctly.
 ///
 /// When no XML fallback is provided, the rendered output should only
 /// reference the primary PLAN.md file.
@@ -295,9 +295,9 @@ fn unicode_content_size_in_bytes() {
     });
 }
 
-/// Test that PromptContentBuilder correctly reports oversize state.
+/// Test that `PromptContentBuilder` correctly reports oversize state.
 ///
-/// The has_oversize_content() method should return true if ANY content
+/// The `has_oversize_content()` method should return true if ANY content
 /// exceeds the limit.
 #[test]
 fn builder_reports_any_oversize() {
@@ -348,7 +348,7 @@ fn builder_reports_any_oversize() {
 
 /// Test that oversize PLAN falls back to XML file when PLAN.md is unavailable.
 ///
-/// When PLAN.md content exceeds MAX_INLINE_CONTENT_SIZE and PLAN.md doesn't exist
+/// When PLAN.md content exceeds `MAX_INLINE_CONTENT_SIZE` and PLAN.md doesn't exist
 /// or is empty, the generated prompt should tell the agent to read from
 /// .agent/tmp/plan.xml as fallback.
 #[test]
@@ -379,9 +379,9 @@ fn oversize_plan_falls_back_to_xml_when_md_unavailable() {
     });
 }
 
-/// Test that PromptContentBuilder handles all three oversized content types.
+/// Test that `PromptContentBuilder` handles all three oversized content types.
 ///
-/// When PROMPT, PLAN, and DIFF all exceed MAX_INLINE_CONTENT_SIZE, the builder
+/// When PROMPT, PLAN, and DIFF all exceed `MAX_INLINE_CONTENT_SIZE`, the builder
 /// should correctly reference all backup locations and the rendered output
 /// should contain appropriate instructions for each.
 #[test]
@@ -442,7 +442,7 @@ fn builder_handles_all_three_oversized_content_types() {
 
 /// Test that developer iteration prompt correctly uses oversized content references.
 ///
-/// When using prompt_developer_iteration_xml_with_references with oversized content,
+/// When using `prompt_developer_iteration_xml_with_references` with oversized content,
 /// the generated prompt should include file path instructions, not embedded content.
 #[test]
 fn developer_iteration_prompt_uses_oversize_references() {
@@ -522,9 +522,9 @@ fn prompt_content_builder_is_deterministic_across_repeated_builds() {
 
 /// Test that commit diff materialization is stable across XSD retries.
 ///
-/// When commit XML validation fails and we retry with an XsdRetry prompt, the diff
+/// When commit XML validation fails and we retry with an `XsdRetry` prompt, the diff
 /// should NOT be re-truncated. The materialized input from the first attempt should
-/// be reused because the content_id and consumer_signature match.
+/// be reused because the `content_id` and `consumer_signature` match.
 ///
 /// This is a regression test for the bug where truncation warnings repeated with
 /// each retry attempt, even though the diff content hadn't changed.
@@ -569,7 +569,7 @@ fn commit_diff_materialization_stable_across_xsd_retries() {
         let should_rematerialize = {
             let stored = Some(MaterializedCommitInputs {
                 attempt: 1,
-                diff: materialized_input.clone(),
+                diff: materialized_input,
             });
 
             // Check if rematerialization is needed (same logic as phase_effects.rs)
@@ -597,7 +597,7 @@ fn commit_diff_materialization_stable_across_xsd_retries() {
     });
 }
 
-/// Test that OversizeDetected events are emitted once per content_id, not per effect invocation.
+/// Test that `OversizeDetected` events are emitted once per `content_id`, not per effect invocation.
 ///
 /// This verifies the reducer-driven materialization system correctly deduplicates
 /// oversize handling. When the same diff is processed multiple times (e.g., during

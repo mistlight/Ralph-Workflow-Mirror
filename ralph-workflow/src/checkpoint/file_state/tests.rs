@@ -121,7 +121,7 @@ mod tests {
         };
         use crate::workspace::MemoryWorkspace;
 
-        /// Ensure capture_git_state is skipped when a user interrupt is pending.
+        /// Ensure `capture_git_state` is skipped when a user interrupt is pending.
         ///
         /// If interrupted, we must NOT block on `executor.execute("git", ...)` calls because
         /// those calls can hang indefinitely after a SIGTERM-killed agent leaves orphaned

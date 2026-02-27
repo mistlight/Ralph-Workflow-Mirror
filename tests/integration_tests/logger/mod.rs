@@ -5,7 +5,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (file content, parsed output)

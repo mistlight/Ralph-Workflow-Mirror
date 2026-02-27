@@ -10,16 +10,17 @@ use crate::files::llm_output_extraction::validate_issues_xml;
 use crate::reducer::ui_event::{XmlCodeSnippet, XmlOutputContext};
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::sync::LazyLock;
 
 /// Render review issues XML with semantic formatting.
-pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
+pub fn render(content: &str, output_context: Option<&XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with pass context
-    if let Some(ctx) = context {
+    if let Some(ctx) = output_context {
         if let Some(pass) = ctx.pass {
-            output.push_str(&format!("\n╔═══ Review Pass {} ═══╗\n\n", pass));
+            writeln!(output, "\n╔═══ Review Pass {pass} ═══╗\n").unwrap();
         } else {
             output.push_str("\n╔═══ Review Results ═══╗\n\n");
         }
@@ -27,28 +28,30 @@ pub fn render(content: &str, context: &Option<XmlOutputContext>) -> String {
         output.push_str("\n╔═══ Review Results ═══╗\n\n");
     }
 
-    match validate_issues_xml(content) {
-        Ok(elements) => {
-            if elements.issues.is_empty() {
-                // Celebration for no issues
-                if let Some(ref msg) = elements.no_issues_found {
-                    output.push_str("🎉 ✅ Code Approved!\n\n");
-                    output.push_str(&format!("   {}\n", msg));
-                } else {
-                    output.push_str("🎉 ✅ No issues found! Code looks good.\n");
-                }
+    if let Ok(elements) = validate_issues_xml(content) {
+        if elements.issues.is_empty() {
+            // Celebration for no issues
+            if let Some(ref msg) = elements.no_issues_found {
+                output.push_str("🎉 ✅ Code Approved!\n\n");
+                writeln!(output, "   {msg}").unwrap();
             } else {
-                output.push_str(&format!(
-                    "🔍 Found {} issue(s) to address:\n\n",
-                    elements.issues.len()
-                ));
-                output.push_str(&render_issues_grouped_by_file(&elements.issues, context));
+                output.push_str("🎉 ✅ No issues found! Code looks good.\n");
             }
+        } else {
+            writeln!(
+                output,
+                "🔍 Found {} issue(s) to address:\n",
+                elements.issues.len()
+            )
+            .unwrap();
+            output.push_str(&render_issues_grouped_by_file(
+                &elements.issues,
+                output_context,
+            ));
         }
-        Err(_) => {
-            output.push_str("⚠️  Unable to parse issues XML\n\n");
-            output.push_str(content);
-        }
+    } else {
+        output.push_str("⚠️  Unable to parse issues XML\n\n");
+        output.push_str(content);
     }
 
     output
@@ -64,7 +67,7 @@ struct ParsedIssue {
     description: String,
 }
 
-fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputContext>) -> String {
+fn render_issues_grouped_by_file(issues: &[String], context: Option<&XmlOutputContext>) -> String {
     let parsed: Vec<ParsedIssue> = issues.iter().map(|i| parse_issue(i)).collect();
     let mut grouped: BTreeMap<String, Vec<ParsedIssue>> = BTreeMap::new();
 
@@ -78,17 +81,17 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
 
     let mut output = String::new();
     for (file, issues) in grouped {
-        output.push_str(&format!("📄 {}\n", file));
+        writeln!(output, "📄 {file}").unwrap();
         for issue in issues {
             let mut header = String::new();
             if let Some(sev) = &issue.severity {
-                header.push_str(&format!("[{}] ", sev));
+                write!(header, "[{sev}] ").unwrap();
             }
             if let Some(start) = issue.line_start {
-                header.push_str(&format!("L{}", start));
+                write!(header, "L{start}").unwrap();
                 if let Some(end) = issue.line_end {
                     if end != start {
-                        header.push_str(&format!("-L{}", end));
+                        write!(header, "-L{end}").unwrap();
                     }
                 }
                 header.push_str(": ");
@@ -96,9 +99,9 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
 
             let desc = issue.description.trim();
             if header.is_empty() {
-                output.push_str(&format!("   - {}\n", desc));
+                writeln!(output, "   - {desc}").unwrap();
             } else {
-                output.push_str(&format!("   - {}{}\n", header, desc));
+                writeln!(output, "   - {header}{desc}").unwrap();
             }
 
             let snippet = issue
@@ -107,7 +110,7 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
                 .or_else(|| snippet_from_context(&issue, context));
             if let Some(snippet) = snippet {
                 for line in snippet.lines() {
-                    output.push_str(&format!("      {}\n", line));
+                    writeln!(output, "      {line}").unwrap();
                 }
             }
         }
@@ -117,7 +120,7 @@ fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputCo
     output
 }
 
-fn snippet_from_context(issue: &ParsedIssue, context: &Option<XmlOutputContext>) -> Option<String> {
+fn snippet_from_context(issue: &ParsedIssue, context: Option<&XmlOutputContext>) -> Option<String> {
     let ctx = context.as_ref()?;
     let file = issue.file.as_ref()?;
     let start = issue.line_start?;
@@ -143,12 +146,12 @@ fn file_matches(snippet_file: &str, issue_file: &str) -> bool {
 
     // Be tolerant of differing prefixes (e.g. `./src/lib.rs` vs `src/lib.rs`),
     // and of callers emitting paths rooted at a sub-crate (`ralph-workflow/src/...`).
-    let snippet_suffix = format!("/{}", issue_norm);
+    let snippet_suffix = format!("/{issue_norm}");
     if snippet_norm.ends_with(&snippet_suffix) {
         return true;
     }
 
-    let issue_suffix = format!("/{}", snippet_norm);
+    let issue_suffix = format!("/{snippet_norm}");
     issue_norm.ends_with(&issue_suffix)
 }
 
@@ -156,7 +159,7 @@ fn normalize_path_for_match(path: &str) -> String {
     path.replace('\\', "/").trim_start_matches("./").to_string()
 }
 
-fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
+const fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
     a_start <= b_end && b_start <= a_end
 }
 
@@ -210,33 +213,29 @@ fn parse_issue(issue: &str) -> ParsedIssue {
         working = SNIPPET_RE.replace(&working, "").to_string();
     }
 
-    let (file, line_start, line_end) = if let Some(cap) = LOCATION_RE.captures(&working) {
-        let file = cap.name("file").map(|m| m.as_str().to_string());
-        let start = cap
-            .name("start")
-            .and_then(|m| m.as_str().parse::<u32>().ok());
-        let end = cap
-            .name("end")
-            .and_then(|m| m.as_str().parse::<u32>().ok())
-            .or(start);
-        (file, start, end)
-    } else if let Some(cap) = GH_LOCATION_RE.captures(&working) {
-        let file = cap.name("file").map(|m| m.as_str().to_string());
-        let start = cap
-            .name("start")
-            .and_then(|m| m.as_str().parse::<u32>().ok());
-        let end = cap
-            .name("end")
-            .and_then(|m| m.as_str().parse::<u32>().ok())
-            .or(start);
-        (file, start, end)
-    } else {
-        (
-            extract_file_from_issue(&working).map(|s| s.to_string()),
-            None,
-            None,
-        )
-    };
+    let (file, line_start, line_end) = LOCATION_RE
+        .captures(&working)
+        .or_else(|| GH_LOCATION_RE.captures(&working))
+        .map_or_else(
+            || {
+                (
+                    extract_file_from_issue(&working).map(std::string::ToString::to_string),
+                    None,
+                    None,
+                )
+            },
+            |cap| {
+                let file = cap.name("file").map(|m| m.as_str().to_string());
+                let start = cap
+                    .name("start")
+                    .and_then(|m| m.as_str().parse::<u32>().ok());
+                let end = cap
+                    .name("end")
+                    .and_then(|m| m.as_str().parse::<u32>().ok())
+                    .or(start);
+                (file, start, end)
+            },
+        );
 
     let description = working
         .lines()
@@ -287,17 +286,17 @@ mod tests {
 
     #[test]
     fn test_render_issues_with_issues() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Variable unused in src/main.rs</ralph-issue>
 <ralph-issue>Missing error handling</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
             pass: Some(1),
             snippets: Vec::new(),
         });
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(output.contains("Review Pass 1"), "Should show pass number");
         assert!(output.contains("2 issue"), "Should show issue count");
@@ -314,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_render_issues_groups_by_file_and_renders_line_ranges_and_snippets() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>[High] src/main.rs:12-18 - Avoid unwrap in production code
 ```rust
 let x = foo().unwrap();
@@ -322,9 +321,9 @@ let x = foo().unwrap();
 </ralph-issue>
 <ralph-issue>src/lib.rs:44:3 - Rename variable for clarity</ralph-issue>
 <ralph-issue>General suggestion with no file</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(
             output.contains("📄 src/main.rs") && output.contains("📄 src/lib.rs"),
@@ -347,9 +346,9 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_uses_context_snippets_when_issue_has_location_but_no_fenced_code() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>./src/lib.rs:44-44 - Rename variable for clarity</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
@@ -362,7 +361,7 @@ let x = foo().unwrap();
             }],
         });
 
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(
             output.contains("let clearer"),
@@ -372,11 +371,11 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_no_issues() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>The code looks good, no issues detected</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
 
         assert!(output.contains("✅"), "Should show approval emoji");
         assert!(
@@ -388,7 +387,7 @@ let x = foo().unwrap();
     #[test]
     fn test_render_issues_malformed_fallback() {
         let bad_xml = "random text";
-        let output = render(bad_xml, &None);
+        let output = render(bad_xml, None);
 
         assert!(output.contains("⚠️"), "Should show warning");
     }
@@ -416,11 +415,11 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_celebration_on_approval() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>All code looks great!</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
-        let output = render(xml, &None);
+        let output = render(xml, None);
         assert!(output.contains("🎉"), "Should celebrate approval");
         assert!(
             output.contains("Code Approved"),
@@ -430,9 +429,9 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_shows_snippet_from_context_when_not_in_issue_text() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>[High] src/lib.rs:2 Missing semicolon</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
@@ -445,17 +444,15 @@ let x = foo().unwrap();
             }],
         });
 
-        let output = render(xml, &ctx);
+        let output = render(xml, ctx.as_ref());
 
         assert!(
             output.contains("fn example()"),
-            "Should render snippet content when provided via context: {}",
-            output
+            "Should render snippet content when provided via context: {output}"
         );
         assert!(
             output.contains("src/lib.rs"),
-            "Should show file context: {}",
-            output
+            "Should show file context: {output}"
         );
     }
 }

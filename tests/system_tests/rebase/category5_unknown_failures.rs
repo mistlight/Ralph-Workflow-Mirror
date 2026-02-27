@@ -37,7 +37,7 @@ fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
 fn get_default_branch_name(repo: &git2::Repository) -> String {
     repo.head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().map(std::string::ToString::to_string))
         .unwrap_or_else(|| "main".to_string())
 }
 
@@ -60,8 +60,7 @@ fn unknown_error_kind_exists_with_description() {
             desc.to_lowercase().contains("unknown")
                 || desc.to_lowercase().contains("unexpected")
                 || desc.contains("undefined"),
-            "Unknown error description should indicate unknown nature: {}",
-            desc
+            "Unknown error description should indicate unknown nature: {desc}"
         );
     });
 }
@@ -128,25 +127,21 @@ fn rebase_handles_unexpected_stderr_format() {
             // Should not panic - should return an error or handle it
             assert!(result.is_ok(), "Should not panic on corrupt index");
 
-            match result.unwrap() {
-                RebaseResult::Failed(err) => {
-                    // Should classify as some form of error
-                    let desc = err.description();
-                    assert!(
-                        desc.contains("index")
-                            || desc.contains("corrupt")
-                            || desc.contains("Repository")
-                            || desc.contains("integrity")
-                            || desc.contains("Unknown")
-                            || desc.contains("revision")
-                            || desc.contains("Invalid"),
-                        "Error should describe the problem: {}",
-                        desc
-                    );
-                }
-                _ => {
-                    // Other results are acceptable
-                }
+            if let RebaseResult::Failed(err) = result.unwrap() {
+                // Should classify as some form of error
+                let desc = err.description();
+                assert!(
+                    desc.contains("index")
+                        || desc.contains("corrupt")
+                        || desc.contains("Repository")
+                        || desc.contains("integrity")
+                        || desc.contains("Unknown")
+                        || desc.contains("revision")
+                        || desc.contains("Invalid"),
+                    "Error should describe the problem: {desc}"
+                );
+            } else {
+                // Other results are acceptable
             }
         });
     });

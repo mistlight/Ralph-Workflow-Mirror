@@ -5,7 +5,7 @@ use crate::prompts::template_context::TemplateContext;
 ///
 /// Groups together the configuration and runtime state needed for
 /// AI-assisted conflict resolution during rebase operations.
-pub(crate) struct ConflictResolutionContext<'a> {
+pub struct ConflictResolutionContext<'a> {
     pub config: &'a crate::config::Config,
     pub registry: &'a crate::agents::AgentRegistry,
     pub template_context: &'a TemplateContext,
@@ -19,14 +19,14 @@ pub(crate) struct ConflictResolutionContext<'a> {
 /// Result type for conflict resolution attempts.
 ///
 /// Represents the different ways conflict resolution can succeed or fail.
-pub(crate) enum ConflictResolutionResult {
+pub enum ConflictResolutionResult {
     /// Agent resolved conflicts by editing files directly (no JSON output)
     FileEditsOnly,
     /// Resolution failed completely
     Failed,
 }
 
-pub(crate) enum InitialRebaseOutcome {
+pub enum InitialRebaseOutcome {
     Succeeded { new_head: String },
     Skipped { reason: String },
 }

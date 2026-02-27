@@ -43,7 +43,7 @@ pub(super) fn save_prompt_to_file_and_clipboard(
     if let Some(info) = options.archive_info {
         if let Err(e) = archive_prompt(prompt, &info, logger, workspace) {
             // Log but don't fail - archiving is for observability, not critical path
-            logger.warn(&format!("Failed to archive prompt: {}", e));
+            logger.warn(&format!("Failed to archive prompt: {e}"));
         }
     }
 
@@ -64,7 +64,7 @@ pub(super) fn save_prompt_to_file_and_clipboard(
                     ));
                 }
                 Err(e) => {
-                    logger.warn(&format!("Failed to copy to clipboard: {}", e));
+                    logger.warn(&format!("Failed to copy to clipboard: {e}"));
                 }
             }
         }
@@ -138,8 +138,10 @@ pub(super) fn build_prompt_archive_filename(
         .file_name()
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty())
-        .map(|s| sanitize_agent_name(&s.to_lowercase()))
-        .unwrap_or_else(|| "unknown".to_string());
+        .map_or_else(
+            || "unknown".to_string(),
+            |s| sanitize_agent_name(&s.to_lowercase()),
+        );
 
     if prefix_part.is_empty() || prefix_part == "unknown" || prefix_part == safe_agent {
         prefix_part = sanitize_agent_name(&phase_label.to_lowercase());
@@ -150,7 +152,7 @@ pub(super) fn build_prompt_archive_filename(
         parts.push(model.to_string());
     }
     if let Some(a) = attempt {
-        parts.push(format!("a{}", a));
+        parts.push(format!("a{a}"));
     }
 
     format!("{}_s{}_{}.txt", parts.join("_"), seq, timestamp_ms)

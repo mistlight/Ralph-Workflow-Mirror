@@ -90,7 +90,7 @@ fn test_prompts_are_agent_agnostic() {
         ),
     ];
 
-    for (prompt_name, prompt) in prompts_to_check.iter() {
+    for (prompt_name, prompt) in &prompts_to_check {
         let prompt_lower = prompt.to_lowercase();
         for term in agent_specific_terms {
             if prompt_lower.contains(term) {
@@ -151,8 +151,7 @@ fn test_prompts_are_agent_agnostic() {
 
                 assert!(
                     !found_non_path_occurrence,
-                    "Prompt '{}' contains agent-specific term '{}' in non-path context",
-                    prompt_name, term
+                    "Prompt '{prompt_name}' contains agent-specific term '{term}' in non-path context"
                 );
             }
         }
@@ -314,26 +313,20 @@ fn test_all_prompts_isolate_agents_from_git() {
             if prompt.contains(pattern) {
                 // Check if this is in a "forbidden" context
                 let is_forbidden = forbid_contexts.iter().any(|ctx| {
-                    if let Some(pos) = prompt.find(ctx) {
-                        // Check if the pattern appears after the forbid context
-                        if let Some(pattern_pos) = prompt[pos..].find(pattern) {
+                    prompt.find(ctx).is_some_and(|pos| {
+                        prompt[pos..].find(pattern).is_some_and(|pattern_pos| {
                             // Pattern is within reasonable proximity (200 chars) of forbid context
                             pattern_pos < 200
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
+                        })
+                    })
                 });
 
-                if !is_forbidden {
-                    panic!(
-                        "Prompt contains instructive git command pattern '{}': {}",
-                        pattern,
-                        &prompt[..prompt.len().min(150)]
-                    );
-                }
+                assert!(
+                    is_forbidden,
+                    "Prompt contains instructive git command pattern '{}': {}",
+                    pattern,
+                    &prompt[..prompt.len().min(150)]
+                );
             }
         }
     }
@@ -351,15 +344,11 @@ fn test_all_prompts_isolate_agents_from_git() {
         if orchestrator_prompt.contains(pattern) {
             // Check if this is in a "forbidden" context
             let is_forbidden = forbid_contexts.iter().any(|ctx| {
-                if let Some(pos) = orchestrator_prompt.find(ctx) {
-                    if let Some(pattern_pos) = orchestrator_prompt[pos..].find(pattern) {
-                        pattern_pos < 200
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
+                orchestrator_prompt.find(ctx).is_some_and(|pos| {
+                    orchestrator_prompt[pos..]
+                        .find(pattern)
+                        .is_some_and(|pattern_pos| pattern_pos < 200)
+                })
             });
 
             assert!(

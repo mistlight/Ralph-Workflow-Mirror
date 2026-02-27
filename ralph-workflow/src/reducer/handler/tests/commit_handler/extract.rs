@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_extract_commit_xml_emits_missing_event_when_absent() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -27,12 +27,12 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -52,7 +52,7 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
@@ -66,9 +66,7 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
         max_attempts: 2,
     };
 
-    let result = handler
-        .extract_commit_xml(&mut ctx)
-        .expect("extract_commit_xml should succeed");
+    let result = handler.extract_commit_xml(&ctx);
 
     assert!(matches!(
         result.event,

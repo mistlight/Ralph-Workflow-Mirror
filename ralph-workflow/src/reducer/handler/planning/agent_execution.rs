@@ -43,7 +43,7 @@ impl MainEffectHandler {
             .cloned()
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
-        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Developer, &agent, None, prompt)?;
         if result.additional_events.iter().any(|e| {
             matches!(
                 e,
@@ -56,14 +56,11 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn cleanup_planning_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let plan_xml = Path::new(xml_paths::PLAN_XML);
         let _ = ctx.workspace.remove_if_exists(plan_xml);
-        Ok(EffectResult::event(PipelineEvent::planning_xml_cleaned(
-            iteration,
-        )))
+        EffectResult::event(PipelineEvent::planning_xml_cleaned(iteration))
     }
 }

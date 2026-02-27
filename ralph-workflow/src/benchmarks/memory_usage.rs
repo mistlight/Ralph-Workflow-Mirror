@@ -43,17 +43,17 @@ fn benchmark_execution_history_growth_10_iterations() {
         .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
-    let growth_per_iteration = if !state.execution_history().is_empty() {
-        actual_heap_size / state.execution_history_len()
-    } else {
+    let growth_per_iteration = if state.execution_history().is_empty() {
         0
+    } else {
+        actual_heap_size / state.execution_history_len()
     };
 
     println!("\n=== Execution History Growth (10 iterations) ===");
-    println!("Stack size start: {} bytes", start_size);
-    println!("Stack size end: {} bytes", end_size);
-    println!("Heap size (estimated): {} bytes", actual_heap_size);
-    println!("Growth per iteration: ~{} bytes", growth_per_iteration);
+    println!("Stack size start: {start_size} bytes");
+    println!("Stack size end: {end_size} bytes");
+    println!("Heap size (estimated): {actual_heap_size} bytes");
+    println!("Growth per iteration: ~{growth_per_iteration} bytes");
     println!("Total entries: {}", state.execution_history_len());
 
     // Document baseline - this is NOT a failure, just measurement
@@ -77,17 +77,17 @@ fn benchmark_execution_history_growth_100_iterations() {
         .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
-    let growth_per_iteration = if !state.execution_history().is_empty() {
-        actual_heap_size / state.execution_history_len()
-    } else {
+    let growth_per_iteration = if state.execution_history().is_empty() {
         0
+    } else {
+        actual_heap_size / state.execution_history_len()
     };
 
     println!("\n=== Execution History Growth (100 iterations) ===");
-    println!("Heap size (estimated): {} bytes", actual_heap_size);
-    println!("Growth per iteration: ~{} bytes", growth_per_iteration);
+    println!("Heap size (estimated): {actual_heap_size} bytes");
+    println!("Growth per iteration: ~{growth_per_iteration} bytes");
     println!("Total entries: {}", state.execution_history_len());
-    println!("Time to populate: {:?}", duration);
+    println!("Time to populate: {duration:?}");
 
     // Document baseline
     assert_eq!(state.execution_history_len(), 100);
@@ -113,22 +113,19 @@ fn benchmark_execution_history_growth_1000_iterations() {
         .map(estimate_execution_step_heap_bytes_core_fields)
         .sum();
 
-    let growth_per_iteration = if !state.execution_history().is_empty() {
-        actual_heap_size / state.execution_history_len()
-    } else {
+    let growth_per_iteration = if state.execution_history().is_empty() {
         0
+    } else {
+        actual_heap_size / state.execution_history_len()
     };
-    let size_kb = actual_heap_size / 1024;
-    let size_mb = size_kb / 1024;
+    let heap_kb = actual_heap_size / 1024;
+    let heap_megabytes = heap_kb / 1024;
 
     println!("\n=== Execution History Growth (1000 iterations) ===");
-    println!(
-        "Heap size (estimated): {} bytes ({} KB, {} MB)",
-        actual_heap_size, size_kb, size_mb
-    );
-    println!("Growth per iteration: ~{} bytes", growth_per_iteration);
+    println!("Heap size (estimated): {actual_heap_size} bytes ({heap_kb} KB, {heap_megabytes} MB)");
+    println!("Growth per iteration: ~{growth_per_iteration} bytes");
     println!("Total entries: {}", state.execution_history_len());
-    println!("Time to populate: {:?}", duration);
+    println!("Time to populate: {duration:?}");
 
     // Document baseline
     assert_eq!(state.execution_history_len(), 1000);
@@ -147,11 +144,8 @@ fn benchmark_pipeline_state_size_empty() {
     let execution_history_size = std::mem::size_of_val(state.execution_history());
 
     println!("\n=== Pipeline State Size (Empty) ===");
-    println!("Base state size: {} bytes", base_size);
-    println!(
-        "Execution history Vec size: {} bytes",
-        execution_history_size
-    );
+    println!("Base state size: {base_size} bytes");
+    println!("Execution history Vec size: {execution_history_size} bytes");
     println!(
         "Total execution history entries: {}",
         state.execution_history_len()
@@ -179,12 +173,9 @@ fn benchmark_pipeline_state_size_with_100_steps() {
         .sum();
 
     println!("\n=== Pipeline State Size (100 steps) ===");
-    println!("Base state size: {} bytes", base_size);
-    println!(
-        "Execution history Vec size: {} bytes",
-        execution_history_size
-    );
-    println!("Execution history heap size: ~{} bytes", heap_size);
+    println!("Base state size: {base_size} bytes");
+    println!("Execution history Vec size: {execution_history_size} bytes");
+    println!("Execution history heap size: ~{heap_size} bytes");
     println!("Total size estimate: ~{} bytes", base_size + heap_size);
     println!(
         "Total execution history entries: {}",
@@ -229,11 +220,11 @@ fn benchmark_memory_growth_rate() {
         let growth = if idx > 0 {
             let prev_size = sizes[idx - 1].1;
             let growth_kb = (size - prev_size) / 1024;
-            format!("+{} KB", growth_kb)
+            format!("+{growth_kb} KB")
         } else {
             String::from("baseline")
         };
-        println!("{:10} | {:14} | {}", iter, size_kb, growth);
+        println!("{iter:10} | {size_kb:14} | {growth}");
     }
 
     // Verify we have the expected samples
@@ -270,14 +261,17 @@ fn benchmark_checkpoint_cycle_memory_stability() {
     for (cycle, size) in &states {
         // Use signed arithmetic to avoid usize underflow when a later cycle
         // happens to serialize slightly smaller than the first.
-        let diff_pct = ((*size as f64 - first_size as f64) / first_size as f64) * 100.0;
+        // Use integer arithmetic to compute percentage difference
+        // (multiplied by 100 to get whole-number percentage)
+        let diff_abs = size.abs_diff(first_size);
+        let diff_pct_100x = (diff_abs * 10000) / first_size; // pct * 100
         assert!(
-            diff_pct.abs() < 5.0,
-            "Cycle {} size should be within 5% of initial: {} KB vs {} KB ({:.2}% diff)",
-            cycle,
+            diff_pct_100x < 500, // 5.0% * 100
+            "Cycle {cycle} size should be within 5% of initial: {} KB vs {} KB ({}.{:02}% diff)",
             size / 1024,
             first_size / 1024,
-            diff_pct
+            diff_pct_100x / 100,
+            diff_pct_100x % 100,
         );
     }
 }
@@ -291,7 +285,10 @@ fn create_test_pipeline_state(
     let mut state = PipelineState::initial(iterations, review_passes);
 
     for i in 0..history_size {
-        state.add_execution_step(create_test_step(i as u32), history_size);
+        state.add_execution_step(
+            create_test_step(u32::try_from(i).expect("index fits in u32")),
+            history_size,
+        );
     }
 
     state
@@ -324,11 +321,14 @@ fn benchmark_peak_memory_usage_during_large_state_serialization() {
 
     let json_size = json.len();
 
-    println!("Serialization time: {:?}", duration);
+    println!("Serialization time: {duration:?}");
     println!("Serialized size: {} KB", json_size / 1024);
+    // Integer-based ratio display to avoid usize->f64 precision loss
+    let ratio_100x = (json_size * 100) / heap_before;
     println!(
-        "Memory overhead ratio: {:.2}x",
-        json_size as f64 / heap_before as f64
+        "Memory overhead ratio: {}.{:02}x",
+        ratio_100x / 100,
+        ratio_100x % 100,
     );
 
     // Document baseline

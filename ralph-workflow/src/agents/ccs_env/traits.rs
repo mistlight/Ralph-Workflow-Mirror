@@ -40,7 +40,7 @@ pub trait CcsFilesystem {
     fn read_dir(&self, path: &std::path::Path) -> std::io::Result<Vec<CcsDirEntry>>;
 }
 
-/// Directory entry for CcsFilesystem.
+/// Directory entry for `CcsFilesystem`.
 pub struct CcsDirEntry {
     pub path: std::path::PathBuf,
     pub file_name: String,
@@ -231,7 +231,10 @@ fn list_ccs_json_files_with_fs(
         if !entry.is_file {
             continue;
         }
-        if entry.file_name.ends_with(".json") {
+        if std::path::Path::new(&entry.file_name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
             files.push(entry.path);
         }
     }

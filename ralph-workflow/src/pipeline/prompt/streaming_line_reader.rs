@@ -161,7 +161,7 @@ impl<R: Read> BufRead for StreamingLineReader<R> {
             }
 
             let newline_pos = available.iter().position(|&b| b == b'\n');
-            let to_take = newline_pos.map(|i| i + 1).unwrap_or(available.len());
+            let to_take = newline_pos.map_or(available.len(), |i| i + 1);
 
             let remaining = MAX_BUFFER_SIZE - (buf.len() - start_len);
             if to_take > remaining {

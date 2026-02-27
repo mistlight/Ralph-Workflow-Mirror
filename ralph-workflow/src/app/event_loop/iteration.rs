@@ -12,15 +12,15 @@ use crate::reducer::state::PipelineState;
 /// Determine if we should exit the loop BEFORE executing the next effect.
 ///
 /// Returns true if the state is already complete, with exceptions for:
-/// - Interrupted from AwaitingDevFix without checkpoint (need SaveCheckpoint)
-/// - AwaitingDevFix without dev_fix_triggered (need TriggerDevFixFlow)
-/// - Restoration pending (need RestorePromptPermissions)
+/// - Interrupted from `AwaitingDevFix` without checkpoint (need `SaveCheckpoint`)
+/// - `AwaitingDevFix` without `dev_fix_triggered` (need `TriggerDevFixFlow`)
+/// - Restoration pending (need `RestorePromptPermissions`)
 ///
 /// # Rationale
 ///
 /// When resuming from an Interrupted checkpoint, the state is already complete
-/// but we still need to allow one iteration to execute any pending SaveCheckpoint
-/// effect. Similarly, when entering AwaitingDevFix, we must execute TriggerDevFixFlow
+/// but we still need to allow one iteration to execute any pending `SaveCheckpoint`
+/// effect. Similarly, when entering `AwaitingDevFix`, we must execute `TriggerDevFixFlow`
 /// to write the completion marker before exiting.
 ///
 /// # Example
@@ -31,7 +31,7 @@ use crate::reducer::state::PipelineState;
 /// }
 /// // Otherwise, execute the next effect
 /// ```
-pub(super) fn should_exit_before_effect(state: &PipelineState) -> bool {
+pub(super) const fn should_exit_before_effect(state: &PipelineState) -> bool {
     if !state.is_complete() {
         return false;
     }
@@ -52,7 +52,7 @@ pub(super) fn should_exit_before_effect(state: &PipelineState) -> bool {
 
 /// Determine if we should exit the loop AFTER executing an effect.
 ///
-/// Similar logic to should_exit_before_effect, but checks after state transitions.
+/// Similar logic to `should_exit_before_effect`, but checks after state transitions.
 /// This ensures that transitions to terminal phases (e.g., Interrupted) have a
 /// chance to save their checkpoint before the loop exits.
 ///
@@ -64,7 +64,7 @@ pub(super) fn should_exit_before_effect(state: &PipelineState) -> bool {
 ///     break; // State became terminal after this effect
 /// }
 /// ```
-pub(super) fn should_exit_after_effect(state: &PipelineState) -> bool {
+pub(super) const fn should_exit_after_effect(state: &PipelineState) -> bool {
     should_exit_before_effect(state)
 }
 

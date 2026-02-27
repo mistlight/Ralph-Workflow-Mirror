@@ -53,17 +53,17 @@ pub fn run_initial_rebase(
         .header("Pre-development rebase", Colors::cyan);
 
     record_rebase_start(phase_ctx);
-    save_pre_rebase_checkpoint(phase_ctx, run_context)?;
+    save_pre_rebase_checkpoint(phase_ctx, run_context);
 
     match run_rebase_to_default(phase_ctx.logger, *phase_ctx.colors, executor) {
         Ok(RebaseResult::Success) => {
-            handle_rebase_success(phase_ctx, run_context)?;
+            handle_rebase_success(phase_ctx, run_context);
             Ok(InitialRebaseOutcome::Succeeded {
                 new_head: read_repo_head_or_unknown(phase_ctx.workspace),
             })
         }
         Ok(RebaseResult::NoOp { reason }) => {
-            handle_rebase_noop(phase_ctx, run_context, &reason)?;
+            handle_rebase_noop(phase_ctx, run_context, &reason);
             Ok(InitialRebaseOutcome::Skipped { reason })
         }
         Ok(RebaseResult::Conflicts(_)) => {
@@ -79,13 +79,13 @@ pub fn run_initial_rebase(
             }
         }
         Ok(RebaseResult::Failed(err)) => {
-            handle_rebase_failed(phase_ctx, err)?;
+            handle_rebase_failed(phase_ctx, &err);
             Ok(InitialRebaseOutcome::Skipped {
                 reason: "Rebase failed".to_string(),
             })
         }
         Err(e) => {
-            handle_rebase_error(phase_ctx, e)?;
+            handle_rebase_error(phase_ctx, &e);
             Ok(InitialRebaseOutcome::Skipped {
                 reason: "Rebase error".to_string(),
             })
@@ -107,12 +107,9 @@ fn record_rebase_start(phase_ctx: &mut PhaseContext<'_>) {
 }
 
 /// Save checkpoint at the start of pre-rebase phase.
-fn save_pre_rebase_checkpoint(
-    phase_ctx: &PhaseContext<'_>,
-    run_context: &RunContext,
-) -> anyhow::Result<()> {
+fn save_pre_rebase_checkpoint(phase_ctx: &PhaseContext<'_>, run_context: &RunContext) {
     if !phase_ctx.config.features.checkpoint_enabled {
-        return Ok(());
+        return;
     }
 
     let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
@@ -124,15 +121,10 @@ fn save_pre_rebase_checkpoint(
         };
         let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
-
-    Ok(())
 }
 
 /// Handle successful rebase completion.
-fn handle_rebase_success(
-    phase_ctx: &mut PhaseContext<'_>,
-    run_context: &RunContext,
-) -> anyhow::Result<()> {
+fn handle_rebase_success(phase_ctx: &mut PhaseContext<'_>, run_context: &RunContext) {
     phase_ctx.logger.success("Rebase completed successfully");
 
     let step = ExecutionStep::new(
@@ -146,15 +138,10 @@ fn handle_rebase_success(
         .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 
     save_post_rebase_checkpoint(phase_ctx, run_context);
-    Ok(())
 }
 
 /// Handle rebase that was not needed.
-fn handle_rebase_noop(
-    phase_ctx: &mut PhaseContext<'_>,
-    run_context: &RunContext,
-    reason: &str,
-) -> anyhow::Result<()> {
+fn handle_rebase_noop(phase_ctx: &mut PhaseContext<'_>, run_context: &RunContext, reason: &str) {
     phase_ctx
         .logger
         .info(&format!("No rebase needed: {reason}"));
@@ -170,7 +157,6 @@ fn handle_rebase_noop(
         .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 
     save_post_rebase_checkpoint(phase_ctx, run_context);
-    Ok(())
 }
 
 /// Handle rebase conflicts by attempting AI resolution.
@@ -209,21 +195,21 @@ fn handle_rebase_conflicts(
 
     match try_resolve_conflicts(
         &conflicted_files,
-        resolution_ctx,
+        &resolution_ctx,
         phase_ctx,
         "PreRebase",
         executor,
     ) {
         Ok(true) => {
-            handle_conflicts_resolved(phase_ctx, run_context, executor)?;
+            handle_conflicts_resolved(phase_ctx, run_context, executor);
             Ok(true)
         }
         Ok(false) => {
-            handle_resolution_failed(phase_ctx, executor)?;
+            handle_resolution_failed(phase_ctx, executor);
             Ok(false)
         }
         Err(e) => {
-            handle_resolution_error(phase_ctx, executor, e)?;
+            handle_resolution_error(phase_ctx, executor, &e);
             Ok(false)
         }
     }
@@ -271,7 +257,7 @@ fn handle_conflicts_resolved(
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
-) -> anyhow::Result<()> {
+) {
     phase_ctx
         .logger
         .info("Continuing rebase after conflict resolution");
@@ -293,7 +279,6 @@ fn handle_conflicts_resolved(
                 .add_step_bounded(step, phase_ctx.config.execution_history_limit);
 
             save_post_rebase_checkpoint(phase_ctx, run_context);
-            Ok(())
         }
         Err(e) => {
             phase_ctx
@@ -313,16 +298,12 @@ fn handle_conflicts_resolved(
             phase_ctx
                 .execution_history
                 .add_step_bounded(step, phase_ctx.config.execution_history_limit);
-            Ok(()) // Continue anyway - conflicts were resolved
         }
     }
 }
 
 /// Handle failed AI conflict resolution.
-fn handle_resolution_failed(
-    phase_ctx: &mut PhaseContext<'_>,
-    executor: &dyn ProcessExecutor,
-) -> anyhow::Result<()> {
+fn handle_resolution_failed(phase_ctx: &mut PhaseContext<'_>, executor: &dyn ProcessExecutor) {
     phase_ctx
         .logger
         .warn("AI conflict resolution failed, aborting rebase");
@@ -337,15 +318,14 @@ fn handle_resolution_failed(
     phase_ctx
         .execution_history
         .add_step_bounded(step, phase_ctx.config.execution_history_limit);
-    Ok(()) // Continue pipeline - don't block on rebase failure
 }
 
 /// Handle error during conflict resolution.
 fn handle_resolution_error(
     phase_ctx: &mut PhaseContext<'_>,
     executor: &dyn ProcessExecutor,
-    e: anyhow::Error,
-) -> anyhow::Result<()> {
+    e: &anyhow::Error,
+) {
     phase_ctx
         .logger
         .error(&format!("Conflict resolution error: {e}"));
@@ -360,14 +340,10 @@ fn handle_resolution_error(
     phase_ctx
         .execution_history
         .add_step_bounded(step, phase_ctx.config.execution_history_limit);
-    Ok(()) // Continue pipeline
 }
 
 /// Handle rebase failure.
-fn handle_rebase_failed(
-    phase_ctx: &mut PhaseContext<'_>,
-    err: RebaseErrorKind,
-) -> anyhow::Result<()> {
+fn handle_rebase_failed(phase_ctx: &mut PhaseContext<'_>, err: &RebaseErrorKind) {
     phase_ctx.logger.error(&format!("Rebase failed: {err}"));
     let _ = abort_rebase(phase_ctx.executor);
 
@@ -380,11 +356,10 @@ fn handle_rebase_failed(
     phase_ctx
         .execution_history
         .add_step_bounded(step, phase_ctx.config.execution_history_limit);
-    Ok(()) // Continue pipeline despite failure
 }
 
 /// Handle rebase error.
-fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: std::io::Error) -> anyhow::Result<()> {
+fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: &std::io::Error) {
     phase_ctx
         .logger
         .warn(&format!("Rebase failed, continuing without rebase: {e}"));
@@ -398,7 +373,6 @@ fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: std::io::Error) -> a
     phase_ctx
         .execution_history
         .add_step_bounded(step, phase_ctx.config.execution_history_limit);
-    Ok(())
 }
 
 /// Save checkpoint after successful rebase completion.
@@ -452,13 +426,13 @@ fn create_checkpoint_builder(
 }
 
 fn read_repo_head_or_unknown(workspace: &dyn Workspace) -> String {
-    match git2::Repository::open(workspace.root()) {
-        Ok(repo) => repo
-            .head()
-            .ok()
-            .and_then(|head| head.peel_to_commit().ok())
-            .map(|commit| commit.id().to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
-        Err(_) => "unknown".to_string(),
-    }
+    git2::Repository::open(workspace.root()).map_or_else(
+        |_| "unknown".to_string(),
+        |repo| {
+            repo.head()
+                .ok()
+                .and_then(|head| head.peel_to_commit().ok())
+                .map_or_else(|| "unknown".to_string(), |commit| commit.id().to_string())
+        },
+    )
 }

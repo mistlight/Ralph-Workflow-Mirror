@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
     // When prompt file write fails, the handler logs a warning and continues successfully.
     let inner = MemoryWorkspace::new_test()
@@ -66,10 +66,10 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState {
+    let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
             same_agent_retry_count: 1,
             same_agent_retry_reason: Some(SameAgentRetryReason::Other),
@@ -94,7 +94,7 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
 
 #[test]
 fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "<issues/>\n")
@@ -137,10 +137,10 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_fix_prompt should surface non-NotFound PROMPT backup read failures");
@@ -162,7 +162,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
 
 #[test]
 fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/ISSUES.md", "<issues/>\n")
@@ -205,10 +205,10 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_fix_prompt should surface non-NotFound PLAN read failures");
@@ -230,7 +230,7 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
 
 #[test]
 fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -273,10 +273,10 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_fix_prompt should surface non-NotFound ISSUES read failures");
@@ -298,8 +298,8 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -344,7 +344,7 @@ fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_rea
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

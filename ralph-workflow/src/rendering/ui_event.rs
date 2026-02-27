@@ -5,23 +5,24 @@
 
 use crate::reducer::ui_event::UIEvent;
 
-/// Render a UIEvent to a displayable string.
+/// Render a `UIEvent` to a displayable string.
 ///
 /// This is the single entrypoint for all UI event rendering.
 /// The event loop calls this function and displays the result.
+#[must_use]
 pub fn render_ui_event(event: &UIEvent) -> String {
     match event {
         UIEvent::PhaseTransition { to, .. } => {
             format!("{} {}", UIEvent::phase_emoji(to), to)
         }
         UIEvent::IterationProgress { current, total } => {
-            format!("🔄 Development iteration {}/{}", current, total)
+            format!("🔄 Development iteration {current}/{total}")
         }
         UIEvent::ReviewProgress { pass, total } => {
-            format!("👁 Review pass {}/{}", pass, total)
+            format!("👁 Review pass {pass}/{total}")
         }
         UIEvent::AgentActivity { agent, message } => {
-            format!("🤖 [{}] {}", agent, message)
+            format!("🤖 [{agent}] {message}")
         }
         UIEvent::PushCompleted {
             remote,
@@ -107,10 +108,10 @@ mod tests {
     fn test_render_xml_output_routes_to_xml_module() {
         let event = UIEvent::XmlOutput {
             xml_type: XmlOutputType::DevelopmentResult,
-            content: r#"<ralph-development-result>
+            content: r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#
+</ralph-development-result>"
                 .to_string(),
             context: Some(XmlOutputContext::default()),
         };
@@ -135,7 +136,7 @@ mod tests {
         ];
         for phase in phases {
             let emoji = UIEvent::phase_emoji(&phase);
-            assert!(!emoji.is_empty(), "Phase {:?} should have an emoji", phase);
+            assert!(!emoji.is_empty(), "Phase {phase:?} should have an emoji");
         }
     }
 }

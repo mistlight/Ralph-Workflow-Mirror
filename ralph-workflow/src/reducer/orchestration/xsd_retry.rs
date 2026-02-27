@@ -13,6 +13,7 @@
 ///
 /// Intentionally excludes retry counters like `xsd_retry_count` so that repeated
 /// retries still register as the "same effect" for tight-loop detection.
+#[must_use] 
 pub fn compute_effect_fingerprint(state: &PipelineState) -> String {
     format!(
         "{}:{}:iter={}:pass={}:xsd_retry={}",
@@ -208,6 +209,7 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
 /// 5. Agent chain exhausted
 /// 6. Backoff wait
 /// 7. Phase-specific effects
+#[must_use] 
 pub fn determine_next_effect(state: &PipelineState) -> Effect {
     // Terminal: once aborted, drive a single checkpoint save so the event loop can
     // deterministically complete (Interrupted + checkpoint_saved_count > 0).
@@ -345,8 +347,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
     if !state.agent_chain.agents.is_empty() && state.agent_chain.is_exhausted() {
         let progressed = match state.phase {
-            PipelinePhase::Planning => state.iteration > 0,
-            PipelinePhase::Development => state.iteration > 0,
+            PipelinePhase::Planning | PipelinePhase::Development => state.iteration > 0,
             PipelinePhase::Review => state.reviewer_pass > 0,
             PipelinePhase::CommitMessage => matches!(
                 state.commit,
@@ -398,20 +399,18 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
     }
 
     // Cloud mode orchestration: sequence cloud-specific operations
-    // CRITICAL: All cloud-specific logic is guarded by cloud_config.enabled check.
+    // CRITICAL: All cloud-specific logic is guarded by cloud.enabled check.
     // When cloud mode is disabled, this entire block is skipped and behavior is
     // identical to current CLI behavior.
-    if state.cloud_config.enabled {
+    if state.cloud.enabled {
         // After a successful commit, push immediately (cloud mode only)
         if let Some(commit_sha) = &state.pending_push_commit {
             // Configure git auth first if not done yet
             if !state.git_auth_configured {
                 // Format auth method for the effect
-                let auth_method = match &state.cloud_config.git_remote.auth_method {
+                let auth_method = match &state.cloud.git_remote.auth_method {
                     crate::config::GitAuthStateMethod::SshKey { key_path } => key_path
-                        .as_ref()
-                        .map(|p| format!("ssh-key:{p}"))
-                        .unwrap_or_else(|| "ssh-key:default".to_string()),
+                        .as_ref().map_or_else(|| "ssh-key:default".to_string(), |p| format!("ssh-key:{p}")),
                     crate::config::GitAuthStateMethod::Token { username } => {
                         format!("token:{username}")
                     }
@@ -423,7 +422,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             }
 
             // Then push the commit
-            if state.cloud_config.git_remote.push_branch.is_empty() {
+            if state.cloud.git_remote.push_branch.is_empty() {
                 return Effect::EmitCompletionMarkerAndTerminate {
                     is_failure: true,
                     reason: Some(
@@ -432,16 +431,16 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 };
             }
             return Effect::PushToRemote {
-                remote: state.cloud_config.git_remote.remote_name.clone(),
-                branch: state.cloud_config.git_remote.push_branch.clone(),
-                force: state.cloud_config.git_remote.force_push,
+                remote: state.cloud.git_remote.remote_name.clone(),
+                branch: state.cloud.git_remote.push_branch.clone(),
+                force: state.cloud.git_remote.force_push,
                 commit_sha: commit_sha.clone(),
             };
         }
 
         // In Finalizing phase, create PR if configured
         if state.phase == PipelinePhase::Finalizing
-            && state.cloud_config.git_remote.create_pr
+            && state.cloud.git_remote.create_pr
             && !state.pr_created
         {
             // PR creation is only meaningful if we actually produced commits.
@@ -463,7 +462,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     };
                 }
 
-                if state.cloud_config.git_remote.push_branch.is_empty() {
+                if state.cloud.git_remote.push_branch.is_empty() {
                     return Effect::EmitCompletionMarkerAndTerminate {
                         is_failure: true,
                         reason: Some(
@@ -474,12 +473,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 let (title, body) = render_cloud_pr_title_and_body(state);
                 return Effect::CreatePullRequest {
                     base_branch: state
-                        .cloud_config
+                        .cloud
                         .git_remote
                         .pr_base_branch
                         .clone()
                         .unwrap_or_else(|| "main".to_string()),
-                    head_branch: state.cloud_config.git_remote.push_branch.clone(),
+                    head_branch: state.cloud.git_remote.push_branch.clone(),
                     title,
                     body,
                 };
@@ -514,7 +513,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 fn render_cloud_pr_title_and_body(state: &PipelineState) -> (String, String) {
     use std::collections::HashMap;
 
-    let run_id = state.cloud_config.run_id.as_deref().unwrap_or("unknown");
+    let run_id = state.cloud.run_id.as_deref().unwrap_or("unknown");
 
     // Intentionally avoid using any prompt text or other potentially sensitive input.
     // This value is safe to publish in a PR title/body.
@@ -527,7 +526,7 @@ fn render_cloud_pr_title_and_body(state: &PipelineState) -> (String, String) {
     let default_title = "Ralph workflow changes".to_string();
 
     let title = state
-        .cloud_config
+        .cloud
         .git_remote
         .pr_title_template
         .as_deref()
@@ -535,7 +534,7 @@ fn render_cloud_pr_title_and_body(state: &PipelineState) -> (String, String) {
         .unwrap_or(default_title);
 
     let body = state
-        .cloud_config
+        .cloud
         .git_remote
         .pr_body_template
         .as_deref()

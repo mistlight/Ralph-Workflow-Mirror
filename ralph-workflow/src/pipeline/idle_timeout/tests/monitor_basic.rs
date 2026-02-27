@@ -39,11 +39,11 @@ fn monitor_stops_when_signaled() {
     let check_interval = Duration::from_millis(10);
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval(
-            timestamp,
-            child,
+            &timestamp,
+            &child,
             60,
-            should_stop_clone,
-            executor,
+            &should_stop_clone,
+            &executor,
             check_interval,
         )
     });
@@ -75,11 +75,11 @@ fn monitor_stops_promptly_even_with_long_check_interval() {
     let start = std::time::Instant::now();
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval(
-            timestamp,
-            child,
+            &timestamp,
+            &child,
             60,
-            should_stop_clone,
-            executor,
+            &should_stop_clone,
+            &executor,
             check_interval,
         )
     });

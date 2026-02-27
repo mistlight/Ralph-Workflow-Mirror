@@ -33,7 +33,16 @@ use crate::reducer::event::ReviewEvent;
 use crate::reducer::state::PipelineState;
 
 pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineState {
-    use ReviewEvent::*;
+    use ReviewEvent::{
+        AgentInvoked, Completed, ContextPrepared, FixAgentInvoked, FixAttemptCompleted,
+        FixAttemptStarted, FixContinuationBudgetExhausted, FixContinuationSucceeded,
+        FixContinuationTriggered, FixOutcomeApplied, FixOutputValidationFailed, FixPromptPrepared,
+        FixResultXmlArchived, FixResultXmlCleaned, FixResultXmlExtracted, FixResultXmlMissing,
+        FixResultXmlValidated, IssueSnippetsExtracted, IssuesMarkdownWritten, IssuesXmlArchived,
+        IssuesXmlCleaned, IssuesXmlExtracted, IssuesXmlMissing, IssuesXmlValidated,
+        OutputValidationFailed, PassCompletedClean, PassStarted, PhaseCompleted, PhaseStarted,
+        PromptPrepared,
+    };
 
     match event {
         // Review pass events

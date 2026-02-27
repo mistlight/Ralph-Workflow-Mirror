@@ -18,14 +18,14 @@
 //! 1. **Phase Start**: Initialize development-specific state
 //! 2. **Iteration Lifecycle**: Start iteration → prepare context → invoke agents → validate → complete
 //! 3. **Continuation Logic**: Handle partial/failed outputs via continuation attempts
-//! 4. **Completion**: Transition to CommitMessage phase on success or AwaitingDevFix on exhaustion
+//! 4. **Completion**: Transition to `CommitMessage` phase on success or `AwaitingDevFix` on exhaustion
 //!
 //! # Event Types
 //!
-//! - **Lifecycle events**: PhaseStarted, IterationStarted, IterationCompleted, PhaseCompleted
-//! - **Step events**: ContextPrepared, PromptPrepared, XmlCleaned, AgentInvoked, etc.
-//! - **Continuation events**: ContinuationTriggered, ContinuationSucceeded, ContinuationBudgetExhausted
-//! - **Error events**: OutputValidationFailed, XmlMissing
+//! - **Lifecycle events**: `PhaseStarted`, `IterationStarted`, `IterationCompleted`, `PhaseCompleted`
+//! - **Step events**: `ContextPrepared`, `PromptPrepared`, `XmlCleaned`, `AgentInvoked`, etc.
+//! - **Continuation events**: `ContinuationTriggered`, `ContinuationSucceeded`, `ContinuationBudgetExhausted`
+//! - **Error events**: `OutputValidationFailed`, `XmlMissing`
 //!
 //! # Module Structure
 //!

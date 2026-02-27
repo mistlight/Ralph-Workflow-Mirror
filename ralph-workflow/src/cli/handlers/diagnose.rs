@@ -149,23 +149,22 @@ fn print_config_info(
     println!("{}Configuration:{}", colors.bold(), colors.reset());
     println!("  Unified config: {}", config_path.display());
     let exists_status = if config_path.is_absolute() {
-        config_path
-            .strip_prefix(workspace.root())
-            .ok()
-            .map(|relative| {
+        config_path.strip_prefix(workspace.root()).ok().map_or_else(
+            || "unknown (outside workspace)".to_string(),
+            |relative| {
                 if workspace.exists(relative) {
                     "yes".to_string()
                 } else {
                     "no".to_string()
                 }
-            })
-            .unwrap_or_else(|| "unknown (outside workspace)".to_string())
+            },
+        )
     } else if workspace.exists(config_path) {
         "yes".to_string()
     } else {
         "no".to_string()
     };
-    println!("  Config exists: {}", exists_status);
+    println!("  Config exists: {exists_status}");
     println!(
         "  Review depth: {:?} ({})",
         config.review_depth,
@@ -357,22 +356,27 @@ fn print_project_stack(colors: Colors, workspace: &dyn Workspace) {
 fn print_recent_logs(colors: Colors, workspace: &dyn Workspace) {
     // Try to find logs from current run (per-run logging)
     // First try to get log_run_id from checkpoint, then try lexicographic sort
-    let log_path = if let Ok(Some(checkpoint)) =
-        crate::checkpoint::load_checkpoint_with_workspace(workspace)
-    {
-        // Use log_run_id from checkpoint to find per-run logs
-        if let Some(log_run_id) = checkpoint.log_run_id {
-            PathBuf::from(format!(".agent/logs-{}/pipeline.log", log_run_id))
-        } else {
-            // Older checkpoint without log_run_id, try to find latest run directory
-            find_latest_run_log_directory(workspace)
-                .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
-        }
-    } else {
-        // No checkpoint exists, try to find latest run directory
-        find_latest_run_log_directory(workspace)
-            .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
-    };
+    let log_path = crate::checkpoint::load_checkpoint_with_workspace(workspace)
+        .ok()
+        .flatten()
+        .map_or_else(
+            || {
+                // No checkpoint exists, try to find latest run directory
+                find_latest_run_log_directory(workspace)
+                    .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
+            },
+            |checkpoint| {
+                // Use log_run_id from checkpoint to find per-run logs
+                checkpoint.log_run_id.map_or_else(
+                    || {
+                        // Older checkpoint without log_run_id, try to find latest run directory
+                        find_latest_run_log_directory(workspace)
+                            .unwrap_or_else(|| PathBuf::from(".agent/logs/pipeline.log"))
+                    },
+                    |log_run_id| PathBuf::from(format!(".agent/logs-{log_run_id}/pipeline.log")),
+                )
+            },
+        );
 
     if workspace.exists(&log_path) {
         println!(
@@ -411,14 +415,13 @@ fn find_latest_run_log_directory(workspace: &dyn Workspace) -> Option<PathBuf> {
             entry
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.starts_with("logs-") && entry.is_dir())
-                .unwrap_or(false)
+                .is_some_and(|s| s.starts_with("logs-") && entry.is_dir())
         })
         .filter_map(|entry| {
             entry
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })
         .collect();
 
@@ -427,5 +430,5 @@ fn find_latest_run_log_directory(workspace: &dyn Workspace) -> Option<PathBuf> {
     // Return the pipeline.log path for the latest directory
     log_dirs
         .last()
-        .map(|dir_name| PathBuf::from(format!(".agent/{}/pipeline.log", dir_name)))
+        .map(|dir_name| PathBuf::from(format!(".agent/{dir_name}/pipeline.log")))
 }

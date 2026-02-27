@@ -3,6 +3,7 @@
 //! Maps file extensions to programming language names.
 
 /// Mapping from file extensions to language names
+#[must_use]
 pub fn extension_to_language(ext: &str) -> Option<&'static str> {
     match ext.to_lowercase().as_str() {
         // Rust

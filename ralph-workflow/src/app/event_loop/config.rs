@@ -13,7 +13,7 @@ use crate::reducer::PipelineState;
 /// This function creates a `PipelineState` with XSD retry and continuation limits
 /// loaded from the config, ensuring these values are available for the reducer
 /// to make deterministic retry decisions.
-pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
+pub fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
     // Config semantics: max_dev_continuations counts continuation attempts *beyond*
     // the initial attempt. ContinuationState::max_continue_count semantics are
     // "maximum total attempts including initial".
@@ -61,8 +61,7 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
     if ctx.config.max_dev_continuations.is_none() {
         debug_assert_eq!(
             max_continue_count, 3,
-            "BUG: missing max_dev_continuations must default to 3 total attempts. Got: {}",
-            max_continue_count
+            "BUG: missing max_dev_continuations must default to 3 total attempts. Got: {max_continue_count}"
         );
     }
 
@@ -74,13 +73,13 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
     let mut state = PipelineState::initial_with_continuation(
         ctx.config.developer_iters,
         ctx.config.reviewer_reviews,
-        continuation,
+        &continuation,
     );
 
     // Inject a checkpoint-safe (redacted) view of runtime cloud config.
     // This ensures pure orchestration can derive cloud effects when enabled,
     // without ever storing secrets in reducer state.
-    state.cloud_config = crate::config::CloudStateConfig::from(ctx.cloud_config);
+    state.cloud = crate::config::CloudStateConfig::from(ctx.cloud);
 
     state
 }
@@ -91,9 +90,9 @@ pub(crate) fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> Pipeli
 /// while progress counters and histories are restored from the checkpoint-migrated
 /// `PipelineState`.
 ///
-/// NOTE: `base_state.cloud_config` is intentionally preserved (it is derived from
+/// NOTE: `base_state.cloud` is intentionally preserved (it is derived from
 /// runtime env and is already redacted/credential-free).
-pub(crate) fn overlay_checkpoint_progress_onto_base_state(
+pub fn overlay_checkpoint_progress_onto_base_state(
     base_state: &mut PipelineState,
     migrated: PipelineState,
     execution_history_limit: usize,
@@ -113,7 +112,7 @@ pub(crate) fn overlay_checkpoint_progress_onto_base_state(
     base_state.metrics = migrated.metrics;
 
     // Restore cloud resume continuity from checkpoint-migrated state.
-    // Keep `base_state.cloud_config` (runtime env-derived, redacted).
+    // Keep `base_state.cloud` (runtime env-derived, redacted).
     base_state.pending_push_commit = migrated.pending_push_commit;
     base_state.git_auth_configured = migrated.git_auth_configured;
     base_state.pr_created = migrated.pr_created;
@@ -132,7 +131,7 @@ pub(crate) fn overlay_checkpoint_progress_onto_base_state(
 /// under normal circumstances. If reached, it indicates either a bug in the
 /// reducer logic or an extremely complex project.
 ///
-/// NOTE: Even 1_000_000 can still be too low for extremely slow-progress runs.
+/// NOTE: Even `1_000_000` can still be too low for extremely slow-progress runs.
 /// If this cap is hit in practice, prefer making it configurable and/or
 /// investigating why the reducer is not converging.
 pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1_000_000;
@@ -144,9 +143,9 @@ mod resume_overlay_tests {
     use crate::reducer::PipelineState;
 
     #[test]
-    fn resume_overlay_restores_cloud_resume_fields_but_preserves_runtime_cloud_config() {
+    fn resume_overlay_restores_cloud_resume_fields_but_preserves_runtime_cloud() {
         let mut base = PipelineState::initial(3, 2);
-        base.cloud_config = CloudStateConfig {
+        base.cloud = CloudStateConfig {
             enabled: true,
             api_url: None,
             run_id: Some("run_from_env".to_string()),
@@ -167,7 +166,7 @@ mod resume_overlay_tests {
         };
 
         let mut migrated = PipelineState::initial(999, 999);
-        migrated.cloud_config = CloudStateConfig::disabled();
+        migrated.cloud = CloudStateConfig::disabled();
         migrated.pending_push_commit = Some("abc123".to_string());
         migrated.git_auth_configured = true;
         migrated.pr_created = true;
@@ -182,12 +181,9 @@ mod resume_overlay_tests {
         overlay_checkpoint_progress_onto_base_state(&mut base, migrated, 1000);
 
         // Runtime (env-derived) redacted config is preserved.
-        assert!(base.cloud_config.enabled);
-        assert_eq!(base.cloud_config.run_id.as_deref(), Some("run_from_env"));
-        assert_eq!(
-            base.cloud_config.git_remote.push_branch.as_str(),
-            "env_branch"
-        );
+        assert!(base.cloud.enabled);
+        assert_eq!(base.cloud.run_id.as_deref(), Some("run_from_env"));
+        assert_eq!(base.cloud.git_remote.push_branch.as_str(), "env_branch");
 
         // Cloud resume state is restored.
         assert_eq!(base.pending_push_commit.as_deref(), Some("abc123"));
@@ -204,7 +200,7 @@ mod resume_overlay_tests {
 }
 
 /// Configuration for event loop.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct EventLoopConfig {
     /// Maximum number of iterations to prevent infinite loops.
     pub max_iterations: usize,

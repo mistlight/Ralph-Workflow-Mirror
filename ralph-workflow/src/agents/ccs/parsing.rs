@@ -16,6 +16,7 @@ pub const CCS_PREFIX: &str = "ccs/";
 /// assert_eq!(parse_ccs_ref("ccs"), Some(""));
 /// assert_eq!(parse_ccs_ref("claude"), None);
 /// ```
+#[must_use]
 pub fn parse_ccs_ref(agent_name: &str) -> Option<&str> {
     if agent_name == "ccs" {
         Some("")
@@ -27,6 +28,7 @@ pub fn parse_ccs_ref(agent_name: &str) -> Option<&str> {
 }
 
 /// Check if an agent name is a CCS reference.
+#[must_use] 
 pub fn is_ccs_ref(agent_name: &str) -> bool {
     parse_ccs_ref(agent_name).is_some()
 }

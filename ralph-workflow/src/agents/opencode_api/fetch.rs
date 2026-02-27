@@ -1,6 +1,6 @@
-//! OpenCode API catalog fetching.
+//! `OpenCode` API catalog fetching.
 //!
-//! This module handles HTTP requests to fetch the OpenCode model catalog
+//! This module handles HTTP requests to fetch the `OpenCode` model catalog
 //! from <https://models.dev/api.json>.
 
 use crate::agents::opencode_api::cache::{save_catalog, CacheError};
@@ -8,9 +8,9 @@ use crate::agents::opencode_api::types::ApiCatalog;
 use crate::agents::opencode_api::{API_URL, DEFAULT_CACHE_TTL_SECONDS};
 use std::time::Duration;
 
-/// Fetch the OpenCode API catalog from the remote endpoint.
+/// Fetch the `OpenCode` API catalog from the remote endpoint.
 ///
-/// This function makes an HTTP GET request to the OpenCode API endpoint
+/// This function makes an HTTP GET request to the `OpenCode` API endpoint
 /// and parses the JSON response into an `ApiCatalog`.
 ///
 /// The fetched catalog is automatically cached to disk for future use.
@@ -43,7 +43,7 @@ pub fn fetch_api_catalog() -> Result<ApiCatalog, CacheError> {
 
     // Save to cache
     if let Err(e) = save_catalog(&catalog) {
-        eprintln!("Warning: Failed to cache OpenCode API catalog: {}", e);
+        eprintln!("Warning: Failed to cache OpenCode API catalog: {e}");
     }
 
     Ok(catalog)
@@ -90,7 +90,7 @@ mod tests {
                 id: "glm-4.7-free".to_string(),
                 name: "GLM-4.7 Free".to_string(),
                 description: "Open source GLM model".to_string(),
-                context_length: Some(128000),
+                context_length: Some(128_000),
             }],
         );
         models.insert(
@@ -100,13 +100,13 @@ mod tests {
                     id: "claude-sonnet-4-5".to_string(),
                     name: "Claude Sonnet 4.5".to_string(),
                     description: "Latest Claude Sonnet".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
                 Model {
                     id: "claude-opus-4".to_string(),
                     name: "Claude Opus 4".to_string(),
                     description: "Most capable Claude".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
             ],
         );
@@ -147,7 +147,7 @@ mod tests {
         // Verify model retrieval
         let model = catalog.get_model("anthropic", "claude-sonnet-4-5").unwrap();
         assert_eq!(model.id, "claude-sonnet-4-5");
-        assert_eq!(model.context_length, Some(200000));
+        assert_eq!(model.context_length, Some(200_000));
     }
 
     #[test]

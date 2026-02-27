@@ -10,6 +10,7 @@ use crate::logger::Colors;
 use crate::logger::Logger;
 
 /// Detects project stack and generates review guidelines.
+#[must_use]
 pub fn detect_project_stack(
     config: &Config,
     repo_root: &std::path::Path,

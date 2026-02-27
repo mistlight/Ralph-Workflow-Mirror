@@ -33,6 +33,7 @@ pub struct MemorySnapshot {
 
 impl MemorySnapshot {
     /// Create a snapshot from current pipeline state.
+    #[must_use]
     pub fn from_pipeline_state(state: &crate::reducer::PipelineState) -> Self {
         let execution_history_heap_bytes = estimate_execution_history_heap_size(state);
 
@@ -60,7 +61,7 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
             let modified_files_detail_size = step.modified_files_detail.as_ref().map_or(0, |d| {
                 let sum_list = |xs: &Option<Box<[String]>>| {
                     xs.as_ref()
-                        .map_or(0, |v| v.iter().map(|s| s.len()).sum::<usize>())
+                        .map_or(0, |v| v.iter().map(std::string::String::len).sum::<usize>())
                 };
 
                 sum_list(&d.added) + sum_list(&d.modified) + sum_list(&d.deleted)
@@ -70,7 +71,7 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
                 .issues_summary
                 .as_ref()
                 .and_then(|s| s.description.as_ref())
-                .map_or(0, |s| s.len());
+                .map_or(0, std::string::String::len);
 
             // Approximate heap allocations: string fields + vec allocations
             // Use `len()` consistently as a deterministic size proxy.
@@ -78,9 +79,18 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
                 + step.step_type.len()
                 + step.timestamp.len()
                 + step.agent.as_ref().map_or(0, |s| s.len())
-                + step.checkpoint_saved_at.as_ref().map_or(0, |s| s.len())
-                + step.git_commit_oid.as_ref().map_or(0, |s| s.len())
-                + step.prompt_used.as_ref().map_or(0, |s| s.len())
+                + step
+                    .checkpoint_saved_at
+                    .as_ref()
+                    .map_or(0, std::string::String::len)
+                + step
+                    .git_commit_oid
+                    .as_ref()
+                    .map_or(0, std::string::String::len)
+                + step
+                    .prompt_used
+                    .as_ref()
+                    .map_or(0, std::string::String::len)
                 + modified_files_detail_size
                 + issues_summary_size;
 
@@ -91,15 +101,15 @@ fn estimate_execution_history_heap_size(state: &crate::reducer::PipelineState) -
                     ..
                 } => {
                     output.as_ref().map_or(0, |s| s.len())
-                        + files_modified
-                            .as_ref()
-                            .map_or(0, |files| files.iter().map(|s| s.len()).sum::<usize>())
+                        + files_modified.as_ref().map_or(0, |files| {
+                            files.iter().map(std::string::String::len).sum::<usize>()
+                        })
                 }
                 StepOutcome::Failure { error, signals, .. } => {
                     error.len()
-                        + signals
-                            .as_ref()
-                            .map_or(0, |sigs| sigs.iter().map(|s| s.len()).sum::<usize>())
+                        + signals.as_ref().map_or(0, |sigs| {
+                            sigs.iter().map(std::string::String::len).sum::<usize>()
+                        })
                 }
                 StepOutcome::Partial {
                     completed,
@@ -127,7 +137,8 @@ impl MemoryMetricsCollector {
     /// # Arguments
     ///
     /// * `snapshot_interval` - Take snapshot every N iterations (0 = disabled)
-    pub fn new(snapshot_interval: u32) -> Self {
+    #[must_use]
+    pub const fn new(snapshot_interval: u32) -> Self {
         Self {
             snapshots: Vec::new(),
             snapshot_interval,
@@ -161,11 +172,16 @@ impl MemoryMetricsCollector {
     }
 
     /// Get all recorded snapshots.
+    #[must_use]
     pub fn snapshots(&self) -> &[MemorySnapshot] {
         &self.snapshots
     }
 
     /// Export snapshots as JSON for external analysis.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn export_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(&self.snapshots)
     }
@@ -196,7 +212,7 @@ impl MemoryMetricsCollector {
 /// Pluggable backend for telemetry integration.
 ///
 /// Implement this trait to integrate with external monitoring systems
-/// (Prometheus, DataDog, CloudWatch, etc.)
+/// (Prometheus, `DataDog`, `CloudWatch`, etc.)
 pub trait TelemetryBackend {
     /// Emit a memory snapshot to the telemetry system.
     fn emit_snapshot(&mut self, snapshot: &MemorySnapshot);
@@ -422,7 +438,7 @@ mod tests {
                 .first()
                 .expect("should record at least one snapshot")
                 .iteration,
-            2000 - snapshots.len() as u32 + 1
+            2000 - u32::try_from(snapshots.len()).expect("snapshot count fits in u32") + 1
         );
     }
 

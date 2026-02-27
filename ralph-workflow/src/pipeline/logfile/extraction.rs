@@ -29,6 +29,7 @@ use std::path::Path;
 /// let prefix = Path::new(".agent/logs/planning_1");
 /// assert_eq!(extract_agent_name_from_logfile(log_file, prefix), Some("ccs-glm".to_string()));
 /// ```
+#[must_use]
 pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Option<String> {
     let filename = log_file.file_name()?.to_str()?;
     let prefix_filename = log_prefix.file_name()?.to_str()?;
@@ -48,28 +49,24 @@ pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Op
     // Important: only strip when the filename also contains a model index.
     // If a logfile ever uses the agent-only form (no model index) and the agent
     // name itself ends with "_a<digits>", we must not truncate the agent name.
-    let without_ext = if let Some(attempt_pos) = without_ext.rfind("_a") {
+    let without_ext = without_ext.rfind("_a").map_or(without_ext, |attempt_pos| {
         let attempt_digits = &without_ext[attempt_pos + 2..];
         if !attempt_digits.is_empty() && attempt_digits.chars().all(|c| c.is_ascii_digit()) {
             let before_attempt = &without_ext[..attempt_pos];
 
             // Confirm the segment before "_a{attempt}" ends with "_{model_index}".
-            if let Some(model_pos) = before_attempt.rfind('_') {
+            before_attempt.rfind('_').map_or(without_ext, |model_pos| {
                 let model_digits = &before_attempt[model_pos + 1..];
                 if !model_digits.is_empty() && model_digits.chars().all(|c| c.is_ascii_digit()) {
                     before_attempt
                 } else {
                     without_ext
                 }
-            } else {
-                without_ext
-            }
+            })
         } else {
             without_ext
         }
-    } else {
-        without_ext
-    };
+    });
 
     // The format is either "agent" or "agent_modelindex"
     // Find the last underscore followed by a number

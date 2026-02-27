@@ -3,7 +3,7 @@
 //! This module provides bulletproof agent execution wrapper that:
 //! - Catches all panics from subprocess execution
 //! - Catches all I/O errors and non-zero exit codes
-//! - Never returns errors - always emits PipelineEvents
+//! - Never returns errors - always emits `PipelineEvents`
 //! - Provides detailed error classification for reducer-driven retry/fallback policy
 //! - Logs all failures but continues pipeline execution
 //!
@@ -30,7 +30,7 @@ const ERROR_PREVIEW_MAX_CHARS: usize = 100;
 
 /// Result of executing an agent.
 ///
-/// Contains the pipeline event and optional session_id for session continuation.
+/// Contains the pipeline event and optional `session_id` for session continuation.
 ///
 /// # Session ID Handling
 ///
@@ -45,7 +45,7 @@ const ERROR_PREVIEW_MAX_CHARS: usize = 100;
 /// This two-event approach ensures:
 /// - Clean separation of concerns (success vs session establishment)
 /// - Proper state transitions in the reducer
-/// - Session ID is stored in agent_chain.last_session_id for XSD retry reuse
+/// - Session ID is stored in `agent_chain.last_session_id` for XSD retry reuse
 pub struct AgentExecutionResult {
     /// The pipeline event from agent execution (success or failure).
     pub event: PipelineEvent,
@@ -89,7 +89,7 @@ pub struct AgentExecutionConfig<'a> {
 /// This function:
 /// 1. Uses `catch_unwind` to catch panics from subprocess
 /// 2. Catches all I/O errors and non-zero exit codes
-/// 3. Never returns errors - always emits PipelineEvents
+/// 3. Never returns errors - always emits `PipelineEvents`
 /// 4. Classifies errors for retry/fallback decisions
 /// 5. Logs failures but continues pipeline
 ///
@@ -104,10 +104,14 @@ pub struct AgentExecutionConfig<'a> {
 /// - `event`: `AgentInvocationSucceeded` or `AgentInvocationFailed`
 /// - `session_id`: Optional session ID for XSD retry session continuation
 ///
-/// The handler MUST emit `SessionEstablished` as a separate event when session_id
+/// The handler MUST emit `SessionEstablished` as a separate event when `session_id`
 /// is present. This ensures proper state management in the reducer.
 ///
 /// This function never returns `Err` - all errors are converted to events.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn execute_agent_fault_tolerantly(
     config: AgentExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
@@ -118,24 +122,21 @@ pub fn execute_agent_fault_tolerantly(
         try_agent_execution(config, runtime)
     }));
 
-    match result {
-        Ok(event_result) => event_result,
-        Err(_) => {
-            let error_kind = AgentErrorKind::InternalError;
-            let retriable = is_retriable_agent_error(&error_kind);
+    Ok(result.unwrap_or_else(|_| {
+        let error_kind = AgentErrorKind::InternalError;
+        let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(AgentExecutionResult {
-                event: PipelineEvent::agent_invocation_failed(
-                    role,
-                    config.agent_name.to_string(),
-                    1,
-                    error_kind,
-                    retriable,
-                ),
-                session_id: None,
-            })
+        AgentExecutionResult {
+            event: PipelineEvent::agent_invocation_failed(
+                role,
+                config.agent_name.to_string(),
+                1,
+                error_kind,
+                retriable,
+            ),
+            session_id: None,
         }
-    }
+    }))
 }
 
 /// Try to execute agent without panic catching.
@@ -146,7 +147,7 @@ pub fn execute_agent_fault_tolerantly(
 fn try_agent_execution(
     config: AgentExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
-) -> Result<AgentExecutionResult> {
+) -> AgentExecutionResult {
     let prompt_cmd = PromptCommand {
         label: config.agent_name,
         display_name: config.display_name,
@@ -161,13 +162,13 @@ fn try_agent_execution(
     };
 
     match run_with_prompt(&prompt_cmd, runtime) {
-        Ok(result) if result.exit_code == 0 => Ok(AgentExecutionResult {
+        Ok(result) if result.exit_code == 0 => AgentExecutionResult {
             event: PipelineEvent::agent_invocation_succeeded(
                 config.role,
                 config.agent_name.to_string(),
             ),
             session_id: result.session_id,
-        }),
+        },
         Ok(result) => {
             let exit_code = result.exit_code;
 
@@ -254,42 +255,42 @@ fn try_agent_execution(
                     config.agent_name, error_source, preview
                 ));
 
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_rate_limited(
                         config.role,
                         config.agent_name.to_string(),
                         Some(config.prompt.to_string()),
                     ),
                     session_id: None,
-                });
+                };
             }
 
             // Special handling for auth failure: emit fact event without prompt context
             if is_auth_error(&error_kind) {
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_auth_failed(
                         config.role,
                         config.agent_name.to_string(),
                     ),
                     session_id: None,
-                });
+                };
             }
 
             // Special handling for timeout: emit fact event (reducer decides retry/fallback)
             // Unlike rate limits, timeouts do not preserve prompt context.
             if is_timeout_error(&error_kind) {
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
                     ),
                     session_id: None,
-                });
+                };
             }
 
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(AgentExecutionResult {
+            AgentExecutionResult {
                 event: PipelineEvent::agent_invocation_failed(
                     config.role,
                     config.agent_name.to_string(),
@@ -298,7 +299,7 @@ fn try_agent_execution(
                     retriable,
                 ),
                 session_id: None,
-            })
+            }
         }
         Err(e) => {
             // `run_with_prompt` returns `io::Error` directly. Classify based on the error kind
@@ -309,17 +310,17 @@ fn try_agent_execution(
             // If `run_with_prompt` itself returns an error classified as Timeout,
             // emit TimedOut so the reducer can decide retry vs fallback deterministically.
             if is_timeout_error(&error_kind) {
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
                     ),
                     session_id: None,
-                });
+                };
             }
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(AgentExecutionResult {
+            AgentExecutionResult {
                 event: PipelineEvent::agent_invocation_failed(
                     config.role,
                     config.agent_name.to_string(),
@@ -328,7 +329,7 @@ fn try_agent_execution(
                     retriable,
                 ),
                 session_id: None,
-            })
+            }
         }
     }
 }

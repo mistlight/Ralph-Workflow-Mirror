@@ -187,7 +187,7 @@ impl Template {
 
     /// Substitute variables in content (simple version without partials or conditionals).
     /// Returns `(result, substituted, unsubstituted)` where:
-    /// - `substituted` is a list of SubstitutionEntry tracking how each var was resolved
+    /// - `substituted` is a list of `SubstitutionEntry` tracking how each var was resolved
     /// - `unsubstituted` is a list of variable names that had no value AND no default
     fn substitute_variables(
         content: &str,
@@ -344,7 +344,7 @@ impl Template {
     ) -> String {
         let mut index = literal_segments.len();
         loop {
-            let token = format!("__RALPH_TEMPLATE_LITERAL_{}__", index);
+            let token = format!("__RALPH_TEMPLATE_LITERAL_{index}__");
             if !result.contains(&token) && !content.contains(&token) {
                 return token;
             }
@@ -363,6 +363,10 @@ impl Template {
     }
 
     /// Render the template with the provided variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn render(&self, variables: &HashMap<&str, String>) -> Result<String, TemplateError> {
         let mut literal_segments = Vec::new();
         // Process loops first (they may generate new variable references)
@@ -406,6 +410,10 @@ impl Template {
     ///
     /// Partials are processed recursively, with the same variables passed to each partial.
     /// Circular references are detected and reported with a clear error.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn render_with_partials(
         &self,
         variables: &HashMap<&str, String>,
@@ -419,6 +427,10 @@ impl Template {
     /// This is the primary method for reducer-integrated rendering. It returns both
     /// the rendered content and a detailed log of all substitutions, enabling
     /// validation based on what was actually substituted rather than regex scanning.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn render_with_log(
         &self,
         template_name: &str,

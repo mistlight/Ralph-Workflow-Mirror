@@ -146,7 +146,8 @@ pub struct MainEffectHandler {
 
 impl MainEffectHandler {
     /// Create a new effect handler.
-    pub fn new(state: PipelineState) -> Self {
+    #[must_use]
+    pub const fn new(state: PipelineState) -> Self {
         Self {
             state,
             event_log: Vec::new(),
@@ -154,7 +155,7 @@ impl MainEffectHandler {
     }
 }
 
-impl<'ctx> EffectHandler<'ctx> for MainEffectHandler {
+impl EffectHandler<'_> for MainEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         let result = self.execute_effect(effect, ctx)?;
         self.event_log.push(result.event.clone());
@@ -172,7 +173,7 @@ impl crate::app::event_loop::StatefulHandler for MainEffectHandler {
 
 impl MainEffectHandler {
     /// Helper to create phase transition UI event.
-    fn phase_transition_ui(&self, to: PipelinePhase) -> UIEvent {
+    const fn phase_transition_ui(&self, to: PipelinePhase) -> UIEvent {
         UIEvent::PhaseTransition {
             from: Some(self.state.phase),
             to,
@@ -187,8 +188,7 @@ impl MainEffectHandler {
         let marker_dir = std::path::Path::new(".agent/tmp");
         if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
             ctx.logger.warn(&format!(
-                "Failed to create completion marker directory: {}",
-                err
+                "Failed to create completion marker directory: {err}"
             ));
         }
 
@@ -203,7 +203,7 @@ impl MainEffectHandler {
             }
             Err(err) => {
                 ctx.logger
-                    .warn(&format!("Failed to write completion marker: {}", err));
+                    .warn(&format!("Failed to write completion marker: {err}"));
                 Err(err.to_string())
             }
         }
@@ -220,9 +220,9 @@ impl MainEffectHandler {
                 agent,
                 model,
                 prompt,
-            } => self.invoke_agent(ctx, role, agent, model, prompt),
+            } => self.invoke_agent(ctx, role, &agent, model.as_deref(), prompt),
 
-            Effect::InitializeAgentChain { role } => self.initialize_agent_chain(ctx, role),
+            Effect::InitializeAgentChain { role } => Ok(self.initialize_agent_chain(ctx, role)),
 
             Effect::PreparePlanningPrompt {
                 iteration,
@@ -233,11 +233,15 @@ impl MainEffectHandler {
                 self.materialize_planning_inputs(ctx, iteration)
             }
 
-            Effect::CleanupPlanningXml { iteration } => self.cleanup_planning_xml(ctx, iteration),
+            Effect::CleanupPlanningXml { iteration } => {
+                Ok(Self::cleanup_planning_xml(ctx, iteration))
+            }
 
             Effect::InvokePlanningAgent { iteration } => self.invoke_planning_agent(ctx, iteration),
 
-            Effect::ExtractPlanningXml { iteration } => self.extract_planning_xml(ctx, iteration),
+            Effect::ExtractPlanningXml { iteration } => {
+                Ok(self.extract_planning_xml(ctx, iteration))
+            }
 
             Effect::ValidatePlanningXml { iteration } => self.validate_planning_xml(ctx, iteration),
 
@@ -245,14 +249,16 @@ impl MainEffectHandler {
                 self.write_planning_markdown(ctx, iteration)
             }
 
-            Effect::ArchivePlanningXml { iteration } => self.archive_planning_xml(ctx, iteration),
+            Effect::ArchivePlanningXml { iteration } => {
+                Ok(Self::archive_planning_xml(ctx, iteration))
+            }
 
             Effect::ApplyPlanningOutcome { iteration, valid } => {
-                self.apply_planning_outcome(ctx, iteration, valid)
+                Ok(self.apply_planning_outcome(ctx, iteration, valid))
             }
 
             Effect::PrepareDevelopmentContext { iteration } => {
-                self.prepare_development_context(ctx, iteration)
+                Ok(Self::prepare_development_context(ctx, iteration))
             }
 
             Effect::MaterializeDevelopmentInputs { iteration } => {
@@ -265,7 +271,7 @@ impl MainEffectHandler {
             } => self.prepare_development_prompt(ctx, iteration, prompt_mode),
 
             Effect::CleanupDevelopmentXml { iteration } => {
-                self.cleanup_development_xml(ctx, iteration)
+                Ok(Self::cleanup_development_xml(ctx, iteration))
             }
 
             Effect::InvokeDevelopmentAgent { iteration } => {
@@ -275,11 +281,11 @@ impl MainEffectHandler {
             Effect::InvokeAnalysisAgent { iteration } => self.invoke_analysis_agent(ctx, iteration),
 
             Effect::ExtractDevelopmentXml { iteration } => {
-                self.extract_development_xml(ctx, iteration)
+                Ok(self.extract_development_xml(ctx, iteration))
             }
 
             Effect::ValidateDevelopmentXml { iteration } => {
-                self.validate_development_xml(ctx, iteration)
+                Ok(self.validate_development_xml(ctx, iteration))
             }
 
             Effect::ApplyDevelopmentOutcome { iteration } => {
@@ -287,10 +293,10 @@ impl MainEffectHandler {
             }
 
             Effect::ArchiveDevelopmentXml { iteration } => {
-                self.archive_development_xml(ctx, iteration)
+                Ok(Self::archive_development_xml(ctx, iteration))
             }
 
-            Effect::PrepareReviewContext { pass } => self.prepare_review_context(ctx, pass),
+            Effect::PrepareReviewContext { pass } => Ok(self.prepare_review_context(ctx, pass)),
 
             Effect::MaterializeReviewInputs { pass } => self.materialize_review_inputs(ctx, pass),
 
@@ -298,13 +304,19 @@ impl MainEffectHandler {
                 self.prepare_review_prompt(ctx, pass, prompt_mode)
             }
 
-            Effect::CleanupReviewIssuesXml { pass } => self.cleanup_review_issues_xml(ctx, pass),
+            Effect::CleanupReviewIssuesXml { pass } => {
+                Ok(Self::cleanup_review_issues_xml(ctx, pass))
+            }
 
             Effect::InvokeReviewAgent { pass } => self.invoke_review_agent(ctx, pass),
 
-            Effect::ExtractReviewIssuesXml { pass } => self.extract_review_issues_xml(ctx, pass),
+            Effect::ExtractReviewIssuesXml { pass } => {
+                Ok(self.extract_review_issues_xml(ctx, pass))
+            }
 
-            Effect::ValidateReviewIssuesXml { pass } => self.validate_review_issues_xml(ctx, pass),
+            Effect::ValidateReviewIssuesXml { pass } => {
+                Ok(self.validate_review_issues_xml(ctx, pass))
+            }
 
             Effect::WriteIssuesMarkdown { pass } => self.write_issues_markdown(ctx, pass),
 
@@ -312,44 +324,51 @@ impl MainEffectHandler {
                 self.extract_review_issue_snippets(ctx, pass)
             }
 
-            Effect::ArchiveReviewIssuesXml { pass } => self.archive_review_issues_xml(ctx, pass),
+            Effect::ArchiveReviewIssuesXml { pass } => {
+                Ok(Self::archive_review_issues_xml(ctx, pass))
+            }
 
             Effect::ApplyReviewOutcome {
                 pass,
                 issues_found,
                 clean_no_issues,
-            } => self.apply_review_outcome(ctx, pass, issues_found, clean_no_issues),
+            } => Ok(Self::apply_review_outcome(
+                ctx,
+                pass,
+                issues_found,
+                clean_no_issues,
+            )),
 
             Effect::PrepareFixPrompt { pass, prompt_mode } => {
                 self.prepare_fix_prompt(ctx, pass, prompt_mode)
             }
 
-            Effect::CleanupFixResultXml { pass } => self.cleanup_fix_result_xml(ctx, pass),
+            Effect::CleanupFixResultXml { pass } => Ok(Self::cleanup_fix_result_xml(ctx, pass)),
 
             Effect::InvokeFixAgent { pass } => self.invoke_fix_agent(ctx, pass),
 
-            Effect::ExtractFixResultXml { pass } => self.extract_fix_result_xml(ctx, pass),
+            Effect::ExtractFixResultXml { pass } => Ok(self.extract_fix_result_xml(ctx, pass)),
 
-            Effect::ValidateFixResultXml { pass } => self.validate_fix_result_xml(ctx, pass),
+            Effect::ValidateFixResultXml { pass } => Ok(self.validate_fix_result_xml(ctx, pass)),
 
             Effect::ApplyFixOutcome { pass } => self.apply_fix_outcome(ctx, pass),
 
-            Effect::ArchiveFixResultXml { pass } => self.archive_fix_result_xml(ctx, pass),
+            Effect::ArchiveFixResultXml { pass } => Ok(Self::archive_fix_result_xml(ctx, pass)),
 
             Effect::RunRebase {
                 phase,
                 target_branch,
-            } => self.run_rebase(ctx, phase, target_branch),
+            } => Self::run_rebase(ctx, phase, &target_branch),
 
             Effect::ResolveRebaseConflicts { strategy } => {
-                self.resolve_rebase_conflicts(ctx, strategy)
+                Ok(Self::resolve_rebase_conflicts(ctx, strategy))
             }
 
             Effect::PrepareCommitPrompt { prompt_mode } => {
                 self.prepare_commit_prompt(ctx, prompt_mode)
             }
 
-            Effect::CheckCommitDiff => self.check_commit_diff(ctx),
+            Effect::CheckCommitDiff => Self::check_commit_diff(ctx),
 
             Effect::MaterializeCommitInputs { attempt } => {
                 self.materialize_commit_inputs(ctx, attempt)
@@ -357,22 +376,22 @@ impl MainEffectHandler {
 
             Effect::InvokeCommitAgent => self.invoke_commit_agent(ctx),
 
-            Effect::CleanupCommitXml => self.cleanup_commit_xml(ctx),
+            Effect::CleanupCommitXml => Ok(self.cleanup_commit_xml(ctx)),
 
-            Effect::ExtractCommitXml => self.extract_commit_xml(ctx),
+            Effect::ExtractCommitXml => Ok(self.extract_commit_xml(ctx)),
 
-            Effect::ValidateCommitXml => self.validate_commit_xml(ctx),
+            Effect::ValidateCommitXml => Ok(self.validate_commit_xml(ctx)),
 
             Effect::ApplyCommitMessageOutcome => self.apply_commit_message_outcome(ctx),
 
-            Effect::ArchiveCommitXml => self.archive_commit_xml(ctx),
+            Effect::ArchiveCommitXml => Ok(self.archive_commit_xml(ctx)),
 
-            Effect::CreateCommit { message } => self.create_commit(ctx, message),
+            Effect::CreateCommit { message } => Self::create_commit(ctx, message),
 
-            Effect::SkipCommit { reason } => self.skip_commit(ctx, reason),
+            Effect::SkipCommit { reason } => Ok(Self::skip_commit(ctx, reason)),
 
             Effect::CheckUncommittedChangesBeforeTermination => {
-                self.check_uncommitted_changes_before_termination(ctx)
+                Self::check_uncommitted_changes_before_termination(ctx)
             }
 
             Effect::BackoffWait {
@@ -394,17 +413,17 @@ impl MainEffectHandler {
                 Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
             }
 
-            Effect::ValidateFinalState => self.validate_final_state(ctx),
+            Effect::ValidateFinalState => Ok(self.validate_final_state(ctx)),
 
-            Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
+            Effect::SaveCheckpoint { trigger } => Ok(self.save_checkpoint(ctx, trigger)),
 
-            Effect::EnsureGitignoreEntries => self.ensure_gitignore_entries(ctx),
+            Effect::EnsureGitignoreEntries => Ok(Self::ensure_gitignore_entries(ctx)),
 
-            Effect::CleanupContext => self.cleanup_context(ctx),
+            Effect::CleanupContext => Self::cleanup_context(ctx),
 
-            Effect::LockPromptPermissions => self.lock_prompt_permissions(ctx),
+            Effect::LockPromptPermissions => Ok(Self::lock_prompt_permissions(ctx)),
 
-            Effect::RestorePromptPermissions => self.restore_prompt_permissions(ctx),
+            Effect::RestorePromptPermissions => Ok(self.restore_prompt_permissions(ctx)),
 
             Effect::WriteContinuationContext(ref data) => {
                 development::write_continuation_context_to_workspace(
@@ -420,41 +439,41 @@ impl MainEffectHandler {
                 ))
             }
 
-            Effect::CleanupContinuationContext => self.cleanup_continuation_context(ctx),
+            Effect::CleanupContinuationContext => Self::cleanup_continuation_context(ctx),
 
             Effect::TriggerLoopRecovery {
                 detected_loop,
                 loop_count,
-            } => self.trigger_loop_recovery(ctx, detected_loop, loop_count),
+            } => Ok(Self::trigger_loop_recovery(ctx, &detected_loop, loop_count)),
 
             Effect::EmitRecoveryReset {
                 reset_type,
                 target_phase,
-            } => self.emit_recovery_reset(ctx, reset_type, target_phase),
+            } => Ok(self.emit_recovery_reset(ctx, &reset_type, target_phase)),
 
             Effect::AttemptRecovery {
                 level,
                 attempt_count,
-            } => self.attempt_recovery(ctx, level, attempt_count),
+            } => Ok(self.attempt_recovery(ctx, level, attempt_count)),
 
             Effect::EmitRecoverySuccess {
                 level,
                 total_attempts,
-            } => self.emit_recovery_success(ctx, level, total_attempts),
+            } => Ok(Self::emit_recovery_success(ctx, level, total_attempts)),
 
             Effect::TriggerDevFixFlow {
                 failed_phase,
                 failed_role,
                 retry_cycle,
-            } => self.trigger_dev_fix_flow(ctx, failed_phase, failed_role, retry_cycle),
+            } => Ok(self.trigger_dev_fix_flow(ctx, failed_phase, failed_role, retry_cycle)),
 
-            Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
-                Self::emit_completion_marker_and_terminate(ctx, is_failure, reason)
-            }
+            Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => Ok(
+                Self::emit_completion_marker_and_terminate(ctx, is_failure, reason),
+            ),
 
             // Cloud mode effects - only executed when cloud mode is enabled
             Effect::ConfigureGitAuth { auth_method } => {
-                self.handle_configure_git_auth(ctx, auth_method)
+                Ok(Self::handle_configure_git_auth(ctx, &auth_method))
             }
 
             Effect::PushToRemote {
@@ -462,14 +481,22 @@ impl MainEffectHandler {
                 branch,
                 force,
                 commit_sha,
-            } => self.handle_push_to_remote(ctx, remote, branch, force, commit_sha),
+            } => Ok(Self::handle_push_to_remote(
+                ctx, remote, branch, force, commit_sha,
+            )),
 
             Effect::CreatePullRequest {
                 base_branch,
                 head_branch,
                 title,
                 body,
-            } => self.handle_create_pull_request(ctx, base_branch, head_branch, title, body),
+            } => Ok(Self::handle_create_pull_request(
+                ctx,
+                &base_branch,
+                &head_branch,
+                &title,
+                &body,
+            )),
         }
     }
 }

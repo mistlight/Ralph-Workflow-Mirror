@@ -348,7 +348,7 @@ fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted()
 ///
 /// This test starts with a state that has `backoff_pending_ms=Some(...)` and runs
 /// through the effect/reduce cycle to verify the pipeline progresses correctly
-/// without getting stuck repeating BackoffWait effects.
+/// without getting stuck repeating `BackoffWait` effects.
 #[test]
 fn test_backoff_wait_does_not_cause_infinite_loop_in_event_loop_simulation() {
     use crate::reducer::effect::Effect;
@@ -383,12 +383,10 @@ fn test_backoff_wait_does_not_cause_infinite_loop_in_event_loop_simulation() {
         match effect {
             Effect::BackoffWait { role, cycle, .. } => {
                 backoff_wait_count += 1;
-                if backoff_wait_count > 2 {
-                    panic!(
-                        "BackoffWait repeated {} times - potential infinite loop",
-                        backoff_wait_count
-                    );
-                }
+                assert!(
+                    backoff_wait_count <= 2,
+                    "BackoffWait repeated {backoff_wait_count} times - potential infinite loop"
+                );
                 // Simulate handler emitting RetryCycleStarted
                 state = reduce(state, PipelineEvent::agent_retry_cycle_started(role, cycle));
             }

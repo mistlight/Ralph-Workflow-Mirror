@@ -41,6 +41,7 @@ pub type TemplateSelectionResult = Option<String>;
 ///
 /// * `Some(template_name)` - User selected a template
 /// * `None` - User declined, input was not a terminal, or input errored/ended
+#[must_use]
 pub fn prompt_template_selection(colors: Colors) -> TemplateSelectionResult {
     // Interactive prompts require both stdin and stdout to be terminals.
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -138,6 +139,10 @@ pub fn prompt_template_selection(colors: Colors) -> TemplateSelectionResult {
 ///
 /// * `Ok(())` - File created successfully
 /// * `Err(e)` - Failed to create file
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn create_prompt_from_template(template_name: &str, colors: Colors) -> anyhow::Result<()> {
     let prompt_path = Path::new("PROMPT.md");
 

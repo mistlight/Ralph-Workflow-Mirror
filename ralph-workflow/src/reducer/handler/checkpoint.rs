@@ -6,16 +6,14 @@ use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{CheckpointTrigger, PipelineEvent, PipelinePhase};
 use crate::reducer::state::PipelineState;
-use anyhow::Result;
-
 impl MainEffectHandler {
     pub(super) fn save_checkpoint(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         trigger: CheckpointTrigger,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         if ctx.config.features.checkpoint_enabled {
-            let _ = save_checkpoint_from_state(&self.state, ctx);
+            save_checkpoint_from_state(&self.state, ctx);
         }
 
         let mut result = EffectResult::event(PipelineEvent::checkpoint_saved(trigger));
@@ -45,14 +43,11 @@ impl MainEffectHandler {
             }
         }
 
-        Ok(result)
+        result
     }
 }
 
-fn save_checkpoint_from_state(
-    state: &PipelineState,
-    ctx: &mut PhaseContext<'_>,
-) -> anyhow::Result<()> {
+fn save_checkpoint_from_state(state: &PipelineState, ctx: &PhaseContext<'_>) {
     // When the user pressed Ctrl+C, we must write a checkpoint for resume
     // support, but we skip large optional fields (execution_history,
     // prompt_history, last_substitution_log, env_snapshot) to avoid slow JSON
@@ -110,25 +105,23 @@ fn save_checkpoint_from_state(
         checkpoint.failed_phase_for_recovery = state.failed_phase_for_recovery;
         checkpoint.interrupted_by_user = state.interrupted_by_user;
 
-        if state.cloud_config.enabled {
+        if state.cloud.enabled {
             checkpoint.cloud_state =
                 Some(crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(state));
         }
 
         let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
     }
-
-    Ok(())
 }
 
-fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> CheckpointPhase {
+const fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> CheckpointPhase {
     match phase {
         crate::reducer::event::PipelinePhase::Planning => CheckpointPhase::Planning,
         crate::reducer::event::PipelinePhase::Development => CheckpointPhase::Development,
         crate::reducer::event::PipelinePhase::Review => CheckpointPhase::Review,
         crate::reducer::event::PipelinePhase::CommitMessage => CheckpointPhase::CommitMessage,
-        crate::reducer::event::PipelinePhase::FinalValidation => CheckpointPhase::FinalValidation,
-        crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
+        crate::reducer::event::PipelinePhase::FinalValidation
+        | crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Complete => CheckpointPhase::Complete,
         crate::reducer::event::PipelinePhase::AwaitingDevFix => CheckpointPhase::AwaitingDevFix,
         crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Interrupted,

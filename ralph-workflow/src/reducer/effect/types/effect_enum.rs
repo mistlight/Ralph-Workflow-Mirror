@@ -6,7 +6,7 @@
 //!
 //! ## Why This File Is Large (500 lines)
 //!
-//! Per CODE_STYLE.md, this file is an acceptable exception to the 300-line guideline because it's
+//! Per `CODE_STYLE.md`, this file is an acceptable exception to the 300-line guideline because it's
 //! a **comprehensive enum** with 60+ variants that must remain together for exhaustiveness checking.
 //! Splitting the enum would break pattern matching across the codebase.
 //!
@@ -189,9 +189,9 @@ pub enum Effect {
     /// Invoke the analysis agent for an iteration (single-task).
     ///
     /// This effect must only perform agent execution to analyze the git diff
-    /// against PLAN.md and produce development_result.xml. It must not parse
-    /// or validate outputs - those are handled by subsequent ExtractDevelopmentXml
-    /// and ValidateDevelopmentXml effects.
+    /// against PLAN.md and produce `development_result.xml`. It must not parse
+    /// or validate outputs - those are handled by subsequent `ExtractDevelopmentXml`
+    /// and `ValidateDevelopmentXml` effects.
     ///
     /// The analysis agent has no context from development execution and produces
     /// an objective assessment based purely on observable code changes.
@@ -444,10 +444,10 @@ pub enum Effect {
     /// Check for uncommitted changes before pipeline termination (single-task).
     ///
     /// This effect runs `git status --porcelain` to detect uncommitted work.
-    /// If changes exist, routes back to CommitMessage phase to commit them.
+    /// If changes exist, routes back to `CommitMessage` phase to commit them.
     /// If no changes, emits `PreTerminationSafetyCheckPassed` to proceed with termination.
     ///
-    /// THE ONLY EXCEPTION: User-initiated Ctrl+C (interrupted_by_user=true) skips this check
+    /// THE ONLY EXCEPTION: User-initiated Ctrl+C (`interrupted_by_user=true`) skips this check
     /// and proceeds directly to termination, respecting the user's explicit interrupt choice.
     CheckUncommittedChangesBeforeTermination,
 
@@ -465,7 +465,7 @@ pub enum Effect {
     /// Report agent chain exhaustion.
     ///
     /// This effect is emitted when the agent chain has exhausted all retry attempts.
-    /// The handler converts this to an ErrorEvent::AgentChainExhausted which the
+    /// The handler converts this to an `ErrorEvent::AgentChainExhausted` which the
     /// reducer processes to transition to Interrupted phase.
     ReportAgentChainExhausted {
         role: AgentRole,
@@ -526,7 +526,7 @@ pub enum Effect {
 
     /// Trigger development agent to fix pipeline failure.
     ///
-    /// Invoked when the pipeline reaches AwaitingDevFix phase after agent chain
+    /// Invoked when the pipeline reaches `AwaitingDevFix` phase after agent chain
     /// exhaustion. The dev agent is given the full failure context (logs, error
     /// messages, last state) and asked to diagnose and fix the root cause.
     ///
@@ -582,11 +582,11 @@ pub enum Effect {
     /// Attempt recovery by transitioning back to failed phase.
     ///
     /// This effect is derived when dev-fix completes and recovery should be attempted.
-    /// The handler emits RecoveryAttempted event which transitions back to the failed
+    /// The handler emits `RecoveryAttempted` event which transitions back to the failed
     /// phase, allowing normal orchestration to derive the recovery effect.
     ///
     /// This is used for level 1 recovery (retry same operation). For level 2+ recovery
-    /// (phase reset, iteration reset, complete reset), use EmitRecoveryReset instead.
+    /// (phase reset, iteration reset, complete reset), use `EmitRecoveryReset` instead.
     AttemptRecovery {
         /// The escalation level being attempted.
         level: u32,
@@ -594,12 +594,12 @@ pub enum Effect {
         attempt_count: u32,
     },
 
-    /// Emit RecoverySucceeded event to clear recovery state after successful work completion.
+    /// Emit `RecoverySucceeded` event to clear recovery state after successful work completion.
     ///
     /// This effect is derived when the pipeline successfully completes work after a recovery
     /// attempt (e.g., Planning validates, Development completes). The handler emits
-    /// RecoverySucceeded event which clears recovery tracking fields (dev_fix_attempt_count,
-    /// recovery_escalation_level, failed_phase_for_recovery) and allows normal operation to resume.
+    /// `RecoverySucceeded` event which clears recovery tracking fields (`dev_fix_attempt_count`,
+    /// `recovery_escalation_level`, `failed_phase_for_recovery`) and allows normal operation to resume.
     EmitRecoverySuccess {
         /// The escalation level that succeeded.
         level: u32,
@@ -622,21 +622,21 @@ pub enum Effect {
     /// credentials for all subsequent push operations. It configures git based on
     /// the authentication method specified in cloud configuration.
     ///
-    /// Only emitted when cloud_config.enabled is true.
+    /// Only emitted when `cloud.enabled` is true.
     ConfigureGitAuth {
         /// Serialized authentication method for logging/debugging.
-        /// The actual auth config comes from cloud_config in PhaseContext.
+        /// The actual auth config comes from `cloud` in `PhaseContext`.
         auth_method: String,
     },
 
     /// Push commits to remote repository (cloud mode only).
     ///
-    /// This effect is emitted immediately after every successful CreateCommit effect
-    /// when cloud mode is enabled. The orchestrator sequences: CreateCommit -> PushToRemote.
+    /// This effect is emitted immediately after every successful `CreateCommit` effect
+    /// when cloud mode is enabled. The orchestrator sequences: `CreateCommit` -> `PushToRemote`.
     ///
     /// This ensures incremental progress is visible on the remote and survives pipeline failures.
     ///
-    /// Only emitted when cloud_config.enabled is true and a pending push exists in state.
+    /// Only emitted when `cloud.enabled` is true and a pending push exists in state.
     PushToRemote {
         /// Remote name (e.g., "origin")
         remote: String,
@@ -650,13 +650,13 @@ pub enum Effect {
 
     /// Create a pull request on the remote platform (cloud mode only).
     ///
-    /// This effect is emitted during Finalizing phase when create_pr is enabled in
+    /// This effect is emitted during Finalizing phase when `create_pr` is enabled in
     /// cloud configuration. The PR is created after all commits are pushed, summarizing
     /// the full run.
     ///
     /// Uses platform-specific CLI tools (gh for GitHub, glab for GitLab).
     ///
-    /// Only emitted when cloud_config.enabled and cloud_config.git_remote.create_pr are true.
+    /// Only emitted when `cloud.enabled` and `cloud.git_remote.create_pr` are true.
     CreatePullRequest {
         /// Target branch for the PR
         base_branch: String,

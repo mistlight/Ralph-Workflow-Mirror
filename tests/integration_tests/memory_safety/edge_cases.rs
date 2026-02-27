@@ -10,15 +10,26 @@
 //! **CRITICAL:** All tests MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::{create_test_config_struct, create_test_registry, mock_executor_with_success};
 use crate::test_timeout::with_default_timeout;
+use crate::workflows::resume::make_checkpoint_with_execution_history;
+use clap::error::ErrorKind;
+use clap::Parser;
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use ralph_workflow::app::{run_with_config_and_handlers, RunWithHandlersParams};
+use ralph_workflow::checkpoint::execution_history::StepOutcome as CkptStepOutcome;
 use ralph_workflow::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+use ralph_workflow::config::MemoryConfigEnvironment;
+use ralph_workflow::executor::ProcessExecutor;
+use ralph_workflow::phases::PhaseContext;
+use ralph_workflow::reducer::effect::{Effect, EffectResult};
+use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
 use ralph_workflow::reducer::state::PipelineState;
-
+use ralph_workflow::reducer::{EffectHandler, PipelineState as ReducerPipelineState};
+use ralph_workflow::workspace::{DirEntry, MemoryWorkspace, Workspace};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-
-use ralph_workflow::workspace::{DirEntry, MemoryWorkspace, Workspace};
+use std::sync::{Arc, LazyLock, Mutex};
 
 /// Workspace wrapper that records file contents when they are removed.
 ///
@@ -147,52 +158,85 @@ fn create_test_step(iteration: u32) -> ExecutionStep {
     .with_duration(5)
 }
 
+/// Build a v3 checkpoint JSON with an oversized execution history.
+/// Keep it modest for CI stability while still exceeding our configured limit.
+fn make_execution_history_json(step_count: usize) -> String {
+    let steps: Vec<serde_json::Value> = (0..step_count)
+        .map(|i| {
+            serde_json::json!({
+                "phase": "Development",
+                "iteration": i,
+                "step_type": "legacy",
+                "timestamp": "2024-01-01 12:00:00",
+                "outcome": {"Success": {"output": null, "files_modified": []}},
+                "agent": "test-agent",
+                "duration_secs": 1
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "steps": steps,
+        "file_snapshots": {}
+    })
+    .to_string()
+}
+
+/// Wrap the standard reducer `MockEffectHandler` but append a step during
+/// event loop execution. This must appear in the completion checkpoint.
+struct AppendHistoryHandler {
+    inner: MockEffectHandler,
+    appended: bool,
+}
+
+impl AppendHistoryHandler {
+    const fn new(state: ReducerPipelineState) -> Self {
+        Self {
+            inner: MockEffectHandler::new(state),
+            appended: false,
+        }
+    }
+}
+
+impl EffectHandler<'_> for AppendHistoryHandler {
+    fn execute(
+        &mut self,
+        effect: Effect,
+        ctx: &mut PhaseContext<'_>,
+    ) -> anyhow::Result<EffectResult> {
+        if !self.appended {
+            self.appended = true;
+            let step = ralph_workflow::checkpoint::execution_history::ExecutionStep::new(
+                "Development",
+                1234,
+                "appended_during_loop",
+                CkptStepOutcome::success(Some("appended".to_string()), vec![]),
+            );
+            ctx.execution_history
+                .add_step_bounded(step, ctx.config.execution_history_limit);
+        }
+        self.inner.execute(effect, ctx)
+    }
+}
+
+impl ralph_workflow::app::event_loop::StatefulHandler for AppendHistoryHandler {
+    fn update_state(&mut self, state: ReducerPipelineState) {
+        self.inner.update_state(state);
+    }
+}
+
+const LARGE_OUTPUT_BYTES: usize = 1024 * 1024;
+const MANY_FILES_COUNT: usize = 200;
+static LARGE_OUTPUT: LazyLock<String> = LazyLock::new(|| "x".repeat(LARGE_OUTPUT_BYTES));
+static MANY_FILES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    (0..MANY_FILES_COUNT)
+        .map(|i| format!("file_{i}.rs"))
+        .collect()
+});
+
 #[test]
 fn test_resume_binds_execution_history_and_completion_checkpoint_uses_updated_history() {
     with_default_timeout(|| {
-        use crate::common::{
-            create_test_config_struct, create_test_registry, mock_executor_with_success,
-        };
-        use crate::workflows::resume::make_checkpoint_with_execution_history;
-        use clap::error::ErrorKind;
-        use clap::Parser;
-        use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
-        use ralph_workflow::app::{run_with_config_and_handlers, RunWithHandlersParams};
-        use ralph_workflow::checkpoint::execution_history::StepOutcome as CkptStepOutcome;
-        use ralph_workflow::config::MemoryConfigEnvironment;
-        use ralph_workflow::executor::ProcessExecutor;
-        use ralph_workflow::phases::PhaseContext;
-        use ralph_workflow::reducer::effect::{Effect, EffectResult};
-        use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-        use ralph_workflow::reducer::{EffectHandler, PipelineState as ReducerPipelineState};
-        use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
-        use std::path::{Path, PathBuf};
-        use std::sync::Arc;
-
-        // Build a v3 checkpoint JSON with an oversized execution history.
-        // Keep it modest for CI stability while still exceeding our configured limit.
-        fn make_execution_history_json(step_count: usize) -> String {
-            let steps: Vec<serde_json::Value> = (0..step_count)
-                .map(|i| {
-                    serde_json::json!({
-                        "phase": "Development",
-                        "iteration": i,
-                        "step_type": "legacy",
-                        "timestamp": "2024-01-01 12:00:00",
-                        "outcome": {"Success": {"output": null, "files_modified": []}},
-                        "agent": "test-agent",
-                        "duration_secs": 1
-                    })
-                })
-                .collect();
-
-            serde_json::json!({
-                "steps": steps,
-                "file_snapshots": {}
-            })
-            .to_string()
-        }
-
         let oversized_history_json = make_execution_history_json(50);
         let checkpoint_json = make_checkpoint_with_execution_history(
             "/mock/repo",
@@ -215,58 +259,15 @@ fn test_resume_binds_execution_history_and_completion_checkpoint_uses_updated_hi
         config.execution_history_limit = 10;
         let executor = mock_executor_with_success();
 
-        // Wrap the standard reducer MockEffectHandler but append a step during
-        // event loop execution. This must appear in the completion checkpoint.
-        struct AppendHistoryHandler {
-            inner: MockEffectHandler,
-            appended: bool,
-        }
-
-        impl AppendHistoryHandler {
-            fn new(state: ReducerPipelineState) -> Self {
-                Self {
-                    inner: MockEffectHandler::new(state),
-                    appended: false,
-                }
-            }
-        }
-
-        impl<'ctx> EffectHandler<'ctx> for AppendHistoryHandler {
-            fn execute(
-                &mut self,
-                effect: Effect,
-                ctx: &mut PhaseContext<'_>,
-            ) -> anyhow::Result<EffectResult> {
-                if !self.appended {
-                    self.appended = true;
-                    let step = ralph_workflow::checkpoint::execution_history::ExecutionStep::new(
-                        "Development",
-                        1234,
-                        "appended_during_loop",
-                        CkptStepOutcome::success(Some("appended".to_string()), vec![]),
-                    );
-                    ctx.execution_history
-                        .add_step_bounded(step, ctx.config.execution_history_limit);
-                }
-                self.inner.execute(effect, ctx)
-            }
-        }
-
-        impl ralph_workflow::app::event_loop::StatefulHandler for AppendHistoryHandler {
-            fn update_state(&mut self, state: ReducerPipelineState) {
-                self.inner.update_state(state);
-            }
-        }
-
         let mut effect_handler = AppendHistoryHandler::new(ReducerPipelineState::initial(0, 0));
 
-        let argv: Vec<String> = vec!["ralph".to_string(), "--resume".to_string()];
-        let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
-            Ok(args) => args,
+        let arg_vec: Vec<String> = vec!["ralph".to_string(), "--resume".to_string()];
+        let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&arg_vec) {
+            Ok(parsed_args) => parsed_args,
             Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
                 return;
             }
-            Err(e) => panic!("failed to parse args: {e}"),
+            Err(e) => panic!("failed to parse parsed_args: {e}"),
         };
 
         let cwd = app_handler.get_cwd();
@@ -436,13 +437,11 @@ fn test_execution_history_large_single_step() {
 
         // Create a step with large output.
         // Keep this sized for CI stability while still exercising large allocations.
-        const LARGE_OUTPUT_BYTES: usize = 1024 * 1024; // 1 MB
-        let large_output = "x".repeat(LARGE_OUTPUT_BYTES);
         let large_step = ExecutionStep::new(
             "Development",
             0,
             "agent_invoked",
-            StepOutcome::success(Some(large_output), vec!["file.rs".to_string()]),
+            StepOutcome::success(Some(LARGE_OUTPUT.clone()), vec!["file.rs".to_string()]),
         );
 
         state.add_execution_step(large_step, limit);
@@ -463,15 +462,11 @@ fn test_execution_history_many_files_modified() {
         let limit = 1000;
 
         // Create a step that modified many files
-        const MANY_FILES_COUNT: usize = 200;
-        let many_files: Vec<String> = (0..MANY_FILES_COUNT)
-            .map(|i| format!("file_{i}.rs"))
-            .collect();
         let step_with_many_files = ExecutionStep::new(
             "Development",
             0,
             "agent_invoked",
-            StepOutcome::success(Some("output".to_string()), many_files),
+            StepOutcome::success(Some("output".to_string()), MANY_FILES.clone()),
         );
 
         state.add_execution_step(step_with_many_files, limit);

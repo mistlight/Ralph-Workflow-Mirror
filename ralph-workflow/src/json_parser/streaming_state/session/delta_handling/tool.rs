@@ -22,7 +22,7 @@ impl StreamingSession {
     /// Record the tool name for a specific content block index.
     ///
     /// This is used for GLM/CCS deduplication where assistant events contain
-    /// tool_use blocks (name + input) but streaming only accumulates the input.
+    /// `tool_use` blocks (name + input) but streaming only accumulates the input.
     /// By tracking the name separately, we can reconstruct the normalized
     /// representation for proper hash-based deduplication.
     ///

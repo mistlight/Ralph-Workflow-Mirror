@@ -1,4 +1,4 @@
-//! Effectful app operations that use AppEffect handlers.
+//! Effectful app operations that use `AppEffect` handlers.
 //!
 //! This module provides functions that execute CLI operations via an
 //! [`AppEffectHandler`], enabling testing without real side effects.
@@ -54,15 +54,19 @@ use crate::files::io::context::{VAGUE_ISSUES_LINE, VAGUE_NOTES_LINE, VAGUE_STATU
 ///
 /// # Returns
 ///
-/// Returns the OID that was written to the start_commit file, or an error.
+/// Returns the OID that was written to the `start_commit` file, or an error.
 ///
 /// # Effects Emitted
 ///
-/// 1. `SetCurrentDir` - If working_dir_override is provided
+/// 1. `SetCurrentDir` - If `working_dir_override` is provided
 /// 2. `GitRequireRepo` - Validates git repository exists
 /// 3. `GitGetRepoRoot` - Gets the repository root path
 /// 4. `SetCurrentDir` - Changes to repo root (if no override)
 /// 5. `GitResetStartCommit` - Resets the start commit reference
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_reset_start_commit<H: AppEffectHandler>(
     handler: &mut H,
     working_dir_override: Option<&PathBuf>,
@@ -117,6 +121,10 @@ pub fn handle_reset_start_commit<H: AppEffectHandler>(
 /// # Returns
 ///
 /// Returns the OID that was saved, or an error.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn save_start_commit<H: AppEffectHandler>(handler: &mut H) -> Result<String, String> {
     match handler.execute(AppEffect::GitSaveStartCommit) {
         AppEffectResult::String(oid) => Ok(oid),
@@ -132,6 +140,10 @@ pub fn save_start_commit<H: AppEffectHandler>(handler: &mut H) -> Result<String,
 /// # Returns
 ///
 /// Returns `true` if on main or master branch, `false` otherwise.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn is_on_main_branch<H: AppEffectHandler>(handler: &mut H) -> Result<bool, String> {
     match handler.execute(AppEffect::GitIsMainBranch) {
         AppEffectResult::Bool(b) => Ok(b),
@@ -145,6 +157,10 @@ pub fn is_on_main_branch<H: AppEffectHandler>(handler: &mut H) -> Result<bool, S
 /// # Returns
 ///
 /// Returns the 40-character hex OID of HEAD, or an error.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_head_oid<H: AppEffectHandler>(handler: &mut H) -> Result<String, String> {
     match handler.execute(AppEffect::GitGetHeadOid) {
         AppEffectResult::String(oid) => Ok(oid),
@@ -158,6 +174,10 @@ pub fn get_head_oid<H: AppEffectHandler>(handler: &mut H) -> Result<String, Stri
 /// # Returns
 ///
 /// Returns `Ok(())` if in a git repo, error otherwise.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn require_repo<H: AppEffectHandler>(handler: &mut H) -> Result<(), String> {
     match handler.execute(AppEffect::GitRequireRepo) {
         AppEffectResult::Ok => Ok(()),
@@ -171,6 +191,10 @@ pub fn require_repo<H: AppEffectHandler>(handler: &mut H) -> Result<(), String> 
 /// # Returns
 ///
 /// Returns the absolute path to the repository root.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_repo_root<H: AppEffectHandler>(handler: &mut H) -> Result<PathBuf, String> {
     match handler.execute(AppEffect::GitGetRepoRoot) {
         AppEffectResult::Path(p) => Ok(p),
@@ -202,6 +226,10 @@ pub fn get_repo_root<H: AppEffectHandler>(handler: &mut H) -> Result<PathBuf, St
 /// 2. `CreateDir` - Creates `.agent/tmp` directory
 /// 3. `WriteFile` - Writes XSD schemas to `.agent/tmp/`
 /// 4. `WriteFile` - Creates STATUS.md, NOTES.md, ISSUES.md (if not isolation mode)
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn ensure_files_effectful<H: AppEffectHandler>(
     handler: &mut H,
     isolation_mode: bool,
@@ -290,6 +318,10 @@ pub fn ensure_files_effectful<H: AppEffectHandler>(
 ///
 /// 1. `PathExists` - Checks if each context file exists
 /// 2. `DeleteFile` - Deletes each existing context file
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn reset_context_for_isolation_effectful<H: AppEffectHandler>(
     handler: &mut H,
 ) -> Result<(), String> {
@@ -353,13 +385,17 @@ pub fn reset_context_for_isolation_effectful<H: AppEffectHandler>(
 /// # Effects Emitted
 ///
 /// 1. `PathExists` - Checks if PROMPT.md exists
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn check_prompt_exists_effectful<H: AppEffectHandler>(handler: &mut H) -> Result<bool, String> {
     match handler.execute(AppEffect::PathExists {
         path: PathBuf::from("PROMPT.md"),
     }) {
         AppEffectResult::Bool(exists) => Ok(exists),
-        AppEffectResult::Error(e) => Err(format!("Failed to check PROMPT.md: {}", e)),
-        other => Err(format!("Unexpected result from PathExists: {:?}", other)),
+        AppEffectResult::Error(e) => Err(format!("Failed to check PROMPT.md: {e}")),
+        other => Err(format!("Unexpected result from PathExists: {other:?}")),
     }
 }
 

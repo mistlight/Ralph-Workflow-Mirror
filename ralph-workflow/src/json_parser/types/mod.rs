@@ -1,7 +1,7 @@
 //! Shared types and utilities for NDJSON stream parsers.
 //!
 //! This module defines the event types emitted by AI agent CLIs during streaming
-//! execution. Each agent (Claude, Codex, Gemini, OpenCode) outputs NDJSON (newline-delimited
+//! execution. Each agent (Claude, Codex, Gemini, `OpenCode`) outputs NDJSON (newline-delimited
 //! JSON) with agent-specific event schemas that get normalized into these types.
 
 mod accumulator;

@@ -9,12 +9,24 @@ use crate::config::types::CloudConfig;
 /// implementations (production HTTP, mock for testing, noop for CLI).
 pub trait CloudReporter: Send + Sync {
     /// Report a progress update to the cloud.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn report_progress(&self, update: &ProgressUpdate) -> Result<(), CloudError>;
 
     /// Send a heartbeat to indicate the container is alive.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn heartbeat(&self) -> Result<(), CloudError>;
 
     /// Report pipeline completion with final results.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn report_completion(&self, result: &PipelineResult) -> Result<(), CloudError>;
 }
 
@@ -46,7 +58,8 @@ pub struct HttpCloudReporter {
 }
 
 impl HttpCloudReporter {
-    pub fn new(config: CloudConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: CloudConfig) -> Self {
         Self { config }
     }
 
@@ -96,7 +109,7 @@ impl HttpCloudReporter {
 
         let response = agent
             .post(&url)
-            .header("Authorization", &format!("Bearer {}", api_token))
+            .header("Authorization", &format!("Bearer {api_token}"))
             .header("Content-Type", "application/json")
             .send_json(json_body);
 
@@ -123,7 +136,7 @@ impl CloudReporter for HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
-        let path = format!("runs/{}/progress", run_id);
+        let path = format!("runs/{run_id}/progress");
         self.post_json(&path, update)
     }
 
@@ -134,7 +147,7 @@ impl CloudReporter for HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
-        let path = format!("runs/{}/heartbeat", run_id);
+        let path = format!("runs/{run_id}/heartbeat");
         let body = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
         });
@@ -148,7 +161,7 @@ impl CloudReporter for HttpCloudReporter {
             .as_ref()
             .ok_or_else(|| CloudError::Configuration("Run ID not configured".to_string()))?;
 
-        let path = format!("runs/{}/complete", run_id);
+        let path = format!("runs/{run_id}/complete");
         self.post_json(&path, result)
     }
 }

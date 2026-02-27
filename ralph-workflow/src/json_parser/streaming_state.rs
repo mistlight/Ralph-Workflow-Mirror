@@ -94,6 +94,7 @@
 
 // Re-export ContentType from types module for use in sub-modules
 use crate::json_parser::types::ContentType;
+use std::fmt::Write;
 
 // Contract types: constants, thresholds, and state enums
 include!("streaming_state/contract.rs");

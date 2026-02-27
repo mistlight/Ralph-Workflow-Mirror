@@ -15,19 +15,19 @@ fn discover_repo_root_for_workspace<H: effect::AppEffectHandler>(
         }) {
             AppEffectResult::Ok => {}
             AppEffectResult::Error(e) => anyhow::bail!(e),
-            other => anyhow::bail!("unexpected result from SetCurrentDir: {:?}", other),
+            other => anyhow::bail!("unexpected result from SetCurrentDir: {other:?}"),
         }
     }
 
     match handler.execute(AppEffect::GitRequireRepo) {
         AppEffectResult::Ok => {}
         AppEffectResult::Error(e) => anyhow::bail!("Not in a git repository: {e}"),
-        other => anyhow::bail!("unexpected result from GitRequireRepo: {:?}", other),
+        other => anyhow::bail!("unexpected result from GitRequireRepo: {other:?}"),
     }
 
     match handler.execute(AppEffect::GitGetRepoRoot) {
         AppEffectResult::Path(p) => Ok(p),
         AppEffectResult::Error(e) => anyhow::bail!("Failed to get repo root: {e}"),
-        other => anyhow::bail!("unexpected result from GitGetRepoRoot: {:?}", other),
+        other => anyhow::bail!("unexpected result from GitGetRepoRoot: {other:?}"),
     }
 }

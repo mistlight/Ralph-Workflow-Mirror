@@ -3,6 +3,10 @@
 
 impl AgentRegistry {
     /// Load custom agents from a TOML configuration file.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn load_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<usize, AgentConfigError> {
         match AgentsConfigFile::load_from_file(path)? {
             Some(config) => {

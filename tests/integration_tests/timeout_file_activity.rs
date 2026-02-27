@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-fn fast_kill_config() -> KillConfig {
+const fn fast_kill_config() -> KillConfig {
     KillConfig::new(
         Duration::from_millis(20),
         Duration::from_millis(5),
@@ -55,11 +55,11 @@ fn active_ai_file_updates_prevent_timeout() {
 
         let handle = thread::spawn(move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp,
-                file_activity_config,
-                child,
-                should_stop_for_monitor,
-                executor,
+                &timestamp,
+                file_activity_config.as_ref(),
+                &child,
+                &should_stop_for_monitor,
+                &executor,
                 MonitorConfig {
                     timeout_secs: 1,
                     check_interval: Duration::from_millis(10),
@@ -104,11 +104,11 @@ fn log_only_activity_does_not_prevent_timeout() {
 
         let monitor_handle = thread::spawn(move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp,
-                file_activity_config,
-                child,
-                should_stop,
-                executor_dyn,
+                &timestamp,
+                file_activity_config.as_ref(),
+                &child,
+                &should_stop,
+                &executor_dyn,
                 MonitorConfig {
                     timeout_secs: 1,
                     check_interval: Duration::from_millis(10),
@@ -166,11 +166,11 @@ fn no_output_and_no_ai_files_times_out() {
 
         let monitor_handle = thread::spawn(move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp,
-                file_activity_config,
-                child,
-                should_stop,
-                executor_dyn,
+                &timestamp,
+                file_activity_config.as_ref(),
+                &child,
+                &should_stop,
+                &executor_dyn,
                 MonitorConfig {
                     timeout_secs: 1,
                     check_interval: Duration::from_millis(10),
@@ -236,7 +236,7 @@ fn continuous_file_updates_prevent_timeout_over_extended_period() {
                 workspace_for_updates
                     .write(
                         Path::new(".agent/PLAN.md"),
-                        &format!("# Updated plan iteration {}", i),
+                        &format!("# Updated plan iteration {i}"),
                     )
                     .ok();
             }
@@ -244,11 +244,11 @@ fn continuous_file_updates_prevent_timeout_over_extended_period() {
 
         let handle = thread::spawn(move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp,
-                file_activity_config,
-                child,
-                should_stop_for_monitor,
-                executor,
+                &timestamp,
+                file_activity_config.as_ref(),
+                &child,
+                &should_stop_for_monitor,
+                &executor,
                 MonitorConfig {
                     timeout_secs: 1,
                     check_interval: Duration::from_millis(100),
@@ -305,10 +305,7 @@ fn mixed_output_and_file_activity_prevents_timeout() {
                 } else {
                     // Odd iterations: update file
                     workspace_for_updates
-                        .write(
-                            Path::new(".agent/NOTES.md"),
-                            &format!("# Notes update {}", i),
-                        )
+                        .write(Path::new(".agent/NOTES.md"), &format!("# Notes update {i}"))
                         .ok();
                 }
             }
@@ -316,11 +313,11 @@ fn mixed_output_and_file_activity_prevents_timeout() {
 
         let handle = thread::spawn(move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp,
-                file_activity_config,
-                child,
-                should_stop_for_monitor,
-                executor,
+                &timestamp,
+                file_activity_config.as_ref(),
+                &child,
+                &should_stop_for_monitor,
+                &executor,
                 MonitorConfig {
                     timeout_secs: 1,
                     check_interval: Duration::from_millis(100),

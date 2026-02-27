@@ -68,6 +68,7 @@ fn format_tool_value(key: Option<&str>, value: &serde_json::Value) -> String {
 ///
 /// Converts JSON input to a human-readable string, showing key parameters.
 /// Uses character-safe truncation to handle UTF-8 properly.
+#[must_use]
 pub fn format_tool_input(input: &serde_json::Value) -> String {
     match input {
         serde_json::Value::Object(map) => {
@@ -341,6 +342,7 @@ fn extract_common_fields(obj: &serde_json::Map<String, serde_json::Value>) -> Ve
 /// # Returns
 /// A formatted string showing the event type and key fields, or an empty string
 /// if the JSON couldn't be parsed or verbosity should suppress it.
+#[must_use]
 pub fn format_unknown_json_event(
     line: &str,
     parser_name: &str,

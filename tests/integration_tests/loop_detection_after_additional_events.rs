@@ -48,7 +48,7 @@ fn test_loop_detection_counters_computed_after_additional_events() {
         // Simulate the event loop behavior:
         // 1. Primary event: ContextCleaned (doesn't change phase or retry state)
         let primary_event = PipelineEvent::context_cleaned();
-        let state_after_primary = reduce(state.clone(), primary_event);
+        let state_after_primary = reduce(state, primary_event);
 
         // At this point, still in Planning with xsd_retry_pending
         assert!(matches!(state_after_primary.phase, PipelinePhase::Planning));
@@ -70,15 +70,13 @@ fn test_loop_detection_counters_computed_after_additional_events() {
         // The final fingerprint should reflect the Development phase, not Planning
         assert!(
             final_fingerprint.contains("Development"),
-            "Final fingerprint should reflect Development phase after additional event, got: {}",
-            final_fingerprint
+            "Final fingerprint should reflect Development phase after additional event, got: {final_fingerprint}"
         );
 
         // The intermediate fingerprint should reflect Planning phase
         assert!(
             intermediate_fingerprint.contains("Planning"),
-            "Intermediate fingerprint should reflect Planning phase, got: {}",
-            intermediate_fingerprint
+            "Intermediate fingerprint should reflect Planning phase, got: {intermediate_fingerprint}"
         );
 
         // They should be different
@@ -116,7 +114,7 @@ fn test_loop_detection_resets_when_additional_events_change_phase() {
         // Now simulate: primary event keeps us in Planning, but additional event
         // transitions to Development
         let primary_event = PipelineEvent::context_cleaned();
-        let state_after_primary = reduce(state.clone(), primary_event);
+        let state_after_primary = reduce(state, primary_event);
 
         let additional_event = PipelineEvent::development_phase_started();
         let final_state = reduce(state_after_primary, additional_event);
@@ -160,7 +158,7 @@ fn test_loop_detection_increments_when_additional_events_preserve_fingerprint() 
         // Simulate: primary event and additional events that both keep us in
         // the same state (Planning, XSD retry pending)
         let primary_event = PipelineEvent::context_cleaned();
-        let state_after_primary = reduce(state.clone(), primary_event);
+        let state_after_primary = reduce(state, primary_event);
 
         // This additional event also doesn't change the phase or retry state
         // (we clone state_after_primary since it's moved into reduce)

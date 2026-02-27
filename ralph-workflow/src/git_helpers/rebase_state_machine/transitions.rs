@@ -34,6 +34,10 @@ impl Drop for RebaseLock {
 
 impl RebaseLock {
     /// Create a new lock guard that owns the lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn new() -> io::Result<Self> {
         acquire_rebase_lock()?;
         Ok(Self { owns_lock: true })
@@ -153,6 +157,7 @@ fn is_lock_stale() -> io::Result<bool> {
 
     let now = chrono::Utc::now();
     let elapsed = now.signed_duration_since(lock_time);
+    let timeout_seconds = i64::try_from(DEFAULT_LOCK_TIMEOUT_SECONDS).unwrap_or(i64::MAX);
 
-    Ok(elapsed.num_seconds() > DEFAULT_LOCK_TIMEOUT_SECONDS as i64)
+    Ok(elapsed.num_seconds() > timeout_seconds)
 }

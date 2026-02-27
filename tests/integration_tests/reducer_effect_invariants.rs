@@ -3,7 +3,7 @@
 //! Key invariants verified:
 //! 1. Each effect type represents exactly one task
 //! 2. Orchestration respects preconditions before emitting phase effects
-//! 3. Effect handlers don't perform implicit agent selection (uses state.agent_chain)
+//! 3. Effect handlers don't perform implicit agent selection (uses `state.agent_chain`)
 //!
 //! # Integration Test Style Guide
 //!
@@ -23,7 +23,7 @@ use ralph_workflow::reducer::state::{
 
 /// Test that development effects are NOT emitted when agent chain is empty.
 ///
-/// Development should use the agent from state.agent_chain.
+/// Development should use the agent from `state.agent_chain`.
 /// It should NOT be emitted when the chain is empty.
 #[test]
 fn test_development_requires_agent_chain() {
@@ -41,15 +41,14 @@ fn test_development_requires_agent_chain() {
         // Must NOT be PrepareDevelopmentContext when chain is empty
         assert!(
             !matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-            "Must initialize agent chain before running development, got {:?}",
-            effect
+            "Must initialize agent chain before running development, got {effect:?}"
         );
     });
 }
 
 /// Test that review effects are NOT emitted when agent chain is empty.
 ///
-/// Review should use the agent from state.agent_chain.
+/// Review should use the agent from `state.agent_chain`.
 /// It should NOT be emitted when the chain is empty.
 #[test]
 fn test_run_review_pass_requires_agent_chain() {
@@ -67,15 +66,14 @@ fn test_run_review_pass_requires_agent_chain() {
         // Must NOT begin review chain when chain is empty
         assert!(
             !matches!(effect, Effect::PrepareReviewContext { .. }),
-            "Must initialize agent chain before running review, got {:?}",
-            effect
+            "Must initialize agent chain before running review, got {effect:?}"
         );
     });
 }
 
 /// Test that fix effects are NOT emitted when agent chain is empty.
 ///
-/// Fix should use the agent from state.agent_chain.
+/// Fix should use the agent from `state.agent_chain`.
 /// It should NOT be emitted when the chain is empty.
 #[test]
 fn test_run_fix_attempt_requires_agent_chain() {
@@ -94,15 +92,14 @@ fn test_run_fix_attempt_requires_agent_chain() {
         // Must NOT begin fix chain when chain is empty
         assert!(
             !matches!(effect, Effect::PrepareFixPrompt { .. }),
-            "Must initialize agent chain before running fix, got {:?}",
-            effect
+            "Must initialize agent chain before running fix, got {effect:?}"
         );
     });
 }
 
 /// Test that planning prompt preparation is NOT emitted when agent chain is empty.
 ///
-/// Planning prompt preparation should use the agent from state.agent_chain.
+/// Planning prompt preparation should use the agent from `state.agent_chain`.
 /// It should NOT be emitted when the chain is empty.
 #[test]
 fn test_planning_prompt_requires_agent_chain() {
@@ -120,8 +117,7 @@ fn test_planning_prompt_requires_agent_chain() {
         // Must NOT be PreparePlanningPrompt when chain is empty
         assert!(
             !matches!(effect, Effect::PreparePlanningPrompt { .. }),
-            "Must initialize agent chain before preparing plan prompt, got {:?}",
-            effect
+            "Must initialize agent chain before preparing plan prompt, got {effect:?}"
         );
     });
 }
@@ -151,8 +147,7 @@ fn test_planning_phase_emits_prepare_prompt() {
 
         assert!(
             matches!(effect, Effect::MaterializePlanningInputs { .. }),
-            "Planning should emit MaterializePlanningInputs first, got {:?}",
-            effect
+            "Planning should emit MaterializePlanningInputs first, got {effect:?}"
         );
     });
 }
@@ -177,8 +172,7 @@ fn test_development_phase_emits_prepare_development_context() {
 
         assert!(
             matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-            "Development should emit PrepareDevelopmentContext, got {:?}",
-            effect
+            "Development should emit PrepareDevelopmentContext, got {effect:?}"
         );
     });
 }
@@ -186,7 +180,7 @@ fn test_development_phase_emits_prepare_development_context() {
 /// Test that exhausted agent chains produce an explicit abort effect.
 ///
 /// When the agent chain is exhausted, the pipeline must not stall by emitting
-/// SaveCheckpoint repeatedly. The reducer/orchestration must emit an explicit
+/// `SaveCheckpoint` repeatedly. The reducer/orchestration must emit an explicit
 /// abort effect so termination happens through a single effect path.
 #[test]
 fn test_exhausted_agent_chain_emits_abort_effect() {
@@ -250,7 +244,7 @@ fn test_exhausted_agent_chain_emits_abort_effect() {
 /// Test that Interrupted phase drives a checkpoint save before termination.
 ///
 /// Regression: an Interrupted state combined with an exhausted agent chain must not
-/// repeatedly emit AbortPipeline. Orchestration should emit a single SaveCheckpoint
+/// repeatedly emit `AbortPipeline`. Orchestration should emit a single `SaveCheckpoint`
 /// (Interrupt trigger) so the state machine can complete.
 #[test]
 fn test_interrupted_phase_emits_interrupt_checkpoint_save() {
@@ -419,9 +413,9 @@ fn test_effect_types_are_single_task() {
     });
 }
 
-/// Test that CommitMessage phase requires agent chain initialization.
+/// Test that `CommitMessage` phase requires agent chain initialization.
 ///
-/// CommitMessage phase should first initialize agent chain when empty,
+/// `CommitMessage` phase should first initialize agent chain when empty,
 /// just like other phases (Planning, Development, Review).
 #[test]
 fn test_commit_phase_requires_agent_chain() {
@@ -441,18 +435,17 @@ fn test_commit_phase_requires_agent_chain() {
                     role: AgentRole::Commit
                 }
             ),
-            "Empty chain should emit InitializeAgentChain for Commit, got {:?}",
-            effect
+            "Empty chain should emit InitializeAgentChain for Commit, got {effect:?}"
         );
     });
 }
 
-/// Test that CommitMessage phase effects follow correct sequence.
+/// Test that `CommitMessage` phase effects follow correct sequence.
 ///
-/// CommitMessage phase should (after agent chain is initialized):
-/// 1. PrepareCommitPrompt when commit is NotStarted
-/// 2. CreateCommit when commit is Generated
-/// 3. SaveCheckpoint when commit is Committed/Skipped
+/// `CommitMessage` phase should (after agent chain is initialized):
+/// 1. `PrepareCommitPrompt` when commit is `NotStarted`
+/// 2. `CreateCommit` when commit is Generated
+/// 3. `SaveCheckpoint` when commit is Committed/Skipped
 #[test]
 fn test_commit_phase_effect_sequence() {
     with_default_timeout(|| {
@@ -473,8 +466,7 @@ fn test_commit_phase_effect_sequence() {
         let effect = determine_next_effect(&state_not_started);
         assert!(
             matches!(effect, Effect::CheckCommitDiff),
-            "NotStarted with chain should emit CheckCommitDiff first, got {:?}",
-            effect
+            "NotStarted with chain should emit CheckCommitDiff first, got {effect:?}"
         );
 
         // After diff checked, NotStarted -> PrepareCommitPrompt
@@ -489,8 +481,7 @@ fn test_commit_phase_effect_sequence() {
         let effect = determine_next_effect(&state_not_started_diff_prepared);
         assert!(
             matches!(effect, Effect::MaterializeCommitInputs { .. }),
-            "NotStarted with diff prepared should emit MaterializeCommitInputs, got {:?}",
-            effect
+            "NotStarted with diff prepared should emit MaterializeCommitInputs, got {effect:?}"
         );
 
         // Generated -> ArchiveCommitXml (before CreateCommit)
@@ -505,8 +496,7 @@ fn test_commit_phase_effect_sequence() {
         let effect = determine_next_effect(&state_generated);
         assert!(
             matches!(effect, Effect::ArchiveCommitXml),
-            "Generated should emit ArchiveCommitXml, got {:?}",
-            effect
+            "Generated should emit ArchiveCommitXml, got {effect:?}"
         );
 
         // Committed -> SaveCheckpoint
@@ -521,8 +511,7 @@ fn test_commit_phase_effect_sequence() {
         let effect = determine_next_effect(&state_committed);
         assert!(
             matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Committed should emit SaveCheckpoint, got {:?}",
-            effect
+            "Committed should emit SaveCheckpoint, got {effect:?}"
         );
     });
 }
@@ -550,8 +539,7 @@ fn test_context_cleaned_before_planning() {
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::EnsureGitignoreEntries),
-            "Should ensure gitignore entries before cleanup, got {:?}",
-            effect
+            "Should ensure gitignore entries before cleanup, got {effect:?}"
         );
 
         // After gitignore ensured, should cleanup context
@@ -562,8 +550,7 @@ fn test_context_cleaned_before_planning() {
         let effect = determine_next_effect(&state_gitignore_ensured);
         assert!(
             matches!(effect, Effect::CleanupContext),
-            "Should cleanup context after gitignore ensured, got {:?}",
-            effect
+            "Should cleanup context after gitignore ensured, got {effect:?}"
         );
 
         // After cleanup, should prepare planning prompt
@@ -575,8 +562,7 @@ fn test_context_cleaned_before_planning() {
         let effect = determine_next_effect(&state_cleaned);
         assert!(
             matches!(effect, Effect::MaterializePlanningInputs { .. }),
-            "Should materialize planning inputs after cleanup, got {:?}",
-            effect
+            "Should materialize planning inputs after cleanup, got {effect:?}"
         );
     });
 }
@@ -616,7 +602,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
             phase: PipelinePhase::Development,
             iteration: 0,
             total_iterations: 5,
-            agent_chain: base_chain.clone(),
+            agent_chain: base_chain,
             ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
         assert!(matches!(
@@ -671,9 +657,9 @@ fn test_phases_emit_expected_effects_when_initialized() {
     });
 }
 
-/// Test that ApplyDevelopmentOutcome effect does not bundle context writing.
+/// Test that `ApplyDevelopmentOutcome` effect does not bundle context writing.
 ///
-/// The handler should emit proper events that trigger WriteContinuationContext
+/// The handler should emit proper events that trigger `WriteContinuationContext`
 /// as a separate effect, not write context files as a side effect of execution.
 /// This test verifies the architectural invariant that effects are single-task.
 #[test]
@@ -721,7 +707,7 @@ fn test_development_outcome_does_not_bundle_context_writing() {
 
 /// Test that each phase effect is independent and doesn't bundle with cleanup.
 ///
-/// Phase effects (PrepareDevelopmentContext, PrepareReviewContext, etc.) should only
+/// Phase effects (`PrepareDevelopmentContext`, `PrepareReviewContext`, etc.) should only
 /// execute their primary task. Cleanup operations should be separate effects.
 #[test]
 fn test_phase_effects_do_not_bundle_cleanup() {
@@ -778,16 +764,16 @@ fn test_phase_effects_do_not_bundle_cleanup() {
     });
 }
 
-/// Test that continuation context writing is driven by WriteContinuationContext effect.
+/// Test that continuation context writing is driven by `WriteContinuationContext` effect.
 ///
 /// When development returns status="partial" or "failed", the handler emits a
-/// ContinuationTriggered event. The reducer then determines if WriteContinuationContext
+/// `ContinuationTriggered` event. The reducer then determines if `WriteContinuationContext`
 /// effect should be emitted based on continuation budget and policy.
 ///
 /// This test verifies that:
-/// 1. WriteContinuationContext is a distinct effect (not bundled)
+/// 1. `WriteContinuationContext` is a distinct effect (not bundled)
 /// 2. The effect is emitted based on reducer state, not handler decision
-/// 3. CleanupContinuationContext is also effect-driven
+/// 3. `CleanupContinuationContext` is also effect-driven
 #[test]
 fn test_continuation_context_is_effect_driven() {
     use ralph_workflow::reducer::effect::ContinuationContextData;
@@ -840,7 +826,7 @@ fn test_continuation_context_is_effect_driven() {
 
 /// Test that effect determination is deterministic across ALL phases.
 ///
-/// For every phase, calling determine_next_effect multiple times with the
+/// For every phase, calling `determine_next_effect` multiple times with the
 /// same state must produce the same effect. This proves no external state
 /// (filesystem, time, randomness) influences effect determination.
 #[test]
@@ -880,13 +866,13 @@ fn test_effect_determination_deterministic_all_phases() {
 
             // All must be equal (using Debug format for comparison since Effect doesn't impl PartialEq)
             assert_eq!(
-                format!("{:?}", effect1),
+                format!("{effect1:?}"),
                 format!("{:?}", effect2),
                 "Effect determination must be deterministic for phase {:?}",
                 phase
             );
             assert_eq!(
-                format!("{:?}", effect2),
+                format!("{effect2:?}"),
                 format!("{:?}", effect3),
                 "Effect determination must be deterministic for phase {:?}",
                 phase

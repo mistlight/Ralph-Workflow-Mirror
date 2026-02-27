@@ -6,6 +6,7 @@ fn ansi_escape_regex() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*[mK]").expect("ANSI regex should be valid"))
 }
 
+#[must_use] 
 pub fn remove_formatted_thinking_patterns(content: &str) -> String {
     let mut result = String::new();
     let mut skip_until_blank = false;

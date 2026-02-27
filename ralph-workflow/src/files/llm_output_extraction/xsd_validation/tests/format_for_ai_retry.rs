@@ -142,8 +142,7 @@ fn test_format_for_ai_retry_illegal_character_includes_fix_marker() {
 
     assert!(
         formatted.contains("How to fix") || formatted.contains("Fix:"),
-        "Illegal character errors should include a fix marker, got:\n{}",
-        formatted
+        "Illegal character errors should include a fix marker, got:\n{formatted}"
     );
 }
 

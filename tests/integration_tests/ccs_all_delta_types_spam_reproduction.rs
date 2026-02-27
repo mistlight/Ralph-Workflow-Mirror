@@ -24,8 +24,11 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
+
+const ASCII_LOWERCASE: &[u8; 26] = b"abcdefghijklmnopqrstuvwxyz";
 
 /// Helper to count non-empty lines starting with a prefix
 fn count_prefixed_lines(output: &str, prefix: &str) -> usize {
@@ -68,11 +71,9 @@ fn test_ccs_glm_ultra_extreme_text_deltas_1000_chunks_none_mode() {
         );
 
         for i in 0..1000 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#
+            ).unwrap();
         }
 
         stream.push_str(
@@ -100,8 +101,7 @@ fn test_ccs_glm_ultra_extreme_text_deltas_1000_chunks_none_mode() {
         // Verify content is present (not lost)
         assert!(
             output.contains("w0") && output.contains("w999"),
-            "Expected accumulated content to contain first and last words. Output:\n{}",
-            output
+            "Expected accumulated content to contain first and last words. Output:\n{output}"
         );
     });
 }
@@ -126,11 +126,11 @@ fn test_ccs_glm_rapid_successive_thinking_deltas_none_mode() {
         );
 
         // 200 very small deltas (single characters)
-        for i in 0..200 {
-            stream.push_str(&format!(
+        for i in 0usize..200 {
+            write!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"{}"}}}}}}"#,
-                (i % 26 + 97) as u8 as char // a-z cycling
-            ));
+                char::from(ASCII_LOWERCASE[i % ASCII_LOWERCASE.len()])
+            ).unwrap();
             stream.push('\n');
         }
 
@@ -180,11 +180,8 @@ fn test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode() {
 "#,
         );
         for i in 0..50 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"t0_{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"t0_{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
@@ -197,11 +194,8 @@ fn test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode() {
 "#,
         );
         for i in 0..75 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"txt1_{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"txt1_{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":1}}
@@ -214,11 +208,8 @@ fn test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode() {
 "#,
         );
         for i in 0..60 {
-            stream.push_str(&format!(
-                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"txt2_{} "}}}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"txt2_{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"stream_event","event":{"type":"content_block_stop","index":2}}
@@ -272,11 +263,11 @@ fn test_ccs_codex_ultra_extreme_reasoning_deltas_1000_chunks_none_mode() {
         // Generate 1000 reasoning deltas
         let mut stream = String::new();
         for i in 0..1000 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -301,8 +292,7 @@ fn test_ccs_codex_ultra_extreme_reasoning_deltas_1000_chunks_none_mode() {
         // Verify content is present
         assert!(
             output.contains("r0") && output.contains("r999"),
-            "Expected accumulated reasoning content. Output:\n{}",
-            output
+            "Expected accumulated reasoning content. Output:\n{output}"
         );
     });
 }
@@ -320,11 +310,13 @@ fn test_ccs_codex_rapid_agent_message_deltas_none_mode() {
 
         // Test rapid agent_message deltas with single characters
         let mut stream = String::new();
-        for i in 0..200 {
-            stream.push_str(&format!(
+        for i in 0usize..200 {
+            write!(
+                stream,
                 r#"{{"type":"item.started","item":{{"type":"agent_message","text":"{}"}}}}"#,
-                (i % 26 + 97) as u8 as char // a-z cycling
-            ));
+                char::from(ASCII_LOWERCASE[i % ASCII_LOWERCASE.len()])
+            )
+            .unwrap();
             stream.push('\n');
         }
         stream.push_str(
@@ -365,11 +357,11 @@ fn test_ccs_codex_multi_item_interleaved_deltas_none_mode() {
 
         // Item 1: 80 reasoning deltas
         for i in 0..80 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item1_r{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item1_r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -378,11 +370,8 @@ fn test_ccs_codex_multi_item_interleaved_deltas_none_mode() {
 
         // Item 2: 70 agent_message deltas
         for i in 0..70 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"item2_msg{} "}}}}
-"#,
-                i
-            ));
+            writeln!(stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"item2_msg{i} "}}}}"#).unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}
@@ -391,11 +380,11 @@ fn test_ccs_codex_multi_item_interleaved_deltas_none_mode() {
 
         // Item 3: 90 reasoning deltas
         for i in 0..90 {
-            stream.push_str(&format!(
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item3_r{} "}}}}
-"#,
-                i
-            ));
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item3_r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -489,13 +478,11 @@ fn test_ccs_glm_same_stream_different_modes_consistency() {
         // Both modes should produce the same number of prefix lines (AT MOST 1)
         assert!(
             prefix_count_none <= 1,
-            "None mode: Expected <= 1 prefix, found {}",
-            prefix_count_none
+            "None mode: Expected <= 1 prefix, found {prefix_count_none}"
         );
         assert!(
             prefix_count_basic <= 1,
-            "Basic mode: Expected <= 1 prefix, found {}",
-            prefix_count_basic
+            "Basic mode: Expected <= 1 prefix, found {prefix_count_basic}"
         );
 
         // Both should contain the content

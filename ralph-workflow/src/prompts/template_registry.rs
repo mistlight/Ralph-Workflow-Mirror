@@ -110,6 +110,10 @@ impl TemplateRegistry {
     ///
     /// * `Ok(String)` - Template content
     /// * `Err(TemplateError)` - Template not found or read error
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn get_template(&self, name: &str) -> Result<String, TemplateError> {
         use crate::prompts::template_catalog;
 

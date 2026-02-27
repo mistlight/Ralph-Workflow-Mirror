@@ -35,6 +35,7 @@ use crate::json_parser::delta_display::{
 use crate::json_parser::streaming_state::StreamingSession;
 use crate::json_parser::terminal::TerminalMode;
 use crate::json_parser::types::ContentType;
+use std::fmt::Write;
 
 impl crate::json_parser::claude::ClaudeParser {
     /// Handle standalone text delta events (not part of content blocks).
@@ -102,7 +103,7 @@ impl crate::json_parser::claude::ClaudeParser {
 
         let output = if terminal_mode == TerminalMode::Full {
             // Append-only pattern in Full mode: track last rendered and emit only new content
-            let key = format!("text:{}", default_index);
+            let key = format!("text:{default_index}");
             let last_rendered = self
                 .last_rendered_content
                 .borrow()
@@ -227,16 +228,16 @@ impl crate::json_parser::claude::ClaudeParser {
                         let mut thinking_output = String::new();
                         {
                             let indices: Vec<u64> =
-                                if !self.thinking_non_tty_indices.borrow().is_empty() {
-                                    self.thinking_non_tty_indices
+                                if self.thinking_non_tty_indices.borrow().is_empty() {
+                                    // Backward-compatible fallback: if we never recorded indices (older
+                                    // behavior), flush the single active index.
+                                    self.thinking_active_index
                                         .borrow()
                                         .iter()
                                         .copied()
                                         .collect()
                                 } else {
-                                    // Backward-compatible fallback: if we never recorded indices (older
-                                    // behavior), flush the single active index.
-                                    self.thinking_active_index
+                                    self.thinking_non_tty_indices
                                         .borrow()
                                         .iter()
                                         .copied()
@@ -281,9 +282,11 @@ impl crate::json_parser::claude::ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                thinking_output.push_str(&format!(
-                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
-                                ));
+                                writeln!(
+                                    thinking_output,
+                                    "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}"
+                                )
+                                .unwrap();
                             }
                         }
 
@@ -329,9 +332,11 @@ impl crate::json_parser::claude::ClaudeParser {
                                         TerminalMode::Full => unreachable!(),
                                     };
 
-                                    tool_output.push_str(&format!(
-                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}\n"
-                                    ));
+                                    writeln!(
+                                        tool_output,
+                                        "{prefix_fmt}{label_fmt}{sanitized}{suffix_fmt}"
+                                    )
+                                    .unwrap();
                                 }
                             }
                         }
@@ -366,8 +371,8 @@ impl crate::json_parser::claude::ClaudeParser {
                                     TerminalMode::Full => unreachable!(),
                                 };
 
-                                text_output
-                                    .push_str(&format!("{prefix_fmt}{sanitized}{suffix_fmt}\n"));
+                                writeln!(text_output, "{prefix_fmt}{sanitized}{suffix_fmt}")
+                                    .unwrap();
                             }
                         }
 

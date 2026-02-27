@@ -30,7 +30,7 @@ fn create_minimal_agent_config(name: &str) -> AgentConfigSnapshot {
     }
 }
 
-fn create_minimal_cli_args() -> CliArgsSnapshot {
+const fn create_minimal_cli_args() -> CliArgsSnapshot {
     CliArgsSnapshot {
         developer_iters: 1,
         reviewer_reviews: 1,
@@ -349,7 +349,7 @@ fn test_metrics_survive_checkpoint_resume() {
 /// iteration boundary (iteration=N, total=N), the pipeline should:
 /// 1. Re-run the current iteration (because progress flags are None)
 /// 2. Continue through Review phase
-/// 3. Continue through Commit and FinalValidation
+/// 3. Continue through Commit and `FinalValidation`
 /// 4. Reach Complete phase
 #[test]
 fn test_resume_at_final_iteration_completes_full_pipeline() {
@@ -386,8 +386,7 @@ fn test_resume_at_final_iteration_completes_full_pipeline() {
         );
         assert!(
             is_development_effect,
-            "Expected development effect, got {:?}",
-            effect
+            "Expected development effect, got {effect:?}"
         );
     });
 }
@@ -395,7 +394,7 @@ fn test_resume_at_final_iteration_completes_full_pipeline() {
 /// Regression test: Mid-pipeline resume should still work correctly
 ///
 /// Verifies that the boundary check fix doesn't break normal mid-pipeline resumes
-/// where iteration < total_iterations.
+/// where iteration < `total_iterations`.
 #[test]
 fn test_resume_mid_pipeline_continues_normally() {
     with_default_timeout(|| {
@@ -423,8 +422,7 @@ fn test_resume_mid_pipeline_continues_normally() {
         );
         assert!(
             is_development_effect,
-            "Mid-pipeline resume should still derive development effects, got {:?}",
-            effect
+            "Mid-pipeline resume should still derive development effects, got {effect:?}"
         );
     });
 }
@@ -435,9 +433,9 @@ fn test_resume_mid_pipeline_continues_normally() {
 
 /// Verify that resume at final iteration boundary executes development work.
 ///
-/// Bug: Previously, resuming at iteration == total_iterations would skip to
-/// SaveCheckpoint instead of running the iteration. The fix adds a boundary
-/// check: iteration_needs_work when (iteration < total) OR (iteration == total && total > 0).
+/// Bug: Previously, resuming at iteration == `total_iterations` would skip to
+/// `SaveCheckpoint` instead of running the iteration. The fix adds a boundary
+/// check: `iteration_needs_work` when (iteration < total) OR (iteration == total && total > 0).
 #[test]
 fn test_resume_at_final_iteration_boundary_runs_development() {
     with_default_timeout(|| {
@@ -459,8 +457,7 @@ fn test_resume_at_final_iteration_boundary_runs_development() {
         // Then: Should derive development work, NOT SaveCheckpoint
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Bug: At iteration boundary, should run development work, not skip to SaveCheckpoint. Got: {:?}",
-            effect
+            "Bug: At iteration boundary, should run development work, not skip to SaveCheckpoint. Got: {effect:?}"
         );
 
         assert!(
@@ -470,16 +467,15 @@ fn test_resume_at_final_iteration_boundary_runs_development() {
                     role: AgentRole::Developer
                 } | Effect::PrepareDevelopmentContext { .. }
             ),
-            "Expected development effect at iteration=1, total=1. Got: {:?}",
-            effect
+            "Expected development effect at iteration=1, total=1. Got: {effect:?}"
         );
     });
 }
 
 /// Verify that resume at final review pass boundary executes review work.
 ///
-/// Same bug as development: previously would skip to SaveCheckpoint.
-/// The fix adds: review_pass_needs_work when (pass < total) OR (pass == total && total > 0).
+/// Same bug as development: previously would skip to `SaveCheckpoint`.
+/// The fix adds: `review_pass_needs_work` when (pass < total) OR (pass == total && total > 0).
 #[test]
 fn test_resume_at_final_review_pass_boundary_runs_review() {
     with_default_timeout(|| {
@@ -502,8 +498,7 @@ fn test_resume_at_final_review_pass_boundary_runs_review() {
         // Then: Should derive review work, NOT SaveCheckpoint
         assert!(
             !matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Bug: At review pass boundary, should run review work, not skip to SaveCheckpoint. Got: {:?}",
-            effect
+            "Bug: At review pass boundary, should run review work, not skip to SaveCheckpoint. Got: {effect:?}"
         );
 
         assert!(
@@ -513,8 +508,7 @@ fn test_resume_at_final_review_pass_boundary_runs_review() {
                     role: AgentRole::Reviewer
                 } | Effect::PrepareReviewContext { .. }
             ),
-            "Expected review effect at reviewer_pass=2, total=2. Got: {:?}",
-            effect
+            "Expected review effect at reviewer_pass=2, total=2. Got: {effect:?}"
         );
     });
 }
@@ -548,8 +542,7 @@ fn test_resume_zero_indexed_iteration_boundary() {
         );
         assert!(
             is_dev_effect,
-            "Expected development work at iteration=0, total=1. Got: {:?}",
-            effect
+            "Expected development work at iteration=0, total=1. Got: {effect:?}"
         );
     });
 }

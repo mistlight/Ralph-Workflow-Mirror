@@ -40,11 +40,11 @@ fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
 fn get_default_branch_name(repo: &git2::Repository) -> String {
     repo.head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().map(std::string::ToString::to_string))
         .unwrap_or_else(|| "main".to_string())
 }
 
-/// Test that ProcessTerminated error kind is properly represented.
+/// Test that `ProcessTerminated` error kind is properly represented.
 ///
 /// This verifies that when a process termination error is constructed,
 /// the error description contains relevant termination information.
@@ -63,9 +63,9 @@ fn rebase_detects_process_termination_error_kind() {
     });
 }
 
-/// Test that ProcessTerminated error is categorized as Category 4.
+/// Test that `ProcessTerminated` error is categorized as Category 4.
 ///
-/// This verifies that when a ProcessTerminated error occurs, the system
+/// This verifies that when a `ProcessTerminated` error occurs, the system
 /// correctly categorizes it as an interrupted/corrupted state failure.
 #[test]
 fn rebase_process_terminated_has_correct_category() {
@@ -81,7 +81,7 @@ fn rebase_process_terminated_has_correct_category() {
     });
 }
 
-/// Test that InconsistentState error kind is properly represented.
+/// Test that `InconsistentState` error kind is properly represented.
 ///
 /// This verifies that when an inconsistent state error is constructed,
 /// the error description contains details about the corruption.
@@ -100,9 +100,9 @@ fn rebase_detects_inconsistent_state_error_kind() {
     });
 }
 
-/// Test that InconsistentState error is categorized as Category 4.
+/// Test that `InconsistentState` error is categorized as Category 4.
 ///
-/// This verifies that when an InconsistentState error occurs, the system
+/// This verifies that when an `InconsistentState` error occurs, the system
 /// correctly categorizes it as an interrupted/corrupted state failure.
 #[test]
 fn rebase_inconsistent_state_has_correct_category() {
@@ -174,17 +174,17 @@ fn rebase_detects_stale_lock_files() {
 /// This verifies that when .git/rebase-apply directory contains corrupted state,
 /// the system handles cleanup gracefully.
 #[test]
-fn rebase_detects_corrupted_reapply_directory() {
+fn rebase_detects_corrupted_reapplydirectory() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
 
             // Create a corrupted .git/rebase-apply directory
-            let rebase_dir = dir.path().join(".git").join("rebase-apply");
-            fs::create_dir_all(&rebase_dir).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-apply");
+            fs::create_dir_all(&rebasedir).unwrap();
 
             // Write some corrupted state
-            fs::write(rebase_dir.join("orig-head"), "invalid\0content").unwrap();
+            fs::write(rebasedir.join("orig-head"), "invalid\0content").unwrap();
 
             // Cleanup function should handle corrupted state
             let result = ralph_workflow::git_helpers::cleanup_stale_rebase_state();
@@ -198,18 +198,18 @@ fn rebase_detects_corrupted_reapply_directory() {
 /// This verifies that when .git/rebase-merge directory contains corrupted state,
 /// the system handles cleanup gracefully.
 #[test]
-fn rebase_detects_corrupted_rebase_merge_directory() {
+fn rebase_detects_corrupted_rebase_mergedirectory() {
     with_default_timeout(|| {
-        with_temp_cwd(|_dir| {
-            let _repo = init_repo_with_initial_commit(_dir);
+        with_temp_cwd(|dir| {
+            let _repo = init_repo_with_initial_commit(dir);
 
             // Create a corrupted .git/rebase-merge directory
-            let rebase_dir = _dir.path().join(".git").join("rebase-merge");
-            fs::create_dir_all(&rebase_dir).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-merge");
+            fs::create_dir_all(&rebasedir).unwrap();
 
             // Write some corrupted state files
-            fs::write(rebase_dir.join("head-name"), "refs/heads/\0feature").unwrap();
-            fs::write(rebase_dir.join("onto"), "not-a-valid-oid").unwrap();
+            fs::write(rebasedir.join("head-name"), "refs/heads/\0feature").unwrap();
+            fs::write(rebasedir.join("onto"), "not-a-valid-oid").unwrap();
 
             // Cleanup function should handle corrupted state
             let result = ralph_workflow::git_helpers::cleanup_stale_rebase_state();
@@ -218,9 +218,9 @@ fn rebase_detects_corrupted_rebase_merge_directory() {
     });
 }
 
-/// Test that missing ORIG_HEAD in rebase-apply is handled gracefully.
+/// Test that missing `ORIG_HEAD` in rebase-apply is handled gracefully.
 ///
-/// This verifies that when .git/rebase-apply exists without ORIG_HEAD file,
+/// This verifies that when .git/rebase-apply exists without `ORIG_HEAD` file,
 /// the system handles the situation without crashing.
 #[test]
 fn rebase_handles_missing_orig_head() {
@@ -231,11 +231,11 @@ fn rebase_handles_missing_orig_head() {
             let executor = mock_executor_for_git_success();
 
             // Create .git/rebase-apply directory without ORIG_HEAD
-            let rebase_dir = dir.path().join(".git").join("rebase-apply");
-            fs::create_dir_all(&rebase_dir).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-apply");
+            fs::create_dir_all(&rebasedir).unwrap();
 
             // Create some files but not ORIG_HEAD
-            fs::write(rebase_dir.join("head-name"), "refs/heads/feature\n").unwrap();
+            fs::write(rebasedir.join("head-name"), "refs/heads/feature\n").unwrap();
 
             // System should handle missing ORIG_HEAD gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
@@ -264,13 +264,10 @@ fn rebase_handles_missing_head_ref() {
             // Rebase should detect this and handle gracefully
             let result = rebase_onto("main", executor.as_ref());
 
-            match result {
-                Ok(_) => {
-                    // May succeed if git can recover
-                }
-                Err(_) => {
-                    // May fail with clear error
-                }
+            if result.is_ok() {
+                // May succeed if git can recover
+            } else {
+                // May fail with clear error
             }
         });
     });
@@ -299,17 +296,9 @@ fn rebase_checkpoint_corruption_recovery() {
             // Loading should attempt recovery from backup
             let result = load_rebase_checkpoint();
 
-            match result {
-                Ok(Some(loaded)) => {
-                    // Should have loaded from backup
-                    assert_eq!(loaded.upstream_branch, "main");
-                }
-                Ok(None) => {
-                    // No backup available - acceptable
-                }
-                Err(_) => {
-                    // Error is also acceptable if no backup exists
-                }
+            if let Ok(Some(loaded)) = result {
+                // Should have loaded from backup
+                assert_eq!(loaded.upstream_branch, "main");
             }
         });
     });
@@ -317,7 +306,7 @@ fn rebase_checkpoint_corruption_recovery() {
 
 /// Test that orphaned temporary merge files are cleaned up.
 ///
-/// This verifies that when MERGE_HEAD, MERGE_MSG, and similar files
+/// This verifies that when `MERGE_HEAD`, `MERGE_MSG`, and similar files
 /// exist without an active merge, the system cleans them up.
 #[test]
 fn rebase_handles_orphaned_temp_files() {
@@ -326,10 +315,10 @@ fn rebase_handles_orphaned_temp_files() {
             let _repo = init_repo_with_initial_commit(dir);
 
             // Create orphaned temporary merge files
-            let git_dir = dir.path().join(".git");
-            fs::write(git_dir.join("MERGE_HEAD"), "abc123\n").unwrap();
-            fs::write(git_dir.join("MERGE_MSG"), "Merge message\n").unwrap();
-            fs::write(git_dir.join("COMMIT_EDITMSG"), "Commit message\n").unwrap();
+            let gitdir = dir.path().join(".git");
+            fs::write(gitdir.join("MERGE_HEAD"), "abc123\n").unwrap();
+            fs::write(gitdir.join("MERGE_MSG"), "Merge message\n").unwrap();
+            fs::write(gitdir.join("COMMIT_EDITMSG"), "Commit message\n").unwrap();
 
             // Cleanup should handle orphaned files
             let result = ralph_workflow::git_helpers::cleanup_stale_rebase_state();
@@ -357,8 +346,8 @@ fn rebase_handles_reflog_disabled() {
             let executor = mock_executor_for_git_success();
 
             // Disable reflog
-            let git_dir = dir.path().join(".git");
-            fs::create_dir_all(git_dir.join("refs").join("heads")).unwrap();
+            let gitdir = dir.path().join(".git");
+            fs::create_dir_all(gitdir.join("refs").join("heads")).unwrap();
 
             // System should still work without reflog
             let result = rebase_onto("main", executor.as_ref());
@@ -380,12 +369,12 @@ fn rebase_detects_sparse_checkout_conflicts() {
             let executor = mock_executor_for_git_success();
 
             // Configure sparse checkout
-            let git_dir = dir.path().join(".git");
-            let info_dir = git_dir.join("info");
-            fs::create_dir_all(&info_dir).unwrap();
+            let gitdir = dir.path().join(".git");
+            let infodir = gitdir.join("info");
+            fs::create_dir_all(&infodir).unwrap();
 
             // Create sparse checkout config
-            fs::write(info_dir.join("sparse-checkout"), "*.rs\n").unwrap();
+            fs::write(infodir.join("sparse-checkout"), "*.rs\n").unwrap();
             // Enable sparse checkout (requires core.sparseCheckout config)
             let mut cfg = repo.config().expect("open config");
             cfg.set_bool("core.sparseCheckout", true)
@@ -420,20 +409,17 @@ fn rebase_detects_detached_head_after_interruption() {
             repo.checkout_head(None).unwrap();
 
             // Simulate interrupted rebase state
-            let rebase_dir = dir.path().join(".git").join("rebase-merge");
-            fs::create_dir_all(&rebase_dir).unwrap();
-            fs::write(rebase_dir.join("onto"), head_commit.id().to_string()).unwrap();
+            let rebasedir = dir.path().join(".git").join("rebase-merge");
+            fs::create_dir_all(&rebasedir).unwrap();
+            fs::write(rebasedir.join("onto"), head_commit.id().to_string()).unwrap();
 
             // System should handle detached HEAD with rebase state
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(_) => {
-                    // May succeed
-                }
-                Err(_) => {
-                    // May fail with clear error
-                }
+            if result.is_ok() {
+                // May succeed
+            } else {
+                // May fail with clear error
             }
 
             // Clean up
@@ -445,7 +431,7 @@ fn rebase_detects_detached_head_after_interruption() {
 /// Test that garbage collected objects are reported as repository corruption.
 ///
 /// This verifies that when git gc has removed objects needed for recovery,
-/// the system returns RepositoryCorrupt error with appropriate message.
+/// the system returns `RepositoryCorrupt` error with appropriate message.
 #[test]
 fn rebase_handles_git_gc_removed_objects() {
     with_default_timeout(|| {
@@ -465,7 +451,7 @@ fn rebase_handles_git_gc_removed_objects() {
     });
 }
 
-/// Test that ProcessTerminated errors are marked as recoverable.
+/// Test that `ProcessTerminated` errors are marked as recoverable.
 ///
 /// This verifies that when a process termination occurs, the system
 /// considers the error recoverable via checkpoint mechanism.
@@ -484,7 +470,7 @@ fn rebase_process_terminated_is_recoverable() {
     });
 }
 
-/// Test that InconsistentState errors are marked as recoverable.
+/// Test that `InconsistentState` errors are marked as recoverable.
 ///
 /// This verifies that when inconsistent state is detected, the system
 /// considers the error recoverable via cleanup operations.

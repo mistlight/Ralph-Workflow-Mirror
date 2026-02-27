@@ -1,6 +1,6 @@
 //! Metrics tracking tests
 //!
-//! Verifies that RunMetrics counters increment correctly on reducer events.
+//! Verifies that `RunMetrics` counters increment correctly on reducer events.
 //! Tests are split by metric category:
 //! - `iteration_tracking` - Development and review iteration counters
 //! - `retry_counting` - XSD retry, same-agent retry, and continuation counters

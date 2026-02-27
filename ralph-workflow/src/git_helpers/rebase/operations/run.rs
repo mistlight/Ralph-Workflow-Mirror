@@ -31,6 +31,10 @@
 /// has limitations and complexity that make it unreliable for production use.
 /// The git CLI is more robust and better tested for rebase operations.
 ///
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn rebase_onto(
     upstream_branch: &str,
     executor: &dyn crate::executor::ProcessExecutor,
@@ -39,7 +43,7 @@ pub fn rebase_onto(
     rebase_onto_impl(&repo, upstream_branch, executor)
 }
 
-/// Implementation of rebase_onto.
+/// Implementation of `rebase_onto`.
 fn rebase_onto_impl(
     repo: &git2::Repository,
     upstream_branch: &str,
@@ -59,13 +63,10 @@ fn rebase_onto_impl(
     }
 
     // Get the upstream branch to ensure it exists
-    let upstream_object = match repo.revparse_single(upstream_branch) {
-        Ok(obj) => obj,
-        Err(_) => {
-            return Ok(RebaseResult::Failed(RebaseErrorKind::InvalidRevision {
-                revision: upstream_branch.to_string(),
-            }))
-        }
+    let Ok(upstream_object) = repo.revparse_single(upstream_branch) else {
+        return Ok(RebaseResult::Failed(RebaseErrorKind::InvalidRevision {
+            revision: upstream_branch.to_string(),
+        }));
     };
 
     let upstream_commit = upstream_object
@@ -106,14 +107,11 @@ fn rebase_onto_impl(
     }
 
     // Check if we're on main/master or in a detached HEAD state
-    let branch_name = match head.shorthand() {
-        Some(name) => name,
-        None => {
-            // Detached HEAD state - rebase is not applicable
-            return Ok(RebaseResult::NoOp {
-                reason: "HEAD is detached (not on any branch), rebase not applicable".to_string(),
-            });
-        }
+    let Some(branch_name) = head.shorthand() else {
+        // Detached HEAD state - rebase is not applicable
+        return Ok(RebaseResult::NoOp {
+            reason: "HEAD is detached (not on any branch), rebase not applicable".to_string(),
+        });
     };
 
     if branch_name == "main" || branch_name == "master" {

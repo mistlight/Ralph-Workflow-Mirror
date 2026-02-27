@@ -1,4 +1,4 @@
-//! Tests for invoke_prompt handler functionality
+//! Tests for `invoke_prompt` handler functionality
 //!
 //! This module contains tests for agent prompt invocation, covering:
 //! - Error handling when prompts are missing or unreadable

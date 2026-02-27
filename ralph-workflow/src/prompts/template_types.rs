@@ -86,7 +86,7 @@ impl std::error::Error for RenderedPromptError {}
 /// The reducer consumes these failures via `AgentEvent::TemplateVariablesInvalid`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateVariablesInvalidError {
-    /// The template key/name (e.g. "planning_xml").
+    /// The template key/name (e.g. "`planning_xml`").
     pub template_name: String,
     /// Missing required variables (best-effort; may be empty when the renderer
     /// succeeded but placeholders remained in the output).
@@ -156,11 +156,13 @@ pub struct SubstitutionLog {
 impl SubstitutionLog {
     /// Check if all required placeholders were substituted.
     /// Returns true if no placeholders are left unsubstituted.
-    pub fn is_complete(&self) -> bool {
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
         self.unsubstituted.is_empty()
     }
 
     /// Get names of placeholders that used their default values.
+    #[must_use]
     pub fn defaults_used(&self) -> Vec<&str> {
         self.substituted
             .iter()

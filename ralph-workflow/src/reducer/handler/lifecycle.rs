@@ -20,12 +20,10 @@
 //! They are emitted only when the pipeline is actually terminating via
 //! `Effect::EmitCompletionMarkerAndTerminate`.
 
+use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{PipelineEvent, PipelinePhase};
-use anyhow::Result;
-
-use super::MainEffectHandler;
 
 impl MainEffectHandler {
     /// Trigger dev-fix flow for pipeline failure remediation.
@@ -55,16 +53,24 @@ impl MainEffectHandler {
     /// * `failed_role` - Agent role that failed
     /// * `retry_cycle` - Retry cycle count at failure
     pub(super) fn trigger_dev_fix_flow(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         failed_phase: PipelinePhase,
         failed_role: crate::agents::AgentRole,
         retry_cycle: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
+        /// Helper function to detect agent unavailability from error messages.
+        /// Checks for quota/usage/rate limit indicators in error text.
+        fn is_agent_unavailable_error(err_msg: &str) -> bool {
+            let err_msg_lower = err_msg.to_lowercase();
+            err_msg_lower.contains("usage limit")
+                || err_msg_lower.contains("quota exceeded")
+                || err_msg_lower.contains("rate limit")
+        }
+
         ctx.logger.error("WARNING: PIPELINE FAILURE DETECTED");
         ctx.logger.warn(&format!(
-            "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
-            failed_phase, failed_role, retry_cycle
+            "Pipeline failure detected (phase: {failed_phase}, role: {failed_role:?}, cycle: {retry_cycle})"
         ));
         ctx.logger.info("Entering AwaitingDevFix flow...");
         ctx.logger
@@ -76,10 +82,9 @@ impl MainEffectHandler {
                 Ok(content) => content,
                 Err(err) => {
                     ctx.logger.warn(&format!(
-                        "Dev-fix prompt fallback: failed to read {}: {}",
-                        label, err
+                        "Dev-fix prompt fallback: failed to read {label}: {err}"
                     ));
-                    format!("(Missing {}: {})", label, err)
+                    format!("(Missing {label}: {err})")
                 }
             }
         };
@@ -87,8 +92,7 @@ impl MainEffectHandler {
         let prompt_content = read_or_fallback("PROMPT.md", "PROMPT.md");
         let plan_content = read_or_fallback(".agent/PLAN.md", ".agent/PLAN.md");
         let issues_content = format!(
-            "# Issues\n\n- [High] Pipeline failure (phase: {}, role: {:?}, cycle: {}).\n  Diagnose the root cause and fix the failure.\n",
-            failed_phase, failed_role, retry_cycle
+            "# Issues\n\n- [High] Pipeline failure (phase: {failed_phase}, role: {failed_role:?}, cycle: {retry_cycle}).\n  Diagnose the root cause and fix the failure.\n"
         );
         let dev_fix_prompt = crate::prompts::prompt_fix_with_context(
             ctx.template_context,
@@ -103,8 +107,7 @@ impl MainEffectHandler {
             &dev_fix_prompt,
         ) {
             ctx.logger.warn(&format!(
-                "Failed to write dev-fix prompt to workspace: {}",
-                err
+                "Failed to write dev-fix prompt to workspace: {err}"
             ));
         }
 
@@ -113,19 +116,10 @@ impl MainEffectHandler {
         // occurred under a different role (Commit/Reviewer/Analysis).
         let agent = ctx.developer_agent.to_string();
 
-        /// Helper function to detect agent unavailability from error messages.
-        /// Checks for quota/usage/rate limit indicators in error text.
-        fn is_agent_unavailable_error(err_msg: &str) -> bool {
-            let err_msg_lower = err_msg.to_lowercase();
-            err_msg_lower.contains("usage limit")
-                || err_msg_lower.contains("quota exceeded")
-                || err_msg_lower.contains("rate limit")
-        }
-
         let agent_result = match self.invoke_agent(
             ctx,
             crate::agents::AgentRole::Developer,
-            agent,
+            &agent,
             None,
             dev_fix_prompt,
         ) {
@@ -135,12 +129,11 @@ impl MainEffectHandler {
 
                 if unavailable {
                     ctx.logger.warn(&format!(
-                        "Dev-fix agent unavailable: {}. Continuing unattended recovery loop without dev-fix agent.",
-                        err
+                        "Dev-fix agent unavailable: {err}. Continuing unattended recovery loop without dev-fix agent."
                     ));
                 } else {
                     ctx.logger
-                        .warn(&format!("Dev-fix agent invocation failed: {}", err));
+                        .warn(&format!("Dev-fix agent invocation failed: {err}"));
                 }
                 Err(err)
             }
@@ -149,8 +142,7 @@ impl MainEffectHandler {
         let is_agent_unavailable = agent_result
             .as_ref()
             .err()
-            .map(|err| is_agent_unavailable_error(&err.to_string()))
-            .unwrap_or(false);
+            .is_some_and(|err| is_agent_unavailable_error(&err.to_string()));
 
         // Dev-fix "success" cannot be determined at invocation time.
         //
@@ -159,7 +151,10 @@ impl MainEffectHandler {
         // the underlying pipeline failure is fixed.
 
         // Extract error reason for logging and summary
-        let error_reason = agent_result.as_ref().err().map(|e| e.to_string());
+        let error_reason = agent_result
+            .as_ref()
+            .err()
+            .map(std::string::ToString::to_string);
 
         // In unattended mode, we need a concrete reducer-visible signal that a dev-fix
         // attempt completed so the recovery loop can advance attempt counters and
@@ -174,23 +169,27 @@ impl MainEffectHandler {
             },
         };
 
-        let mut result = match agent_result.as_ref() {
-            Ok(result) => EffectResult::with_ui(
-                PipelineEvent::AwaitingDevFix(
+        let mut result = agent_result.as_ref().map_or_else(
+            |_| {
+                EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
                         failed_phase,
                         failed_role,
                     },
-                ),
-                result.ui_events.clone(),
-            ),
-            Err(_) => EffectResult::event(PipelineEvent::AwaitingDevFix(
-                crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
-                    failed_phase,
-                    failed_role,
-                },
-            )),
-        };
+                ))
+            },
+            |result| {
+                EffectResult::with_ui(
+                    PipelineEvent::AwaitingDevFix(
+                        crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                            failed_phase,
+                            failed_role,
+                        },
+                    ),
+                    result.ui_events.clone(),
+                )
+            },
+        );
 
         // Add any additional events from the agent result if it succeeded
         if let Ok(ref result_events) = agent_result {
@@ -219,7 +218,7 @@ impl MainEffectHandler {
         // reserved for explicit external/catastrophic termination via
         // Effect::EmitCompletionMarkerAndTerminate.
 
-        Ok(result.with_additional_event(PipelineEvent::AwaitingDevFix(dev_fix_completed)))
+        result.with_additional_event(PipelineEvent::AwaitingDevFix(dev_fix_completed))
     }
 
     /// Emit completion marker and terminate pipeline.
@@ -241,7 +240,7 @@ impl MainEffectHandler {
         ctx: &PhaseContext<'_>,
         is_failure: bool,
         reason: Option<String>,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         // Write completion marker to .agent/tmp/completion_marker
         let content = if is_failure {
             format!(
@@ -255,21 +254,21 @@ impl MainEffectHandler {
         match Self::write_completion_marker(ctx, &content, is_failure) {
             Ok(()) => {
                 // Emit event to transition to Interrupted
-                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure,
                     },
-                )))
+                ))
             }
             Err(error) => {
                 // Do NOT transition to Interrupted if the marker was not written.
                 // External orchestration relies on the marker for termination semantics.
-                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerWriteFailed {
                         is_failure,
                         error,
                     },
-                )))
+                ))
             }
         }
     }

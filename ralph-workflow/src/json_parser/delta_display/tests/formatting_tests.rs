@@ -1,7 +1,7 @@
 //! Tests for delta display formatting methods.
 //!
-//! This module tests the DeltaDisplayFormatter's format_thinking and
-//! format_tool_input methods across different terminal modes.
+//! This module tests the `DeltaDisplayFormatter`'s `format_thinking` and
+//! `format_tool_input` methods across different terminal modes.
 
 use super::*;
 

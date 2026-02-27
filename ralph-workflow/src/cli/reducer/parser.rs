@@ -1,14 +1,14 @@
 //! Parse Args into CLI events.
 //!
 //! This module converts the clap-parsed Args struct into a sequence
-//! of CliEvents that can be processed by the reducer.
+//! of `CliEvents` that can be processed by the reducer.
 
 use super::event::CliEvent;
 
 /// Convert CLI arguments into a sequence of events.
 ///
 /// This function maps each relevant field in the Args struct to a
-/// corresponding CliEvent. Events are generated in a deterministic order,
+/// corresponding `CliEvent`. Events are generated in a deterministic order,
 /// with later events taking precedence over earlier ones (last-wins semantics).
 ///
 /// # Event Ordering
@@ -31,7 +31,7 @@ use super::event::CliEvent;
 ///
 /// # Returns
 ///
-/// A vector of CliEvents representing all specified CLI arguments.
+/// A vector of `CliEvents` representing all specified CLI arguments.
 #[must_use]
 pub fn args_to_events(args: &super::super::Args) -> Vec<CliEvent> {
     let mut events = Vec::new();
@@ -169,12 +169,8 @@ mod tests {
         );
 
         // Should not have any other events
-        let events_without_completion: Vec<_> = events
-            .iter()
-            .filter(|e| *e != &CliEvent::CliProcessingComplete)
-            .collect();
         assert!(
-            events_without_completion.is_empty(),
+            !events.iter().any(|e| e != &CliEvent::CliProcessingComplete),
             "Should have no other events for empty args"
         );
     }

@@ -238,7 +238,7 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
 /// Test that retry-cycle backoff is emitted as an explicit effect.
 ///
 /// When an agent chain wraps into a new retry cycle, the reducer must record that
-/// a backoff wait is pending, and orchestration must emit a BackoffWait effect
+/// a backoff wait is pending, and orchestration must emit a `BackoffWait` effect
 /// before attempting more work.
 #[test]
 fn test_retry_cycle_backoff_is_explicit_effect() {
@@ -359,7 +359,7 @@ fn test_pipeline_continues_after_multiple_agent_failures() {
 
 /// Test that XSD retry decisions come from reducer state, not implicit logic.
 ///
-/// The invalid_output_attempts counter in ContinuationState must be the
+/// The `invalid_output_attempts` counter in `ContinuationState` must be the
 /// single source of truth for XSD retry decisions. This test verifies
 /// that the reducer correctly updates this counter and triggers agent
 /// fallback at the right threshold.
@@ -561,7 +561,7 @@ fn test_xsd_retry_state_independent_of_invocation_failures() {
 
 /// Test that planning XSD retry decisions come from reducer state.
 ///
-/// The invalid_output_attempts counter in ContinuationState must be the
+/// The `invalid_output_attempts` counter in `ContinuationState` must be the
 /// single source of truth for planning XSD retry decisions.
 #[test]
 fn test_planning_xsd_retry_decisions_from_reducer_state() {
@@ -696,8 +696,8 @@ fn test_planning_xsd_retry_state_persistence() {
 
 /// Test that commit agent chain can use reviewer agents when no commit agents configured.
 ///
-/// This is the documented fallback behavior: when agent_chain.commit is empty,
-/// the system falls back to using agent_chain.reviewer agents.
+/// This is the documented fallback behavior: when `agent_chain.commit` is empty,
+/// the system falls back to using `agent_chain.reviewer` agents.
 #[test]
 fn test_commit_phase_uses_reviewer_chain_fallback() {
     use ralph_workflow::reducer::state::{

@@ -36,22 +36,24 @@ fn test_builder_missing_required_field() {
 
 #[test]
 fn test_review_depth_to_string() {
-    assert_eq!(
-        review_depth_to_string(ReviewDepth::Standard),
-        Some("standard".to_string())
-    );
+    assert_eq!(review_depth_to_string(ReviewDepth::Standard), "standard");
     assert_eq!(
         review_depth_to_string(ReviewDepth::Comprehensive),
-        Some("comprehensive".to_string())
+        "comprehensive"
     );
-    assert_eq!(
-        review_depth_to_string(ReviewDepth::Security),
-        Some("security".to_string())
-    );
+    assert_eq!(review_depth_to_string(ReviewDepth::Security), "security");
     assert_eq!(
         review_depth_to_string(ReviewDepth::Incremental),
-        Some("incremental".to_string())
+        "incremental"
     );
+}
+
+#[test]
+fn test_review_depth_to_string_returns_static_reference() {
+    let value = review_depth_to_string(ReviewDepth::Standard);
+    let value_again = review_depth_to_string(ReviewDepth::Standard);
+
+    assert!(std::ptr::eq(value, value_again));
 }
 
 #[test]

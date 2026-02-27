@@ -1,6 +1,6 @@
 //! Regression test for duplicate `item.completed` events.
 //!
-//! Codex can emit duplicate `item.completed` events for the same agent_message.
+//! Codex can emit duplicate `item.completed` events for the same `agent_message`.
 //! This must not cause the final agent message to be printed more than once in
 //! non-TTY modes (Basic/None).
 //!
@@ -45,9 +45,7 @@ fn test_codex_duplicate_item_completed_agent_message_prints_once_in_basic_mode()
 
         let output = test_printer.borrow().get_output();
 
-        let lines: Vec<&str> = output.lines().collect();
-        assert_eq!(
-            lines.len(),
+        assert_eq!(output.lines().count(),
             2,
             "Expected exactly two output lines (turn started + message) in Basic mode. Output:\n{output}"
         );
@@ -93,9 +91,7 @@ fn test_codex_duplicate_item_completed_agent_message_prints_once_in_none_mode() 
 
         let output = test_printer.borrow().get_output();
 
-        let lines: Vec<&str> = output.lines().collect();
-        assert_eq!(
-            lines.len(),
+        assert_eq!(output.lines().count(),
             2,
             "Expected exactly two output lines (turn started + message) in None mode. Output:\n{output}"
         );
@@ -149,9 +145,7 @@ fn test_codex_agent_message_multiple_turns_prints_prefix_once_per_turn_in_none_m
 
         // In None mode, Codex emits a visible "Turn started" line per turn *plus*
         // a final line for each completed message.
-        let lines: Vec<&str> = output.lines().collect();
-        assert_eq!(
-            lines.len(),
+        assert_eq!(output.lines().count(),
             4,
             "Expected exactly four output lines (turn started + message per turn) in None mode. Output:\n{output}"
         );

@@ -22,6 +22,10 @@ impl CommitLogSession {
     ///
     /// * `base_log_dir` - Base directory for commit logs (e.g., `.agent/logs/commit_generation`)
     /// * `workspace` - The workspace to use for filesystem operations
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn new(base_log_dir: &str, workspace: &dyn Workspace) -> std::io::Result<Self> {
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
         let run_dir = PathBuf::from(base_log_dir).join(format!("run_{timestamp}"));
@@ -36,12 +40,13 @@ impl CommitLogSession {
     /// Create a no-op logging session that discards all writes.
     ///
     /// This is used as a fallback when all log directories fail to be created.
-    /// The session will still track attempt numbers and provide a dummy run_dir,
+    /// The session will still track attempt numbers and provide a dummy `run_dir`,
     /// but writes will silently succeed without actually writing anything.
     ///
     /// # Returns
     ///
     /// A `CommitLogSession` that uses `/dev/null` equivalent as its run directory.
+    #[must_use] 
     pub fn noop() -> Self {
         // Use a path that indicates this is a noop session
         // The path won't be created or written to by noop session
@@ -52,11 +57,13 @@ impl CommitLogSession {
     }
 
     /// Check if this is a no-op session.
+    #[must_use] 
     pub fn is_noop(&self) -> bool {
         self.run_dir.starts_with("/dev/null")
     }
 
     /// Get the path to the run directory.
+    #[must_use] 
     pub fn run_dir(&self) -> &Path {
         &self.run_dir
     }
@@ -87,18 +94,22 @@ impl CommitLogSession {
     /// * `total_attempts` - Total number of attempts made
     /// * `final_outcome` - Description of the final outcome
     /// * `workspace` - The workspace to use for filesystem operations
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn write_summary(
         &self,
         total_attempts: usize,
         final_outcome: &str,
         workspace: &dyn Workspace,
     ) -> std::io::Result<()> {
+        use std::fmt::Write;
+
         // Skip writing for noop sessions
         if self.is_noop() {
             return Ok(());
         }
-
-        use std::fmt::Write;
 
         let summary_path = self.run_dir.join("SUMMARY.txt");
         let mut content = String::new();

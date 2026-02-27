@@ -50,7 +50,8 @@ use crate::checkpoint::execution_history::ExecutionStep;
 /// - `agent`: Option<Arc<str>> - counted as the length of the string (shared allocation)
 ///
 /// Arc<str> fields are counted by length rather than capacity because the
-/// allocation is shared across multiple ExecutionStep instances via string interning.
+/// allocation is shared across multiple `ExecutionStep` instances via string interning.
+#[must_use]
 pub fn estimate_execution_step_heap_bytes_core_fields(step: &ExecutionStep) -> usize {
     // For Arc<str>, count the string length (shared allocation)
     step.phase.len()
@@ -110,8 +111,12 @@ impl ExecutionHistoryBaseline {
     };
 
     /// Check if measured value exceeds baseline.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn check_heap_size(&self, measured: usize) -> Result<(), String> {
-        let max_allowed = (self.heap_size_bytes as f64 * self.tolerance) as usize;
+        let max_allowed = tolerance_ceiling(self.heap_size_bytes, self.tolerance);
         if measured > max_allowed {
             Err(format!(
                 "Heap size {} bytes exceeds baseline {} bytes (tolerance: {}x)",
@@ -123,8 +128,12 @@ impl ExecutionHistoryBaseline {
     }
 
     /// Check if serialized size exceeds baseline.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn check_serialized_size(&self, measured: usize) -> Result<(), String> {
-        let max_allowed = (self.serialized_size_bytes as f64 * self.tolerance) as usize;
+        let max_allowed = tolerance_ceiling(self.serialized_size_bytes, self.tolerance);
         if measured > max_allowed {
             Err(format!(
                 "Serialized size {} bytes exceeds baseline {} bytes (tolerance: {}x)",
@@ -134,6 +143,31 @@ impl ExecutionHistoryBaseline {
             Ok(())
         }
     }
+}
+
+fn tolerance_ceiling(baseline: usize, tolerance: f64) -> usize {
+    if !tolerance.is_finite() {
+        return usize::MAX;
+    }
+
+    let baseline_f = baseline.to_string().parse::<f64>().unwrap_or(f64::MAX);
+    let scaled = baseline_f * tolerance;
+    if !scaled.is_finite() {
+        return usize::MAX;
+    }
+
+    let ceil = scaled.ceil();
+    if ceil <= 0.0 {
+        return 0;
+    }
+
+    let max_f = usize::MAX.to_string().parse::<f64>().unwrap_or(f64::MAX);
+    if ceil >= max_f {
+        return usize::MAX;
+    }
+
+    let ceil_str = format!("{ceil:.0}");
+    ceil_str.parse::<usize>().unwrap_or(usize::MAX)
 }
 
 /// Checkpoint serialization performance baseline.
@@ -263,8 +297,7 @@ mod tests {
         // (11 bytes phase + 14 bytes step_type + ~25 bytes timestamp + 10 bytes agent)
         assert!(
             heap_size <= 60,
-            "Memory regression: {} bytes per entry exceeds 60 byte target (expected ~40-45 bytes)",
-            heap_size
+            "Memory regression: {heap_size} bytes per entry exceeds 60 byte target (expected ~40-45 bytes)"
         );
     }
 

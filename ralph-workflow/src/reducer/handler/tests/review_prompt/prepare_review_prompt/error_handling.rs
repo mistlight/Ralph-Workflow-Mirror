@@ -1,7 +1,7 @@
 //! Error handling tests for review prompt preparation.
 //!
 //! Covers scenarios where review input reading fails with various error conditions,
-//! verifying that non-NotFound errors are properly surfaced as ErrorEvents.
+//! verifying that non-NotFound errors are properly surfaced as `ErrorEvents`.
 
 use super::super::AtomicWriteEnforcingWorkspace;
 use super::helpers::ReadFailingWorkspace;
@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -65,10 +65,10 @@ fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect_err("prepare_review_prompt should return an error when inputs not materialized");
@@ -81,7 +81,7 @@ fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
 
 #[test]
 fn test_prepare_review_prompt_workspace_write_failure_is_non_fatal() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
     // When prompt file write fails, the handler logs a warning and continues successfully.
     let inner = MemoryWorkspace::new_test()
@@ -124,12 +124,12 @@ fn test_prepare_review_prompt_workspace_write_failure_is_non_fatal() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -152,7 +152,7 @@ fn test_prepare_review_prompt_workspace_write_failure_is_non_fatal() {
 
 #[test]
 fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     // This test does not call materialize_review_inputs; instead it injects a materialized
     // inline diff input and verifies that prepare_review_prompt surfaces read failures.
     let inner = MemoryWorkspace::new_test()
@@ -199,7 +199,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_error
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
@@ -250,7 +250,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_backup_read_error
 
 #[test]
 fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_baseline_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -295,7 +295,7 @@ fn test_prepare_review_prompt_does_not_mask_non_not_found_diff_baseline_read_err
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));

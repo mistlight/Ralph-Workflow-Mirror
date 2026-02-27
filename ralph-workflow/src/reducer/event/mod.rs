@@ -34,7 +34,7 @@
 //!
 //! - Handler: "Agent invocation failed (retriable)"
 //! - Reducer: "Increment retry count, stay in same phase"
-//! - Orchestration: "Retry count < max? Emit InvokeAgent effect"
+//! - Orchestration: "Retry count < max? Emit `InvokeAgent` effect"
 //!
 //! # Event Categories
 //!
@@ -72,10 +72,10 @@
 //!
 //! - [`types`] - Core event type definitions (all event enums)
 //! - [`constructors`] - Convenience constructors for building events
-//! - `development` - DevelopmentEvent and constructors
-//! - `review` - ReviewEvent and constructors
-//! - `agent` - AgentEvent and constructors
-//! - `error` - ErrorEvent and error types
+//! - `development` - `DevelopmentEvent` and constructors
+//! - `review` - `ReviewEvent` and constructors
+//! - `agent` - `AgentEvent` and constructors
+//! - `error` - `ErrorEvent` and error types
 //!
 //! # Example: Handler Emitting Events
 //!
@@ -234,11 +234,11 @@ mod constructors;
 /// - **Planning**: Generate implementation plan for the iteration
 /// - **Development**: Execute plan, write code
 /// - **Review**: Review code changes, identify issues
-/// - **CommitMessage**: Generate commit message
-/// - **FinalValidation**: Final checks before completion
+/// - **`CommitMessage`**: Generate commit message
+/// - **`FinalValidation`**: Final checks before completion
 /// - **Finalizing**: Cleanup operations (restore permissions, etc.)
 /// - **Complete**: Pipeline completed successfully
-/// - **AwaitingDevFix**: Terminal failure occurred, dev agent diagnosing
+/// - **`AwaitingDevFix`**: Terminal failure occurred, dev agent diagnosing
 /// - **Interrupted**: Pipeline terminated (success or failure)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PipelinePhase {
@@ -263,31 +263,31 @@ pub enum PipelinePhase {
     ///
     /// ## Failure Handling Flow
     ///
-    /// 1. ErrorEvent::AgentChainExhausted occurs in any phase
-    /// 2. Reducer transitions state to AwaitingDevFix
-    /// 3. Orchestration determines Effect::TriggerDevFixFlow
-    /// 4. Handler executes TriggerDevFixFlow:
-    ///    a. Writes completion marker to .agent/tmp/completion_marker (failure status)
-    ///    b. Emits DevFixTriggered event
+    /// 1. `ErrorEvent::AgentChainExhausted` occurs in any phase
+    /// 2. Reducer transitions state to `AwaitingDevFix`
+    /// 3. Orchestration determines `Effect::TriggerDevFixFlow`
+    /// 4. Handler executes `TriggerDevFixFlow`:
+    ///    a. Writes completion marker to .`agent/tmp/completion_marker` (failure status)
+    ///    b. Emits `DevFixTriggered` event
     ///    c. Dispatches dev-fix agent
-    ///    d. Emits DevFixCompleted event
-    ///    e. Emits CompletionMarkerEmitted event
-    /// 5. DevFixTriggered/DevFixCompleted events: no state change (stays in AwaitingDevFix)
-    /// 6. CompletionMarkerEmitted event: transitions to Interrupted
-    /// 7. Orchestration determines Effect::SaveCheckpoint for Interrupted
-    /// 8. Handler saves checkpoint, increments checkpoint_saved_count
-    /// 9. Event loop recognizes is_complete() == true and exits successfully
+    ///    d. Emits `DevFixCompleted` event
+    ///    e. Emits `CompletionMarkerEmitted` event
+    /// 5. DevFixTriggered/DevFixCompleted events: no state change (stays in `AwaitingDevFix`)
+    /// 6. `CompletionMarkerEmitted` event: transitions to Interrupted
+    /// 7. Orchestration determines `Effect::SaveCheckpoint` for Interrupted
+    /// 8. Handler saves checkpoint, increments `checkpoint_saved_count`
+    /// 9. Event loop recognizes `is_complete()` == true and exits successfully
     ///
     /// ## Event Loop Termination Guarantees
     ///
-    /// The event loop MUST NOT exit with completed=false when in AwaitingDevFix phase.
+    /// The event loop MUST NOT exit with completed=false when in `AwaitingDevFix` phase.
     /// The failure handling flow is designed to always complete with:
     /// - Completion marker written to filesystem
     /// - State transitioned to Interrupted
-    /// - Checkpoint saved (checkpoint_saved_count > 0)
+    /// - Checkpoint saved (`checkpoint_saved_count` > 0)
     /// - Event loop returning completed=true
     ///
-    /// If the event loop exits with completed=false from AwaitingDevFix, this indicates
+    /// If the event loop exits with completed=false from `AwaitingDevFix`, this indicates
     /// a critical bug (e.g., max iterations reached before checkpoint saved).
     ///
     /// ## Completion Marker Requirement
@@ -298,13 +298,13 @@ pub enum PipelinePhase {
     ///
     /// ## Agent Chain Exhaustion Handling
     ///
-    /// When in AwaitingDevFix phase with an exhausted agent chain, orchestration
-    /// falls through to phase-specific logic (TriggerDevFixFlow) instead of reporting
+    /// When in `AwaitingDevFix` phase with an exhausted agent chain, orchestration
+    /// falls through to phase-specific logic (`TriggerDevFixFlow`) instead of reporting
     /// exhaustion again. This prevents infinite loops where exhaustion is reported
     /// repeatedly.
     ///
     /// Transitions:
-    /// - From: Any phase where AgentChainExhausted error occurs
+    /// - From: Any phase where `AgentChainExhausted` error occurs
     /// - To: Interrupted (after dev-fix attempt completes or fails)
     AwaitingDevFix,
     Interrupted,
@@ -411,7 +411,7 @@ pub enum PipelineEvent {
     Rebase(RebaseEvent),
     /// Commit generation events.
     Commit(CommitEvent),
-    /// AwaitingDevFix phase events.
+    /// `AwaitingDevFix` phase events.
     AwaitingDevFix(AwaitingDevFixEvent),
 
     // ========================================================================
@@ -463,14 +463,14 @@ mod tests {
         assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
     }
 
-    /// This test enforces the FROZEN policy on LifecycleEvent.
+    /// This test enforces the FROZEN policy on `LifecycleEvent`.
     ///
     /// If you're here because this test failed to compile after adding
     /// a variant, you are violating the freeze policy. See the FROZEN
-    /// comment on LifecycleEvent for alternatives.
+    /// comment on `LifecycleEvent` for alternatives.
     #[test]
     fn lifecycle_event_is_frozen() {
-        fn exhaustive_match(e: LifecycleEvent) -> &'static str {
+        fn exhaustive_match(e: &LifecycleEvent) -> &'static str {
             match e {
                 LifecycleEvent::Started => "started",
                 LifecycleEvent::Resumed { .. } => "resumed",
@@ -480,17 +480,17 @@ mod tests {
             }
         }
         // Just needs to compile; actual call proves exhaustiveness
-        let _ = exhaustive_match(LifecycleEvent::Started);
+        let _ = exhaustive_match(&LifecycleEvent::Started);
     }
 
-    /// This test enforces the FROZEN policy on PipelineEvent.
+    /// This test enforces the FROZEN policy on `PipelineEvent`.
     ///
     /// If you're here because this test failed to compile after adding
     /// a variant, you are violating the freeze policy. See the FROZEN
-    /// comment on PipelineEvent for alternatives.
+    /// comment on `PipelineEvent` for alternatives.
     #[test]
     fn pipeline_event_is_frozen() {
-        fn exhaustive_match(e: PipelineEvent) -> &'static str {
+        fn exhaustive_match(e: &PipelineEvent) -> &'static str {
             match e {
                 PipelineEvent::Lifecycle(_) => "lifecycle",
                 PipelineEvent::Planning(_) => "planning",
@@ -509,6 +509,6 @@ mod tests {
                 // DO NOT ADD _ WILDCARD - intentionally exhaustive
             }
         }
-        let _ = exhaustive_match(PipelineEvent::ContextCleaned);
+        let _ = exhaustive_match(&PipelineEvent::ContextCleaned);
     }
 }

@@ -16,7 +16,8 @@ pub struct CommitExtractionResult(String);
 
 impl CommitExtractionResult {
     /// Create a new extraction result with the given message.
-    pub fn new(message: String) -> Self {
+    #[must_use]
+    pub const fn new(message: String) -> Self {
         Self(message)
     }
 
@@ -24,6 +25,7 @@ impl CommitExtractionResult {
     ///
     /// This applies the final rendering step to ensure no escape sequences leak through
     /// to the actual commit message.
+    #[must_use]
     pub fn into_message(self) -> String {
         render_final_commit_message(&self.0)
     }
@@ -34,10 +36,11 @@ impl CommitExtractionResult {
 /// This uses flexible XML extraction (direct tags, fenced blocks, escaped JSON strings, embedded
 /// text) and validates the resulting XML against the commit XSD.
 ///
-/// Returns: (message, skip_reason, trace_detail)
+/// Returns: (message, `skip_reason`, `trace_detail`)
 /// - message: Some(msg) if commit message found
-/// - skip_reason: Some(reason) if AI determined no commit needed
-/// - trace_detail: Diagnostic string explaining extraction result
+/// - `skip_reason`: Some(reason) if AI determined no commit needed
+/// - `trace_detail`: Diagnostic string explaining extraction result
+#[must_use]
 pub fn try_extract_xml_commit_with_trace(
     content: &str,
 ) -> (Option<String>, Option<String>, String) {
@@ -45,8 +48,13 @@ pub fn try_extract_xml_commit_with_trace(
     // If extraction fails, use the raw content directly - XSD validation will
     // provide a clear error message explaining what's wrong (e.g., missing
     // <ralph-commit> root element) that can be sent back to the AI for retry.
-    let (xml_block, extraction_pattern) = match extract_xml_commit(content) {
-        Some(xml) => {
+    let (xml_block, extraction_pattern) = extract_xml_commit(content).map_or_else(
+        || {
+            // No XML tags found - use raw content and let XSD validation
+            // produce an informative error for the AI to retry
+            (content.to_string(), "raw content (no XML tags found)")
+        },
+        |xml| {
             // Detect which extraction pattern was used for logging
             let pattern = if content.trim().starts_with("<ralph-commit>") {
                 "direct XML"
@@ -58,13 +66,8 @@ pub fn try_extract_xml_commit_with_trace(
                 "embedded search"
             };
             (xml, pattern)
-        }
-        None => {
-            // No XML tags found - use raw content and let XSD validation
-            // produce an informative error for the AI to retry
-            (content.to_string(), "raw content (no XML tags found)")
-        }
-    };
+        },
+    );
 
     // Run XSD validation - this will catch both malformed XML and missing elements
     let xsd_result = validate_xml_against_xsd(&xml_block);
@@ -76,17 +79,14 @@ pub fn try_extract_xml_commit_with_trace(
                 return (
                     None,
                     Some(reason.clone()),
-                    format!(
-                        "Found <ralph-skip> via {}, reason: '{}'",
-                        extraction_pattern, reason
-                    ),
+                    format!("Found <ralph-skip> via {extraction_pattern}, reason: '{reason}'"),
                 );
             }
 
             // Format the commit message using parsed elements
             let body = elements.format_body();
             let message = if body.is_empty() {
-                elements.subject.clone()
+                elements.subject
             } else {
                 format!("{}\n\n{}", elements.subject, body)
             };
@@ -101,7 +101,7 @@ pub fn try_extract_xml_commit_with_trace(
             };
 
             (
-                Some(message.clone()),
+                Some(message),
                 None,
                 format!(
                     "Found <ralph-commit> via {}, XSD validation passed, body={}, message: '{}'",
@@ -114,12 +114,13 @@ pub fn try_extract_xml_commit_with_trace(
         Err(e) => {
             // XSD validation failed - return error with details for AI retry
             let error_msg = e.format_for_ai_retry();
-            (None, None, format!("XSD validation failed: {}", error_msg))
+            (None, None, format!("XSD validation failed: {error_msg}"))
         }
     }
 }
 
 /// Check if a string is a valid conventional commit subject line.
+#[must_use]
 pub fn is_conventional_commit_subject(subject: &str) -> bool {
     let valid_types = [
         "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
@@ -332,8 +333,7 @@ mod tests {
         let (result, skip, reason) = try_extract_xml_commit_with_trace(content);
         assert!(
             result.is_some(),
-            "Should extract from basic XML. Reason: {}",
-            reason
+            "Should extract from basic XML. Reason: {reason}"
         );
         assert!(skip.is_none());
         assert_eq!(result.unwrap(), "feat: add new feature");
@@ -524,11 +524,11 @@ Line 3</ralph-body>
     fn test_xsd_validation_integrated_in_extraction() {
         // The XSD validation is called within try_extract_xml_commit_with_trace
         // This test ensures that path is exercised
-        let xml = r#"Some text before
+        let xml = r"Some text before
 <ralph-commit>
 <ralph-subject>fix: resolve bug</ralph-subject>
 </ralph-commit>
-Some text after"#;
+Some text after";
         let (msg, _skip, trace) = try_extract_xml_commit_with_trace(xml);
         assert!(msg.is_some(), "Should extract valid message");
         // The trace should contain XSD validation result

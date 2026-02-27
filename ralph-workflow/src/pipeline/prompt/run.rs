@@ -6,6 +6,10 @@ use super::types::{PipelineRuntime, PromptArchiveInfo, PromptCommand, PromptSave
 /// Run a command with a prompt argument.
 ///
 /// This is an internal helper for `run_with_fallback`.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn run_with_prompt(
     cmd: &PromptCommand<'_>,
     runtime: &mut PipelineRuntime<'_>,

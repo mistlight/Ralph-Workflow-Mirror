@@ -10,13 +10,13 @@
 pub enum ArtifactType {
     /// Plan XML from planning phase.
     Plan,
-    /// DevelopmentResult XML from development phase.
+    /// `DevelopmentResult` XML from development phase.
     DevelopmentResult,
     /// Issues XML from review phase.
     Issues,
-    /// FixResult XML from fix phase.
+    /// `FixResult` XML from fix phase.
     FixResult,
-    /// CommitMessage XML from commit message generation.
+    /// `CommitMessage` XML from commit message generation.
     CommitMessage,
 }
 
@@ -64,7 +64,7 @@ impl std::fmt::Display for ArtifactType {
 
 /// Development status from agent output.
 ///
-/// These values map to the `<ralph-status>` element in development_result.xml.
+/// These values map to the `<ralph-status>` element in `development_result.xml`.
 /// Used to track whether work is complete or needs continuation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DevelopmentStatus {
@@ -78,7 +78,7 @@ pub enum DevelopmentStatus {
 
 /// Fix status from agent output.
 ///
-/// These values map to the `<ralph-status>` element in fix_result.xml.
+/// These values map to the `<ralph-status>` element in `fix_result.xml`.
 /// Used to track whether fix work is complete or needs continuation.
 ///
 /// # Continuation Semantics
@@ -128,8 +128,9 @@ impl std::fmt::Display for FixStatus {
 impl FixStatus {
     /// Parse a fix status string from XML.
     ///
-    /// This is intentionally not implementing std::str::FromStr because it returns
+    /// This is intentionally not implementing `std::str::FromStr` because it returns
     /// Option<Self> for easier handling of unknown values without error types.
+    #[must_use] 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "all_issues_addressed" => Some(Self::AllIssuesAddressed),
@@ -141,7 +142,8 @@ impl FixStatus {
     }
 
     /// Returns true if the fix is complete (no more work needed).
-    pub fn is_complete(&self) -> bool {
+    #[must_use] 
+    pub const fn is_complete(&self) -> bool {
         matches!(self, Self::AllIssuesAddressed | Self::NoIssuesFound)
     }
 
@@ -150,7 +152,8 @@ impl FixStatus {
     /// Both `IssuesRemain` and `Failed` trigger continuation:
     /// - `IssuesRemain`: Some issues fixed, others remain
     /// - `Failed`: Fix attempt failed, needs different approach
-    pub fn needs_continuation(&self) -> bool {
+    #[must_use] 
+    pub const fn needs_continuation(&self) -> bool {
         matches!(self, Self::IssuesRemain | Self::Failed)
     }
 }
@@ -158,7 +161,7 @@ impl FixStatus {
 /// Rebase operation state.
 ///
 /// Tracks rebase progress through the state machine:
-/// NotStarted → InProgress → Conflicted → Completed/Skipped
+/// `NotStarted` → `InProgress` → Conflicted → Completed/Skipped
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum RebaseState {
     NotStarted,
@@ -181,25 +184,27 @@ pub enum RebaseState {
 impl RebaseState {
     #[doc(hidden)]
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, RebaseState::Completed { .. } | RebaseState::Skipped)
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(self, Self::Completed { .. } | Self::Skipped)
     }
 
+    #[must_use] 
     pub fn current_head(&self) -> Option<String> {
         match self {
-            RebaseState::NotStarted | RebaseState::Skipped => None,
-            RebaseState::InProgress { original_head, .. } => Some(original_head.clone()),
-            RebaseState::Conflicted { .. } => None,
-            RebaseState::Completed { new_head } => Some(new_head.clone()),
+            Self::InProgress { original_head, .. } => Some(original_head.clone()),
+            Self::NotStarted | Self::Skipped | Self::Conflicted { .. } => None,
+            Self::Completed { new_head } => Some(new_head.clone()),
         }
     }
 
     #[doc(hidden)]
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_in_progress(&self) -> bool {
+    #[must_use]
+    pub const fn is_in_progress(&self) -> bool {
         matches!(
             self,
-            RebaseState::InProgress { .. } | RebaseState::Conflicted { .. }
+            Self::InProgress { .. } | Self::Conflicted { .. }
         )
     }
 }
@@ -234,7 +239,7 @@ pub const MAX_PLAN_INVALID_OUTPUT_RERUNS: u32 = 2;
 /// Commit generation state.
 ///
 /// Tracks commit message generation progress through retries:
-/// NotStarted → Generating → Generated → Committed/Skipped
+/// `NotStarted` → Generating → Generated → Committed/Skipped
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum CommitState {
     NotStarted,
@@ -247,8 +252,9 @@ pub enum CommitState {
 impl CommitState {
     #[doc(hidden)]
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, CommitState::Committed { .. } | CommitState::Skipped)
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(self, Self::Committed { .. } | Self::Skipped)
     }
 }
 

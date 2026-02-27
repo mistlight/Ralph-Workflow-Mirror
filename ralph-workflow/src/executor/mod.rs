@@ -23,7 +23,7 @@
 //! - [`AgentChildHandle`] - Handle to a spawned agent with streaming output
 //! - [`ProcessOutput`] - Captured output from a completed process
 //!
-//! # Testing with MockProcessExecutor
+//! # Testing with `MockProcessExecutor`
 //!
 //! The `test-utils` feature enables `MockProcessExecutor` for integration tests:
 //!
@@ -220,7 +220,7 @@ mod tests {
                 command: "env".to_string(),
                 args: vec![],
                 env,
-                prompt: "".to_string(),
+                prompt: String::new(),
                 logfile: logfile_path.to_string_lossy().to_string(),
                 parser_type: JsonParserType::OpenCode,
             };

@@ -1,6 +1,6 @@
-//! OpenCode API catalog caching.
+//! `OpenCode` API catalog caching.
 //!
-//! This module handles file-based caching of the OpenCode model catalog
+//! This module handles file-based caching of the `OpenCode` model catalog
 //! with TTL-based expiration.
 //!
 //! # Dependency Injection
@@ -102,6 +102,10 @@ fn cache_file_path_with_env(env: &dyn CacheEnvironment) -> Result<PathBuf, Cache
 ///
 /// Gracefully degrades on network errors: if fetching fails but a stale
 /// cache exists (< 7 days old), it will be used with a warning.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn load_api_catalog() -> Result<ApiCatalog, CacheError> {
     load_api_catalog_with_env(&RealCacheEnvironment)
 }
@@ -152,8 +156,7 @@ fn load_cached_catalog_with_env(
                         (now.signed_duration_since(cached_at).num_seconds() / 86400).abs();
                     if stale_days < 7 {
                         eprintln!(
-                            "Warning: Failed to fetch fresh OpenCode API catalog ({}), using stale cache from {} days ago",
-                            e, stale_days
+                            "Warning: Failed to fetch fresh OpenCode API catalog ({e}), using stale cache from {stale_days} days ago"
                         );
                         return Ok(catalog);
                     }
@@ -169,7 +172,7 @@ fn load_cached_catalog_with_env(
 /// Save the API catalog to disk.
 ///
 /// Note: Only serializes the providers and models data from the API.
-/// The cached_at timestamp and ttl_seconds are not persisted.
+/// The `cached_at` timestamp and `ttl_seconds` are not persisted.
 pub fn save_catalog(catalog: &ApiCatalog) -> Result<(), CacheError> {
     save_catalog_with_env(catalog, &RealCacheEnvironment)
 }
@@ -390,15 +393,16 @@ mod tests {
 
     #[test]
     fn test_catalog_serialization() {
-        // Test that catalog serialization produces valid JSON
-        let catalog = create_test_catalog();
-
-        // Serialize using the same method as save_catalog
         #[derive(serde::Serialize)]
         struct SerializableCatalog<'a> {
             providers: &'a std::collections::HashMap<String, crate::agents::opencode_api::Provider>,
             models: &'a std::collections::HashMap<String, Vec<crate::agents::opencode_api::Model>>,
         }
+
+        // Test that catalog serialization produces valid JSON
+        let catalog = create_test_catalog();
+
+        // Serialize using the same method as save_catalog
         let serializable = SerializableCatalog {
             providers: &catalog.providers,
             models: &catalog.models,
@@ -420,7 +424,8 @@ mod tests {
 
         // Old catalog should be expired
         catalog.cached_at = Some(
-            chrono::Utc::now() - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS as i64 + 1),
+            chrono::Utc::now()
+                - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS.cast_signed() + 1),
         );
         assert!(catalog.is_expired());
     }

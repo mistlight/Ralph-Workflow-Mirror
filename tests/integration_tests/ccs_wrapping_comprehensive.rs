@@ -44,11 +44,10 @@ fn test_claude_wrapping_exactly_at_boundary() {
             r#"
 {{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
-{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{content}"}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
 {{"type":"stream_event","event":{{"type":"message_stop"}}}}
-"#,
-            content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -61,8 +60,7 @@ fn test_claude_wrapping_exactly_at_boundary() {
         // Content at exact boundary should occupy exactly 1 line (no wrap)
         assert_eq!(
             visible_lines, 1,
-            "Content at exact boundary should not wrap. Found {} lines",
-            visible_lines
+            "Content at exact boundary should not wrap. Found {visible_lines} lines"
         );
 
         // Enhanced assertions per screen model upgrade
@@ -102,11 +100,10 @@ fn test_claude_wrapping_one_char_over() {
             r#"
 {{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
-{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{content}"}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
 {{"type":"stream_event","event":{{"type":"message_stop"}}}}
-"#,
-            content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -130,8 +127,7 @@ fn test_claude_wrapping_one_char_over() {
         let visible_no_newlines = visible.replace('\n', "");
         assert!(
             visible_no_newlines.contains(&content),
-            "Content should be complete (may be split across wrapped rows). Screen:\n{}",
-            visible
+            "Content should be complete (may be split across wrapped rows). Screen:\n{visible}"
         );
     });
 }
@@ -154,11 +150,10 @@ fn test_claude_wrapping_multi_line() {
             r#"
 {{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
-{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{content}"}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
 {{"type":"stream_event","event":{{"type":"message_stop"}}}}
-"#,
-            content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -177,8 +172,7 @@ fn test_claude_wrapping_multi_line() {
         );
         assert!(
             visible.contains("This is a long message"),
-            "Content should be complete. Screen:\n{}",
-            visible
+            "Content should be complete. Screen:\n{visible}"
         );
     });
 }
@@ -200,11 +194,10 @@ fn test_claude_wrapping_with_unicode() {
             r#"
 {{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
-{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{content}"}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
 {{"type":"stream_event","event":{{"type":"message_stop"}}}}
-"#,
-            content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -223,8 +216,7 @@ fn test_claude_wrapping_with_unicode() {
         );
         assert!(
             visible.contains("Hello") && visible.contains("World"),
-            "Unicode content should be complete. Screen:\n{}",
-            visible
+            "Unicode content should be complete. Screen:\n{visible}"
         );
     });
 }
@@ -270,8 +262,7 @@ fn test_claude_wrapping_multiple_deltas() {
         );
         assert!(
             visible.contains("Hello World"),
-            "Content should be complete. Screen:\n{}",
-            visible
+            "Content should be complete. Screen:\n{visible}"
         );
         let (row, _col) = term.cursor_position();
         assert!(row >= 1, "Cursor should be on new line after completion");
@@ -295,11 +286,10 @@ fn test_claude_wrapping_very_narrow_terminal() {
             r#"
 {{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg1","content":[]}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}
-{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}}}
+{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{content}"}}}}}}
 {{"type":"stream_event","event":{{"type":"content_block_stop","index":0}}}}
 {{"type":"stream_event","event":{{"type":"message_stop"}}}}
-"#,
-            content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -320,8 +310,7 @@ fn test_claude_wrapping_very_narrow_terminal() {
         let visible_no_newlines = visible.replace('\n', "");
         assert!(
             visible_no_newlines.contains(content),
-            "Content should be complete (split across many wrapped rows). Screen:\n{}",
-            visible
+            "Content should be complete (split across many wrapped rows). Screen:\n{visible}"
         );
     });
 }
@@ -347,11 +336,10 @@ fn test_codex_wrapping_exactly_at_boundary() {
         let stream = format!(
             r#"
 {{"type":"turn.started"}}
-{{"type":"item.started","item":{{"type":"reasoning","text":"{}"}}}}
-{{"type":"item.completed","item":{{"type":"reasoning","text":"{}"}}}}
+{{"type":"item.started","item":{{"type":"reasoning","text":"{content}"}}}}
+{{"type":"item.completed","item":{{"type":"reasoning","text":"{content}"}}}}
 {{"type":"turn.completed"}}
-"#,
-            content, content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());
@@ -384,11 +372,10 @@ fn test_codex_wrapping_multi_line() {
         let stream = format!(
             r#"
 {{"type":"turn.started"}}
-{{"type":"item.started","item":{{"type":"reasoning","text":"{}"}}}}
-{{"type":"item.completed","item":{{"type":"reasoning","text":"{}"}}}}
+{{"type":"item.started","item":{{"type":"reasoning","text":"{content}"}}}}
+{{"type":"item.completed","item":{{"type":"reasoning","text":"{content}"}}}}
 {{"type":"turn.completed"}}
-"#,
-            content, content
+"#
         );
 
         let reader = BufReader::new(stream.as_bytes());

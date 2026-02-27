@@ -235,7 +235,7 @@ impl Workspace for ReadFailingWorkspace {
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -255,7 +255,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -275,12 +275,12 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with sentinel PLAN");
 
     assert!(
@@ -306,7 +306,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
 
 #[test]
 fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Intentionally do not create `.agent/` up-front. Some workspace implementations
     // do not auto-create parent directories on write.
     let inner = MemoryWorkspace::new_test();
@@ -327,7 +327,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -347,12 +347,12 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should create .agent/ and write sentinel PLAN");
 
     let plan_content = workspace
@@ -363,7 +363,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -388,7 +388,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -408,12 +408,12 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound PLAN read failures");
 
     let error_event = err
@@ -433,7 +433,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -459,7 +459,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -479,12 +479,12 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound DIFF read failures");
 
     let error_event = err
@@ -504,7 +504,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read_errors() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -527,7 +527,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -547,12 +547,12 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound baseline read failures");
 
     let error_event = err
@@ -572,7 +572,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -592,7 +592,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -612,12 +612,12 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with sentinel PLAN in isolation mode");
 
     assert!(
@@ -643,7 +643,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
 
 #[test]
 fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp");
@@ -660,7 +660,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -680,12 +680,12 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
 
     assert!(
@@ -702,7 +702,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
 
 #[test]
 fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let large_diff = "d".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 1);
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -723,7 +723,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -743,12 +743,12 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should return an EffectResult");
 
     assert!(

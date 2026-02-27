@@ -48,6 +48,7 @@ pub struct Timer {
 
 impl Timer {
     /// Create a new timer, starting now
+    #[must_use]
     pub fn new() -> Self {
         let now = Instant::now();
         Self {
@@ -62,16 +63,19 @@ impl Timer {
     }
 
     /// Get elapsed time since timer start
+    #[must_use]
     pub fn elapsed(&self) -> Duration {
         self.start_time.elapsed()
     }
 
     /// Get elapsed time since phase start
+    #[must_use]
     pub fn phase_elapsed(&self) -> Duration {
         self.phase_start.elapsed()
     }
 
     /// Format a duration as "Xm YYs"
+    #[must_use]
     pub fn format_duration(duration: Duration) -> String {
         let total_secs = duration.as_secs();
         let mins = total_secs / 60;
@@ -80,11 +84,13 @@ impl Timer {
     }
 
     /// Get formatted elapsed time since start
+    #[must_use]
     pub fn elapsed_formatted(&self) -> String {
         Self::format_duration(self.elapsed())
     }
 
     /// Get formatted elapsed time since phase start
+    #[must_use]
     pub fn phase_elapsed_formatted(&self) -> String {
         Self::format_duration(self.phase_elapsed())
     }

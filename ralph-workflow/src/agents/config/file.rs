@@ -45,6 +45,12 @@ pub enum ConfigInitResult {
 
 impl AgentsConfigFile {
     /// Load agents config from a file, returning None if file doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - File cannot be read
+    /// - File contents are not valid TOML
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Option<Self>, AgentConfigError> {
         let path = path.as_ref();
         let workspace = WorkspaceFs::new(PathBuf::from("."));
@@ -62,7 +68,13 @@ impl AgentsConfigFile {
     ///
     /// This is the architecture-conformant version that uses the Workspace trait
     /// instead of direct filesystem access, allowing for proper testing with
-    /// MemoryWorkspace.
+    /// `MemoryWorkspace`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - File cannot be read from workspace
+    /// - File contents are not valid TOML
     pub fn load_from_file_with_workspace(
         path: &Path,
         workspace: &dyn Workspace,
@@ -79,6 +91,12 @@ impl AgentsConfigFile {
     }
 
     /// Ensure agents config file exists, creating it from template if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Parent directories cannot be created
+    /// - Default template cannot be written to file
     pub fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
         let path = path.as_ref();
         let workspace = WorkspaceFs::new(PathBuf::from("."));
@@ -102,7 +120,13 @@ impl AgentsConfigFile {
     ///
     /// This is the architecture-conformant version that uses the Workspace trait
     /// instead of direct filesystem access, allowing for proper testing with
-    /// MemoryWorkspace.
+    /// `MemoryWorkspace`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Parent directories cannot be created in workspace
+    /// - Default template cannot be written to workspace
     pub fn ensure_config_exists_with_workspace(
         path: &Path,
         workspace: &dyn Workspace,

@@ -19,6 +19,7 @@ use crate::reducer::state::PipelineState;
 use crate::workspace::Workspace;
 
 /// Context for pipeline finalization.
+#[derive(Copy, Clone)]
 pub struct FinalizeContext<'a> {
     pub logger: &'a Logger,
     pub colors: Colors,

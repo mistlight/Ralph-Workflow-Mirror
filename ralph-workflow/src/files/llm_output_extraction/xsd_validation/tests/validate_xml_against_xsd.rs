@@ -4,9 +4,9 @@
 
 #[test]
 fn test_validate_valid_minimal_xml() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>feat: add new feature</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
@@ -18,10 +18,10 @@ fn test_validate_valid_minimal_xml() {
 
 #[test]
 fn test_validate_valid_xml_with_body() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>fix(api): resolve null pointer</ralph-subject>
 <ralph-body>This fixes the null pointer issue in the API handler.</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
@@ -35,14 +35,14 @@ fn test_validate_valid_xml_with_body() {
 
 #[test]
 fn test_validate_valid_xml_with_detailed_body() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>docs: update API documentation</ralph-subject>
 <ralph-body-summary>Updated the API documentation to reflect recent changes.</ralph-body-summary>
 <ralph-body-details>- Added new endpoints
 - Updated request/response examples
 - Fixed typos in authentication section</ralph-body-details>
 <ralph-body-footer>Closes #123</ralph-body-footer>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
@@ -70,7 +70,7 @@ fn test_validate_with_xml_declaration() {
 
 #[test]
 fn test_validate_missing_root_element() {
-    let xml = r#"Some random text without proper XML tags"#;
+    let xml = r"Some random text without proper XML tags";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -84,8 +84,8 @@ fn test_validate_missing_root_element() {
 
 #[test]
 fn test_validate_missing_closing_tag() {
-    let xml = r#"<ralph-commit>
-<ralph-subject>feat: add feature</ralph-subject>"#;
+    let xml = r"<ralph-commit>
+<ralph-subject>feat: add feature</ralph-subject>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -95,9 +95,9 @@ fn test_validate_missing_closing_tag() {
 
 #[test]
 fn test_validate_missing_subject() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-body>Some body text</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -112,9 +112,9 @@ fn test_validate_missing_subject() {
 
 #[test]
 fn test_validate_empty_subject() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>   </ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -125,9 +125,9 @@ fn test_validate_empty_subject() {
 
 #[test]
 fn test_validate_invalid_conventional_commit_format() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>This is not a conventional commit</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -138,10 +138,10 @@ fn test_validate_invalid_conventional_commit_format() {
 
 #[test]
 fn test_validate_duplicate_subject() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>feat: first subject</ralph-subject>
 <ralph-subject>feat: second subject</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -152,11 +152,11 @@ fn test_validate_duplicate_subject() {
 
 #[test]
 fn test_validate_mixed_simple_and_detailed_body() {
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-subject>feat: add feature</ralph-subject>
 <ralph-body>Simple body</ralph-body>
 <ralph-body-summary>Detailed summary</ralph-body-summary>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_err());
@@ -167,7 +167,7 @@ fn test_validate_mixed_simple_and_detailed_body() {
 
 #[test]
 fn test_validate_whitespace_handling() {
-    let xml = r#"
+    let xml = r"
   <ralph-commit>
 
     <ralph-subject>feat: add feature</ralph-subject>
@@ -177,7 +177,7 @@ fn test_validate_whitespace_handling() {
     </ralph-body>
 
   </ralph-commit>
-"#;
+";
 
     let result = validate_xml_against_xsd(xml);
     assert!(result.is_ok());
@@ -205,10 +205,10 @@ fn test_validate_rejects_commit_elements_after_skip() {
     // Regression: if <ralph-skip> appears before commit message elements, the validator
     // must reject the mixed content rather than silently accepting skip and ignoring
     // the later commit message.
-    let xml = r#"<ralph-commit>
+    let xml = r"<ralph-commit>
 <ralph-skip>No changes found</ralph-skip>
 <ralph-subject>feat: should not be accepted</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
     let result = validate_xml_against_xsd(xml);
     assert!(

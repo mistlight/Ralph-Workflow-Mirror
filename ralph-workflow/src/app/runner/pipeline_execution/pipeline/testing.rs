@@ -11,6 +11,13 @@
 /// # Type Parameters
 ///
 /// * `H` - Effect handler type that implements `EffectHandler` and `StatefulHandler`
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Resume validation fails
+/// - Pipeline execution fails
+/// - Effect handling fails
 #[cfg(feature = "test-utils")]
 pub fn run_pipeline_with_effect_handler<'ctx, H>(
     ctx: &PipelineContext,
@@ -20,6 +27,7 @@ where
     H: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
 {
     use crate::app::event_loop::EventLoopConfig;
+    use crate::checkpoint::RunContext;
     use crate::reducer::PipelineState;
 
     // First, offer interactive resume if checkpoint exists without --resume flag
@@ -50,23 +58,20 @@ where
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
     // Create run context - either new or from checkpoint
-    let run_context = if let Some(ref checkpoint) = resume_checkpoint {
-        use crate::checkpoint::RunContext;
-        RunContext::from_checkpoint(checkpoint)
-    } else {
-        use crate::checkpoint::RunContext;
-        RunContext::new()
-    };
+    let run_context = resume_checkpoint
+        .as_ref()
+        .map_or_else(RunContext::new, RunContext::from_checkpoint);
 
     // Apply checkpoint configuration restoration if resuming
-    let config = if let Some(ref checkpoint) = resume_checkpoint {
-        use crate::checkpoint::apply_checkpoint_to_config;
-        let mut restored_config = ctx.config.clone();
-        apply_checkpoint_to_config(&mut restored_config, checkpoint);
-        restored_config
-    } else {
-        ctx.config.clone()
-    };
+    let config = resume_checkpoint.as_ref().map_or_else(
+        || ctx.config.clone(),
+        |checkpoint| {
+            use crate::checkpoint::apply_checkpoint_to_config;
+            let mut restored_config = ctx.config.clone();
+            apply_checkpoint_to_config(&mut restored_config, checkpoint);
+            restored_config
+        },
+    );
 
     // Set up git helpers and agent phase
     // Use workspace-aware versions when test-utils feature is enabled
@@ -123,11 +128,9 @@ where
     save_start_commit_or_warn(ctx);
 
     // Set up interrupt context for checkpoint saving on Ctrl+C
-    let initial_phase = if let Some(ref checkpoint) = resume_checkpoint {
-        checkpoint.phase
-    } else {
-        PipelinePhase::Planning
-    };
+    let initial_phase = resume_checkpoint
+        .as_ref()
+        .map_or(PipelinePhase::Planning, |checkpoint| checkpoint.phase);
     setup_interrupt_context_for_pipeline(
         initial_phase,
         config.developer_iters,

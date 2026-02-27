@@ -8,6 +8,7 @@ use crate::prompts::template_engine::Template;
 use crate::prompts::{RenderedTemplate, SubstitutionEntry, SubstitutionLog, SubstitutionSource};
 use crate::workspace::Workspace;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 const COMMIT_MESSAGE_XSD_SCHEMA: &str =
     include_str!("../files/llm_output_extraction/commit_message.xsd");
@@ -41,7 +42,12 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
+///
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined.
 #[cfg(test)]
+#[must_use]
 pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
     use crate::workspace::WorkspaceFs;
     use std::env;
@@ -210,7 +216,12 @@ END OF FILES SECTION
 /// changes before calling this function to avoid wasting LLM API calls.
 /// The `generate_commit_message` function in phases/commit.rs handles empty
 /// diffs by returning the hardcoded fallback commit message.
+///
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined.
 #[cfg(test)]
+#[must_use]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     use crate::workspace::WorkspaceFs;
     use std::env;
@@ -279,11 +290,11 @@ pub fn prompt_generate_commit_message_with_diff_with_log(
     let has_changes = !diff_content.is_empty();
 
     if !has_changes {
-        let error_message = "ERROR: Empty diff provided. This indicates a bug in the caller - \
+        let prompt_content = "ERROR: Empty diff provided. This indicates a bug in the caller - \
                 meaningful changes should be checked before requesting a commit message."
             .to_string();
         return RenderedTemplate {
-            content: error_message,
+            content: prompt_content,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![],
@@ -315,12 +326,12 @@ pub fn prompt_generate_commit_message_with_diff_with_log(
         Err(e) => {
             eprintln!("Warning: Failed to render commit template: {e}");
             // Last resort: simple inline prompt with manual log
-            let fallback_prompt = format!(
+            let prompt_content = format!(
                 "Generate a conventional commit message for this diff:\n\n{diff_content}\n\n\
                  Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
             );
             RenderedTemplate {
-                content: fallback_prompt,
+                content: prompt_content,
                 log: SubstitutionLog {
                     template_name: template_name.to_string(),
                     substituted: vec![SubstitutionEntry {
@@ -441,32 +452,37 @@ pub fn prompt_commit_xsd_retry_with_log(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Schema file: {} (workspace.root() = {})\n",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/commit_message.xsd"),
                 workspace.root().display()
-            ));
+            )
+            .unwrap();
         }
         if !last_output_exists {
             if used_processed {
-                diagnostic_prefix.push_str(&format!(
+                writeln!(
+                    diagnostic_prefix,
                     "  - Last output: Neither canonical nor processed file exists:\n\
                      \t  Tried: {}\n\
                      \t  Tried: {}\n\
-                     \t  (workspace.root() = {})\n",
+                     \t  (workspace.root() = {})",
                     workspace.absolute_str(".agent/tmp/commit_message.xml"),
                     workspace.absolute_str(".agent/tmp/commit_message.xml.processed"),
                     workspace.root().display()
-                ));
+                )
+                .unwrap();
             } else {
                 let processed_note = if processed_output_exists {
                     " (note: .processed file exists but canonical file is missing)"
                 } else {
                     ""
                 };
-                diagnostic_prefix.push_str(&format!(
+                writeln!(
+                    diagnostic_prefix,
                     "  - Last output: {}{}\n\
-                     \t  (workspace.root() = {})\n",
+                     \t  (workspace.root() = {})",
                     workspace.absolute_str(
                         canonical_output_path
                             .to_str()
@@ -474,7 +490,8 @@ pub fn prompt_commit_xsd_retry_with_log(
                     ),
                     processed_note,
                     workspace.root().display()
-                ));
+                )
+                .unwrap();
             }
         }
         diagnostic_prefix
@@ -483,16 +500,15 @@ pub fn prompt_commit_xsd_retry_with_log(
 
     // If both files are missing, return fallback with manual log
     if !schema_exists && !last_output_exists {
-        let fallback_content = format!(
-            "{}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
-             Error: {}\n\n\
+        let prompt_content = format!(
+            "{diagnostic_prefix}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please generate a conventional commit message for the current changes.\n\n\
-             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n"
         );
         return RenderedTemplate {
-            content: fallback_content,
+            content: prompt_content,
             log: SubstitutionLog {
                 template_name: template_name.to_string(),
                 substituted: vec![SubstitutionEntry {
@@ -527,32 +543,29 @@ pub fn prompt_commit_xsd_retry_with_log(
     ]);
 
     let template = Template::new(&template_content);
-    match template.render_with_log(template_name, &variables, &partials) {
-        Ok(mut rendered) => {
-            // Prepend diagnostic prefix if files were missing but we continued anyway
-            if !diagnostic_prefix.is_empty() {
-                rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
-            }
-            rendered
+    if let Ok(mut rendered) = template.render_with_log(template_name, &variables, &partials) {
+        // Prepend diagnostic prefix if files were missing but we continued anyway
+        if !diagnostic_prefix.is_empty() {
+            rendered.content = format!("{}\n{}", diagnostic_prefix, rendered.content);
         }
-        Err(_) => {
-            // Fallback with manual log
-            let fallback_message = format!(
-                "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
-                 Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
-                 Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
-            );
-            RenderedTemplate {
-                content: fallback_message,
-                log: SubstitutionLog {
-                    template_name: template_name.to_string(),
-                    substituted: vec![SubstitutionEntry {
-                        name: "XSD_ERROR".to_string(),
-                        source: SubstitutionSource::Value,
-                    }],
-                    unsubstituted: vec![],
-                },
-            }
+        rendered
+    } else {
+        // Fallback with manual log
+        let prompt_content = format!(
+            "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
+             Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
+             Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
+        );
+        RenderedTemplate {
+            content: prompt_content,
+            log: SubstitutionLog {
+                template_name: template_name.to_string(),
+                substituted: vec![SubstitutionEntry {
+                    name: "XSD_ERROR".to_string(),
+                    source: SubstitutionSource::Value,
+                }],
+                unsubstituted: vec![],
+            },
         }
     }
 }
@@ -609,25 +622,29 @@ pub fn prompt_commit_xsd_retry_with_context(
     if !schema_exists || !last_output_exists {
         diagnostic_prefix.push_str("⚠️  WARNING: Required XSD retry files are missing:\n");
         if !schema_exists {
-            diagnostic_prefix.push_str(&format!(
-                "  - Schema file: {} (workspace.root() = {})\n",
+            writeln!(
+                diagnostic_prefix,
+                "  - Schema file: {} (workspace.root() = {})",
                 workspace.absolute_str(".agent/tmp/commit_message.xsd"),
                 workspace.root().display()
-            ));
+            )
+            .unwrap();
         }
         if !last_output_exists {
             // Show both attempted paths for clarity
             if used_processed {
                 // We tried processed as fallback and it's also missing
-                diagnostic_prefix.push_str(&format!(
+                writeln!(
+                    diagnostic_prefix,
                     "  - Last output: Neither canonical nor processed file exists:\n\
                      \t  Tried: {}\n\
                      \t  Tried: {}\n\
-                     \t  (workspace.root() = {})\n",
+                     \t  (workspace.root() = {})",
                     workspace.absolute_str(".agent/tmp/commit_message.xml"),
                     workspace.absolute_str(".agent/tmp/commit_message.xml.processed"),
                     workspace.root().display()
-                ));
+                )
+                .unwrap();
             } else {
                 // Canonical path doesn't exist
                 let processed_note = if processed_output_exists {
@@ -635,9 +652,10 @@ pub fn prompt_commit_xsd_retry_with_context(
                 } else {
                     ""
                 };
-                diagnostic_prefix.push_str(&format!(
+                writeln!(
+                    diagnostic_prefix,
                     "  - Last output: {}{}\n\
-                     \t  (workspace.root() = {})\n",
+                     \t  (workspace.root() = {})",
                     workspace.absolute_str(
                         canonical_output_path
                             .to_str()
@@ -645,7 +663,8 @@ pub fn prompt_commit_xsd_retry_with_context(
                     ),
                     processed_note,
                     workspace.root().display()
-                ));
+                )
+                .unwrap();
             }
         }
         diagnostic_prefix
@@ -655,12 +674,11 @@ pub fn prompt_commit_xsd_retry_with_context(
     // If both files are missing, return fallback prompt with diagnostics (per AC #5)
     if !schema_exists && !last_output_exists {
         return format!(
-            "{}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
-             Error: {}\n\n\
+            "{diagnostic_prefix}XSD VALIDATION FAILED - GENERATE COMMIT MESSAGE\n\n\
+             Error: {xsd_error}\n\n\
              The schema and previous output files could not be found. \
              Please generate a conventional commit message for the current changes.\n\n\
-             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n",
-            diagnostic_prefix, xsd_error
+             Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n"
         );
     }
 
@@ -698,10 +716,10 @@ pub fn prompt_commit_xsd_retry_with_context(
         });
 
     // Prepend diagnostic prefix if files were missing but we continued anyway
-    if !diagnostic_prefix.is_empty() {
-        format!("{}\n{}", diagnostic_prefix, rendered_prompt)
-    } else {
+    if diagnostic_prefix.is_empty() {
         rendered_prompt
+    } else {
+        format!("{diagnostic_prefix}\n{rendered_prompt}")
     }
 }
 

@@ -31,6 +31,10 @@ use std::path::Path;
 /// # Returns
 ///
 /// Returns `Ok(())` if validation passes, or an error if PROMPT.md validation fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn handle_dry_run(
     logger: &Logger,
     _colors: crate::logger::Colors,

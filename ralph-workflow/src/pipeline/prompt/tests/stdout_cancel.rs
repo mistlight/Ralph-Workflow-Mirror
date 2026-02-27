@@ -20,6 +20,8 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
     use super::super::agent_spawn_test::run_with_agent_spawn_with_monitor_config;
     use super::super::types::{PipelineRuntime, PromptCommand};
 
+    const MAX_ADDITIONAL_READS: usize = 10;
+
     #[derive(Debug)]
     struct SharedRunningChild {
         still_running: Arc<AtomicBool>,
@@ -129,7 +131,7 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -145,7 +147,7 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
         scope.spawn(move || {
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
-                &mut runtime,
+                &runtime,
                 &[],
                 1,
                 Duration::from_millis(10),
@@ -213,7 +215,6 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
 
         // Allow up to 10 additional reads after stabilization due to scheduling jitter.
         // Empirically observed deltas of 8-9 reads on CI/local machines.
-        const MAX_ADDITIONAL_READS: usize = 10;
         assert!(
             reads_end <= reads_stable_at + MAX_ADDITIONAL_READS,
             "expected stdout pump reads to stop promptly after enforcement begins, \

@@ -14,8 +14,8 @@ const CHECKPOINT_FILE: &str = "checkpoint.json";
 /// Increment this when making breaking changes to the checkpoint format.
 /// This allows for future migration logic if needed.
 /// v1: Initial checkpoint format
-/// v2: Added run_id, parent_run_id, resume_count, actual_developer_runs, actual_reviewer_runs
-/// v3: Added execution_history, file_system_state for hardened resume
+/// v2: Added `run_id`, `parent_run_id`, `resume_count`, `actual_developer_runs`, `actual_reviewer_runs`
+/// v3: Added `execution_history`, `file_system_state` for hardened resume
 const CHECKPOINT_VERSION: u32 = 3;
 
 /// Get the checkpoint file path.
@@ -67,13 +67,13 @@ pub struct CliArgsSnapshot {
     pub reviewer_json_parser: Option<String>,
 }
 
-/// Default value for isolation_mode (true = isolation enabled).
-fn default_isolation_mode() -> bool {
+/// Default value for `isolation_mode` (true = isolation enabled).
+const fn default_isolation_mode() -> bool {
     true
 }
 
 /// Default value for verbosity (2 = Verbose).
-fn default_verbosity() -> u8 {
+const fn default_verbosity() -> u8 {
     2
 }
 
@@ -93,7 +93,8 @@ pub struct CliArgsSnapshotBuilder {
 
 impl CliArgsSnapshotBuilder {
     /// Create a new builder with required fields.
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         developer_iters: u32,
         reviewer_reviews: u32,
         review_depth: Option<String>,
@@ -111,24 +112,28 @@ impl CliArgsSnapshotBuilder {
     }
 
     /// Set the verbosity level.
-    pub fn verbosity(mut self, verbosity: u8) -> Self {
+    #[must_use] 
+    pub const fn verbosity(mut self, verbosity: u8) -> Self {
         self.verbosity = verbosity;
         self
     }
 
     /// Set whether to show streaming metrics.
-    pub fn show_streaming_metrics(mut self, show: bool) -> Self {
+    #[must_use] 
+    pub const fn show_streaming_metrics(mut self, show: bool) -> Self {
         self.show_streaming_metrics = show;
         self
     }
 
     /// Set the reviewer JSON parser override.
+    #[must_use] 
     pub fn reviewer_json_parser(mut self, parser: Option<String>) -> Self {
         self.reviewer_json_parser = parser;
         self
     }
 
     /// Build the snapshot.
+    #[must_use] 
     pub fn build(self) -> CliArgsSnapshot {
         CliArgsSnapshot {
             developer_iters: self.developer_iters,
@@ -148,6 +153,7 @@ impl CliArgsSnapshot {
     /// This is a convenience method for test code.
     /// For production code, use [`CliArgsSnapshotBuilder`] for better readability.
     #[cfg(test)]
+    #[must_use] 
     pub fn new(
         developer_iters: u32,
         reviewer_reviews: u32,
@@ -200,14 +206,15 @@ pub struct AgentConfigSnapshot {
     pub context_level: u8,
 }
 
-/// Default value for context_level (1 = normal context).
-fn default_context_level() -> u8 {
+/// Default value for `context_level` (1 = normal context).
+const fn default_context_level() -> u8 {
     1
 }
 
 impl AgentConfigSnapshot {
     /// Create a snapshot from agent configuration.
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         name: String,
         cmd: String,
         output_flag: String,
@@ -227,19 +234,22 @@ impl AgentConfigSnapshot {
     }
 
     /// Set model override.
+    #[must_use] 
     pub fn with_model_override(mut self, model: Option<String>) -> Self {
         self.model_override = model;
         self
     }
 
     /// Set provider override.
+    #[must_use] 
     pub fn with_provider_override(mut self, provider: Option<String>) -> Self {
         self.provider_override = provider;
         self
     }
 
     /// Set context level.
-    pub fn with_context_level(mut self, level: u8) -> Self {
+    #[must_use] 
+    pub const fn with_context_level(mut self, level: u8) -> Self {
         self.context_level = level;
         self
     }
@@ -269,6 +279,7 @@ pub(crate) fn is_sensitive_env_key(key: &str) -> bool {
 
 impl EnvironmentSnapshot {
     /// Capture the current environment variables relevant to Ralph.
+    #[must_use] 
     pub fn capture_current() -> Self {
         let mut ralph_vars = HashMap::new();
         let mut other_vars = HashMap::new();
@@ -419,7 +430,7 @@ impl<'de> Deserialize<'de> for PipelinePhase {
     {
         struct PhaseVisitor;
 
-        impl<'de> Visitor<'de> for PhaseVisitor {
+        impl Visitor<'_> for PhaseVisitor {
             type Value = PipelinePhase;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -446,9 +457,8 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                     "Interrupted" => Ok(PipelinePhase::Interrupted),
                     // Legacy phases are no longer supported - reject with clear error
                     "Fix" | "ReviewAgain" => Err(E::custom(format!(
-                        "Legacy phase '{}' is no longer supported. \
-                         Delete .agent/checkpoint.json and start a fresh pipeline run.",
-                        value
+                        "Legacy phase '{value}' is no longer supported. \
+                         Delete .agent/checkpoint.json and start a fresh pipeline run."
                     ))),
                     _ => Err(E::unknown_variant(
                         value,

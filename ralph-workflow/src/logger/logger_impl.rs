@@ -33,6 +33,7 @@ pub struct Logger {
 
 impl Logger {
     /// Create a new Logger with the given colors configuration.
+    #[must_use]
     pub const fn new(colors: Colors) -> Self {
         Self {
             colors,
@@ -51,6 +52,7 @@ impl Logger {
     /// For pipeline code where a workspace exists, prefer `with_workspace_log`
     /// instead. This method uses `std::fs` directly and is intended for CLI layer
     /// code or legacy compatibility.
+    #[must_use]
     pub fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self
@@ -66,6 +68,7 @@ impl Logger {
     ///
     /// * `workspace` - The workspace to use for file operations
     /// * `relative_path` - Path relative to workspace root for the log file
+    #[must_use]
     pub fn with_workspace_log(
         mut self,
         workspace: Arc<dyn Workspace>,

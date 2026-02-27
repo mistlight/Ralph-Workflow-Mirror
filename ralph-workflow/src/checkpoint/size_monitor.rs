@@ -46,6 +46,7 @@ impl SizeThresholds {
     };
 
     /// Create custom thresholds.
+    #[must_use]
     pub const fn new(warn_threshold: usize, error_threshold: usize) -> Self {
         Self {
             warn_threshold,
@@ -68,18 +69,21 @@ pub struct CheckpointSizeMonitor {
 
 impl CheckpointSizeMonitor {
     /// Create a new monitor with default thresholds.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             thresholds: SizeThresholds::DEFAULT,
         }
     }
 
     /// Create a new monitor with custom thresholds.
-    pub fn with_thresholds(thresholds: SizeThresholds) -> Self {
+    #[must_use]
+    pub const fn with_thresholds(thresholds: SizeThresholds) -> Self {
         Self { thresholds }
     }
 
     /// Check checkpoint size and return appropriate alert.
+    #[must_use]
     pub fn check_size(&self, size_bytes: usize) -> SizeAlert {
         if size_bytes >= self.thresholds.error_threshold {
             SizeAlert::Error(format!(
@@ -107,6 +111,7 @@ impl CheckpointSizeMonitor {
     }
 
     /// Check serialized JSON size and return an alert.
+    #[must_use]
     pub fn check_json(&self, json: &str) -> SizeAlert {
         self.check_size(json.len())
     }
@@ -115,12 +120,14 @@ impl CheckpointSizeMonitor {
     ///
     /// Library code must not print directly; callers decide how/where to log.
     #[deprecated(since = "0.7.3", note = "Use check_json(json) and log at the callsite")]
+    #[must_use]
     pub fn check_json_and_log(&self, json: &str) -> SizeAlert {
         self.check_json(json)
     }
 
     /// Get current thresholds.
-    pub fn thresholds(&self) -> &SizeThresholds {
+    #[must_use]
+    pub const fn thresholds(&self) -> &SizeThresholds {
         &self.thresholds
     }
 }

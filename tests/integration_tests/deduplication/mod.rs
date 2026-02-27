@@ -9,7 +9,7 @@
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (visible terminal output), not internal state
@@ -41,8 +41,8 @@ use ralph_workflow::workspace::MemoryWorkspace;
 // Helper Functions
 // =============================================================================
 
-/// Create a Claude parser with VirtualTerminal in Full mode (ANSI sequences enabled).
-pub(super) fn create_parser_with_vterm() -> (ClaudeParser, Rc<RefCell<VirtualTerminal>>) {
+/// Create a Claude parser with `VirtualTerminal` in Full mode (ANSI sequences enabled).
+pub fn create_parser_with_vterm() -> (ClaudeParser, Rc<RefCell<VirtualTerminal>>) {
     let vterm = Rc::new(RefCell::new(VirtualTerminal::new()));
     let printer: SharedPrinter = vterm.clone();
     let parser = ClaudeParser::with_printer(Colors::new(), Verbosity::Normal, printer)
@@ -50,8 +50,8 @@ pub(super) fn create_parser_with_vterm() -> (ClaudeParser, Rc<RefCell<VirtualTer
     (parser, vterm)
 }
 
-/// Parse events and return the VirtualTerminal for inspection.
-pub(super) fn parse_events(events: &[&str]) -> Rc<RefCell<VirtualTerminal>> {
+/// Parse events and return the `VirtualTerminal` for inspection.
+pub fn parse_events(events: &[&str]) -> Rc<RefCell<VirtualTerminal>> {
     let (parser, vterm) = create_parser_with_vterm();
     let workspace = MemoryWorkspace::new_test();
     let input = events.join("\n");

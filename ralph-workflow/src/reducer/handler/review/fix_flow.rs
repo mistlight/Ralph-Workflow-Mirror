@@ -1,6 +1,6 @@
 impl MainEffectHandler {
     pub(super) fn prepare_fix_prompt(
-        &mut self,
+        &self,
         ctx: &mut PhaseContext<'_>,
         pass: u32,
         prompt_mode: PromptMode,
@@ -96,15 +96,7 @@ impl MainEffectHandler {
         } else {
             String::new()
         };
-        let mut ignore_sources = vec![
-            prompt_content.as_str(),
-            plan_content.as_str(),
-            issues_content.as_str(),
-        ];
-        if is_xsd_retry {
-            ignore_sources.push(last_output.as_str());
-        }
-        let mut _xsd_error_for_validation: Option<String> = None;
+        let mut xsd_error_for_validation: Option<String> = None;
         let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =
             match prompt_mode {
                 PromptMode::XsdRetry => {
@@ -117,7 +109,7 @@ impl MainEffectHandler {
                         .last_fix_xsd_error
                         .as_deref()
                         .unwrap_or("XML output failed validation. Provide valid XML output.");
-                    _xsd_error_for_validation = Some(xsd_error.to_string());
+                    xsd_error_for_validation = Some(xsd_error.to_string());
                     let (prompt, was_replayed) =
                         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
                             prompt_fix_xsd_retry_with_context(
@@ -185,12 +177,11 @@ impl MainEffectHandler {
                     return Err(ErrorEvent::FixContinuationNotSupported.into());
                 }
             };
-        let mut rendered_log = None;
-        if should_validate && !was_replayed {
+        let rendered_log = if should_validate && !was_replayed {
             // Re-generate to get the log for validation
             // Only validate freshly generated prompts, not replayed ones
             let rendered = if matches!(prompt_mode, PromptMode::XsdRetry) {
-                let xsd_error = _xsd_error_for_validation
+                let xsd_error = xsd_error_for_validation
                     .as_deref()
                     .unwrap_or("XML output failed validation. Provide valid XML output.");
                 crate::prompts::review::prompt_fix_xsd_retry_with_log(
@@ -227,8 +218,10 @@ impl MainEffectHandler {
                 ));
                 return Ok(result);
             }
-            rendered_log = Some(rendered.log);
-        }
+            Some(rendered.log)
+        } else {
+            None
+        };
 
         if !was_replayed {
             ctx.capture_prompt(&prompt_key, &fix_prompt);
@@ -240,8 +233,7 @@ impl MainEffectHandler {
             .write(Path::new(".agent/tmp/fix_prompt.txt"), &fix_prompt)
         {
             ctx.logger.warn(&format!(
-                "Failed to write fix prompt file: {}. Pipeline will continue (loop recovery will handle convergence).",
-                err
+                "Failed to write fix prompt file: {err}. Pipeline will continue (loop recovery will handle convergence)."
             ));
         }
 
@@ -290,7 +282,7 @@ impl MainEffectHandler {
             .cloned()
             .unwrap_or_else(|| ctx.reviewer_agent.to_string());
 
-        let mut result = self.invoke_agent(ctx, AgentRole::Reviewer, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Reviewer, &agent, None, prompt)?;
         if result.additional_events.iter().any(|e| {
             matches!(
                 e,
@@ -303,30 +295,29 @@ impl MainEffectHandler {
     }
 
     pub(super) fn cleanup_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
         let _ = ctx.workspace.remove_if_exists(fix_xml);
-        Ok(EffectResult::event(PipelineEvent::fix_result_xml_cleaned(
+        EffectResult::event(PipelineEvent::fix_result_xml_cleaned(
             pass,
-        )))
+        ))
     }
 
     pub(super) fn extract_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
         let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
         match ctx.workspace.read(fix_xml) {
-            Ok(_) => Ok(EffectResult::event(
+            Ok(_) => EffectResult::event(
                 PipelineEvent::fix_result_xml_extracted(pass),
-            )),
+            ),
             Err(err) => {
                 let detail = if err.kind() == std::io::ErrorKind::NotFound {
                     None
@@ -337,20 +328,20 @@ impl MainEffectHandler {
                         err
                     ))
                 };
-                Ok(EffectResult::event(PipelineEvent::fix_result_xml_missing(
+                EffectResult::event(PipelineEvent::fix_result_xml_missing(
                     pass,
                     self.state.continuation.invalid_output_attempts,
                     detail,
-                )))
+                ))
             }
         }
     }
 
     pub(super) fn validate_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use crate::files::llm_output_extraction::validate_fix_result_xml;
         use std::path::Path;
@@ -367,13 +358,13 @@ impl MainEffectHandler {
                         err
                     ))
                 };
-                return Ok(EffectResult::event(
+                return EffectResult::event(
                     PipelineEvent::fix_output_validation_failed(
                         pass,
                         self.state.continuation.invalid_output_attempts,
                         detail,
                     ),
-                ));
+                );
             }
         };
 
@@ -381,7 +372,7 @@ impl MainEffectHandler {
             Ok(elements) => {
                 let status = crate::reducer::state::FixStatus::parse(&elements.status)
                     .unwrap_or(crate::reducer::state::FixStatus::Failed);
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::fix_result_xml_validated(pass, status, elements.summary),
                     vec![UIEvent::XmlOutput {
                         xml_type: XmlOutputType::FixResult,
@@ -392,20 +383,20 @@ impl MainEffectHandler {
                             snippets: Vec::new(),
                         }),
                     }],
-                ))
+                )
             }
-            Err(err) => Ok(EffectResult::event(
+            Err(err) => EffectResult::event(
                 PipelineEvent::fix_output_validation_failed(
                     pass,
                     self.state.continuation.invalid_output_attempts,
                     Some(err.format_for_ai_retry()),
                 ),
-            )),
+            ),
         }
     }
 
     pub(super) fn apply_fix_outcome(
-        &mut self,
+        &self,
         _ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
@@ -421,17 +412,16 @@ impl MainEffectHandler {
     }
 
     pub(super) fn archive_fix_result_xml(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
         archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::FIX_RESULT_XML));
-        Ok(EffectResult::event(PipelineEvent::fix_result_xml_archived(
+        EffectResult::event(PipelineEvent::fix_result_xml_archived(
             pass,
-        )))
+        ))
     }
 }

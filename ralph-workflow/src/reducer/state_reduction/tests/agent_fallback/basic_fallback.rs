@@ -16,7 +16,7 @@ fn test_reduce_agent_fallback_to_next_model() {
         state,
         PipelineEvent::agent_invocation_failed(
             AgentRole::Developer,
-            initial_agent.clone(),
+            initial_agent,
             1,
             AgentErrorKind::Network,
             true,
@@ -101,7 +101,7 @@ fn test_reduce_agent_fallback_triggers_fallback_event() {
         state,
         PipelineEvent::agent_invocation_failed(
             AgentRole::Developer,
-            agent.clone(),
+            agent,
             1,
             AgentErrorKind::Authentication,
             false,

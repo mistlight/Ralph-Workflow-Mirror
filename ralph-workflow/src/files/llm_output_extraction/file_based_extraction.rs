@@ -52,11 +52,12 @@ pub mod paths {
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`resolve_absolute_path_at`] instead.
+#[must_use]
 pub fn resolve_absolute_path(relative_path: &str) -> String {
-    std::env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join(relative_path).display().to_string())
-        .unwrap_or_else(|| relative_path.to_string())
+    std::env::current_dir().ok().map_or_else(
+        || relative_path.to_string(),
+        |cwd| cwd.join(relative_path).display().to_string(),
+    )
 }
 
 /// Resolve a relative path to an absolute path at a specific repository root.
@@ -80,6 +81,7 @@ pub fn resolve_absolute_path(relative_path: &str) -> String {
 /// let path = resolve_absolute_path_at(Path::new("/Users/user/project"), ".agent/tmp/issues.xml");
 /// // Returns: "/Users/user/project/.agent/tmp/issues.xml"
 /// ```
+#[must_use]
 pub fn resolve_absolute_path_at(repo_root: &std::path::Path, relative_path: &str) -> String {
     repo_root.join(relative_path).display().to_string()
 }
@@ -135,13 +137,10 @@ pub fn has_valid_xml_output(workspace: &dyn Workspace, xml_path: &Path) -> bool 
         return false;
     }
 
-    match workspace.read(xml_path) {
-        Ok(content) => {
-            let trimmed = content.trim();
-            !trimmed.is_empty() && trimmed.starts_with('<')
-        }
-        Err(_) => false,
-    }
+    workspace.read(xml_path).is_ok_and(|content| {
+        let trimmed = content.trim();
+        !trimmed.is_empty() && trimmed.starts_with('<')
+    })
 }
 
 /// Archive an XML output file after successful processing.

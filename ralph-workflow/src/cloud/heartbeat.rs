@@ -30,12 +30,11 @@ impl HeartbeatGuard {
         let handle = thread::spawn(move || {
             loop {
                 match stop_rx.recv_timeout(interval) {
-                    Ok(()) => break,
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Ignore heartbeat errors - graceful degradation
                         let _ = reporter.heartbeat();
                     }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
 
@@ -132,8 +131,7 @@ mod tests {
 
         assert!(
             elapsed < Duration::from_millis(500),
-            "drop should return promptly; elapsed={:?}",
-            elapsed
+            "drop should return promptly; elapsed={elapsed:?}"
         );
     }
 
@@ -177,8 +175,7 @@ mod tests {
 
         assert!(
             elapsed < Duration::from_millis(150),
-            "drop should not block on stalled heartbeat; elapsed={:?}",
-            elapsed
+            "drop should not block on stalled heartbeat; elapsed={elapsed:?}"
         );
     }
 }

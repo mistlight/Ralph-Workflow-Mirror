@@ -215,27 +215,18 @@ fn test_next_simplified_logfile_attempt_index_increments_from_existing_attempts(
     // Pre-populate some log files with attempt suffixes
     let base = ".agent/logs-2026-02-06_14-03-27.123Z/agents";
     workspace
-        .write(
-            &PathBuf::from(format!("{}/planning_1_a0.log", base)),
-            "first",
-        )
+        .write(&PathBuf::from(format!("{base}/planning_1_a0.log")), "first")
         .unwrap();
     workspace
-        .write(
-            &PathBuf::from(format!("{}/planning_1_a2.log", base)),
-            "third",
-        )
+        .write(&PathBuf::from(format!("{base}/planning_1_a2.log")), "third")
         .unwrap();
     workspace
-        .write(
-            &PathBuf::from(format!("{}/planning_1_a10.log", base)),
-            "11th",
-        )
+        .write(&PathBuf::from(format!("{base}/planning_1_a10.log")), "11th")
         .unwrap();
     // Different phase should be ignored
     workspace
         .write(
-            &PathBuf::from(format!("{}/developer_1_a5.log", base)),
+            &PathBuf::from(format!("{base}/developer_1_a5.log")),
             "other",
         )
         .unwrap();
@@ -258,7 +249,7 @@ fn test_next_simplified_logfile_attempt_index_returns_one_when_base_file_exists(
     // Create only the base file (without attempt suffix)
     let base = ".agent/logs-2026-02-06_14-03-27.123Z/agents";
     workspace
-        .write(&PathBuf::from(format!("{}/planning_1.log", base)), "base")
+        .write(&PathBuf::from(format!("{base}/planning_1.log")), "base")
         .unwrap();
 
     let base_path = Path::new(".agent/logs-2026-02-06_14-03-27.123Z/agents/planning_1.log");
@@ -280,17 +271,17 @@ fn test_next_simplified_logfile_attempt_index_returns_next_after_base_and_attemp
     // Create the base file (without attempt suffix) and some attempt files
     let base = ".agent/logs-2026-02-06_14-03-27.123Z/agents";
     workspace
-        .write(&PathBuf::from(format!("{}/planning_1.log", base)), "base")
+        .write(&PathBuf::from(format!("{base}/planning_1.log")), "base")
         .unwrap();
     workspace
         .write(
-            &PathBuf::from(format!("{}/planning_1_a1.log", base)),
+            &PathBuf::from(format!("{base}/planning_1_a1.log")),
             "first retry",
         )
         .unwrap();
     workspace
         .write(
-            &PathBuf::from(format!("{}/planning_1_a2.log", base)),
+            &PathBuf::from(format!("{base}/planning_1_a2.log")),
             "second retry",
         )
         .unwrap();

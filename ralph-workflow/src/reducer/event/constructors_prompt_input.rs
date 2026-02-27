@@ -1,5 +1,6 @@
 impl PipelineEvent {
-    pub fn prompt_input_oversize_detected(
+    #[must_use] 
+    pub const fn prompt_input_oversize_detected(
         phase: PipelinePhase,
         kind: PromptInputKind,
         content_id_sha256: String,
@@ -7,7 +8,7 @@ impl PipelineEvent {
         limit_bytes: u64,
         policy: String,
     ) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::OversizeDetected {
+        Self::PromptInput(PromptInputEvent::OversizeDetected {
             phase,
             kind,
             content_id_sha256,
@@ -17,69 +18,77 @@ impl PipelineEvent {
         })
     }
 
-    pub fn planning_inputs_materialized(iteration: u32, prompt: MaterializedPromptInput) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::PlanningInputsMaterialized {
+    #[must_use] 
+    pub const fn planning_inputs_materialized(iteration: u32, prompt: MaterializedPromptInput) -> Self {
+        Self::PromptInput(PromptInputEvent::PlanningInputsMaterialized {
             iteration,
             prompt,
         })
     }
 
-    pub fn development_inputs_materialized(
+    #[must_use] 
+    pub const fn development_inputs_materialized(
         iteration: u32,
         prompt: MaterializedPromptInput,
         plan: MaterializedPromptInput,
     ) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::DevelopmentInputsMaterialized {
+        Self::PromptInput(PromptInputEvent::DevelopmentInputsMaterialized {
             iteration,
             prompt,
             plan,
         })
     }
 
-    pub fn review_inputs_materialized(
+    #[must_use] 
+    pub const fn review_inputs_materialized(
         pass: u32,
         plan: MaterializedPromptInput,
         diff: MaterializedPromptInput,
     ) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::ReviewInputsMaterialized { pass, plan, diff })
+        Self::PromptInput(PromptInputEvent::ReviewInputsMaterialized { pass, plan, diff })
     }
 
-    pub fn commit_inputs_materialized(attempt: u32, diff: MaterializedPromptInput) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::CommitInputsMaterialized { attempt, diff })
+    #[must_use] 
+    pub const fn commit_inputs_materialized(attempt: u32, diff: MaterializedPromptInput) -> Self {
+        Self::PromptInput(PromptInputEvent::CommitInputsMaterialized { attempt, diff })
     }
 
-    pub fn xsd_retry_last_output_materialized(
+    #[must_use] 
+    pub const fn xsd_retry_last_output_materialized(
         phase: PipelinePhase,
         scope_id: u32,
         last_output: MaterializedPromptInput,
     ) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::XsdRetryLastOutputMaterialized {
+        Self::PromptInput(PromptInputEvent::XsdRetryLastOutputMaterialized {
             phase,
             scope_id,
             last_output,
         })
     }
 
-    /// Create a PromptPermissionsLocked event.
-    pub fn prompt_permissions_locked(warning: Option<String>) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsLocked { warning })
+    /// Create a `PromptPermissionsLocked` event.
+    #[must_use] 
+    pub const fn prompt_permissions_locked(warning: Option<String>) -> Self {
+        Self::PromptInput(PromptInputEvent::PromptPermissionsLocked { warning })
     }
 
-    /// Create a PromptPermissionsRestoreWarning event.
-    pub fn prompt_permissions_restore_warning(warning: String) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::PromptPermissionsRestoreWarning { warning })
+    /// Create a `PromptPermissionsRestoreWarning` event.
+    #[must_use] 
+    pub const fn prompt_permissions_restore_warning(warning: String) -> Self {
+        Self::PromptInput(PromptInputEvent::PromptPermissionsRestoreWarning { warning })
     }
 
-    /// Create a TemplateRendered event.
+    /// Create a `TemplateRendered` event.
     ///
     /// Emitted by prompt preparation handlers after template rendering.
     /// The substitution log enables validation based on tracked substitutions.
-    pub fn template_rendered(
+    #[must_use] 
+    pub const fn template_rendered(
         phase: PipelinePhase,
         template_name: String,
         log: crate::prompts::SubstitutionLog,
     ) -> Self {
-        PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
+        Self::PromptInput(PromptInputEvent::TemplateRendered {
             phase,
             template_name,
             log,

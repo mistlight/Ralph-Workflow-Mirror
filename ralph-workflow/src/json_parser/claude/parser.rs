@@ -68,8 +68,8 @@ pub struct ClaudeParser {
     /// Tracks the last rendered content for append-only streaming in Full mode.
     ///
     /// In append-only mode, we emit the prefix once, then only emit new suffixes for subsequent deltas.
-    /// This map stores the last rendered content for each (ContentType, index) pair.
-    /// Key format: "{content_type}:{index}" (e.g., "text:0", "thinking:1")
+    /// This map stores the last rendered content for each (`ContentType`, index) pair.
+    /// Key format: "{`content_type}:{index`}" (e.g., "text:0", "thinking:1")
     last_rendered_content: RefCell<std::collections::HashMap<String, String>>,
 }
 
@@ -94,6 +94,7 @@ impl ClaudeParser {
     ///
     /// let parser = ClaudeParser::new(Colors::new(), Verbosity::Normal);
     /// ```
+    #[must_use] 
     pub fn new(colors: Colors, verbosity: Verbosity) -> Self {
         Self::with_printer(colors, verbosity, super::printer::shared_stdout())
     }
@@ -149,6 +150,7 @@ impl ClaudeParser {
     /// # Returns
     ///
     /// Self for builder pattern chaining
+    #[must_use]
     pub fn with_display_name(mut self, display_name: &str) -> Self {
         self.display_name = display_name.to_string();
         self
@@ -169,6 +171,7 @@ impl ClaudeParser {
     ///
     /// Self for builder pattern chaining
     #[cfg(any(test, feature = "test-utils"))]
+    #[must_use]
     pub fn with_terminal_mode(self, mode: TerminalMode) -> Self {
         *self.terminal_mode.borrow_mut() = mode;
         self
@@ -264,8 +267,8 @@ impl ClaudeParser {
             if !trimmed.is_empty() && !trimmed.starts_with('{') {
                 // In full TTY mode, thinking deltas keep the cursor on the thinking line for
                 // in-place updates. Any other output must first finalize that cursor state.
-                let mut session = self.streaming_session.borrow_mut();
-                let finalize = self.finalize_in_place_full_mode(&mut session);
+                let session = self.streaming_session.borrow_mut();
+                let finalize = self.finalize_in_place_full_mode(&session);
                 let out = format!("{finalize}{trimmed}\n");
                 if *self.terminal_mode.borrow() == TerminalMode::Full {
                     // Only mutate cursor state based on explicit cursor controls.
@@ -292,8 +295,8 @@ impl ClaudeParser {
         let finalize = if matches!(&event, ClaudeEvent::StreamEvent { .. }) {
             String::new()
         } else {
-            let mut session = self.streaming_session.borrow_mut();
-            self.finalize_in_place_full_mode(&mut session)
+            let session = self.streaming_session.borrow_mut();
+            self.finalize_in_place_full_mode(&session)
         };
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -304,7 +307,7 @@ impl ClaudeParser {
                 session_id,
                 cwd,
             } => self.format_system_event(subtype.as_ref(), session_id, cwd),
-            ClaudeEvent::Assistant { message } => self.format_assistant_event(message),
+            ClaudeEvent::Assistant { message } => self.format_assistant_event(message.as_ref()),
             ClaudeEvent::User { message } => self.format_user_event(message),
             ClaudeEvent::Result {
                 subtype,
@@ -390,7 +393,7 @@ impl ClaudeParser {
                 // while a previous streamed line is still "active" (we haven't yet emitted the
                 // completion newline). Finalize any active streaming line before resetting state
                 // so subsequent output doesn't glue onto the in-progress line.
-                let in_place_finalize = self.finalize_in_place_full_mode(&mut session);
+                let in_place_finalize = self.finalize_in_place_full_mode(&session);
 
                 // Reset any pending thinking line from a previous message.
                 *self.thinking_active_index.borrow_mut() = None;

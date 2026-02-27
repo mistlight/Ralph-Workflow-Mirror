@@ -1,9 +1,12 @@
 // NOTE: split from reducer/state_reduction.rs.
 
-use crate::reducer::event::*;
-use crate::reducer::state::*;
+use crate::reducer::event::LifecycleEvent;
+use crate::reducer::state::PipelineState;
 
-pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent) -> PipelineState {
+pub(super) fn reduce_lifecycle_event(
+    state: PipelineState,
+    event: &LifecycleEvent,
+) -> PipelineState {
     match event {
         LifecycleEvent::Started => state,
         LifecycleEvent::Resumed { .. } => PipelineState {
@@ -41,7 +44,7 @@ mod tests {
 
         let reduced = reduce_lifecycle_event(
             state,
-            LifecycleEvent::Resumed {
+            &LifecycleEvent::Resumed {
                 from_checkpoint: true,
             },
         );

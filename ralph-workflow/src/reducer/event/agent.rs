@@ -151,7 +151,7 @@ pub enum AgentEvent {
     /// XSD validation failed for agent output.
     ///
     /// Emitted when agent output cannot be parsed or fails XSD validation.
-    /// Distinct from OutputValidationFailed events in phase-specific enums,
+    /// Distinct from `OutputValidationFailed` events in phase-specific enums,
     /// this is the canonical XSD retry trigger that the reducer uses to
     /// decide whether to retry with the same agent/session or advance the chain.
     XsdValidationFailed {

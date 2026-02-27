@@ -1,6 +1,7 @@
 use crate::config::path_resolver::{ConfigEnvironment, RealConfigEnvironment};
 
 /// Check if the unified config file exists.
+#[must_use]
 pub fn unified_config_exists() -> bool {
     unified_config_exists_with_env(&RealConfigEnvironment)
 }

@@ -154,14 +154,14 @@ fn test_missing_scope_items_in_summary() {
 
 #[test]
 fn test_error_message_includes_element_path() {
-    let xml = r#"<ralph-plan>
+    let xml = r"<ralph-plan>
 <ralph-summary>
 <context>Test</context>
 <scope-items>
 <scope-item>item 1</scope-item>
 </scope-items>
 </ralph-summary>
-</ralph-plan>"#;
+</ralph-plan>";
 
     let result = validate_plan_xml(xml);
     assert!(result.is_err());
@@ -205,9 +205,9 @@ fn test_error_message_includes_what_was_found() {
     let err = result.unwrap_err();
 
     // Should tell us what was found (2 items)
-    assert!(err.found.contains("2"));
+    assert!(err.found.contains('2'));
     // Should tell us what was expected (3 minimum)
-    assert!(err.expected.contains("3"));
+    assert!(err.expected.contains('3'));
 }
 
 #[test]

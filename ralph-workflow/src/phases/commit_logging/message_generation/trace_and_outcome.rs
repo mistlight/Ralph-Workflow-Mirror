@@ -23,6 +23,7 @@ pub struct ParsingTraceStep {
 
 impl ParsingTraceStep {
     /// Create a new parsing trace step.
+    #[must_use] 
     pub fn new(step_number: usize, description: &str) -> Self {
         Self {
             step_number,
@@ -35,6 +36,7 @@ impl ParsingTraceStep {
     }
 
     /// Set the input for this step.
+    #[must_use] 
     pub fn with_input(mut self, input: &str) -> Self {
         // Truncate input if too large
         const MAX_INPUT_SIZE: usize = 10_000;
@@ -51,6 +53,7 @@ impl ParsingTraceStep {
     }
 
     /// Set the result for this step.
+    #[must_use] 
     pub fn with_result(mut self, result: &str) -> Self {
         // Truncate result if too large
         const MAX_RESULT_SIZE: usize = 10_000;
@@ -67,12 +70,14 @@ impl ParsingTraceStep {
     }
 
     /// Set whether this step succeeded.
+    #[must_use] 
     pub const fn with_success(mut self, success: bool) -> Self {
         self.success = success;
         self
     }
 
     /// Set additional details.
+    #[must_use] 
     pub fn with_details(mut self, details: &str) -> Self {
         self.details = details.to_string();
         self
@@ -108,6 +113,7 @@ pub struct ParsingTraceLog {
 
 impl ParsingTraceLog {
     /// Create a new parsing trace log.
+    #[must_use] 
     pub fn new(attempt_number: usize, agent: &str, strategy: &str) -> Self {
         Self {
             attempt_number,
@@ -158,6 +164,10 @@ impl ParsingTraceLog {
     /// # Returns
     ///
     /// Path to the written trace file on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn write_to_workspace(
         &self,
         log_dir: &Path,
@@ -328,6 +338,7 @@ pub struct ExtractionAttempt {
 
 impl ExtractionAttempt {
     /// Create a successful extraction attempt.
+    #[must_use] 
     pub const fn success(method: &'static str, detail: String) -> Self {
         Self {
             method,
@@ -337,6 +348,7 @@ impl ExtractionAttempt {
     }
 
     /// Create a failed extraction attempt.
+    #[must_use] 
     pub const fn failure(method: &'static str, detail: String) -> Self {
         Self {
             method,
@@ -360,6 +372,7 @@ pub struct ValidationCheck {
 impl ValidationCheck {
     /// Create a passing validation check.
     #[cfg(test)]
+    #[must_use] 
     pub const fn pass(name: &'static str) -> Self {
         Self {
             name,
@@ -370,6 +383,7 @@ impl ValidationCheck {
 
     /// Create a failing validation check.
     #[cfg(test)]
+    #[must_use] 
     pub const fn fail(name: &'static str, error: String) -> Self {
         Self {
             name,

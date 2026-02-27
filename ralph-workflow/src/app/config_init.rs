@@ -5,7 +5,7 @@
 //! - Applying environment variable and CLI overrides
 //! - Selecting default agents from fallback chains
 //! - Loading agent registry data from unified config
-//! - Fetching and caching OpenCode API catalog for dynamic provider/model resolution
+//! - Fetching and caching `OpenCode` API catalog for dynamic provider/model resolution
 //!
 //! # Dependency Injection
 //!
@@ -59,6 +59,10 @@ pub struct ConfigInitResult {
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
 /// (e.g., --init, --list-templates), or an error if initialization fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn initialize_config(
     args: &Args,
     colors: Colors,
@@ -84,13 +88,17 @@ pub fn initialize_config(
 /// * `args` - The parsed CLI arguments
 /// * `colors` - Color configuration for output
 /// * `logger` - Logger for info/warning messages
-/// * `catalog_loader` - Loader for the OpenCode API catalog
+/// * `catalog_loader` - Loader for the `OpenCode` API catalog
 /// * `path_resolver` - Resolver for configuration file paths
 ///
 /// # Returns
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
 /// (e.g., --init, --list-templates), or an error if initialization fails.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     args: &Args,
     colors: Colors,
@@ -138,7 +146,7 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
         handle_extended_help();
         if args.work_guide_list.list_work_guides {
             println!();
-            handle_list_work_guides(colors);
+            let _ = handle_list_work_guides(colors);
         }
         return Ok(None);
     }
@@ -234,11 +242,11 @@ fn load_agent_registry<L: CatalogLoader>(
     Ok((registry, sources))
 }
 
-/// Setup OpenCode API catalog for dynamic provider/model resolution.
+/// Setup `OpenCode` API catalog for dynamic provider/model resolution.
 ///
 /// This function:
 /// 1. Checks if there are any `opencode/*` references in the configured agent chains
-/// 2. If yes, fetches/loads the cached OpenCode API catalog
+/// 2. If yes, fetches/loads the cached `OpenCode` API catalog
 /// 3. Sets the catalog on the registry for dynamic agent resolution
 /// 4. Validates all opencode/* references and reports errors with suggestions
 fn setup_opencode_catalog<L: CatalogLoader>(

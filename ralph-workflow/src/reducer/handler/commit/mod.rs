@@ -8,7 +8,7 @@
 //! The commit handler follows the reducer architecture pattern:
 //! - **Pure orchestration** - Reducers decide when to commit based on state
 //! - **Single-attempt effects** - Handlers execute one commit generation attempt
-//! - **Fact-shaped events** - Events report outcomes (CommitGenerated, ValidationFailed)
+//! - **Fact-shaped events** - Events report outcomes (`CommitGenerated`, `ValidationFailed`)
 //! - **Workspace abstraction** - All filesystem I/O goes through `ctx.workspace`
 //!
 //! ## Process Flow
@@ -45,7 +45,7 @@ mod xml;
 const COMMIT_XSD_ERROR_PATH: &str = ".agent/tmp/commit_xsd_error.txt";
 
 /// Get the current commit attempt number from commit state.
-pub(in crate::reducer::handler) fn current_commit_attempt(
+pub(in crate::reducer::handler) const fn current_commit_attempt(
     commit: &crate::reducer::state::CommitState,
 ) -> u32 {
     use crate::reducer::state::CommitState;

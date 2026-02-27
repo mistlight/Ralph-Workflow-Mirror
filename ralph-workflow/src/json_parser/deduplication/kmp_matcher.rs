@@ -48,6 +48,7 @@ impl KMPMatcher {
     /// ```ignore
     /// let matcher = KMPMatcher::new("hello");
     /// ```
+    #[must_use] 
     pub fn new(pattern: &str) -> Self {
         let pattern = pattern.to_string();
         let failure = Self::compute_failure(&pattern);
@@ -114,6 +115,7 @@ impl KMPMatcher {
     /// assert_eq!(matcher.find("hello world"), Some(6));
     /// assert_eq!(matcher.find("hello"), None);
     /// ```
+    #[must_use] 
     pub fn find(&self, text: &str) -> Option<usize> {
         let n = text.len();
         let m = self.pattern.len();
@@ -166,6 +168,7 @@ impl KMPMatcher {
     /// assert_eq!(positions, vec![0, 2, 4]);
     /// ```
     #[cfg(test)]
+    #[must_use] 
     pub fn find_all(&self, text: &str) -> Vec<usize> {
         let mut positions = Vec::new();
         let n = text.len();
@@ -203,12 +206,14 @@ impl KMPMatcher {
 
     /// Get the pattern length.
     #[cfg(test)]
+    #[must_use] 
     pub const fn pattern_len(&self) -> usize {
         self.pattern.len()
     }
 
     /// Check if the pattern is empty.
     #[cfg(test)]
+    #[must_use] 
     pub const fn is_empty(&self) -> bool {
         self.pattern.is_empty()
     }

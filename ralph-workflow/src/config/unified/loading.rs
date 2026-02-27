@@ -63,6 +63,7 @@ impl UnifiedConfig {
     ///     println!("Verbosity level: {}", config.general.verbosity);
     /// }
     /// ```
+    #[must_use]
     pub fn load_default() -> Option<Self> {
         Self::load_with_env(&super::super::path_resolver::RealConfigEnvironment)
     }
@@ -103,6 +104,10 @@ impl UnifiedConfig {
     /// Load unified configuration from a specific path using a `ConfigEnvironment`.
     ///
     /// This is the testable version of `load_from_path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn load_from_path_with_env(
         path: &std::path::Path,
         env: &dyn super::super::path_resolver::ConfigEnvironment,
@@ -179,6 +184,10 @@ impl UnifiedConfig {
     /// Ensure unified config file exists using a `ConfigEnvironment`.
     ///
     /// This is the testable version of `ensure_config_exists`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn ensure_config_exists_with_env(
         env: &dyn super::super::path_resolver::ConfigEnvironment,
     ) -> io::Result<ConfigInitResult> {
@@ -195,6 +204,10 @@ impl UnifiedConfig {
     /// Ensure a config file exists at the specified path.
     ///
     /// This is useful for custom config file locations or testing.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn ensure_config_exists_at(path: &std::path::Path) -> io::Result<ConfigInitResult> {
         Self::ensure_config_exists_at_with_env(
             path,
@@ -205,6 +218,10 @@ impl UnifiedConfig {
     /// Ensure a config file exists at the specified path using a `ConfigEnvironment`.
     ///
     /// This is the testable version of `ensure_config_exists_at`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn ensure_config_exists_at_with_env(
         path: &std::path::Path,
         env: &dyn super::super::path_resolver::ConfigEnvironment,
@@ -223,8 +240,8 @@ impl UnifiedConfig {
     ///
     /// Local values override global values with these semantics:
     /// - Scalar values: local replaces global when explicitly present in TOML
-    /// - Maps (agents, ccs_aliases): local entries merge with global (local wins on collision)
-    /// - Arrays (agent_chain): local replaces global entirely (not appended)
+    /// - Maps (agents, `ccs_aliases)`: local entries merge with global (local wins on collision)
+    /// - Arrays (`agent_chain)`: local replaces global entirely (not appended)
     /// - Optional values: local Some(_) replaces global, local None preserves global
     /// - CCS string values: empty string ("") means disabled, missing means use global
     ///
@@ -253,11 +270,21 @@ impl UnifiedConfig {
     /// let merged = global.merge_with(&local);
     /// assert_eq!(merged.general.verbosity, 4);
     /// ```
-    pub fn merge_with(&self, local: &UnifiedConfig) -> UnifiedConfig {
+    #[must_use]
+    pub fn merge_with(&self, local: &Self) -> Self {
         use super::types::{
             CcsConfig, GeneralBehaviorFlags, GeneralConfig, GeneralExecutionFlags,
             GeneralWorkflowFlags,
         };
+
+        // Merge CCS config - empty string means use global
+        fn merge_ccs_string(local: &str, global: &str) -> String {
+            if local.is_empty() {
+                global.to_string()
+            } else {
+                local.to_string()
+            }
+        }
 
         // For programmatically-constructed configs, we use default comparison
         // NOTE: This has known issues with booleans and default-valued fields (Issue #2)
@@ -266,82 +293,82 @@ impl UnifiedConfig {
 
         // Merge general config - override if local differs from default
         let general = GeneralConfig {
-            verbosity: if local.general.verbosity != defaults.verbosity {
-                local.general.verbosity
-            } else {
+            verbosity: if local.general.verbosity == defaults.verbosity {
                 self.general.verbosity
+            } else {
+                local.general.verbosity
             },
             behavior: GeneralBehaviorFlags {
-                interactive: if local.general.behavior.interactive != defaults.behavior.interactive
+                interactive: if local.general.behavior.interactive == defaults.behavior.interactive
                 {
-                    local.general.behavior.interactive
-                } else {
                     self.general.behavior.interactive
+                } else {
+                    local.general.behavior.interactive
                 },
                 auto_detect_stack: if local.general.behavior.auto_detect_stack
-                    != defaults.behavior.auto_detect_stack
+                    == defaults.behavior.auto_detect_stack
                 {
-                    local.general.behavior.auto_detect_stack
-                } else {
                     self.general.behavior.auto_detect_stack
+                } else {
+                    local.general.behavior.auto_detect_stack
                 },
                 strict_validation: if local.general.behavior.strict_validation
-                    != defaults.behavior.strict_validation
+                    == defaults.behavior.strict_validation
                 {
-                    local.general.behavior.strict_validation
-                } else {
                     self.general.behavior.strict_validation
+                } else {
+                    local.general.behavior.strict_validation
                 },
             },
             workflow: GeneralWorkflowFlags {
                 checkpoint_enabled: if local.general.workflow.checkpoint_enabled
-                    != defaults.workflow.checkpoint_enabled
+                    == defaults.workflow.checkpoint_enabled
                 {
-                    local.general.workflow.checkpoint_enabled
-                } else {
                     self.general.workflow.checkpoint_enabled
+                } else {
+                    local.general.workflow.checkpoint_enabled
                 },
             },
             execution: GeneralExecutionFlags {
                 force_universal_prompt: if local.general.execution.force_universal_prompt
-                    != defaults.execution.force_universal_prompt
+                    == defaults.execution.force_universal_prompt
                 {
-                    local.general.execution.force_universal_prompt
-                } else {
                     self.general.execution.force_universal_prompt
+                } else {
+                    local.general.execution.force_universal_prompt
                 },
                 isolation_mode: if local.general.execution.isolation_mode
-                    != defaults.execution.isolation_mode
+                    == defaults.execution.isolation_mode
                 {
-                    local.general.execution.isolation_mode
-                } else {
                     self.general.execution.isolation_mode
+                } else {
+                    local.general.execution.isolation_mode
                 },
             },
-            developer_iters: if local.general.developer_iters != defaults.developer_iters {
-                local.general.developer_iters
-            } else {
+            developer_iters: if local.general.developer_iters == defaults.developer_iters {
                 self.general.developer_iters
-            },
-            reviewer_reviews: if local.general.reviewer_reviews != defaults.reviewer_reviews {
-                local.general.reviewer_reviews
             } else {
+                local.general.developer_iters
+            },
+            reviewer_reviews: if local.general.reviewer_reviews == defaults.reviewer_reviews {
                 self.general.reviewer_reviews
-            },
-            developer_context: if local.general.developer_context != defaults.developer_context {
-                local.general.developer_context
             } else {
+                local.general.reviewer_reviews
+            },
+            developer_context: if local.general.developer_context == defaults.developer_context {
                 self.general.developer_context
-            },
-            reviewer_context: if local.general.reviewer_context != defaults.reviewer_context {
-                local.general.reviewer_context
             } else {
+                local.general.developer_context
+            },
+            reviewer_context: if local.general.reviewer_context == defaults.reviewer_context {
                 self.general.reviewer_context
-            },
-            review_depth: if local.general.review_depth != defaults.review_depth {
-                local.general.review_depth.clone()
             } else {
+                local.general.reviewer_context
+            },
+            review_depth: if local.general.review_depth == defaults.review_depth {
                 self.general.review_depth.clone()
+            } else {
+                local.general.review_depth.clone()
             },
             prompt_path: local
                 .general
@@ -364,41 +391,32 @@ impl UnifiedConfig {
                 .clone()
                 .or_else(|| self.general.git_user_email.clone()),
             max_dev_continuations: if local.general.max_dev_continuations
-                != defaults.max_dev_continuations
+                == defaults.max_dev_continuations
             {
-                local.general.max_dev_continuations
-            } else {
                 self.general.max_dev_continuations
-            },
-            max_xsd_retries: if local.general.max_xsd_retries != defaults.max_xsd_retries {
-                local.general.max_xsd_retries
             } else {
+                local.general.max_dev_continuations
+            },
+            max_xsd_retries: if local.general.max_xsd_retries == defaults.max_xsd_retries {
                 self.general.max_xsd_retries
+            } else {
+                local.general.max_xsd_retries
             },
             max_same_agent_retries: if local.general.max_same_agent_retries
-                != defaults.max_same_agent_retries
+                == defaults.max_same_agent_retries
             {
-                local.general.max_same_agent_retries
-            } else {
                 self.general.max_same_agent_retries
+            } else {
+                local.general.max_same_agent_retries
             },
             execution_history_limit: if local.general.execution_history_limit
-                != defaults.execution_history_limit
+                == defaults.execution_history_limit
             {
-                local.general.execution_history_limit
-            } else {
                 self.general.execution_history_limit
+            } else {
+                local.general.execution_history_limit
             },
         };
-
-        // Merge CCS config - empty string means use global
-        fn merge_ccs_string(local: &str, global: &str) -> String {
-            if local.is_empty() {
-                global.to_string()
-            } else {
-                local.to_string()
-            }
-        }
 
         let ccs = CcsConfig {
             output_flag: merge_ccs_string(&local.ccs.output_flag, &self.ccs.output_flag),
@@ -408,10 +426,10 @@ impl UnifiedConfig {
             streaming_flag: merge_ccs_string(&local.ccs.streaming_flag, &self.ccs.streaming_flag),
             json_parser: merge_ccs_string(&local.ccs.json_parser, &self.ccs.json_parser),
             session_flag: merge_ccs_string(&local.ccs.session_flag, &self.ccs.session_flag),
-            can_commit: if local.ccs.can_commit != CcsConfig::default().can_commit {
-                local.ccs.can_commit
-            } else {
+            can_commit: if local.ccs.can_commit == CcsConfig::default().can_commit {
                 self.ccs.can_commit
+            } else {
+                local.ccs.can_commit
             },
         };
 
@@ -434,7 +452,7 @@ impl UnifiedConfig {
             self.agent_chain.clone()
         };
 
-        UnifiedConfig {
+        Self {
             general,
             ccs,
             agents,
@@ -473,19 +491,16 @@ impl UnifiedConfig {
     /// let merged = global.merge_with_content(local_toml, &local);
     /// assert_eq!(merged.general.verbosity, 4);
     /// ```
-    pub fn merge_with_content(
-        &self,
-        local_content: &str,
-        local_parsed: &UnifiedConfig,
-    ) -> UnifiedConfig {
+    #[must_use]
+    pub fn merge_with_content(&self, local_content: &str, local_parsed: &Self) -> Self {
         use super::types::{
             CcsConfig, GeneralBehaviorFlags, GeneralConfig, GeneralExecutionFlags,
             GeneralWorkflowFlags,
         };
 
         // Parse raw TOML to check field presence
-        let local_toml: toml::Value =
-            toml::from_str(local_content).unwrap_or(toml::Value::Table(Default::default()));
+        let local_toml: toml::Value = toml::from_str(local_content)
+            .unwrap_or_else(|_| toml::Value::Table(toml::map::Map::default()));
 
         // Helper to check if a field is present in the TOML
         let general_table = local_toml.get("general");
@@ -675,7 +690,7 @@ impl UnifiedConfig {
             self.agent_chain.clone()
         };
 
-        UnifiedConfig {
+        Self {
             general,
             ccs,
             agents,

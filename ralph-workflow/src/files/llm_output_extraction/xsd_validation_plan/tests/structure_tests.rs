@@ -58,7 +58,7 @@ fn test_validate_minimal_valid_plan() {
     assert_eq!(plan.summary.scope_items.len(), 3);
     assert_eq!(plan.steps.len(), 1);
     assert_eq!(plan.steps[0].number, 1);
-    assert_eq!(plan.steps[0].step_type, StepType::FileChange);
+    assert_eq!(plan.steps[0].kind, StepType::FileChange);
     assert_eq!(plan.steps[0].priority, Some(Priority::High));
     assert_eq!(plan.critical_files.primary_files.len(), 1);
     assert_eq!(plan.risks_mitigations.len(), 1);
@@ -129,7 +129,7 @@ fn test_insufficient_scope_items() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.element_path.contains("scope-items"));
-    assert!(err.found.contains("2"));
+    assert!(err.found.contains('2'));
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn test_action_step_without_target_files() {
     assert!(result.is_ok(), "Error: {:?}", result.err());
 
     let plan = result.unwrap();
-    assert_eq!(plan.steps[0].step_type, StepType::Action);
+    assert_eq!(plan.steps[0].kind, StepType::Action);
     assert!(plan.steps[0].target_files.is_empty());
 }
 

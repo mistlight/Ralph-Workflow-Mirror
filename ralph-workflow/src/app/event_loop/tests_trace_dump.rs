@@ -134,7 +134,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         }
     }
 
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -147,7 +147,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     let strict_workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
     let run_log_context = crate::logging::RunLogContext::new(&strict_workspace).unwrap();
 
-    let mut ctx = PhaseContext {
+    let ctx = PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -167,14 +167,14 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
         workspace_arc: Arc::new(strict_workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let mut trace = EventTraceBuffer::new(1);
     let state = PipelineState::initial(1, 0);
     trace.push(build_trace_entry(0, &state, "Effect::None", "Event::None"));
 
-    let dumped = dump_event_loop_trace(&mut ctx, &trace, &state, "test");
+    let dumped = dump_event_loop_trace(&ctx, &trace, &state, "test");
     assert!(
         dumped,
         "expected trace dump to succeed even when .agent/tmp is missing"
@@ -257,7 +257,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         }
     }
 
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -290,7 +290,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = PipelineState::initial(1, 0);
@@ -319,7 +319,7 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
 
 #[test]
 fn test_event_loop_config_creation() {
-    let _cloud_config = crate::config::types::CloudConfig::disabled();
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let config = EventLoopConfig {
         max_iterations: 1000,
     };
@@ -333,7 +333,6 @@ fn test_max_event_loop_iterations_is_one_million() {
 
 #[test]
 fn test_create_initial_state_with_config_counts_total_attempts() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -344,6 +343,8 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     // Semantics: max_dev_continuations counts *continuations beyond initial*.
     // Total attempts should be 1 + max_dev_continuations.
@@ -384,7 +385,7 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = create_initial_state_with_config(&ctx);
@@ -397,7 +398,6 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
 
 #[test]
 fn test_create_initial_state_with_config_allows_explicit_low_continuation_limits() {
-    let cloud_config = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -408,6 +408,7 @@ fn test_create_initial_state_with_config_allows_explicit_low_continuation_limits
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+    let cloud_config = crate::config::types::CloudConfig::disabled();
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -446,14 +447,13 @@ fn test_create_initial_state_with_config_allows_explicit_low_continuation_limits
             workspace_arc: std::sync::Arc::new(workspace.clone()),
             run_log_context: &run_log_context,
             cloud_reporter: None,
-            cloud_config: &cloud_config,
+            cloud: &cloud_config,
         };
 
         let state = create_initial_state_with_config(&ctx);
         assert_eq!(
             state.continuation.max_continue_count, expected_max_continue_count,
-            "explicit max_dev_continuations={} should map to max_continue_count={}",
-            max_dev_continuations, expected_max_continue_count
+            "explicit max_dev_continuations={max_dev_continuations} should map to max_continue_count={expected_max_continue_count}"
         );
     }
 }
@@ -478,7 +478,7 @@ fn test_create_initial_state_with_config_injects_cloud_state() {
         ..Config::default()
     };
 
-    let cloud_config = CloudConfig {
+    let cloud = CloudConfig {
         enabled: true,
         api_url: Some("https://api.example.com/v1".to_string()),
         api_token: Some("secret".to_string()),
@@ -527,20 +527,20 @@ fn test_create_initial_state_with_config_injects_cloud_state() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = create_initial_state_with_config(&ctx);
 
     assert!(
-        state.cloud_config.enabled,
+        state.cloud.enabled,
         "initial PipelineState must carry cloud enabled flag so orchestrator can emit cloud effects"
     );
 }
 
-/// Regression test: event loop must apply EffectResult.additional_events.
+/// Regression test: event loop must apply `EffectResult.additional_events`.
 ///
-/// Without this, AgentEvent::SessionEstablished is never reduced and same-session
+/// Without this, `AgentEvent::SessionEstablished` is never reduced and same-session
 /// XSD retry cannot work.
 #[test]
 fn test_event_loop_applies_additional_events_in_order() {
@@ -570,7 +570,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         }
     }
 
-    impl<'ctx> EffectHandler<'ctx> for TestHandler {
+    impl EffectHandler<'_> for TestHandler {
         fn execute(
             &mut self,
             _effect: Effect,
@@ -593,7 +593,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         }
     }
 
-    let cloud_config = crate::config::types::CloudConfig::disabled();
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -626,7 +626,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &cloud_config,
+        cloud: &cloud,
     };
 
     let state = PipelineState {

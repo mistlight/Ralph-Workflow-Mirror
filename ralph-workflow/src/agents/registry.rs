@@ -19,10 +19,10 @@
 //! developer = ["ccs/work", "claude"]
 //! ```
 //!
-//! # OpenCode Dynamic Provider/Model Support
+//! # `OpenCode` Dynamic Provider/Model Support
 //!
-//! The registry supports OpenCode dynamic provider/model using `opencode/provider/model` syntax.
-//! Provider/model combinations are validated against the OpenCode API catalog.
+//! The registry supports `OpenCode` dynamic provider/model using `opencode/provider/model` syntax.
+//! Provider/model combinations are validated against the `OpenCode` API catalog.
 //!
 //! ```ignore
 //! // Using OpenCode dynamic provider/model in agent chains

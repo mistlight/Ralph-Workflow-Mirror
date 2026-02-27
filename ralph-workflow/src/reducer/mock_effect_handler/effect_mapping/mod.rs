@@ -1,11 +1,11 @@
-//! Effect-to-event mapping for MockEffectHandler.
+//! Effect-to-event mapping for `MockEffectHandler`.
 //!
 //! This module coordinates effect execution by delegating to phase-specific modules.
 //! It contains the main `execute_mock` method that routes effects to the appropriate handler.
 //!
 //! ## Purpose
 //!
-//! The execute_mock method provides deterministic, hermetic testing of:
+//! The `execute_mock` method provides deterministic, hermetic testing of:
 //! - Reducer state transitions (given events → new state)
 //! - Orchestrator decisions (given state → next effect)
 //! - Event loop behavior (orchestrate → execute → reduce cycle)
@@ -40,7 +40,7 @@
 //! - [`super::handler`] - `EffectHandler` trait implementation with workspace access
 //! - [`super::core`] - `MockEffectHandler` struct and builder methods
 
-use super::*;
+use super::{Effect, EffectResult, MockEffectHandler};
 
 // Phase-specific effect handlers
 // Each module provides impl blocks extending MockEffectHandler
@@ -51,10 +51,10 @@ mod planning_effects;
 mod review_effects;
 
 impl MockEffectHandler {
-    /// Execute an effect without requiring PhaseContext.
+    /// Execute an effect without requiring `PhaseContext`.
     ///
-    /// This is used for testing when you don't have a full PhaseContext.
-    /// It captures the effect and returns an appropriate mock EffectResult.
+    /// This is used for testing when you don't have a full `PhaseContext`.
+    /// It captures the effect and returns an appropriate mock `EffectResult`.
     ///
     /// Most effects are handled here with pure effect-to-event mapping.
     /// Effects requiring workspace access (`SaveCheckpoint`, `TriggerDevFixFlow`)
@@ -72,7 +72,11 @@ impl MockEffectHandler {
     ///
     /// Each phase handler returns `Some(...)` if it handled the effect,
     /// or `None` to try the next handler.
-    pub fn execute_mock(&mut self, effect: Effect) -> EffectResult {
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
+    pub fn execute_mock(&mut self, effect: &Effect) -> EffectResult {
         // Capture the effect for test assertions
         self.captured_effects.borrow_mut().push(effect.clone());
 
@@ -100,16 +104,13 @@ impl MockEffectHandler {
 
         // Try phase-specific effects
         let (event, ui_events) = self
-            .handle_planning_effect(effect.clone())
-            .or_else(|| self.handle_development_effect(effect.clone()))
-            .or_else(|| self.handle_review_effect(effect.clone()))
-            .or_else(|| self.handle_fix_effect(effect.clone()))
+            .handle_planning_effect(effect)
+            .or_else(|| self.handle_development_effect(effect))
+            .or_else(|| self.handle_review_effect(effect))
+            .or_else(|| Self::handle_fix_effect(effect))
             .or_else(|| self.handle_commit_effect(effect.clone()))
             .unwrap_or_else(|| {
-                panic!(
-                    "MockEffectHandler::execute_mock received unhandled effect: {:?}",
-                    effect
-                )
+                panic!("MockEffectHandler::execute_mock received unhandled effect: {effect:?}")
             });
 
         // Capture UI events for test assertions

@@ -59,7 +59,7 @@ fn test_development_output_validation_failed_exhausts_xsd_retries() {
     };
 
     let new_state = reduce(
-        state.clone(),
+        state,
         PipelineEvent::development_output_validation_failed(1, 0),
     );
 

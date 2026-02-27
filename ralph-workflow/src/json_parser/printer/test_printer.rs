@@ -18,6 +18,7 @@ pub struct TestPrinter {
 #[cfg(any(test, feature = "test-utils"))]
 impl TestPrinter {
     /// Create a new test printer.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

@@ -9,9 +9,9 @@ use anyhow::Context;
 ///
 /// This function accepts `PhaseContext` to capture prompts and track
 /// execution history for hardened resume functionality.
-pub(crate) fn try_resolve_conflicts(
+pub fn try_resolve_conflicts(
     conflicted_files: &[String],
-    ctx: ConflictResolutionContext<'_>,
+    ctx: &ConflictResolutionContext<'_>,
     phase_ctx: &mut PhaseContext<'_>,
     phase: &str,
     executor: &dyn ProcessExecutor,
@@ -35,18 +35,18 @@ pub(crate) fn try_resolve_conflicts(
         });
 
     // Capture the resolution prompt for deterministic resume (only if newly generated)
-    if !was_replayed {
-        phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
-    } else {
+    if was_replayed {
         ctx.logger.info(&format!(
             "Using stored prompt from checkpoint for determinism: {prompt_key}"
         ));
+    } else {
+        phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
     }
 
-    match run_ai_conflict_resolution(&resolution_prompt, &ctx) {
+    match run_ai_conflict_resolution(&resolution_prompt, ctx) {
         Ok(ConflictResolutionResult::FileEditsOnly) => handle_file_edits_resolution(ctx.logger),
-        Ok(ConflictResolutionResult::Failed) => handle_failed_resolution(ctx.logger, executor),
-        Err(e) => handle_error_resolution(ctx.logger, executor, e),
+        Ok(ConflictResolutionResult::Failed) => Ok(handle_failed_resolution(ctx.logger, executor)),
+        Err(e) => Ok(handle_error_resolution(ctx.logger, executor, &e)),
     }
 }
 
@@ -66,21 +66,18 @@ fn handle_file_edits_resolution(logger: &Logger) -> anyhow::Result<bool> {
     }
 }
 
-fn handle_failed_resolution(
-    logger: &Logger,
-    executor: &dyn ProcessExecutor,
-) -> anyhow::Result<bool> {
+fn handle_failed_resolution(logger: &Logger, executor: &dyn ProcessExecutor) -> bool {
     logger.warn("AI conflict resolution failed");
     logger.info("Attempting to continue rebase anyway...");
 
     match crate::git_helpers::continue_rebase(executor) {
         Ok(()) => {
             logger.info("Successfully continued rebase");
-            Ok(true)
+            true
         }
         Err(rebase_err) => {
             logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
-            Ok(false)
+            false
         }
     }
 }
@@ -88,19 +85,19 @@ fn handle_failed_resolution(
 fn handle_error_resolution(
     logger: &Logger,
     executor: &dyn ProcessExecutor,
-    e: anyhow::Error,
-) -> anyhow::Result<bool> {
+    e: &anyhow::Error,
+) -> bool {
     logger.warn(&format!("AI conflict resolution failed: {e}"));
     logger.info("Attempting to continue rebase anyway...");
 
     match crate::git_helpers::continue_rebase(executor) {
         Ok(()) => {
             logger.info("Successfully continued rebase");
-            Ok(true)
+            true
         }
         Err(rebase_err) => {
             logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
-            Ok(false)
+            false
         }
     }
 }
@@ -127,13 +124,7 @@ fn build_resolution_prompt(
     workspace: &dyn crate::workspace::Workspace,
 ) -> String {
     let prompt =
-        build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace)
-            .unwrap_or_else(|e| {
-                format!(
-            "# MERGE CONFLICT RESOLUTION\n\nFailed to build context: {e}\n\nConflicts:\n{:#?}",
-            conflicts.keys().collect::<Vec<_>>()
-        )
-            });
+        build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace);
     if prompt.trim().is_empty() {
         return format!(
             "# MERGE CONFLICT RESOLUTION\n\nEmpty prompt generated.\n\nConflicts:\n{:#?}",
@@ -148,19 +139,17 @@ fn build_enhanced_resolution_prompt(
     _branch_info: Option<()>,
     template_context: &TemplateContext,
     workspace: &dyn crate::workspace::Workspace,
-) -> anyhow::Result<String> {
+) -> String {
     use std::path::Path;
 
     let prompt_md_content = workspace.read(Path::new("PROMPT.md")).ok();
     let plan_content = workspace.read(Path::new(".agent/PLAN.md")).ok();
 
-    Ok(
-        crate::prompts::build_conflict_resolution_prompt_with_context(
-            template_context,
-            conflicts,
-            prompt_md_content.as_deref(),
-            plan_content.as_deref(),
-        ),
+    crate::prompts::build_conflict_resolution_prompt_with_context(
+        template_context,
+        conflicts,
+        prompt_md_content.as_deref(),
+        plan_content.as_deref(),
     )
 }
 
@@ -191,7 +180,7 @@ fn run_ai_conflict_resolution(
     let agent_config = ctx
         .registry
         .resolve_config(reviewer_agent)
-        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", reviewer_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {reviewer_agent}"))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let log_prefix = format!("{log_dir}/conflict_resolution");
@@ -235,7 +224,7 @@ fn run_ai_conflict_resolution(
     }
 }
 
-/// Wrapper for conflict resolution without PhaseContext.
+/// Wrapper for conflict resolution without `PhaseContext`.
 ///
 /// This is used for --rebase-only mode where we don't have a full pipeline context.
 pub fn try_resolve_conflicts_without_phase_ctx(
@@ -244,11 +233,12 @@ pub fn try_resolve_conflicts_without_phase_ctx(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
+    executor: &std::sync::Arc<dyn ProcessExecutor>,
     repo_root: &std::path::Path,
 ) -> anyhow::Result<bool> {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::execution_history::ExecutionHistory;
+    use crate::logging::RunLogContext;
     use crate::pipeline::Timer;
 
     let registry = AgentRegistry::new()?;
@@ -261,10 +251,9 @@ pub fn try_resolve_conflicts_without_phase_ctx(
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
     let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
 
-    let executor_arc = std::sync::Arc::clone(&executor);
+    let executor_arc = std::sync::Arc::clone(executor);
 
     // Create run log context for per-run logging
-    use crate::logging::RunLogContext;
     let run_log_context = RunLogContext::new(&workspace)
         .context("Failed to create run log context for conflict resolution")?;
 
@@ -281,14 +270,14 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         run_context: crate::checkpoint::RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: std::collections::HashMap::new(),
-        executor: &*executor,
+        executor: &**executor,
         executor_arc: std::sync::Arc::clone(&executor_arc),
         repo_root,
         workspace: &workspace,
         workspace_arc: std::sync::Arc::clone(&workspace_arc),
         run_log_context: &run_log_context,
         cloud_reporter: None,
-        cloud_config: &config.cloud_config,
+        cloud: &config.cloud,
     };
 
     let ctx = ConflictResolutionContext {
@@ -304,10 +293,10 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 
     try_resolve_conflicts(
         conflicted_files,
-        ctx,
+        &ctx,
         &mut phase_ctx,
         "RebaseOnly",
-        &*executor,
+        &**executor,
     )
 }
 

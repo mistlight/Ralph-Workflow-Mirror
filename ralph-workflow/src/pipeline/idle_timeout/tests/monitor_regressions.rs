@@ -72,15 +72,15 @@ fn monitor_does_not_hold_child_lock_while_waiting_between_sigterm_checks() {
 
     let monitor = thread::spawn({
         let child_for_monitor = Arc::clone(&child);
-        let timestamp_for_monitor = timestamp.clone();
+        let timestamp_for_monitor = timestamp;
         let should_stop_for_monitor = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp_for_monitor,
+                &timestamp_for_monitor,
                 None, // No file activity tracking for this test
-                child_for_monitor,
-                should_stop_for_monitor,
-                executor,
+                &child_for_monitor,
+                &should_stop_for_monitor,
+                &executor,
                 MonitorConfig {
                     timeout_secs: 0,
                     check_interval: Duration::from_millis(1),
@@ -150,15 +150,15 @@ fn monitor_reports_timeout_even_if_sigkill_confirmation_times_out() {
 
     let monitor_handle = thread::spawn({
         let child_for_monitor = Arc::clone(&child);
-        let timestamp_for_monitor = timestamp.clone();
+        let timestamp_for_monitor = timestamp;
         let should_stop_for_monitor = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp_for_monitor,
+                &timestamp_for_monitor,
                 None,
-                child_for_monitor,
-                should_stop_for_monitor,
-                executor_dyn,
+                &child_for_monitor,
+                &should_stop_for_monitor,
+                &executor_dyn,
                 MonitorConfig {
                     timeout_secs: 0,
                     check_interval: Duration::from_millis(1),
@@ -234,11 +234,11 @@ fn monitor_treats_try_wait_errors_as_status_unknown_and_continues_enforcement() 
         Arc::new(crate::executor::MockProcessExecutor::new());
 
     let result = monitor_idle_timeout_with_interval_and_kill_config(
-        timestamp,
+        &timestamp,
         None,
-        child,
-        should_stop,
-        executor,
+        &child,
+        &should_stop,
+        &executor,
         MonitorConfig {
             timeout_secs: 0,
             check_interval: Duration::from_millis(1),
@@ -275,15 +275,15 @@ fn monitor_escalates_to_sigkill_when_sigterm_ignored() {
 
     let monitor_handle = thread::spawn({
         let child_clone = Arc::clone(&child);
-        let timestamp_clone = timestamp.clone();
+        let timestamp_clone = timestamp;
         let should_stop_clone = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp_clone,
+                &timestamp_clone,
                 None,
-                child_clone,
-                should_stop_clone,
-                executor_dyn,
+                &child_clone,
+                &should_stop_clone,
+                &executor_dyn,
                 MonitorConfig {
                     timeout_secs: 0,
                     check_interval: Duration::from_millis(1),
@@ -337,15 +337,15 @@ fn monitor_succeeds_with_sigterm_when_process_terminates() {
 
     let monitor_handle = thread::spawn({
         let child_clone = Arc::clone(&child);
-        let timestamp_clone = timestamp.clone();
+        let timestamp_clone = timestamp;
         let should_stop_clone = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp_clone,
+                &timestamp_clone,
                 None,
-                child_clone,
-                should_stop_clone,
-                executor_dyn,
+                &child_clone,
+                &should_stop_clone,
+                &executor_dyn,
                 // Give the test ample SIGTERM grace so the polling loop has time
                 // to observe the TERM send and flip the mock child to "exited"
                 // before escalation.
@@ -404,11 +404,11 @@ fn monitor_reports_timeout_even_if_process_still_alive_after_force_kill_hard_cap
         let should_stop_for_monitor = Arc::clone(&should_stop);
         move || {
             let result = monitor_idle_timeout_with_interval_and_kill_config(
-                timestamp,
+                &timestamp,
                 None,
-                child_for_monitor,
-                should_stop_for_monitor,
-                executor_dyn,
+                &child_for_monitor,
+                &should_stop_for_monitor,
+                &executor_dyn,
                 MonitorConfig {
                     timeout_secs: 0,
                     check_interval: Duration::from_millis(1),

@@ -36,11 +36,11 @@ fn monitor_does_not_skip_timeout_enforcement_when_try_wait_errors_before_kill() 
         Arc::new(crate::executor::MockProcessExecutor::new());
 
     let result = monitor_idle_timeout_with_interval_and_kill_config(
-        timestamp,
+        &timestamp,
         None, // No file activity config
-        child,
-        should_stop,
-        executor,
+        &child,
+        &should_stop,
+        &executor,
         MonitorConfig {
             timeout_secs: 0,
             check_interval: Duration::from_millis(1),

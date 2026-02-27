@@ -38,6 +38,7 @@ pub struct ResumeContext {
 
 impl ResumeContext {
     /// Display name for the current phase.
+    #[must_use]
     pub fn phase_name(&self) -> String {
         match self.phase {
             PipelinePhase::Rebase => "Rebase".to_string(),
@@ -70,6 +71,7 @@ impl PipelineCheckpoint {
     ///
     /// This method creates a `ResumeContext` containing all the information
     /// needed to generate informative prompts for agents when resuming.
+    #[must_use]
     pub fn resume_context(&self) -> ResumeContext {
         ResumeContext {
             phase: self.phase,
@@ -145,6 +147,7 @@ pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineChec
 /// Restore environment variables from a checkpoint.
 ///
 /// Restore safe environment variables from the checkpoint snapshot.
+#[must_use]
 pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> usize {
     let Some(ref env_snap) = checkpoint.env_snapshot else {
         return 0;
@@ -174,6 +177,7 @@ pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> u
 }
 
 /// Calculate the starting iteration for development phase resume.
+#[must_use]
 pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations: u32) -> u32 {
     match checkpoint.phase {
         PipelinePhase::Planning | PipelinePhase::Development => {
@@ -197,6 +201,7 @@ pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations
 /// # Returns
 ///
 /// The pass number to start from (1-indexed).
+#[must_use]
 pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes: u32) -> u32 {
     match checkpoint.phase {
         PipelinePhase::Review => checkpoint.reviewer_pass.clamp(1, max_passes.max(1)),
@@ -213,27 +218,30 @@ pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes
 /// Determine if a phase should be skipped based on checkpoint.
 ///
 /// Returns true if the checkpoint indicates this phase has already been completed.
-pub fn should_skip_phase(phase: PipelinePhase, checkpoint: &PipelineCheckpoint) -> bool {
+#[must_use]
+pub const fn should_skip_phase(phase: PipelinePhase, checkpoint: &PipelineCheckpoint) -> bool {
     phase_rank(phase) < phase_rank(checkpoint.phase)
 }
 
 /// Get the rank (position) of a phase in the pipeline.
 ///
 /// Lower values indicate earlier phases in the pipeline.
-fn phase_rank(phase: PipelinePhase) -> u32 {
+const fn phase_rank(phase: PipelinePhase) -> u32 {
     match phase {
         PipelinePhase::Planning => 0,
         PipelinePhase::Development => 1,
-        PipelinePhase::Review => 2,
         PipelinePhase::CommitMessage => 3,
         PipelinePhase::FinalValidation => 4,
         PipelinePhase::Complete => 5,
         PipelinePhase::AwaitingDevFix => 6,
         PipelinePhase::Interrupted => 7,
-        // Pre-rebase phases map to Review rank
-        PipelinePhase::PreRebase | PipelinePhase::PreRebaseConflict => 2,
-        // Rebase phases map between Development and Review
-        PipelinePhase::Rebase | PipelinePhase::PostRebase | PipelinePhase::PostRebaseConflict => 2,
+        // Review and rebase phases all map to rank 2
+        PipelinePhase::Review
+        | PipelinePhase::PreRebase
+        | PipelinePhase::PreRebaseConflict
+        | PipelinePhase::Rebase
+        | PipelinePhase::PostRebase
+        | PipelinePhase::PostRebaseConflict => 2,
     }
 }
 #[cfg(test)]
@@ -252,6 +260,7 @@ pub struct RestoredContext {
 #[cfg(test)]
 impl RestoredContext {
     /// Create a restored context from a checkpoint.
+    #[must_use]
     pub fn from_checkpoint(checkpoint: &PipelineCheckpoint) -> Self {
         // Determine if CLI args are meaningful (non-default values)
         let cli_args = if checkpoint.cli_args.developer_iters > 0
@@ -278,6 +287,7 @@ impl RestoredContext {
     ///
     /// Returns true if the checkpoint has meaningful CLI args that should
     /// override the current configuration.
+    #[must_use]
     pub fn should_use_checkpoint_iterations(&self) -> bool {
         self.cli_args
             .as_ref()
@@ -285,6 +295,7 @@ impl RestoredContext {
     }
 
     /// Check if we should use checkpoint values for reviewer counts.
+    #[must_use]
     pub fn should_use_checkpoint_reviewer_passes(&self) -> bool {
         self.cli_args
             .as_ref()

@@ -24,14 +24,14 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for review tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for review tests.
 fn create_review_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
@@ -57,9 +57,9 @@ fn create_review_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
 // These integration tests focus on behavior that doesn't require agent execution.
 // ============================================================================
 
-/// Test that setting reviewer_reviews to zero skips the review phase.
+/// Test that setting `reviewer_reviews` to zero skips the review phase.
 ///
-/// This verifies that when a user runs ralph with reviewer_reviews=0,
+/// This verifies that when a user runs ralph with `reviewer_reviews=0`,
 /// the review phase is skipped entirely and no ISSUES.md file is created.
 #[test]
 fn test_zero_reviewer_reviews_skips_review() {
@@ -83,7 +83,7 @@ fn test_zero_reviewer_reviews_skips_review() {
 
 /// Test that the pipeline succeeds without a review phase.
 ///
-/// This verifies that when a user runs ralph with reviewer_reviews=0,
+/// This verifies that when a user runs ralph with `reviewer_reviews=0`,
 /// the pipeline completes successfully.
 #[test]
 fn test_pipeline_succeeds_without_review_phase() {
@@ -109,7 +109,7 @@ fn test_pipeline_succeeds_without_review_phase() {
 
 /// Test that a commit is created when the review phase is skipped.
 ///
-/// This verifies that when a user runs ralph with reviewer_reviews=0,
+/// This verifies that when a user runs ralph with `reviewer_reviews=0`,
 /// a commit effect is still triggered.
 #[test]
 fn test_commit_created_when_review_skipped() {
@@ -242,7 +242,7 @@ fn review_prompt_allows_empty_plan_and_changes() {
 /// Test that review prompt includes severity levels and file references in format instructions.
 ///
 /// This verifies the prompt guides the reviewer to provide actionable output
-/// with severity levels and file:line references.
+/// with severity levels and <file:line> references.
 #[test]
 fn review_prompt_includes_output_format_guidance() {
     use ralph_workflow::prompts::prompt_review_xml_with_context;
@@ -273,7 +273,7 @@ fn review_prompt_includes_output_format_guidance() {
 
         assert!(
             review_prompt.contains("file")
-                && (review_prompt.contains("line") || review_prompt.contains(":")),
+                && (review_prompt.contains("line") || review_prompt.contains(':')),
             "Review prompt must mention file:line references"
         );
     });

@@ -17,6 +17,13 @@
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Agent validation fails
+/// - Pipeline initialization fails
+/// - Any pipeline phase execution fails
 #[cfg(feature = "test-utils")]
 pub fn run_with_config(
     args: Args,
@@ -59,6 +66,13 @@ pub fn run_with_config(
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Agent validation fails
+/// - Pipeline initialization fails
+/// - Any pipeline phase execution fails
 #[cfg(feature = "test-utils")]
 pub fn run_with_config_and_resolver<
     P: crate::config::ConfigEnvironment,
@@ -101,7 +115,7 @@ pub fn run_with_config_and_resolver<
         handle_extended_help();
         if args.work_guide_list.list_work_guides {
             println!();
-            handle_list_work_guides(colors);
+            let _ = handle_list_work_guides(colors);
         }
         return Ok(());
     }
@@ -157,7 +171,7 @@ pub fn run_with_config_and_resolver<
     if args.recovery.diagnose {
         let diagnose_workspace = workspace
             .as_ref()
-            .map(|w| w.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
         handle_diagnose(
             colors,
@@ -178,14 +192,14 @@ pub fn run_with_config_and_resolver<
         &logger,
         colors,
         handler,
-        workspace.as_ref().map(|w| w.as_ref()),
+        workspace.as_ref().map(std::convert::AsRef::as_ref),
     )? {
         return Ok(());
     }
 
     // Validate agents and set up git repo and PROMPT.md
     let Some(repo_root) = validate_and_setup_agents(
-        AgentSetupParams {
+        &AgentSetupParams {
             config: &config,
             registry: &registry,
             developer_agent: &developer_agent,
@@ -245,7 +259,7 @@ where
     pub _marker: std::marker::PhantomData<&'ctx ()>,
 }
 
-/// Run with both AppEffectHandler AND EffectHandler for full isolation.
+/// Run with both `AppEffectHandler` AND `EffectHandler` for full isolation.
 ///
 /// This function is the ultimate test entry point that allows injecting BOTH:
 /// - `AppEffectHandler` for CLI-layer operations (git require repo, set cwd, etc.)
@@ -272,6 +286,13 @@ where
 /// assert!(app_handler.captured().iter().any(|e| matches!(e, AppEffect::GitRequireRepo)));
 /// assert!(effect_handler.captured_effects().iter().any(|e| matches!(e, Effect::CreateCommit { .. })));
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Agent validation fails
+/// - Pipeline initialization fails
+/// - Any pipeline phase execution fails
 #[cfg(feature = "test-utils")]
 pub fn run_with_config_and_handlers<'a, 'ctx, P, A, E>(
     params: RunWithHandlersParams<'a, 'ctx, P, A, E>,
@@ -281,6 +302,11 @@ where
     A: effect::AppEffectHandler,
     E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
 {
+    use crate::cli::{
+        handle_extended_help, handle_init_global_with, handle_init_local_config_with,
+        handle_list_work_guides, handle_smart_init_with,
+    };
+
     let RunWithHandlersParams {
         args,
         executor,
@@ -292,10 +318,6 @@ where
         workspace,
         ..
     } = params;
-    use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_init_local_config_with,
-        handle_list_work_guides, handle_smart_init_with,
-    };
 
     let colors = Colors::new();
     let logger = Logger::new(colors);
@@ -321,7 +343,7 @@ where
         handle_extended_help();
         if args.work_guide_list.list_work_guides {
             println!();
-            handle_list_work_guides(colors);
+            let _ = handle_list_work_guides(colors);
         }
         return Ok(());
     }
@@ -377,7 +399,7 @@ where
     if args.recovery.diagnose {
         let diagnose_workspace = workspace
             .as_ref()
-            .map(|w| w.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
         handle_diagnose(
             colors,
@@ -398,14 +420,14 @@ where
         &logger,
         colors,
         app_handler,
-        workspace.as_ref().map(|w| w.as_ref()),
+        workspace.as_ref().map(std::convert::AsRef::as_ref),
     )? {
         return Ok(());
     }
 
     // Validate agents and set up git repo with app_handler
     let Some(repo_root) = validate_and_setup_agents(
-        AgentSetupParams {
+        &AgentSetupParams {
             config: &config,
             registry: &registry,
             developer_agent: &developer_agent,
@@ -442,8 +464,8 @@ where
     })?;
 
     // Run pipeline with the injected effect_handler
-    match ctx {
-        Some(ctx) => run_pipeline_with_effect_handler(&ctx, effect_handler),
-        None => Ok(()),
-    }
+    ctx.map_or_else(
+        || Ok(()),
+        |ctx| run_pipeline_with_effect_handler(&ctx, effect_handler),
+    )
 }

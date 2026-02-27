@@ -49,13 +49,12 @@ fn test_pipeline_advances_after_prompt_preparation() {
         let next_effect = determine_next_effect(&new_state);
         assert!(
             matches!(next_effect, Effect::InvokePlanningAgent { .. }),
-            "Pipeline should advance to InvokePlanningAgent, got {:?}",
-            next_effect
+            "Pipeline should advance to InvokePlanningAgent, got {next_effect:?}"
         );
     });
 }
 
-/// Test that pipeline does not enter AwaitingDevFix solely due to prompt preparation.
+/// Test that pipeline does not enter `AwaitingDevFix` solely due to prompt preparation.
 ///
 /// Verifies that template rendering errors (now non-fatal) don't trigger dev-fix flow.
 #[test]
@@ -110,8 +109,7 @@ fn test_development_advances_after_prompt_preparation() {
                 next_effect,
                 Effect::InvokeDevelopmentAgent { .. } | Effect::InvokeAnalysisAgent { .. }
             ),
-            "Pipeline should advance to agent invocation, got {:?}",
-            next_effect
+            "Pipeline should advance to agent invocation, got {next_effect:?}"
         );
     });
 }
@@ -146,8 +144,7 @@ fn test_review_advances_after_prompt_preparation() {
         let next_effect = determine_next_effect(&new_state);
         assert!(
             matches!(next_effect, Effect::InvokeReviewAgent { .. }),
-            "Pipeline should advance to InvokeReviewAgent, got {:?}",
-            next_effect
+            "Pipeline should advance to InvokeReviewAgent, got {next_effect:?}"
         );
     });
 }

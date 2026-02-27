@@ -5,7 +5,7 @@
 //! Development phase workflow:
 //! 1. Write continuation context (if pending from previous attempt)
 //! 2. Initialize agent chain (Developer role)
-//! 3. For each iteration (up to total_iterations):
+//! 3. For each iteration (up to `total_iterations)`:
 //!    a. Prepare development context
 //!    b. Materialize development inputs (prompt + plan)
 //!    c. Prepare development prompt (Normal or Continuation mode)
@@ -20,11 +20,11 @@
 //! 4. Save checkpoint (transition to Review)
 //!
 //! Iteration boundary handling:
-//! - At iteration == total_iterations, still process the current iteration
+//! - At iteration == `total_iterations`, still process the current iteration
 //! - On resume, progress flags are reset (pipeline.rs:453-532)
-//! - Only skip to SaveCheckpoint when:
-//!   - iteration > total_iterations (abnormal: exceeds configured iterations)
-//!   - total_iterations == 0 (no iterations configured)
+//! - Only skip to `SaveCheckpoint` when:
+//!   - iteration > `total_iterations` (abnormal: exceeds configured iterations)
+//!   - `total_iterations` == 0 (no iterations configured)
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::{ContinuationContextData, Effect};

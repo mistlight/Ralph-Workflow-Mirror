@@ -11,6 +11,10 @@ use crate::workspace::Workspace;
 ///
 /// Handles the case of an empty repository (no commits yet) by
 /// diffing against an empty tree using a read-only approach.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_diff() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     git_diff_impl(&repo)
@@ -19,6 +23,10 @@ pub fn git_diff() -> io::Result<String> {
 /// Get the diff of all changes (unstaged and staged) by discovering from an explicit path.
 ///
 /// This avoids coupling diff generation to the process current working directory.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_diff_in_repo(repo_root: &Path) -> io::Result<String> {
     let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_diff_impl(&repo)
@@ -29,6 +37,10 @@ pub fn git_diff_in_repo(repo_root: &Path) -> io::Result<String> {
 /// Takes a starting commit OID and generates a diff between that commit
 /// and the current working tree. Returns a formatted diff string suitable
 /// for LLM analysis.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -48,6 +60,10 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
 /// Uses the saved starting commit from `.agent/start_commit` to generate
 /// an incremental diff. Falls back to diffing from HEAD if no start commit
 /// file exists.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};
 
@@ -69,6 +85,10 @@ pub fn get_git_diff_from_start() -> io::Result<String> {
 /// and the current state on disk, including staged + unstaged changes and untracked files.
 ///
 /// Unlike [`get_git_diff_from_start`], this does not rely on the process CWD.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_git_diff_from_start_with_workspace(workspace: &dyn Workspace) -> io::Result<String> {
     use crate::git_helpers::start_commit::{
         load_start_point_with_workspace, save_start_commit_with_workspace, StartPoint,
@@ -119,6 +139,10 @@ pub fn get_git_diff_from_start_with_workspace(workspace: &dyn Workspace) -> io::
 ///
 /// Returns `(diff, baseline_oid_for_prompts)` where `baseline_oid_for_prompts` is the commit hash
 /// to mention in fallback instructions (or empty for empty repo baseline).
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
 pub fn get_git_diff_for_review_with_workspace(
     workspace: &dyn Workspace,
 ) -> io::Result<(String, String)> {

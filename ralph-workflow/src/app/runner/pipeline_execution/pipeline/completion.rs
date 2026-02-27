@@ -70,8 +70,7 @@ pub(super) fn write_defensive_completion_marker(
 
     let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
     let content = format!(
-        "failure\nEvent loop exited without normal completion (final_phase={:?})",
-        final_phase
+        "failure\nEvent loop exited without normal completion (final_phase={final_phase:?})"
     );
     if let Err(err) = workspace.write(marker_path, &content) {
         logger.error(&format!(

@@ -60,9 +60,17 @@ pub trait AgentChild: Send + std::fmt::Debug {
     fn id(&self) -> u32;
 
     /// Wait for the process to complete and return the exit status.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn wait(&mut self) -> io::Result<std::process::ExitStatus>;
 
     /// Try to wait without blocking.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>>;
 }
 
@@ -93,7 +101,7 @@ impl AgentChild for RealAgentChild {
 
 /// Result of an agent command execution (for testing).
 ///
-/// This is used by MockProcessExecutor to return mock results without
+/// This is used by `MockProcessExecutor` to return mock results without
 /// actually spawning processes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCommandResult {
@@ -105,7 +113,8 @@ pub struct AgentCommandResult {
 
 impl AgentCommandResult {
     /// Create a successful result.
-    pub fn success() -> Self {
+    #[must_use]
+    pub const fn success() -> Self {
         Self {
             exit_code: 0,
             stderr: String::new(),

@@ -152,8 +152,7 @@ fn test_review_triggers_fix_when_issues_found() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
-        "Expected PrepareReviewContext, got {:?}",
-        effect
+        "Expected PrepareReviewContext, got {effect:?}"
     );
 
     // Simulate review completing with issues found
@@ -169,8 +168,7 @@ fn test_review_triggers_fix_when_issues_found() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareFixPrompt { pass: 0, .. }),
-        "Expected PrepareFixPrompt after issues found, got {:?}",
-        effect
+        "Expected PrepareFixPrompt after issues found, got {effect:?}"
     );
 
     // After fix completes, goes to CommitMessage phase
@@ -278,8 +276,7 @@ fn test_review_runs_exactly_n_passes() {
     assert_eq!(
         passes_run.len(),
         3,
-        "Should run exactly 3 review passes, ran: {:?}",
-        passes_run
+        "Should run exactly 3 review passes, ran: {passes_run:?}"
     );
     assert_eq!(passes_run, vec![0, 1, 2], "Should run passes 0-2");
     assert_eq!(
@@ -326,8 +323,7 @@ fn test_review_skips_fix_when_no_issues() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 1 }),
-        "Expected PrepareReviewContext pass 1 when no issues, got {:?}",
-        effect
+        "Expected PrepareReviewContext pass 1 when no issues, got {effect:?}"
     );
 }
 
@@ -357,8 +353,7 @@ fn test_determine_effect_review_phase_with_wrong_role_chain() {
                 role: AgentRole::Reviewer
             }
         ),
-        "Expected InitializeAgentChain with Reviewer role, got {:?}",
-        effect
+        "Expected InitializeAgentChain with Reviewer role, got {effect:?}"
     );
 }
 
@@ -400,8 +395,7 @@ fn test_resume_at_final_review_pass_should_run_review_not_skip() {
     // This test verifies the fix: previously would fail, now passes
     assert!(
         matches!(effect, Effect::PrepareReviewContext { .. }),
-        "Expected PrepareReviewContext, got {:?}",
-        effect
+        "Expected PrepareReviewContext, got {effect:?}"
     );
 }
 
@@ -435,8 +429,7 @@ fn test_resume_at_final_review_pass_with_no_progress_should_run_review() {
     // Should prepare review context (start pass), NOT save checkpoint
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 2 }),
-        "Expected PrepareReviewContext but got {:?}",
-        effect
+        "Expected PrepareReviewContext but got {effect:?}"
     );
 }
 
@@ -462,8 +455,7 @@ fn test_resume_at_review_pass_zero_with_total_one_runs_work() {
 
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
-        "Expected PrepareReviewContext but got {:?}",
-        effect
+        "Expected PrepareReviewContext but got {effect:?}"
     );
 }
 
@@ -522,7 +514,6 @@ fn test_review_pass_completed_applies_outcome_not_reruns() {
                 clean_no_issues: true
             }
         ),
-        "Expected ApplyReviewOutcome for completed review, got {:?}",
-        effect
+        "Expected ApplyReviewOutcome for completed review, got {effect:?}"
     );
 }

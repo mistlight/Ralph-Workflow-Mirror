@@ -1,6 +1,6 @@
 //! Tests for review phase events (review passes, fix attempts).
 //!
-//! These tests validate the critical review_issues_found flag behavior that was
+//! These tests validate the critical `review_issues_found` flag behavior that was
 //! one of the 7 bugs we fixed in the reducer.
 
 use super::*;

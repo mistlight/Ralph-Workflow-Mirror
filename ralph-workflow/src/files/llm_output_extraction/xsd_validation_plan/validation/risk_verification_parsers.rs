@@ -23,7 +23,7 @@ fn parse_risks_mitigations(
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-risks-mitigations".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -71,9 +71,8 @@ fn parse_risk_pair(
                 }
             },
             Ok(Event::End(e)) if e.name().as_ref() == b"risk-pair" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -123,7 +122,7 @@ fn parse_verification_strategy(
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-verification-strategy".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -170,9 +169,8 @@ fn parse_single_verification(
                 }
             },
             Ok(Event::End(e)) if e.name().as_ref() == b"verification" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }

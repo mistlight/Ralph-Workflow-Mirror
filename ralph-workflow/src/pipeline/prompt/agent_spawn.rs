@@ -30,7 +30,7 @@ const INTERRUPT_KILL_CONFIG: KillConfig = KillConfig::new(
 
 pub(super) fn run_with_agent_spawn(
     cmd: &PromptCommand<'_>,
-    runtime: &mut PipelineRuntime<'_>,
+    runtime: &PipelineRuntime<'_>,
     anthropic_env_vars_to_sanitize: &[&str],
 ) -> io::Result<CommandResult> {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -79,7 +79,7 @@ pub(super) fn run_with_agent_spawn(
     runtime.workspace.write(logfile_path, "")?;
 
     let mut complete_env: std::collections::HashMap<String, String> = std::env::vars().collect();
-    for (key, value) in cmd.env_vars.iter() {
+    for (key, value) in cmd.env_vars {
         complete_env.insert(key.clone(), value.clone());
     }
     super::environment::sanitize_command_env(
@@ -167,11 +167,11 @@ pub(super) fn run_with_agent_spawn(
 
     let mut monitor_handle = Some(std::thread::spawn(move || {
         let result = monitor_idle_timeout_with_interval_and_kill_config(
-            activity_timestamp_clone,
-            file_activity_config,
-            child_for_monitor,
-            monitor_should_stop_clone,
-            monitor_executor,
+            &activity_timestamp_clone,
+            file_activity_config.as_ref(),
+            &child_for_monitor,
+            &monitor_should_stop_clone,
+            &monitor_executor,
             MonitorConfig {
                 timeout_secs: IDLE_TIMEOUT_SECS,
                 check_interval: Duration::from_secs(30), // 30-second check interval
@@ -205,7 +205,7 @@ pub(super) fn run_with_agent_spawn(
         cmd,
         runtime,
         activity_timestamp,
-        Arc::clone(&stdout_cancel),
+        &stdout_cancel,
     ) {
         super::cleanup::cleanup_after_agent_failure(
             &child_shared,
@@ -221,7 +221,7 @@ pub(super) fn run_with_agent_spawn(
 
     let (exit_code, stderr_output, monitor_result_early) =
         match super::process_wait::wait_for_completion_and_collect_stderr(
-            Arc::clone(&child_shared),
+            &child_shared,
             &mut stderr_join_handle,
             &mut monitor_handle,
             runtime,
@@ -376,7 +376,7 @@ mod tests {
         {
             let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
             let should_stop_for_thread = Arc::clone(&monitor_should_stop);
-            let activity_for_thread = activity_timestamp.clone();
+            let activity_for_thread = activity_timestamp;
             std::thread::spawn(move || {
                 let poll = Duration::from_millis(50);
                 loop {

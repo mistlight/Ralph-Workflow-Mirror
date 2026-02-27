@@ -6,7 +6,7 @@
 //! - Baseline reset functionality
 //! - Diff accuracy from baseline
 //!
-//! These tests use MockAppEffectHandler and MockEffectHandler to verify
+//! These tests use `MockAppEffectHandler` and `MockEffectHandler` to verify
 //! behavior through effect capture, making tests fast and deterministic.
 //!
 //! # Integration Test Style Guide
@@ -38,18 +38,18 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for baseline tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for baseline tests.
 ///
-/// Returns (app_handler, effect_handler) configured with:
+/// Returns (`app_handler`, `effect_handler`) configured with:
 /// - Git repo context (valid HEAD OID)
 /// - Working directory set to /mock/repo
 /// - PROMPT.md file with standard content
@@ -141,7 +141,7 @@ fn test_pipeline_accesses_git_state() {
 // Baseline Reset Tests
 // ============================================================================
 
-/// Test that --reset-start-commit calls GitResetStartCommit effect.
+/// Test that --reset-start-commit calls `GitResetStartCommit` effect.
 ///
 /// This verifies that when the --reset-start-commit flag is used,
 /// the system calls the appropriate effect to reset the baseline.
@@ -183,10 +183,10 @@ fn test_reset_start_commit_effect_called() {
     });
 }
 
-/// Test that --reset-start-commit updates the start_commit file in mock.
+/// Test that --reset-start-commit updates the `start_commit` file in mock.
 ///
-/// This verifies that after reset, the MockAppEffectHandler's filesystem
-/// contains the updated start_commit value.
+/// This verifies that after reset, the `MockAppEffectHandler`'s filesystem
+/// contains the updated `start_commit` value.
 #[test]
 fn test_reset_start_commit_updates_mock_file() {
     with_default_timeout(|| {
@@ -275,9 +275,9 @@ fn test_empty_diff_completes_successfully() {
 // Corrupted Baseline Recovery Tests
 // ============================================================================
 
-/// Test that corrupted start_commit file is handled gracefully.
+/// Test that corrupted `start_commit` file is handled gracefully.
 ///
-/// This verifies that when the .agent/start_commit file contains invalid data,
+/// This verifies that when the .`agent/start_commit` file contains invalid data,
 /// the system recovers without crashing.
 #[test]
 fn test_corrupted_start_commit_recovery() {
@@ -311,9 +311,9 @@ fn test_corrupted_start_commit_recovery() {
     });
 }
 
-/// Test that missing start_commit OID is handled gracefully.
+/// Test that missing `start_commit` OID is handled gracefully.
 ///
-/// This verifies that when the start_commit references a non-existent commit
+/// This verifies that when the `start_commit` references a non-existent commit
 /// (e.g., after history rewrite), the system recovers.
 #[test]
 fn test_missing_start_commit_oid_recovery() {

@@ -26,7 +26,7 @@ impl MainEffectHandler {
     ///
     /// Reads PROMPT.md and PLAN.md from the workspace, determines whether to inline
     /// or reference each based on the 16KB inline budget, and emits a
-    /// DevelopmentInputsMaterialized event.
+    /// `DevelopmentInputsMaterialized` event.
     ///
     /// If either file exceeds the inline budget, a backup file is created and referenced
     /// by path instead of embedding the content. This prevents token budget exhaustion
@@ -39,11 +39,11 @@ impl MainEffectHandler {
     ///
     /// # Returns
     ///
-    /// EffectResult with DevelopmentInputsMaterialized event, plus optional oversize
+    /// `EffectResult` with `DevelopmentInputsMaterialized` event, plus optional oversize
     /// detection events if either input exceeds the inline budget.
     pub(in crate::reducer::handler) fn materialize_development_inputs(
-        &mut self,
-        ctx: &mut PhaseContext<'_>,
+        &self,
+        ctx: &PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
         let prompt_md = ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
@@ -127,7 +127,7 @@ impl MainEffectHandler {
         let plan_input = MaterializedPromptInput {
             kind: PromptInputKind::Plan,
             content_id_sha256: sha256_hex_str(&plan_md),
-            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            consumer_signature_sha256,
             original_bytes: plan_md.len() as u64,
             final_bytes: plan_md.len() as u64,
             model_budget_bytes: None,

@@ -33,14 +33,15 @@ pub struct EventLoopLogger {
 }
 
 impl EventLoopLogger {
-    /// Create a new EventLoopLogger.
+    /// Create a new `EventLoopLogger`.
     ///
     /// The sequence counter starts at 1 for the first logged effect.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self { seq: 1 }
     }
 
-    /// Create a new EventLoopLogger that continues from an existing log file.
+    /// Create a new `EventLoopLogger` that continues from an existing log file.
     ///
     /// This reads the last sequence number from the existing log file
     /// and starts the counter from `last_seq + 1`. This is important
@@ -63,6 +64,10 @@ impl EventLoopLogger {
     /// - If the log file exists, reads the last line to extract the sequence number
     /// - If the last line doesn't match the expected format, starts at seq=1
     /// - The sequence counter is set to `last_seq + 1` to continue the sequence
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn from_existing_log(
         workspace: &dyn crate::workspace::Workspace,
         log_path: &Path,
@@ -116,7 +121,11 @@ impl EventLoopLogger {
     ///
     /// Callers who want visibility into logging failures should check the return value
     /// and log to the pipeline logger if desired.
-    pub fn log_effect(&mut self, params: LogEffectParams<'_>) -> Result<(), std::io::Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
+    pub fn log_effect(&mut self, params: &LogEffectParams<'_>) -> Result<(), std::io::Error> {
         let ts = Utc::now().to_rfc3339();
 
         // Format extra events (if any)
@@ -133,7 +142,7 @@ impl EventLoopLogger {
             let pairs: Vec<String> = params
                 .context
                 .iter()
-                .map(|(k, v)| format!("{}={}", k, v))
+                .map(|(k, v)| format!("{k}={v}"))
                 .collect();
             format!(" ctx={}", pairs.join(","))
         };
@@ -180,7 +189,7 @@ mod tests {
 
         // Log a few effects
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::Development,
@@ -193,7 +202,7 @@ mod tests {
             .unwrap();
 
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::Development,
@@ -235,7 +244,7 @@ mod tests {
         // Log several effects
         for i in 0..5 {
             logger
-                .log_effect(LogEffectParams {
+                .log_effect(&LogEffectParams {
                     workspace: &workspace,
                     log_path,
                     phase: PipelinePhase::Planning,
@@ -252,9 +261,8 @@ mod tests {
         let content = workspace.read(log_path).unwrap();
         for i in 1..=5 {
             assert!(
-                content.contains(&format!("{} ts=", i)),
-                "Should contain sequence number {}",
-                i
+                content.contains(&format!("{i} ts=")),
+                "Should contain sequence number {i}"
             );
         }
     }
@@ -268,7 +276,7 @@ mod tests {
         let mut logger = EventLoopLogger::new();
 
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::Review,
@@ -297,7 +305,7 @@ mod tests {
         let mut logger = EventLoopLogger::new();
 
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::CommitMessage,
@@ -328,7 +336,7 @@ mod tests {
             let mut logger = EventLoopLogger::new();
             for i in 0..3 {
                 logger
-                    .log_effect(LogEffectParams {
+                    .log_effect(&LogEffectParams {
                         workspace: &workspace,
                         log_path,
                         phase: PipelinePhase::Development,
@@ -347,7 +355,7 @@ mod tests {
 
         // The next log entry should have seq=4
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::Review,
@@ -383,7 +391,7 @@ mod tests {
 
         // Should start at seq=1
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::Development,
@@ -414,7 +422,7 @@ mod tests {
 
         // Should start at seq=1
         logger
-            .log_effect(LogEffectParams {
+            .log_effect(&LogEffectParams {
                 workspace: &workspace,
                 log_path,
                 phase: PipelinePhase::Development,

@@ -1,11 +1,11 @@
-//! AwaitingDevFix event reduction.
+//! `AwaitingDevFix` event reduction.
 //!
 //! Handles events during the failure remediation phase.
 
 use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
 use crate::reducer::state::PipelineState;
 
-/// Reduce AwaitingDevFix events.
+/// Reduce `AwaitingDevFix` events.
 ///
 /// This phase handles pipeline failure remediation by tracking the dev-fix
 /// flow state and transitioning to Interrupted after completion marker emission.

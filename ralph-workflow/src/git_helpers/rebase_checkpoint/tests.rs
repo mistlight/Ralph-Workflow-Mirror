@@ -246,12 +246,12 @@ mod tests {
     #[test]
     fn test_validate_checkpoint_empty_upstream() {
         // NotStarted phase allows empty upstream
-        let checkpoint = RebaseCheckpoint::new("".to_string()).with_phase(RebasePhase::NotStarted);
+        let checkpoint = RebaseCheckpoint::new(String::new()).with_phase(RebasePhase::NotStarted);
         assert!(validate_checkpoint(&checkpoint).is_ok());
 
         // Other phases require non-empty upstream
         let checkpoint =
-            RebaseCheckpoint::new("".to_string()).with_phase(RebasePhase::RebaseInProgress);
+            RebaseCheckpoint::new(String::new()).with_phase(RebasePhase::RebaseInProgress);
         assert!(validate_checkpoint(&checkpoint).is_err());
     }
 

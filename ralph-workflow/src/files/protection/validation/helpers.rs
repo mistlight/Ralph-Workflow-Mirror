@@ -60,11 +60,13 @@ pub struct PromptValidationResult {
 
 impl PromptValidationResult {
     /// Returns true if PROMPT.md exists.
+    #[must_use] 
     pub const fn exists(&self) -> bool {
         matches!(self.file_state, FileState::Present | FileState::Empty)
     }
 
     /// Returns true if PROMPT.md has non-empty content.
+    #[must_use] 
     pub const fn has_content(&self) -> bool {
         matches!(self.file_state, FileState::Present)
     }
@@ -72,11 +74,13 @@ impl PromptValidationResult {
 
 impl PromptValidationResult {
     /// Returns true if validation passed (no errors).
+    #[must_use] 
     pub const fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
 
     /// Returns true if validation passed with no warnings.
+    #[must_use] 
     pub const fn is_perfect(&self) -> bool {
         self.errors.is_empty() && self.warnings.is_empty()
     }
@@ -99,9 +103,11 @@ impl PromptValidationResult {
 ///
 /// # Returns
 ///
-/// - `Ok(true)` - File exists and has content (no action needed)
-/// - `Ok(false)` - File was restored from backup
-/// - `Err` - File missing/empty and no valid backup available
+/// Restores the PROMPT.md file from backup if it's missing or empty.
+///
+/// # Errors
+///
+/// Returns an error if the prompt file is missing/empty and no valid backup is available.
 #[cfg(test)]
 pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     let prompt_path = Path::new("PROMPT.md");
@@ -204,6 +210,7 @@ pub(super) fn check_acceptance_section(content: &str) -> bool {
 /// # Returns
 ///
 /// A `PromptValidationResult` containing validation findings.
+#[must_use] 
 pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationResult {
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let workspace = WorkspaceFs::new(root);

@@ -1,21 +1,21 @@
 //! Integration tests for commit message generation.
 //!
 //! These tests verify that:
-//! - Commit messages are generated when developer_iters=0
-//! - CreateCommit effect is called correctly at the reducer layer
+//! - Commit messages are generated when `developer_iters=0`
+//! - `CreateCommit` effect is called correctly at the reducer layer
 //! - The commit message fallback system works
 //! - Diff failure fallback behavior (ralph-skip support)
 //! - Pre-termination commit safety checks
 //!
 //! Note: Tests that specifically test LLM commit message generation behavior
 //! require the commit agent to run and cannot be properly tested without the
-//! AgentExecutor trait infrastructure. These tests focus on the observable
+//! `AgentExecutor` trait infrastructure. These tests focus on the observable
 //! behavior of commit effect creation.
 //!
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! defined in **[`INTEGRATION_TESTS.md`](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** via effect capture
@@ -37,18 +37,18 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for commit tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for commit tests.
 ///
-/// Returns (app_handler, effect_handler) configured with:
+/// Returns (`app_handler`, `effect_handler`) configured with:
 /// - Git repo context (valid HEAD OID)
 /// - Working directory set to /mock/repo
 /// - PROMPT.md file with standard content
@@ -69,10 +69,10 @@ fn create_commit_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
     (app_handler, effect_handler)
 }
 
-/// Test that CreateCommit effect is called when there is a simple change.
+/// Test that `CreateCommit` effect is called when there is a simple change.
 ///
 /// This verifies that when a user has uncommitted changes and runs ralph
-/// with developer_iters=0 to skip agent execution, the CreateCommit effect
+/// with `developer_iters=0` to skip agent execution, the `CreateCommit` effect
 /// is called with a non-empty commit message.
 #[test]
 fn test_commit_message_generated_with_simple_diff() {
@@ -95,11 +95,11 @@ fn test_commit_message_generated_with_simple_diff() {
     });
 }
 
-/// Test that CreateCommit effect is called when there are changes to multiple files.
+/// Test that `CreateCommit` effect is called when there are changes to multiple files.
 ///
 /// This verifies that when a user has uncommitted changes across multiple files
-/// and runs ralph with developer_iters=0 to skip agent execution,
-/// the CreateCommit effect is called with a non-empty commit message.
+/// and runs ralph with `developer_iters=0` to skip agent execution,
+/// the `CreateCommit` effect is called with a non-empty commit message.
 #[test]
 fn test_commit_message_generated_with_multiple_files() {
     with_default_timeout(|| {
@@ -130,11 +130,11 @@ fn test_commit_message_generated_with_multiple_files() {
     });
 }
 
-/// Test that CreateCommit effect captures diff content correctly.
+/// Test that `CreateCommit` effect captures diff content correctly.
 ///
 /// This verifies that when a user has uncommitted changes including modifications
-/// deep within a large file and runs ralph with developer_iters=0,
-/// the CreateCommit effect is called with a non-empty commit message.
+/// deep within a large file and runs ralph with `developer_iters=0`,
+/// the `CreateCommit` effect is called with a non-empty commit message.
 #[test]
 fn test_commit_created_with_diff_content() {
     with_default_timeout(|| {
@@ -170,10 +170,10 @@ fn test_commit_created_with_diff_content() {
     });
 }
 
-/// Test that CreateCommit effect is called when both developer and review phases are skipped.
+/// Test that `CreateCommit` effect is called when both developer and review phases are skipped.
 ///
-/// This verifies that when a user runs ralph with both developer_iters=0
-/// and reviewer_reviews=0 to skip agent execution, the CreateCommit effect is still
+/// This verifies that when a user runs ralph with both `developer_iters=0`
+/// and `reviewer_reviews=0` to skip agent execution, the `CreateCommit` effect is still
 /// called with a non-empty commit message.
 #[test]
 fn test_commit_succeeds_without_developer_or_review() {

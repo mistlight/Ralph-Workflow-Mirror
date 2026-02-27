@@ -53,7 +53,7 @@ impl XmlExtractionStrategy for DirectXmlStrategy {
 struct MarkdownFenceStrategy;
 
 impl MarkdownFenceStrategy {
-    fn extract_from_fence(&self, content: &str, fence_marker: &str) -> Option<String> {
+    fn extract_from_fence(content: &str, fence_marker: &str) -> Option<String> {
         let start = content.find(fence_marker)?;
         let after_fence = &content[start + fence_marker.len()..];
         let end = after_fence.find("```")?;
@@ -65,19 +65,19 @@ impl MarkdownFenceStrategy {
 impl XmlExtractionStrategy for MarkdownFenceStrategy {
     fn extract(&self, content: &str) -> Option<String> {
         // Try ```xml fence first, then generic ``` fence
-        self.extract_from_fence(content, "```xml")
-            .or_else(|| self.extract_from_fence(content, "```"))
+        Self::extract_from_fence(content, "```xml")
+            .or_else(|| Self::extract_from_fence(content, "```"))
     }
 }
 
-/// Strategy for extracting XML from OpenCode NDJSON streams.
+/// Strategy for extracting XML from `OpenCode` NDJSON streams.
 ///
-/// OpenCode outputs text in multiple `{"type":"text","part":{"text":"..."}}` events.
+/// `OpenCode` outputs text in multiple `{"type":"text","part":{"text":"..."}}` events.
 /// This strategy accumulates all text fragments and extracts XML from the result.
 struct OpenCodeStrategy;
 
 impl OpenCodeStrategy {
-    fn accumulate_text(&self, content: &str) -> String {
+    fn accumulate_text(content: &str) -> String {
         let mut accumulated = String::new();
 
         for line in content.lines() {
@@ -105,7 +105,7 @@ impl OpenCodeStrategy {
 
 impl XmlExtractionStrategy for OpenCodeStrategy {
     fn extract(&self, content: &str) -> Option<String> {
-        let accumulated = self.accumulate_text(content);
+        let accumulated = Self::accumulate_text(content);
         if accumulated.is_empty() {
             return None;
         }
@@ -119,7 +119,7 @@ impl XmlExtractionStrategy for OpenCodeStrategy {
 struct JsonResultStrategy;
 
 impl JsonResultStrategy {
-    fn try_extract_from_value(&self, value: &str) -> Option<String> {
+    fn try_extract_from_value(value: &str) -> Option<String> {
         extract_plan_tags(value)
             .or_else(|| extract_plan_tags(&unescape_json_strings_aggressive(value)))
     }
@@ -138,7 +138,7 @@ impl XmlExtractionStrategy for JsonResultStrategy {
                 // Check common result fields
                 for field in ["result", "content", "message", "output", "text"] {
                     if let Some(value) = json.get(field).and_then(|v| v.as_str()) {
-                        if let Some(xml) = self.try_extract_from_value(value) {
+                        if let Some(xml) = Self::try_extract_from_value(value) {
                             return Some(xml);
                         }
                     }
@@ -167,7 +167,7 @@ impl XmlExtractionStrategy for EmbeddedXmlStrategy {
 ///
 /// 1. **Direct XML**: Content starts with `<ralph-plan>` tag
 /// 2. **Markdown fence**: XML wrapped in ```xml or ``` fences
-/// 3. **OpenCode NDJSON**: Accumulated text from `{"type":"text","part":{"text":"..."}}` events
+/// 3. **`OpenCode` NDJSON**: Accumulated text from `{"type":"text","part":{"text":"..."}}` events
 /// 4. **JSON result**: XML in `result`, `content`, `message`, `output`, or `text` fields
 /// 5. **Embedded search**: Look for `<ralph-plan>` anywhere in content
 ///
@@ -179,6 +179,7 @@ impl XmlExtractionStrategy for EmbeddedXmlStrategy {
 ///
 /// * `Some(xml_content)` - The extracted XML content including tags
 /// * `None` - No valid XML plan found
+#[must_use]
 pub fn extract_plan_xml(content: &str) -> Option<String> {
     let strategies: &[&dyn XmlExtractionStrategy] = &[
         &DirectXmlStrategy,

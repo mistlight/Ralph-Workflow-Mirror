@@ -1,4 +1,4 @@
-//! Unit tests for AwaitingDevFix recovery escalation logic.
+//! Unit tests for `AwaitingDevFix` recovery escalation logic.
 
 use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
 use crate::reducer::state::PipelineState;
@@ -35,8 +35,7 @@ fn test_recovery_escalation_level_1_for_attempts_1_to_3() {
         let new_state = reduce(state, event);
         assert_eq!(
             new_state.recovery_escalation_level, 1,
-            "Attempt {} should be at level 1",
-            attempt
+            "Attempt {attempt} should be at level 1"
         );
     }
 }
@@ -57,8 +56,7 @@ fn test_recovery_escalation_level_2_for_attempts_4_to_6() {
         let new_state = reduce(state, event);
         assert_eq!(
             new_state.recovery_escalation_level, 2,
-            "Attempt {} should be at level 2",
-            attempt
+            "Attempt {attempt} should be at level 2"
         );
     }
 }
@@ -79,8 +77,7 @@ fn test_recovery_escalation_level_3_for_attempts_7_to_9() {
         let new_state = reduce(state, event);
         assert_eq!(
             new_state.recovery_escalation_level, 3,
-            "Attempt {} should be at level 3",
-            attempt
+            "Attempt {attempt} should be at level 3"
         );
     }
 }
@@ -101,8 +98,7 @@ fn test_recovery_escalation_level_4_for_attempts_10_plus() {
         let new_state = reduce(state, event);
         assert_eq!(
             new_state.recovery_escalation_level, 4,
-            "Attempt {} should be at level 4",
-            attempt
+            "Attempt {attempt} should be at level 4"
         );
     }
 }

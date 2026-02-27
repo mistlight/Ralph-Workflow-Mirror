@@ -30,6 +30,7 @@ pub struct CommitAttemptLog {
 
 impl CommitAttemptLog {
     /// Create a new attempt log.
+    #[must_use] 
     pub fn new(attempt_number: usize, agent: &str, strategy: &str) -> Self {
         Self {
             attempt_number,
@@ -103,6 +104,10 @@ impl CommitAttemptLog {
     /// # Returns
     ///
     /// Path to the written log file on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the operation fails.
     pub fn write_to_workspace(
         &self,
         log_dir: &Path,

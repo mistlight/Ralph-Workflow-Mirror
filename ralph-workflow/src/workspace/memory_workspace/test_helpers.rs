@@ -1,4 +1,4 @@
-//! Test helper methods for MemoryWorkspace.
+//! Test helper methods for `MemoryWorkspace`.
 //!
 //! This module provides builder-pattern methods for pre-populating a workspace
 //! with files and directories, and assertion helpers for tests.
@@ -19,6 +19,11 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_file(".agent/PLAN.md", "# Implementation Plan");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
+    #[must_use]
     pub fn with_file(self, path: &str, content: &str) -> Self {
         let path_buf = PathBuf::from(path);
         self.ensure_parent_dirs(&path_buf);
@@ -43,6 +48,11 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_file_at_time("old_file.txt", "content", old_time);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
+    #[must_use]
     pub fn with_file_at_time(
         self,
         path: &str,
@@ -72,6 +82,11 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_file_bytes("binary.dat", &[0xFF, 0xFE, 0xFD]);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `RwLock` is poisoned.
+    #[must_use]
     pub fn with_file_bytes(self, path: &str, content: &[u8]) -> Self {
         let path_buf = PathBuf::from(path);
         self.ensure_parent_dirs(&path_buf);
@@ -92,6 +107,7 @@ impl MemoryWorkspace {
     /// let workspace = MemoryWorkspace::new_test()
     ///     .with_dir(".agent/logs");
     /// ```
+    #[must_use]
     pub fn with_dir(self, path: &str) -> Self {
         let path_buf = PathBuf::from(path);
         self.ensure_dir_path(&path_buf);
@@ -101,6 +117,10 @@ impl MemoryWorkspace {
     /// List all files in a directory (for test assertions).
     ///
     /// Returns file paths relative to the workspace root.
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn list_files_in_dir(&self, dir: &str) -> Vec<PathBuf> {
         let dir_path = PathBuf::from(dir);
         self.files
@@ -109,14 +129,17 @@ impl MemoryWorkspace {
             .keys()
             .filter(|path| {
                 path.parent()
-                    .map(|p| p == dir_path || p.starts_with(&dir_path))
-                    .unwrap_or(false)
+                    .is_some_and(|p| p == dir_path || p.starts_with(&dir_path))
             })
             .cloned()
             .collect()
     }
 
     /// Get the modification time of a file (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn get_modified(&self, path: &str) -> Option<std::time::SystemTime> {
         self.files
             .read()
@@ -126,6 +149,10 @@ impl MemoryWorkspace {
     }
 
     /// List all directories (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn list_directories(&self) -> Vec<PathBuf> {
         self.directories.read()
             .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace directories lock")
@@ -133,6 +160,10 @@ impl MemoryWorkspace {
     }
 
     /// Get all files that were written (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn written_files(&self) -> std::collections::HashMap<PathBuf, Vec<u8>> {
         self.files
             .read()
@@ -143,6 +174,10 @@ impl MemoryWorkspace {
     }
 
     /// Get a specific file's content (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn get_file(&self, path: &str) -> Option<String> {
         self.files
             .read()
@@ -152,6 +187,10 @@ impl MemoryWorkspace {
     }
 
     /// Get a specific file's bytes (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn get_file_bytes(&self, path: &str) -> Option<Vec<u8>> {
         self.files
             .read()
@@ -161,6 +200,10 @@ impl MemoryWorkspace {
     }
 
     /// Check if a file was written (for test assertions).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn was_written(&self, path: &str) -> bool {
         self.files
             .read()
@@ -169,6 +212,10 @@ impl MemoryWorkspace {
     }
 
     /// Clear all files (for test setup).
+    ///
+    /// # Panics
+    ///
+    /// Panics if invariants are violated.
     pub fn clear(&self) {
         self.files.write()
             .expect("RwLock poisoned - indicates panic in another thread holding MemoryWorkspace files lock")

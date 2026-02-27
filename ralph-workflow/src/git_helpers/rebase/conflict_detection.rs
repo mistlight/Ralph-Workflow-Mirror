@@ -33,15 +33,16 @@ pub enum ConcurrentOperation {
 #[cfg(any(test, feature = "test-utils"))]
 impl ConcurrentOperation {
     /// Returns a human-readable description of the operation.
+    #[must_use]
     pub fn description(&self) -> String {
         match self {
-            ConcurrentOperation::Rebase => "rebase".to_string(),
-            ConcurrentOperation::Merge => "merge".to_string(),
-            ConcurrentOperation::CherryPick => "cherry-pick".to_string(),
-            ConcurrentOperation::Revert => "revert".to_string(),
-            ConcurrentOperation::Bisect => "bisect".to_string(),
-            ConcurrentOperation::OtherGitProcess => "another Git process".to_string(),
-            ConcurrentOperation::Unknown(s) => format!("unknown operation: {s}"),
+            Self::Rebase => "rebase".to_string(),
+            Self::Merge => "merge".to_string(),
+            Self::CherryPick => "cherry-pick".to_string(),
+            Self::Revert => "revert".to_string(),
+            Self::Bisect => "bisect".to_string(),
+            Self::OtherGitProcess => "another Git process".to_string(),
+            Self::Unknown(s) => format!("unknown operation: {s}"),
         }
     }
 }
@@ -74,6 +75,10 @@ impl ConcurrentOperation {
 ///     Err(e) => eprintln!("Error checking: {e}"),
 /// }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if the git repository cannot be accessed or filesystem operations fail.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperation>> {
     use std::fs;
@@ -150,6 +155,10 @@ pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperati
 /// # Returns
 ///
 /// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if the git command fails to execute.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn rebase_in_progress_cli(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<bool> {
     let output = executor.execute("git", &["status", "--porcelain"], &[], None)?;
@@ -171,12 +180,14 @@ pub struct CleanupResult {
 #[cfg(any(test, feature = "test-utils"))]
 impl CleanupResult {
     /// Returns true if any cleanup was performed.
-    pub fn has_cleanup(&self) -> bool {
+    #[must_use]
+    pub const fn has_cleanup(&self) -> bool {
         !self.cleaned_paths.is_empty() || self.locks_removed
     }
 
     /// Returns the number of items cleaned up.
-    pub fn count(&self) -> usize {
+    #[must_use]
+    pub const fn count(&self) -> usize {
         self.cleaned_paths.len() + if self.locks_removed { 1 } else { 0 }
     }
 }
@@ -194,6 +205,10 @@ impl CleanupResult {
 ///
 /// Returns `Ok(CleanupResult)` with details of what was cleaned up,
 /// or an error if cleanup failed catastrophically.
+///
+/// # Errors
+///
+/// Returns an error if the git repository cannot be accessed or filesystem operations fail.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
     use std::fs;
@@ -223,10 +238,10 @@ pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
                 // State is invalid or corrupted, safe to remove
                 let removed = if full_path.is_dir() {
                     fs::remove_dir_all(&full_path)
-                        .map(|_| true)
+                        .map(|()| true)
                         .unwrap_or(false)
                 } else {
-                    fs::remove_file(&full_path).map(|_| true).unwrap_or(false)
+                    fs::remove_file(&full_path).map(|()| true).unwrap_or(false)
                 };
 
                 if removed {
@@ -333,6 +348,10 @@ fn validate_state_file(path: &Path) -> io::Result<bool> {
 ///     Err(e) => println!("Recovery failed: {e}"),
 /// }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if recovery operations fail.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn attempt_automatic_recovery(
     executor: &dyn crate::executor::ProcessExecutor,
@@ -459,6 +478,10 @@ pub fn validate_git_state() -> io::Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(true)` if the working tree is dirty, `Ok(false)` otherwise.
+///
+/// # Errors
+///
+/// Returns an error if the git command fails to execute.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn is_dirty_tree_cli(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<bool> {
     let output = executor.execute("git", &["status", "--porcelain"], &[], None)?;

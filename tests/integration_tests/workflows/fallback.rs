@@ -4,8 +4,8 @@
 //! - Phase skipping with zero iterations
 //! - Pipeline behavior without agent execution
 //!
-//! Note: Tests that require agent execution (developer_iters > 0 or reviewer_reviews > 0)
-//! cannot be properly tested without the AgentExecutor trait infrastructure. Those tests
+//! Note: Tests that require agent execution (`developer_iters` > 0 or `reviewer_reviews` > 0)
+//! cannot be properly tested without the `AgentExecutor` trait infrastructure. Those tests
 //! should be unit tests with mocked executors at the code level.
 //!
 //! # Integration Test Style Guide
@@ -30,14 +30,14 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 /// Standard PROMPT.md content for fallback tests.
-const STANDARD_PROMPT: &str = r#"## Goal
+const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
 
 ## Acceptance
 
 - Tests pass
-"#;
+";
 
 /// Create mock handlers with standard setup for fallback tests.
 fn create_fallback_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
@@ -59,8 +59,8 @@ fn create_fallback_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) 
 
 /// Test that setting iterations to zero skips the respective phase.
 ///
-/// This verifies that when a user runs ralph with both developer_iters=0
-/// and reviewer_reviews=0, the pipeline completes successfully.
+/// This verifies that when a user runs ralph with both `developer_iters=0`
+/// and `reviewer_reviews=0`, the pipeline completes successfully.
 /// The pipeline may still create some tracking files (STATUS.md, etc.) for
 /// pipeline state management, but agent execution is skipped.
 #[test]
@@ -85,8 +85,8 @@ fn test_skips_phases_with_zero_iterations() {
 
 /// Test that the pipeline succeeds with both developer and review phases skipped.
 ///
-/// This verifies that when a user runs ralph with both developer_iters=0
-/// and reviewer_reviews=0, the pipeline completes successfully and a commit
+/// This verifies that when a user runs ralph with both `developer_iters=0`
+/// and `reviewer_reviews=0`, the pipeline completes successfully and a commit
 /// effect is triggered.
 #[test]
 fn test_succeeds_with_zero_iterations() {

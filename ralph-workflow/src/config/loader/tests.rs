@@ -24,7 +24,7 @@ review_depth = "standard"
         panic!("load_config_from_path_with_env should succeed");
     };
 
-    assert!(warnings.is_empty(), "Unexpected warnings: {:?}", warnings);
+    assert!(warnings.is_empty(), "Unexpected warnings: {warnings:?}");
     assert!(unified.is_some());
     assert_eq!(config.developer_iters, 10);
     assert!(!config.behavior.interactive);
@@ -66,7 +66,7 @@ review_depth = "standard"
         panic!("load_config_from_path_with_env should succeed");
     };
 
-    assert!(warnings.is_empty(), "Unexpected warnings: {:?}", warnings);
+    assert!(warnings.is_empty(), "Unexpected warnings: {warnings:?}");
     assert!(unified.is_some());
     assert_eq!(config.developer_iters, 8);
     assert_eq!(config.verbosity, Verbosity::Debug);
@@ -170,8 +170,7 @@ max_dev_continuations = 0
         !warnings
             .iter()
             .any(|w: &String| w.contains("max_dev_continuations")),
-        "Should not warn about max_dev_continuations=0, got: {:?}",
-        warnings
+        "Should not warn about max_dev_continuations=0, got: {warnings:?}"
     );
 }
 
@@ -201,8 +200,7 @@ max_xsd_retries = 0
         !warnings
             .iter()
             .any(|w: &String| w.contains("max_xsd_retries")),
-        "Should not warn about max_xsd_retries=0, got: {:?}",
-        warnings
+        "Should not warn about max_xsd_retries=0, got: {warnings:?}"
     );
 }
 
@@ -231,8 +229,7 @@ max_same_agent_retries = 0
         !warnings
             .iter()
             .any(|w: &String| w.contains("max_same_agent_retries")),
-        "Should not warn about max_same_agent_retries=0, got: {:?}",
-        warnings
+        "Should not warn about max_same_agent_retries=0, got: {warnings:?}"
     );
 }
 
@@ -256,18 +253,18 @@ fn test_load_config_returns_defaults_without_file() {
 #[test]
 #[serial]
 fn test_load_config_with_local_override() {
-    let global_toml = r#"
+    let global_toml = r"
 [general]
 verbosity = 2
 developer_iters = 5
 reviewer_reviews = 2
-"#;
+";
 
-    let local_toml = r#"
+    let local_toml = r"
 [general]
 developer_iters = 10
 reviewer_reviews = 3
-"#;
+";
 
     let env = MemoryConfigEnvironment::new()
         .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -289,11 +286,11 @@ reviewer_reviews = 3
 #[test]
 #[serial]
 fn test_load_config_local_only() {
-    let local_toml = r#"
+    let local_toml = r"
 [general]
 verbosity = 4
 developer_iters = 8
-"#;
+";
 
     let env = MemoryConfigEnvironment::new()
         .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -312,11 +309,11 @@ developer_iters = 8
 #[test]
 #[serial]
 fn test_load_config_global_only_no_local() {
-    let global_toml = r#"
+    let global_toml = r"
 [general]
 verbosity = 3
 developer_iters = 7
-"#;
+";
 
     let env = MemoryConfigEnvironment::new()
         .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -335,15 +332,15 @@ developer_iters = 7
 #[test]
 #[serial]
 fn test_load_config_precedence_env_vars_override_local() {
-    let global_toml = r#"
+    let global_toml = r"
 [general]
 developer_iters = 5
-"#;
+";
 
-    let local_toml = r#"
+    let local_toml = r"
 [general]
 developer_iters = 10
-"#;
+";
 
     let env_impl = MemoryConfigEnvironment::new()
         .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -366,11 +363,11 @@ developer_iters = 10
 
 /// Regression test for infinite continuation loop bug (wt-39).
 ///
-/// CRITICAL: This test verifies that default_config() always sets max_dev_continuations
+/// CRITICAL: This test verifies that `default_config()` always sets `max_dev_continuations`
 /// to Some(2), ensuring bounded continuation even when config files are missing.
 ///
 /// Without this default, the system could allow infinite continuation loops when
-/// max_dev_continuations is omitted from config files.
+/// `max_dev_continuations` is omitted from config files.
 #[test]
 fn test_default_config_sets_continuation_limits() {
     let config = default_config();
@@ -397,11 +394,11 @@ fn test_default_config_sets_continuation_limits() {
 
 /// Regression test for infinite continuation loop bug (wt-39).
 ///
-/// CRITICAL: This test verifies that when max_dev_continuations is omitted from
+/// CRITICAL: This test verifies that when `max_dev_continuations` is omitted from
 /// a config file, the serde default is applied correctly.
 ///
-/// When the key is missing, UnifiedConfig should apply default_max_dev_continuations() = 2,
-/// which then gets wrapped in Some() when converting to Config.
+/// When the key is missing, `UnifiedConfig` should apply `default_max_dev_continuations()` = 2,
+/// which then gets wrapped in `Some()` when converting to Config.
 #[test]
 #[serial]
 fn test_missing_max_dev_continuations_key_applies_serde_default() {
@@ -430,7 +427,6 @@ review_depth = "standard"
 
     assert!(
         warnings.is_empty(),
-        "Should not warn about missing max_dev_continuations (serde default applies): {:?}",
-        warnings
+        "Should not warn about missing max_dev_continuations (serde default applies): {warnings:?}"
     );
 }

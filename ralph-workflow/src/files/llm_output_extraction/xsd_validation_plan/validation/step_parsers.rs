@@ -20,7 +20,7 @@ fn parse_steps(reader: &mut Reader<&[u8]>) -> Result<Vec<Step>, XsdValidationErr
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-implementation-steps".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -68,7 +68,7 @@ fn parse_single_step(
             example: None,
         })?;
 
-    let step_type = attrs
+    let kind = attrs
         .get("type")
         .and_then(|s| StepType::from_str(s))
         .unwrap_or_default();
@@ -125,9 +125,9 @@ fn parse_single_step(
             Err(e) => {
                 return Err(XsdValidationError {
                     error_type: XsdErrorType::MalformedXml,
-                    element_path: format!("step[{}]", number),
+                    element_path: format!("step[{number}]"),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -138,7 +138,7 @@ fn parse_single_step(
 
     let title = title.ok_or_else(|| XsdValidationError {
         error_type: XsdErrorType::MissingRequiredElement,
-        element_path: format!("step[{}]/title", number),
+        element_path: format!("step[{number}]/title"),
         expected: "<title> element".to_string(),
         found: "no <title> found".to_string(),
         suggestion: "Add <title>Step title</title>".to_string(),
@@ -146,10 +146,10 @@ fn parse_single_step(
     })?;
 
     // Validate file-change steps have target-files
-    if step_type == StepType::FileChange && target_files.is_empty() {
+    if kind == StepType::FileChange && target_files.is_empty() {
         return Err(XsdValidationError {
             error_type: XsdErrorType::MissingRequiredElement,
-            element_path: format!("step[{}]/target-files", number),
+            element_path: format!("step[{number}]/target-files"),
             expected: "<target-files> with at least one <file> for file-change steps".to_string(),
             found: "no target-files".to_string(),
             suggestion: "Add <target-files><file path=\"...\" action=\"modify\"/></target-files>"
@@ -160,7 +160,7 @@ fn parse_single_step(
 
     let content = content.ok_or_else(|| XsdValidationError {
         error_type: XsdErrorType::MissingRequiredElement,
-        element_path: format!("step[{}]/content", number),
+        element_path: format!("step[{number}]/content"),
         expected: "<content> element".to_string(),
         found: "no <content> found".to_string(),
         suggestion: "Add <content><paragraph>...</paragraph></content>".to_string(),
@@ -169,7 +169,7 @@ fn parse_single_step(
 
     Ok(Step {
         number,
-        step_type,
+        kind,
         priority,
         title,
         target_files,
@@ -180,7 +180,7 @@ fn parse_single_step(
     })
 }
 
-/// Helper to parse a single <file> element's attributes into a TargetFile
+/// Helper to parse a single <file> element's attributes into a `TargetFile`
 fn parse_file_element(attrs: &HashMap<String, String>) -> Result<TargetFile, XsdValidationError> {
     let path = attrs
         .get("path")
@@ -241,9 +241,8 @@ fn parse_target_files(reader: &mut Reader<&[u8]>) -> Result<Vec<TargetFile>, Xsd
                 // No need to skip - self-closing tag has no end
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"target-files" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -278,7 +277,7 @@ fn parse_critical_files(reader: &mut Reader<&[u8]>) -> Result<CriticalFiles, Xsd
                     error_type: XsdErrorType::MalformedXml,
                     element_path: "ralph-critical-files".to_string(),
                     expected: "valid XML".to_string(),
-                    found: format!("parse error: {}", e),
+                    found: format!("parse error: {e}"),
                     suggestion: "Check XML syntax".to_string(),
                     example: None,
                 });
@@ -358,9 +357,8 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
                 });
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"primary-files" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }
@@ -406,9 +404,8 @@ fn parse_reference_files(
                 files.push(ReferenceFile { path, purpose });
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"reference-files" => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => break,
         }
         buf.clear();
     }

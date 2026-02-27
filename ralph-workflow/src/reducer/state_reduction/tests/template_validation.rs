@@ -1,10 +1,10 @@
 //! Reducer unit tests for template rendering substitution log validation.
 //!
-//! These tests verify that the reducer correctly handles TemplateRendered events
+//! These tests verify that the reducer correctly handles `TemplateRendered` events
 //! and stores substitution logs in state for validation and observability.
 //!
 //! Per the reducer architecture, validation is reducer-owned and derived from
-//! the substitution log when the TemplateRendered event is reduced.
+//! the substitution log when the `TemplateRendered` event is reduced.
 
 use crate::prompts::{SubstitutionEntry, SubstitutionLog, SubstitutionSource};
 use crate::reducer::event::{PipelineEvent, PipelinePhase, PromptInputEvent};
@@ -34,7 +34,7 @@ fn test_reduce_template_rendered_complete_with_defaults() {
     let event = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
         phase: PipelinePhase::CommitMessage,
         template_name: "commit_message_xml".to_string(),
-        log: log.clone(),
+        log,
     });
 
     let new_state = reduce(state, event);
@@ -102,7 +102,7 @@ fn test_reduce_template_rendered_incomplete() {
     let event = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
         phase: PipelinePhase::CommitMessage,
         template_name: "commit_message_xml".to_string(),
-        log: log.clone(),
+        log,
     });
 
     let new_state = reduce(state, event);
@@ -163,7 +163,7 @@ fn test_reduce_template_rendered_empty_with_default() {
     let event = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
         phase: PipelinePhase::CommitMessage,
         template_name: "commit_message_xml".to_string(),
-        log: log.clone(),
+        log,
     });
 
     let new_state = reduce(state, event);
@@ -205,7 +205,7 @@ fn test_reduce_template_rendered_log_persists_across_state() {
     let event1 = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
         phase: PipelinePhase::Planning,
         template_name: "first_template".to_string(),
-        log: log.clone(),
+        log,
     });
 
     let state_after_first = reduce(state, event1);
@@ -234,7 +234,7 @@ fn test_reduce_template_rendered_log_persists_across_state() {
     let event2 = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
         phase: PipelinePhase::Development,
         template_name: "second_template".to_string(),
-        log: log2.clone(),
+        log: log2,
     });
 
     let state_after_second = reduce(state_after_first, event2);
@@ -265,7 +265,7 @@ fn test_reduce_template_rendered_different_phases() {
         let state = PipelineState::initial(1, 0);
 
         let log = SubstitutionLog {
-            template_name: format!("{:?}_template", phase),
+            template_name: format!("{phase:?}_template"),
             substituted: vec![SubstitutionEntry {
                 name: "TEST_VAR".to_string(),
                 source: SubstitutionSource::Value,
@@ -275,7 +275,7 @@ fn test_reduce_template_rendered_different_phases() {
 
         let event = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
             phase,
-            template_name: format!("{:?}_template", phase),
+            template_name: format!("{phase:?}_template"),
             log: log.clone(),
         });
 
@@ -284,12 +284,11 @@ fn test_reduce_template_rendered_different_phases() {
         // Verify log is stored regardless of phase
         assert!(
             new_state.last_substitution_log.is_some(),
-            "Log should be stored for phase {:?}",
-            phase
+            "Log should be stored for phase {phase:?}"
         );
         assert_eq!(
             new_state.last_substitution_log.unwrap().template_name,
-            format!("{:?}_template", phase)
+            format!("{phase:?}_template")
         );
     }
 }
@@ -325,7 +324,7 @@ fn test_reduce_template_rendered_with_multiple_defaults() {
     let event = PipelineEvent::PromptInput(PromptInputEvent::TemplateRendered {
         phase: PipelinePhase::Development,
         template_name: "multi_default_template".to_string(),
-        log: log.clone(),
+        log,
     });
 
     let new_state = reduce(state, event);
