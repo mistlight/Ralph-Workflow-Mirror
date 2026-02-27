@@ -1131,6 +1131,49 @@ developer = ["codex"]
     });
 }
 
+/// Test that global-only partial `agent_chain` inherits missing roles from built-in defaults.
+#[test]
+fn test_global_only_partial_agent_chain_inherits_builtin_missing_roles() {
+    with_default_timeout(|| {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                r#"
+[general]
+verbosity = 4
+
+[agent_chain]
+developer = ["codex"]
+"#,
+            )
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("global-only partial chain should load");
+        let unified = merged.expect("expected merged config");
+        let chain = unified.agent_chain.expect("agent_chain should exist");
+
+        assert_eq!(chain.developer, vec!["codex"]);
+
+        let builtins = ralph_workflow::agents::AgentRegistry::new()
+            .expect("built-in registry should load")
+            .fallback_config()
+            .clone();
+        assert_eq!(
+            chain.reviewer, builtins.reviewer,
+            "missing global reviewer should inherit built-in reviewer chain"
+        );
+        assert_eq!(
+            chain.commit, builtins.commit,
+            "missing global commit should inherit built-in commit chain"
+        );
+    });
+}
+
 /// Test that --init-local-config populates values from global config.
 ///
 /// When global config has custom values (e.g. `developer_iters = 8`),

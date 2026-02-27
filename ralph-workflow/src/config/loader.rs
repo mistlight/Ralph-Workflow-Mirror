@@ -207,8 +207,12 @@ pub fn load_config_from_path_with_env(
     let mut validation_errors = Vec::new();
 
     // Step 1: Load and validate global config
-    let global_unified = if let Some(path) = config_path {
-        // Use provided path
+    let global_config_path = config_path
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| env.unified_config_path());
+    let mut global_content: Option<String> = None;
+
+    let global_unified = if let Some(path) = global_config_path.as_ref() {
         if env.file_exists(path) {
             let content = env.read_file(path)?;
             // Validate the config file
@@ -221,10 +225,13 @@ pub fn load_config_from_path_with_env(
                 }
             }
             match UnifiedConfig::load_from_content(&content) {
-                Ok(cfg) => Some(cfg),
+                Ok(cfg) => {
+                    global_content = Some(content);
+                    Some(cfg)
+                }
                 Err(e) => {
                     validation_errors.push(ConfigValidationError::InvalidValue {
-                        file: path.to_path_buf(),
+                        file: path.clone(),
                         key: "config".to_string(),
                         message: format!("Failed to parse config: {e}"),
                     });
@@ -232,41 +239,13 @@ pub fn load_config_from_path_with_env(
                 }
             }
         } else {
-            warnings.push(format!("Global config file not found: {}", path.display()));
+            if config_path.is_some() {
+                warnings.push(format!("Global config file not found: {}", path.display()));
+            }
             None
         }
     } else {
-        // Use default path
-        if let Some(global_path) = env.unified_config_path() {
-            if env.file_exists(&global_path) {
-                let content = env.read_file(&global_path)?;
-                // Validate the config file
-                match validate_config_file(&global_path, &content) {
-                    Ok(config_warnings) => {
-                        warnings.extend(config_warnings);
-                    }
-                    Err(errors) => {
-                        validation_errors.extend(errors);
-                    }
-                }
-                match UnifiedConfig::load_from_content(&content) {
-                    Ok(cfg) => Some(cfg),
-                    Err(e) => {
-                        validation_errors.push(ConfigValidationError::InvalidValue {
-                            file: global_path,
-                            key: "config".to_string(),
-                            message: format!("Failed to parse config: {e}"),
-                        });
-                        None
-                    }
-                }
-            } else {
-                // File doesn't exist - not an error, use defaults
-                None
-            }
-        } else {
-            None
-        }
+        None
     };
 
     // Step 2: Load and validate local config
@@ -324,8 +303,17 @@ pub fn load_config_from_path_with_env(
             )
         }
         (Some(global), None, _) => {
-            // Only global exists
-            Some(global)
+            // Only global exists: preserve explicit global values exactly.
+            // For agent_chain, resolve missing roles through built-in defaults using
+            // raw global key presence so omitted roles inherit defaults while explicit
+            // empty lists still override.
+            if let Some(content) = global_content.as_ref() {
+                Some(merge_global_with_built_in_agent_chain_defaults(
+                    &global, content,
+                ))
+            } else {
+                Some(global)
+            }
         }
         (None, Some(local), Some(content)) => {
             // Only local exists: merge against `UnifiedConfig::default()` so missing keys
@@ -368,6 +356,16 @@ pub fn load_config_from_path_with_env(
     }
 
     Ok((config, merged_unified, warnings))
+}
+
+fn merge_global_with_built_in_agent_chain_defaults(
+    global: &UnifiedConfig,
+    global_content: &str,
+) -> UnifiedConfig {
+    let mut merged = global.clone();
+    let resolved = UnifiedConfig::default().merge_with_content(global_content, global);
+    merged.agent_chain = resolved.agent_chain;
+    merged
 }
 
 /// Create a Config from `UnifiedConfig`.

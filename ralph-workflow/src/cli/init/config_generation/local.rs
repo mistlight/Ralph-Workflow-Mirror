@@ -62,15 +62,23 @@ fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
 }
 
 fn resolve_effective_init_template_config<R: ConfigEnvironment>(env: &R) -> UnifiedConfig {
-    let global = UnifiedConfig::load_with_env(env).unwrap_or_default();
+    let Some(global_path) = env.unified_config_path() else {
+        return UnifiedConfig::default();
+    };
 
-    if let Some(global_path) = env.unified_config_path() {
-        if env.file_exists(&global_path) {
-            return global;
-        }
+    if !env.file_exists(&global_path) {
+        return UnifiedConfig::default();
     }
 
-    UnifiedConfig::default().merge_with(&global)
+    let Ok(global_content) = env.read_file(&global_path) else {
+        return UnifiedConfig::default();
+    };
+
+    let Ok(global) = UnifiedConfig::load_from_content(&global_content) else {
+        return UnifiedConfig::default();
+    };
+
+    UnifiedConfig::default().merge_with_content(&global_content, &global)
 }
 
 fn built_in_default_chain() -> crate::agents::fallback::FallbackConfig {
@@ -293,6 +301,39 @@ reviewer = ["claude"]
         assert!(
             content.contains(r#"reviewer = ["claude"]"#),
             "should show global reviewer chain, got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_init_local_config_partial_global_agent_chain_uses_builtin_missing_roles() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                r#"
+[agent_chain]
+developer = ["codex"]
+"#,
+            );
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        let content = env
+            .get_file(Path::new("/test/repo/.agent/ralph-workflow.toml"))
+            .expect("local config should be written");
+
+        let registry = crate::agents::AgentRegistry::new().expect("built-in registry should load");
+        let builtins = registry.fallback_config();
+        let expected_reviewer = format_toml_string_array(&builtins.reviewer);
+
+        assert!(
+            content.contains(r#"developer = ["codex"]"#),
+            "should show global developer chain, got:\n{content}"
+        );
+        assert!(
+            content.contains(&format!("reviewer = {expected_reviewer}")),
+            "missing global reviewer should fall back to built-in defaults, got:\n{content}"
         );
     }
 
