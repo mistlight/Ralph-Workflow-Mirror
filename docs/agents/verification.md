@@ -27,6 +27,11 @@ cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
 # (clippy::cargo is not enabled as it flags ecosystem-level dependency conflicts)
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
 
+# Lint test helpers
+# Enforces clippy::all, clippy::pedantic, clippy::nursery
+# via #![deny(...)] attributes in test-helpers/src/lib.rs
+cargo clippy -p test-helpers --all-targets -- -D warnings
+
 # Unit tests
 cargo test -p ralph-workflow --lib --all-features
 

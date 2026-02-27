@@ -1,5 +1,6 @@
 #![feature(rustc_private)]
-#![warn(unused_extern_crates)]
+// DO NOT CHANGE THESE CLIPPY SETTINGS, YOU MUST REFACTOR INSTEAD, EVEN IF IT TAKES YOU 100 YEARS
+#![deny(warnings, clippy::all, clippy::pedantic, clippy::nursery)]
 
 extern crate rustc_ast;
 extern crate rustc_span;

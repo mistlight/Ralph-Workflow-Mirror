@@ -188,6 +188,17 @@ All code (production and tests) must pass clippy with strict lint levels configu
 )]
 ```
 
+**Custom lint crates** (`lints/file_too_long/src/lib.rs`):
+
+```rust
+#![deny(
+    warnings,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery
+)]
+```
+
 **Note on `clippy::cargo`**: The `clippy::cargo` lint group is not enabled because it flags transitive dependency version conflicts (e.g., `bitflags 1.3.2` from `inotify` vs `2.10.0` from other crates) which are ecosystem-level issues outside our control and don't reflect code quality problems.
 
 ### Why Pedantic and Nursery
@@ -234,9 +245,12 @@ cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
 
 # Integration tests
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
+
+# Test helpers
+cargo clippy -p test-helpers --all-targets -- -D warnings
 ```
 
-Both commands must produce **NO OUTPUT**.
+All commands must produce **NO OUTPUT**.
 
 ---
 
