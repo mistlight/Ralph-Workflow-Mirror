@@ -55,8 +55,7 @@ Lint configuration is enforced at the crate level in `tests/integration_tests/ma
     warnings,
     clippy::all,
     clippy::pedantic,
-    clippy::nursery,
-    clippy::cargo
+    clippy::nursery
 )]
 ```
 
