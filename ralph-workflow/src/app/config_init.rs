@@ -193,8 +193,12 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let (registry, config_sources) =
-        load_agent_registry(unified.as_ref(), config_path.as_path(), catalog_loader)?;
+    let config_source_path = resolve_agent_config_source_path(config_path.as_path(), path_resolver);
+    let (registry, config_sources) = load_agent_registry(
+        unified.as_ref(),
+        config_source_path.as_path(),
+        catalog_loader,
+    )?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -205,6 +209,19 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
         config_path,
         config_sources,
     }))
+}
+
+fn resolve_agent_config_source_path(
+    config_path: &std::path::Path,
+    env: &dyn ConfigEnvironment,
+) -> PathBuf {
+    if env.file_exists(config_path) {
+        return config_path.to_path_buf();
+    }
+
+    env.local_config_path()
+        .filter(|path| env.file_exists(path))
+        .unwrap_or_else(|| config_path.to_path_buf())
 }
 
 fn load_agent_registry<L: CatalogLoader>(
@@ -304,5 +321,58 @@ fn apply_default_agents(config: &mut Config, registry: &AgentRegistry) {
             .get_fallbacks(AgentRole::Reviewer)
             .first()
             .cloned();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::initialize_config_with;
+    use crate::agents::opencode_api::{
+        ApiCatalog, CacheError, CatalogLoader, DEFAULT_CACHE_TTL_SECONDS,
+    };
+    use crate::cli::Args;
+    use crate::config::MemoryConfigEnvironment;
+    use crate::logger::{Colors, Logger};
+    use clap::Parser;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    struct StaticCatalogLoader;
+
+    impl CatalogLoader for StaticCatalogLoader {
+        fn load(&self) -> Result<ApiCatalog, CacheError> {
+            Ok(ApiCatalog {
+                providers: HashMap::new(),
+                models: HashMap::new(),
+                cached_at: None,
+                ttl_seconds: DEFAULT_CACHE_TTL_SECONDS,
+            })
+        }
+    }
+
+    #[test]
+    fn test_local_only_agent_chain_uses_local_source_path() {
+        let args = Args::try_parse_from(["ralph", "--config", "/test/config/ralph-workflow.toml"])
+            .expect("args should parse");
+        let logger = Logger::new(Colors::new());
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_file(
+                "/test/repo/.agent/ralph-workflow.toml",
+                "[agent_chain]\ndeveloper = [\"codex\"]\n",
+            );
+
+        let result =
+            initialize_config_with(&args, Colors::new(), &logger, &StaticCatalogLoader, &env)
+                .expect("initialization should succeed")
+                .expect("normal execution should return config init result");
+
+        assert_eq!(result.config_sources.len(), 1);
+        assert_eq!(
+            result.config_sources[0].path,
+            PathBuf::from("/test/repo/.agent/ralph-workflow.toml"),
+            "diagnostics source path should point to the local config that provided agent_chain"
+        );
     }
 }
