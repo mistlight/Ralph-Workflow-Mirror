@@ -789,7 +789,7 @@ fn merge_fallback_configs(
         }
         (None, Some(l)) => {
             if use_toml_presence_for_lists {
-                let defaults = FallbackConfig::default();
+                let defaults = built_in_fallback_defaults();
                 Some(FallbackConfig {
                     developer: if is_local_field_present("developer") {
                         l.developer.clone()
@@ -844,5 +844,38 @@ fn merge_fallback_configs(
         }
         (Some(g), None) => Some(g.clone()),
         (None, None) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{built_in_fallback_defaults, merge_fallback_configs};
+    use crate::agents::fallback::FallbackConfig;
+
+    #[test]
+    fn test_merge_fallback_configs_local_only_uses_built_in_defaults_for_missing_toml_keys() {
+        let local = FallbackConfig {
+            developer: vec!["codex".to_string()],
+            ..Default::default()
+        };
+
+        let merged = merge_fallback_configs(None, Some(&local), |field| field == "developer", true)
+            .expect("merged fallback config should exist");
+
+        let builtins = built_in_fallback_defaults();
+
+        assert_eq!(merged.developer, vec!["codex"]);
+        assert_eq!(
+            merged.reviewer, builtins.reviewer,
+            "missing local reviewer should inherit built-in defaults"
+        );
+        assert_eq!(
+            merged.commit, builtins.commit,
+            "missing local commit should inherit built-in defaults"
+        );
+        assert_eq!(
+            merged.analysis, builtins.analysis,
+            "missing local analysis should inherit built-in defaults"
+        );
     }
 }
