@@ -289,9 +289,17 @@ pub fn load_config_from_path_with_env(
     // Step 3: Merge configs (local overrides global)
     let merged_unified = match (global_unified, local_unified, local_content) {
         (Some(global), Some(local), Some(content)) => {
-            // Both exist: merge with local overriding global
-            // Pass raw TOML content for presence tracking
-            Some(global.merge_with_content(&content, &local))
+            // Both exist: first normalize global agent_chain against built-in defaults
+            // using raw global TOML key presence, then merge local with raw local presence.
+            let normalized_global = global_content.as_ref().map_or_else(
+                || global.clone(),
+                |raw_global_content| {
+                    merge_global_with_built_in_agent_chain_defaults(&global, raw_global_content)
+                },
+            );
+
+            // Pass raw local TOML content for local presence tracking
+            Some(normalized_global.merge_with_content(&content, &local))
         }
         (Some(_global), Some(_local), None) => {
             // SAFETY: This case is impossible in production. If local_unified is Some,

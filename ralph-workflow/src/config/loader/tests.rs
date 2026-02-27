@@ -367,6 +367,52 @@ developer = ["codex"]
 
 #[test]
 #[serial]
+fn test_load_config_global_partial_agent_chain_with_local_config_but_no_local_agent_chain_uses_built_in_missing_roles(
+) {
+    let global_toml = r#"
+[general]
+verbosity = 3
+
+[agent_chain]
+developer = ["codex"]
+"#;
+
+    let local_toml = r"
+[general]
+developer_iters = 9
+";
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/test/config/ralph-workflow.toml", global_toml)
+        .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
+
+    let Ok((_config, merged, _warnings)) = load_config_from_path_with_env(None, &env) else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
+
+    let unified = merged.expect("merged unified config should exist");
+    let chain = unified.agent_chain.expect("agent_chain should exist");
+
+    let builtins = crate::agents::AgentRegistry::new()
+        .expect("built-in registry should load")
+        .fallback_config()
+        .clone();
+
+    assert_eq!(chain.developer, vec!["codex"]);
+    assert_eq!(
+        chain.reviewer, builtins.reviewer,
+        "missing reviewer chain should fall back to built-in defaults when local config omits agent_chain"
+    );
+    assert_eq!(
+        chain.commit, builtins.commit,
+        "missing commit chain should fall back to built-in defaults when local config omits agent_chain"
+    );
+}
+
+#[test]
+#[serial]
 fn test_load_config_precedence_env_vars_override_local() {
     let global_toml = r"
 [general]
