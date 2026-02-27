@@ -22,7 +22,7 @@
 //! may need to be in the system tests package instead.
 
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
-use ralph_workflow::config::MemoryConfigEnvironment;
+use ralph_workflow::config::{ConfigEnvironment, MemoryConfigEnvironment};
 use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
 use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
@@ -924,6 +924,123 @@ fn test_config_discovery_outside_git_repo() {
         .is_ok();
 
         assert!(ok, "Config discovery should work outside git repo");
+    });
+}
+
+/// Test that partial local `agent_chain` merges with global chain.
+///
+/// This verifies that when local config defines only `developer` chain
+/// and global config defines both `developer` and `reviewer`, the merged
+/// config has both chains with local's developer overriding global's.
+#[test]
+fn test_partial_local_chain_with_global_completion() {
+    with_default_timeout(|| {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                r#"
+[general]
+verbosity = 2
+
+[agent_chain]
+developer = ["claude"]
+reviewer = ["claude"]
+commit = ["claude"]
+"#,
+            )
+            .with_file(
+                "/test/repo/.agent/ralph-workflow.toml",
+                r#"
+[agent_chain]
+developer = ["codex"]
+"#,
+            )
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("config should load");
+        let unified = merged.expect("expected merged unified config");
+
+        let chain = unified.agent_chain.expect("agent_chain should exist");
+        // Local developer overrides global
+        assert_eq!(chain.developer, vec!["codex"]);
+        // Global reviewer preserved
+        assert_eq!(chain.reviewer, vec!["claude"]);
+        // Global commit preserved
+        assert_eq!(chain.commit, vec!["claude"]);
+    });
+}
+
+/// Test that worktree init and runtime use the same canonical path.
+///
+/// This verifies that both --init-local-config and runtime config loading
+/// resolve to the same local config path when running inside a worktree.
+#[test]
+fn test_worktree_init_and_runtime_use_same_path() {
+    with_default_timeout(|| {
+        // Simulate worktree: canonical root is /test/main-repo
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_worktree_root("/test/main-repo")
+            .with_prompt_path("/test/main-repo/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\nverbosity = 2",
+            )
+            .with_file(
+                "/test/main-repo/.agent/ralph-workflow.toml",
+                "[general]\ndeveloper_iters = 7",
+            )
+            .with_file("/test/main-repo/PROMPT.md", STANDARD_PROMPT);
+
+        // Runtime loading should find config at canonical root
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("config should load from worktree");
+        let unified = merged.expect("expected merged unified config");
+        assert_eq!(unified.general.developer_iters, 7);
+
+        // Verify local_config_path() resolves to canonical root
+        let local_path = env.local_config_path().unwrap();
+        assert_eq!(
+            local_path,
+            std::path::PathBuf::from("/test/main-repo/.agent/ralph-workflow.toml"),
+            "local_config_path should resolve to canonical repo root"
+        );
+    });
+}
+
+/// Test that local config only (no global) works with defaults fallback.
+///
+/// This verifies that when only a local config exists and no global config,
+/// missing keys resolve from built-in defaults.
+#[test]
+fn test_local_config_only_with_defaults_fallback() {
+    with_default_timeout(|| {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file(
+                "/test/repo/.agent/ralph-workflow.toml",
+                "[general]\nverbosity = 4",
+            )
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("local-only config should load");
+        let unified = merged.expect("expected merged config");
+
+        // Explicitly set field
+        assert_eq!(unified.general.verbosity, 4);
+        // Default values for unset fields
+        assert_eq!(unified.general.developer_iters, 5);
+        assert_eq!(unified.general.reviewer_reviews, 2);
     });
 }
 

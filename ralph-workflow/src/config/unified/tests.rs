@@ -934,3 +934,169 @@ force_universal_prompt = false
         "force_universal_prompt should be from local (false)"
     );
 }
+
+// ============================================================================
+// Agent Chain Per-Key Merge Tests
+// ============================================================================
+
+#[test]
+fn test_merge_with_content_agent_chain_merges_by_key() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let local_toml = r"
+[agent_chain]
+developer = ['codex']
+";
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    let chain = merged.agent_chain.unwrap();
+    // Local developer chain overrides global
+    assert_eq!(chain.developer, vec!["codex"]);
+    // Global reviewer chain preserved (not wiped out)
+    assert_eq!(
+        chain.reviewer,
+        vec!["claude"],
+        "reviewer chain should be preserved from global when not set in local"
+    );
+}
+
+#[test]
+fn test_merge_with_content_agent_chain_local_only_developer_preserves_global_reviewer() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            commit: vec!["claude".to_string()],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let local_toml = r"
+[agent_chain]
+developer = ['codex']
+";
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    let chain = merged.agent_chain.unwrap();
+    assert_eq!(chain.developer, vec!["codex"]);
+    assert_eq!(chain.reviewer, vec!["claude"]);
+    assert_eq!(chain.commit, vec!["claude"]);
+}
+
+#[test]
+fn test_merge_with_agent_chain_local_none_preserves_global_regression() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    // No agent_chain in local at all
+    let local_toml = r"
+[general]
+verbosity = 3
+";
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    let chain = merged.agent_chain.unwrap();
+    assert_eq!(chain.developer, vec!["claude"]);
+    assert_eq!(chain.reviewer, vec!["claude"]);
+}
+
+#[test]
+fn test_merge_with_content_agent_chain_metadata_uses_local_when_present() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            max_retries: 3,
+            retry_delay_ms: 1000,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let local_toml = r"
+[agent_chain]
+max_retries = 5
+";
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    let chain = merged.agent_chain.unwrap();
+    // max_retries should be overridden by local
+    assert_eq!(chain.max_retries, 5);
+    // retry_delay_ms should be preserved from global
+    assert_eq!(chain.retry_delay_ms, 1000);
+    // Chain lists should be preserved from global (not set in local)
+    assert_eq!(chain.developer, vec!["claude"]);
+    assert_eq!(chain.reviewer, vec!["claude"]);
+}
+
+#[test]
+fn test_merge_with_agent_chain_per_key_programmatic() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            commit: vec!["claude".to_string()],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let local = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["codex".to_string()],
+            // Empty reviewer/commit should fall through to global
+            reviewer: vec![],
+            commit: vec![],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let merged = global.merge_with(&local);
+
+    let chain = merged.agent_chain.unwrap();
+    assert_eq!(chain.developer, vec!["codex"]);
+    // Empty local chains fall through to global
+    assert_eq!(
+        chain.reviewer,
+        vec!["claude"],
+        "empty local reviewer should fall through to global"
+    );
+    assert_eq!(
+        chain.commit,
+        vec!["claude"],
+        "empty local commit should fall through to global"
+    );
+}

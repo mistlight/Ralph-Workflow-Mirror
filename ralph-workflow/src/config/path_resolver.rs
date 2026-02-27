@@ -98,11 +98,13 @@ pub trait ConfigEnvironment: Send + Sync {
     /// Returns error if the operation fails.
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 
-    /// Get the root of the current git worktree, if running inside one.
+    /// Get the canonical root of the git repository, even from a worktree.
+    ///
+    /// When running inside a git worktree, this returns the **main repository root**
+    /// (not the ephemeral worktree working directory). This ensures local config
+    /// paths remain valid after worktree deletion.
     ///
     /// Returns `None` if not in a git repository or in a bare repository.
-    /// This is used to resolve local config paths relative to the worktree root
-    /// instead of the current working directory.
     fn worktree_root(&self) -> Option<PathBuf> {
         None // Default implementation for backwards compatibility
     }
@@ -141,9 +143,23 @@ impl ConfigEnvironment for RealConfigEnvironment {
     }
 
     fn worktree_root(&self) -> Option<PathBuf> {
-        git2::Repository::discover(".")
-            .ok()
-            .and_then(|repo| repo.workdir().map(PathBuf::from))
+        let repo = git2::Repository::discover(".").ok()?;
+        let gitdir = repo.path();
+
+        // Detect worktrees: in a git worktree, repo.path() returns something like
+        // <main-repo>/.git/worktrees/<worktree-name>/
+        // We detect this by checking if the gitdir is inside a "worktrees" subdirectory
+        // of the main repo's .git directory.
+        if let Some(parent) = gitdir.parent() {
+            if parent.file_name().and_then(|n| n.to_str()) == Some("worktrees") {
+                // parent is <main-repo>/.git/worktrees
+                // parent.parent() is <main-repo>/.git
+                // parent.parent().parent() is <main-repo> (the canonical root)
+                return parent.parent().and_then(|p| p.parent()).map(PathBuf::from);
+            }
+        }
+
+        repo.workdir().map(PathBuf::from)
     }
 
     fn local_config_path(&self) -> Option<PathBuf> {
@@ -441,5 +457,36 @@ mod tests {
             env.local_config_path(),
             Some(PathBuf::from("/custom/path/config.toml"))
         );
+    }
+
+    #[test]
+    fn test_canonical_repo_root_used_for_local_config_path() {
+        // Simulate a worktree scenario where the canonical repo root
+        // differs from the worktree working directory. The worktree_root
+        // should point to the canonical repo root (not the ephemeral
+        // worktree path) so local config persists after worktree deletion.
+        let canonical_root = "/home/user/my-repo";
+        let env = MemoryConfigEnvironment::new().with_worktree_root(canonical_root);
+
+        assert_eq!(env.worktree_root(), Some(PathBuf::from(canonical_root)));
+        assert_eq!(
+            env.local_config_path(),
+            Some(PathBuf::from(
+                "/home/user/my-repo/.agent/ralph-workflow.toml"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_worktree_root_and_local_config_path_consistency() {
+        // Both --init-local-config and runtime loading must resolve
+        // the same canonical path. Verify that local_config_path()
+        // is always derived from worktree_root() when set.
+        let env = MemoryConfigEnvironment::new().with_worktree_root("/repos/main-repo");
+
+        let root = env.worktree_root().unwrap();
+        let local_path = env.local_config_path().unwrap();
+
+        assert_eq!(local_path, root.join(".agent/ralph-workflow.toml"));
     }
 }

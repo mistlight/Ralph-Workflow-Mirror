@@ -241,7 +241,7 @@ impl UnifiedConfig {
     /// Local values override global values with these semantics:
     /// - Scalar values: local replaces global when explicitly present in TOML
     /// - Maps (agents, `ccs_aliases)`: local entries merge with global (local wins on collision)
-    /// - Arrays (`agent_chain)`: local replaces global entirely (not appended)
+    /// - Agent chain: merged per-key (local chain entries override global, missing chains fall through)
     /// - Optional values: local Some(_) replaces global, local None preserves global
     /// - CCS string values: empty string ("") means disabled, missing means use global
     ///
@@ -445,12 +445,12 @@ impl UnifiedConfig {
             ccs_aliases.insert(key.clone(), value.clone());
         }
 
-        // Agent chain: local replaces global entirely (not merged)
-        let agent_chain = if local.agent_chain.is_some() {
-            local.agent_chain.clone()
-        } else {
-            self.agent_chain.clone()
-        };
+        // Agent chain: merge per-key (local non-empty chains override global)
+        let agent_chain = merge_fallback_configs(
+            self.agent_chain.as_ref(),
+            local.agent_chain.as_ref(),
+            |_field| true, // For programmatic merge, all fields are "present"
+        );
 
         Self {
             general,
@@ -683,12 +683,13 @@ impl UnifiedConfig {
             ccs_aliases.insert(key.clone(), value.clone());
         }
 
-        // Agent chain: local replaces global entirely (not merged)
-        let agent_chain = if local_parsed.agent_chain.is_some() {
-            local_parsed.agent_chain.clone()
-        } else {
-            self.agent_chain.clone()
-        };
+        // Agent chain: merge per-key (local chain entries override global)
+        let chain_table = local_toml.get("agent_chain");
+        let agent_chain = merge_fallback_configs(
+            self.agent_chain.as_ref(),
+            local_parsed.agent_chain.as_ref(),
+            |field| chain_table.and_then(|c| c.get(field)).is_some(),
+        );
 
         Self {
             general,
@@ -697,5 +698,81 @@ impl UnifiedConfig {
             ccs_aliases,
             agent_chain,
         }
+    }
+}
+
+/// Merge two `FallbackConfig` instances with per-key granularity.
+///
+/// The `is_local_field_present` predicate determines whether a given field name
+/// was explicitly set in the local config. For TOML-based merging, this checks
+/// raw TOML key presence. For programmatic merging, this always returns true
+/// (and empty-vec detection is used as the fallthrough heuristic).
+///
+/// Chain lists (developer, reviewer, commit, analysis) use:
+/// - For TOML: presence in raw TOML → use local, otherwise use global
+/// - For programmatic: non-empty local → use local, otherwise use global
+///
+/// Scalar metadata fields (`max_retries`, etc.) follow the same presence logic.
+fn merge_fallback_configs(
+    global: Option<&crate::agents::fallback::FallbackConfig>,
+    local: Option<&crate::agents::fallback::FallbackConfig>,
+    is_local_field_present: impl Fn(&str) -> bool,
+) -> Option<crate::agents::fallback::FallbackConfig> {
+    use crate::agents::fallback::FallbackConfig;
+
+    match (global, local) {
+        (Some(g), Some(l)) => {
+            // For chain lists, use local if present and non-empty, else global
+            let merge_chain =
+                |field: &str, local_chain: &[String], global_chain: &[String]| -> Vec<String> {
+                    if is_local_field_present(field) && !local_chain.is_empty() {
+                        local_chain.to_vec()
+                    } else {
+                        global_chain.to_vec()
+                    }
+                };
+
+            // Merge provider_fallback maps (local entries override global)
+            let mut provider_fallback = g.provider_fallback.clone();
+            for (k, v) in &l.provider_fallback {
+                provider_fallback.insert(k.clone(), v.clone());
+            }
+
+            Some(FallbackConfig {
+                developer: merge_chain("developer", &l.developer, &g.developer),
+                reviewer: merge_chain("reviewer", &l.reviewer, &g.reviewer),
+                commit: merge_chain("commit", &l.commit, &g.commit),
+                analysis: merge_chain("analysis", &l.analysis, &g.analysis),
+                provider_fallback,
+                max_retries: if is_local_field_present("max_retries") {
+                    l.max_retries
+                } else {
+                    g.max_retries
+                },
+                retry_delay_ms: if is_local_field_present("retry_delay_ms") {
+                    l.retry_delay_ms
+                } else {
+                    g.retry_delay_ms
+                },
+                backoff_multiplier: if is_local_field_present("backoff_multiplier") {
+                    l.backoff_multiplier
+                } else {
+                    g.backoff_multiplier
+                },
+                max_backoff_ms: if is_local_field_present("max_backoff_ms") {
+                    l.max_backoff_ms
+                } else {
+                    g.max_backoff_ms
+                },
+                max_cycles: if is_local_field_present("max_cycles") {
+                    l.max_cycles
+                } else {
+                    g.max_cycles
+                },
+            })
+        }
+        (None, Some(l)) => Some(l.clone()),
+        (Some(g), None) => Some(g.clone()),
+        (None, None) => None,
     }
 }
