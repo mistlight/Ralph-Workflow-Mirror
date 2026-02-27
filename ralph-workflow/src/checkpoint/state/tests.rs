@@ -1001,6 +1001,50 @@ fn test_checkpoint_serialization() {
 }
 
 #[test]
+fn test_cloud_checkpoint_state_deserializes_legacy_cloud_config_field() {
+    let legacy_json = serde_json::json!({
+        "cloud_config": {
+            "enabled": true,
+            "api_url": "https://example.invalid",
+            "run_id": "run-legacy-1",
+            "heartbeat_interval_secs": 45,
+            "graceful_degradation": false,
+            "git_remote": {
+                "auth_method": { "SshKey": { "key_path": null } },
+                "push_branch": "feature/legacy",
+                "create_pr": true,
+                "pr_title_template": null,
+                "pr_body_template": null,
+                "pr_base_branch": "main",
+                "force_push": false,
+                "remote_name": "origin"
+            }
+        },
+        "pending_push_commit": "abc123",
+        "git_auth_configured": true,
+        "pr_created": true,
+        "pr_url": "https://example.invalid/pr/1",
+        "pr_number": 1,
+        "push_count": 2,
+        "push_retry_count": 1,
+        "last_push_error": null,
+        "unpushed_commits": ["abc123"],
+        "last_pushed_commit": "def456"
+    });
+
+    let deserialized: CloudCheckpointState = serde_json::from_value(legacy_json).unwrap();
+
+    assert!(deserialized.cloud.enabled);
+    assert_eq!(
+        deserialized.cloud.api_url.as_deref(),
+        Some("https://example.invalid")
+    );
+    assert_eq!(deserialized.pending_push_commit.as_deref(), Some("abc123"));
+    assert!(deserialized.git_auth_configured);
+    assert!(deserialized.pr_created);
+}
+
+#[test]
 fn test_cli_args_snapshot() {
     let snapshot = CliArgsSnapshot::new(
         10,

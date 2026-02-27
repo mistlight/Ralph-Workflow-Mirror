@@ -301,7 +301,7 @@ impl PipelineCheckpoint {
 /// This is intentionally *credential-free* and safe to persist in checkpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CloudCheckpointState {
-    #[serde(default)]
+    #[serde(default, alias = "cloud_config")]
     pub cloud: crate::config::CloudStateConfig,
     #[serde(default)]
     pub pending_push_commit: Option<String>,

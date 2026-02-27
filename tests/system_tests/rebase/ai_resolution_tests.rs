@@ -394,11 +394,16 @@ fn test_rebase_already_up_to_date() {
 
             // Try to rebase feature onto main (they're at the same point)
             let executor = mock_executor_for_git_success();
-            let _result = rebase_onto(&default_branch, executor.as_ref());
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // Should be NoOp since there's nothing to rebase
-            {
-                // Expected (NoOp, Success, or other results all acceptable)
+            // Up-to-date rebase should either no-op or report success.
+            match result {
+                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
+                    // Expected outcome
+                }
+                other => {
+                    panic!("Unexpected result for up-to-date rebase: {other:?}");
+                }
             }
         });
     });

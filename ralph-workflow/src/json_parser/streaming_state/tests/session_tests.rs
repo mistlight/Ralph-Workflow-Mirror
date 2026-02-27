@@ -597,6 +597,20 @@ fn test_content_hash_multiple_content_blocks() {
 }
 
 #[test]
+fn test_is_duplicate_by_hash_returns_true_for_matching_mixed_text_and_tool_use_content() {
+    let mut session = StreamingSession::new();
+    session.on_message_start();
+    session.on_text_delta(0, "Let's inspect this ");
+    session.on_tool_input_delta(1, "{\"path\":\"src\"}");
+    session.set_tool_name(1, Some("read_file".to_string()));
+    session.on_message_stop();
+
+    let normalized_content = "Let's inspect this TOOL_USE:read_file:{\"path\":\"src\"}";
+
+    assert!(session.is_duplicate_by_hash(normalized_content, None));
+}
+
+#[test]
 fn test_content_hash_consistent_for_same_content() {
     let mut session1 = StreamingSession::new();
     session1.on_message_start();
