@@ -7,6 +7,7 @@
 //! (from global config or built-in defaults) as commented-out entries,
 //! so they know what they can override.
 
+use crate::agents::AgentRegistry;
 use crate::config::unified::UnifiedConfig;
 use crate::config::{ConfigEnvironment, RealConfigEnvironment};
 use crate::logger::Colors;
@@ -17,14 +18,20 @@ use crate::logger::Colors;
 /// for any missing values. All values are shown as commented-out entries so
 /// users can selectively uncomment and override only what they need.
 fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
-    let effective = UnifiedConfig::load_with_env(env).unwrap_or_default();
+    let effective = resolve_effective_init_template_config(env);
+    let default_chain = built_in_default_chain();
 
     let general = &effective.general;
     let chain = effective.agent_chain.as_ref();
 
-    let default_chain = || r#"["claude"]"#.to_string();
-    let dev_chain = chain.map_or_else(&default_chain, |c| format_toml_string_array(&c.developer));
-    let rev_chain = chain.map_or_else(&default_chain, |c| format_toml_string_array(&c.reviewer));
+    let dev_chain = chain.map_or_else(
+        || format_toml_string_array(&default_chain.developer),
+        |c| format_toml_string_array(&c.developer),
+    );
+    let rev_chain = chain.map_or_else(
+        || format_toml_string_array(&default_chain.reviewer),
+        |c| format_toml_string_array(&c.reviewer),
+    );
 
     format!(
         "# Local Ralph configuration (.agent/ralph-workflow.toml)\n\
@@ -54,11 +61,26 @@ fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
     )
 }
 
+fn resolve_effective_init_template_config<R: ConfigEnvironment>(env: &R) -> UnifiedConfig {
+    let global = UnifiedConfig::load_with_env(env).unwrap_or_default();
+
+    if let Some(global_path) = env.unified_config_path() {
+        if env.file_exists(&global_path) {
+            return global;
+        }
+    }
+
+    UnifiedConfig::default().merge_with(&global)
+}
+
+fn built_in_default_chain() -> crate::agents::fallback::FallbackConfig {
+    AgentRegistry::new()
+        .map(|registry| registry.fallback_config().clone())
+        .unwrap_or_default()
+}
+
 /// Format a string slice as a TOML array literal (e.g. `["claude", "codex"]`).
 fn format_toml_string_array(items: &[String]) -> String {
-    if items.is_empty() {
-        return r#"["claude"]"#.to_string();
-    }
     let inner: Vec<String> = items.iter().map(|s| format!(r#""{s}""#)).collect();
     format!("[{}]", inner.join(", "))
 }
@@ -218,6 +240,33 @@ mod tests {
     }
 
     #[test]
+    fn test_init_local_config_uses_built_in_agent_chain_defaults_without_global() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml");
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        let content = env
+            .get_file(Path::new("/test/repo/.agent/ralph-workflow.toml"))
+            .expect("local config should be written");
+
+        let registry = crate::agents::AgentRegistry::new().expect("built-in registry should load");
+        let builtins = registry.fallback_config();
+        let expected_developer = format_toml_string_array(&builtins.developer);
+        let expected_reviewer = format_toml_string_array(&builtins.reviewer);
+
+        assert!(
+            content.contains(&format!("developer = {expected_developer}")),
+            "should use built-in developer chain defaults, got:\n{content}"
+        );
+        assert!(
+            content.contains(&format!("reviewer = {expected_reviewer}")),
+            "should use built-in reviewer chain defaults, got:\n{content}"
+        );
+    }
+
+    #[test]
     fn test_init_local_config_shows_global_agent_chains() {
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -285,8 +334,7 @@ reviewer = ["claude"]
             format_toml_string_array(&["codex".to_string(), "claude".to_string()]),
             r#"["codex", "claude"]"#
         );
-        // Empty falls back to default
-        assert_eq!(format_toml_string_array(&[]), r#"["claude"]"#);
+        assert_eq!(format_toml_string_array(&[]), r"[]");
     }
 
     #[test]

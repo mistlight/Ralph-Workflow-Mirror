@@ -975,6 +975,50 @@ developer = ["codex"]
     });
 }
 
+/// Test that explicitly empty local chain entries override global chain entries.
+#[test]
+fn test_local_empty_chain_entry_overrides_global() {
+    with_default_timeout(|| {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                r#"
+[general]
+verbosity = 2
+
+[agent_chain]
+developer = ["claude"]
+reviewer = ["claude"]
+commit = ["claude"]
+"#,
+            )
+            .with_file(
+                "/test/repo/.agent/ralph-workflow.toml",
+                r"
+[agent_chain]
+reviewer = []
+",
+            )
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("config should load");
+        let unified = merged.expect("expected merged unified config");
+        let chain = unified.agent_chain.expect("agent_chain should exist");
+
+        assert_eq!(chain.developer, vec!["claude"]);
+        assert!(
+            chain.reviewer.is_empty(),
+            "explicit empty local reviewer should override global reviewer"
+        );
+        assert_eq!(chain.commit, vec!["claude"]);
+    });
+}
+
 /// Test that worktree init and runtime use the same canonical path.
 ///
 /// This verifies that both --init-local-config and runtime config loading
@@ -1041,6 +1085,49 @@ fn test_local_config_only_with_defaults_fallback() {
         // Default values for unset fields
         assert_eq!(unified.general.developer_iters, 5);
         assert_eq!(unified.general.reviewer_reviews, 2);
+    });
+}
+
+/// Test that local-only partial `agent_chain` inherits missing roles from built-in defaults.
+#[test]
+fn test_local_only_partial_agent_chain_inherits_builtin_missing_roles() {
+    with_default_timeout(|| {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file(
+                "/test/repo/.agent/ralph-workflow.toml",
+                r#"
+[general]
+verbosity = 4
+
+[agent_chain]
+developer = ["codex"]
+"#,
+            )
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let (_config, merged, _warnings) =
+            ralph_workflow::config::loader::load_config_from_path_with_env(None, &env)
+                .expect("local-only partial chain should load");
+        let unified = merged.expect("expected merged config");
+        let chain = unified.agent_chain.expect("agent_chain should exist");
+
+        assert_eq!(chain.developer, vec!["codex"]);
+
+        let builtins = ralph_workflow::agents::AgentRegistry::new()
+            .expect("built-in registry should load")
+            .fallback_config()
+            .clone();
+        assert_eq!(
+            chain.reviewer, builtins.reviewer,
+            "missing local reviewer should inherit built-in reviewer chain"
+        );
+        assert_eq!(
+            chain.commit, builtins.commit,
+            "missing local commit should inherit built-in commit chain"
+        );
     });
 }
 
@@ -1135,6 +1222,38 @@ fn test_init_local_config_uses_defaults_when_no_global() {
         assert!(
             content.contains("reviewer_reviews = 2"),
             "should use default reviewer_reviews=2, got:\n{content}"
+        );
+
+        let builtins = ralph_workflow::agents::AgentRegistry::new()
+            .expect("built-in registry should load")
+            .fallback_config()
+            .clone();
+        let expected_developer = format!(
+            r"developer = [{}]",
+            builtins
+                .developer
+                .iter()
+                .map(|s| format!("\"{s}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let expected_reviewer = format!(
+            r"reviewer = [{}]",
+            builtins
+                .reviewer
+                .iter()
+                .map(|s| format!("\"{s}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        assert!(
+            content.contains(&expected_developer),
+            "should show built-in default developer chain, got:\n{content}"
+        );
+        assert!(
+            content.contains(&expected_reviewer),
+            "should show built-in default reviewer chain, got:\n{content}"
         );
     });
 }

@@ -1076,7 +1076,8 @@ fn test_merge_with_agent_chain_per_key_programmatic() {
     let local = UnifiedConfig {
         agent_chain: Some(FallbackConfig {
             developer: vec!["codex".to_string()],
-            // Empty reviewer/commit should fall through to global
+            // Programmatic merge path has no key-presence info, so empty chains
+            // are treated as "not set" and fall through to global.
             reviewer: vec![],
             commit: vec![],
             ..Default::default()
@@ -1088,15 +1089,78 @@ fn test_merge_with_agent_chain_per_key_programmatic() {
 
     let chain = merged.agent_chain.unwrap();
     assert_eq!(chain.developer, vec!["codex"]);
-    // Empty local chains fall through to global
     assert_eq!(
         chain.reviewer,
         vec!["claude"],
-        "empty local reviewer should fall through to global"
+        "programmatic merge should treat empty local reviewer as fallback-to-global"
     );
     assert_eq!(
         chain.commit,
         vec!["claude"],
-        "empty local commit should fall through to global"
+        "programmatic merge should treat empty local commit as fallback-to-global"
+    );
+}
+
+#[test]
+fn test_merge_with_content_agent_chain_empty_local_list_overrides_global() {
+    use crate::agents::fallback::FallbackConfig;
+
+    let global = UnifiedConfig {
+        agent_chain: Some(FallbackConfig {
+            developer: vec!["claude".to_string()],
+            reviewer: vec!["claude".to_string()],
+            commit: vec!["claude".to_string()],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let local_toml = r"
+[agent_chain]
+reviewer = []
+";
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    let chain = merged.agent_chain.unwrap();
+    assert_eq!(chain.developer, vec!["claude"]);
+    assert!(
+        chain.reviewer.is_empty(),
+        "explicitly present empty local reviewer chain must override global reviewer"
+    );
+    assert_eq!(chain.commit, vec!["claude"]);
+}
+
+#[test]
+fn test_merge_with_content_local_agent_chain_only_uses_built_in_defaults_for_missing_roles() {
+    let global = UnifiedConfig::default();
+
+    let local_toml = r#"
+[agent_chain]
+developer = ["codex"]
+"#;
+
+    let local = UnifiedConfig::load_from_content(local_toml).unwrap();
+    let merged = global.merge_with_content(local_toml, &local);
+
+    let chain = merged.agent_chain.unwrap();
+    let builtins = crate::agents::AgentRegistry::new()
+        .expect("built-in registry should load")
+        .fallback_config()
+        .clone();
+
+    assert_eq!(chain.developer, vec!["codex"]);
+    assert_eq!(
+        chain.reviewer, builtins.reviewer,
+        "missing local reviewer should inherit built-in defaults"
+    );
+    assert_eq!(
+        chain.commit, builtins.commit,
+        "missing local commit should inherit built-in defaults"
+    );
+    assert_eq!(
+        chain.analysis, builtins.analysis,
+        "missing local analysis should inherit built-in defaults"
     );
 }

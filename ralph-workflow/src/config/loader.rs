@@ -327,9 +327,18 @@ pub fn load_config_from_path_with_env(
             // Only global exists
             Some(global)
         }
-        (None, Some(local), _) => {
-            // Only local exists (unusual but valid)
-            Some(local)
+        (None, Some(local), Some(content)) => {
+            // Only local exists: merge against `UnifiedConfig::default()` so missing keys
+            // still resolve through local > global > defaults semantics in the unified layer.
+            Some(UnifiedConfig::default().merge_with_content(&content, &local))
+        }
+        (None, Some(_local), None) => {
+            // SAFETY: This case is impossible in production. If local_unified is Some,
+            // then local_content must also be Some (they're set together at line 281).
+            unreachable!(
+                "BUG: local_unified is Some but local_content is None. \
+                 This indicates a logic error in config loading - they should always be set together."
+            )
         }
         (None, None, _) => {
             // Neither exists: use defaults

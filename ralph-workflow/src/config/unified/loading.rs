@@ -450,6 +450,7 @@ impl UnifiedConfig {
             self.agent_chain.as_ref(),
             local.agent_chain.as_ref(),
             |_field| true, // For programmatic merge, all fields are "present"
+            false,
         );
 
         Self {
@@ -683,12 +684,14 @@ impl UnifiedConfig {
             ccs_aliases.insert(key.clone(), value.clone());
         }
 
-        // Agent chain: merge per-key (local chain entries override global)
+        // Agent chain: merge per-key (local chain entries override global/defaults)
         let chain_table = local_toml.get("agent_chain");
+        let built_in_chain = built_in_fallback_defaults();
         let agent_chain = merge_fallback_configs(
-            self.agent_chain.as_ref(),
+            Some(self.agent_chain.as_ref().unwrap_or(&built_in_chain)),
             local_parsed.agent_chain.as_ref(),
             |field| chain_table.and_then(|c| c.get(field)).is_some(),
+            true,
         );
 
         Self {
@@ -705,27 +708,40 @@ impl UnifiedConfig {
 ///
 /// The `is_local_field_present` predicate determines whether a given field name
 /// was explicitly set in the local config. For TOML-based merging, this checks
-/// raw TOML key presence. For programmatic merging, this always returns true
-/// (and empty-vec detection is used as the fallthrough heuristic).
+/// raw TOML key presence. For programmatic merges (no key-presence info), callers
+/// pass a predicate that always returns true; in that path, empty local chains are
+/// treated as "not set" and fall through to global values.
 ///
 /// Chain lists (developer, reviewer, commit, analysis) use:
-/// - For TOML: presence in raw TOML → use local, otherwise use global
-/// - For programmatic: non-empty local → use local, otherwise use global
+/// - For TOML: presence in raw TOML is authoritative (including explicit empty lists)
+/// - For programmatic: non-empty local → use local, empty local → use global
 ///
 /// Scalar metadata fields (`max_retries`, etc.) follow the same presence logic.
+fn built_in_fallback_defaults() -> crate::agents::fallback::FallbackConfig {
+    crate::agents::AgentRegistry::new()
+        .map(|registry| registry.fallback_config().clone())
+        .unwrap_or_default()
+}
+
 fn merge_fallback_configs(
     global: Option<&crate::agents::fallback::FallbackConfig>,
     local: Option<&crate::agents::fallback::FallbackConfig>,
     is_local_field_present: impl Fn(&str) -> bool,
+    use_toml_presence_for_lists: bool,
 ) -> Option<crate::agents::fallback::FallbackConfig> {
     use crate::agents::fallback::FallbackConfig;
 
     match (global, local) {
         (Some(g), Some(l)) => {
-            // For chain lists, use local if present and non-empty, else global
             let merge_chain =
                 |field: &str, local_chain: &[String], global_chain: &[String]| -> Vec<String> {
-                    if is_local_field_present(field) && !local_chain.is_empty() {
+                    if use_toml_presence_for_lists {
+                        if is_local_field_present(field) {
+                            local_chain.to_vec()
+                        } else {
+                            global_chain.to_vec()
+                        }
+                    } else if is_local_field_present(field) && !local_chain.is_empty() {
                         local_chain.to_vec()
                     } else {
                         global_chain.to_vec()
@@ -771,7 +787,61 @@ fn merge_fallback_configs(
                 },
             })
         }
-        (None, Some(l)) => Some(l.clone()),
+        (None, Some(l)) => {
+            if use_toml_presence_for_lists {
+                let defaults = FallbackConfig::default();
+                Some(FallbackConfig {
+                    developer: if is_local_field_present("developer") {
+                        l.developer.clone()
+                    } else {
+                        defaults.developer
+                    },
+                    reviewer: if is_local_field_present("reviewer") {
+                        l.reviewer.clone()
+                    } else {
+                        defaults.reviewer
+                    },
+                    commit: if is_local_field_present("commit") {
+                        l.commit.clone()
+                    } else {
+                        defaults.commit
+                    },
+                    analysis: if is_local_field_present("analysis") {
+                        l.analysis.clone()
+                    } else {
+                        defaults.analysis
+                    },
+                    provider_fallback: l.provider_fallback.clone(),
+                    max_retries: if is_local_field_present("max_retries") {
+                        l.max_retries
+                    } else {
+                        defaults.max_retries
+                    },
+                    retry_delay_ms: if is_local_field_present("retry_delay_ms") {
+                        l.retry_delay_ms
+                    } else {
+                        defaults.retry_delay_ms
+                    },
+                    backoff_multiplier: if is_local_field_present("backoff_multiplier") {
+                        l.backoff_multiplier
+                    } else {
+                        defaults.backoff_multiplier
+                    },
+                    max_backoff_ms: if is_local_field_present("max_backoff_ms") {
+                        l.max_backoff_ms
+                    } else {
+                        defaults.max_backoff_ms
+                    },
+                    max_cycles: if is_local_field_present("max_cycles") {
+                        l.max_cycles
+                    } else {
+                        defaults.max_cycles
+                    },
+                })
+            } else {
+                Some(l.clone())
+            }
+        }
         (Some(g), None) => Some(g.clone()),
         (None, None) => None,
     }
