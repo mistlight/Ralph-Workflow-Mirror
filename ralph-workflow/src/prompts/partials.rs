@@ -186,5 +186,9 @@ mod tests {
             no_git.contains("read-only") && no_git.contains("lookup"),
             "partial should allow only read-only lookup git commands"
         );
+        assert!(
+            no_git.contains("`git status`") && no_git.contains("`git diff`"),
+            "partial should explicitly allow git status and git diff for read-only inspection"
+        );
     }
 }

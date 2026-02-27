@@ -95,7 +95,8 @@ fn test_prompt_plan_with_content() {
 
 #[test]
 fn all_developer_prompts_isolate_agents_from_git() {
-    // Verify developer prompts don't tell agents to run git commands
+    // Verify developer prompts prohibit mutating git commands.
+    // Read-only lookup examples (git status/git diff) are allowed when explicitly scoped.
     let prompts = vec![
         prompt_developer_iteration(1, 3, ContextLevel::Minimal, "", ""),
         prompt_developer_iteration(2, 3, ContextLevel::Normal, "", ""),
@@ -104,14 +105,6 @@ fn all_developer_prompts_isolate_agents_from_git() {
 
     for prompt in prompts {
         assert!(
-            !prompt.contains("git diff"),
-            "Developer prompt should not tell agent to run git diff"
-        );
-        assert!(
-            !prompt.contains("git status"),
-            "Developer prompt should not tell agent to run git status"
-        );
-        assert!(
             !prompt.contains("git commit"),
             "Developer prompt should not tell agent to run git commit"
         );
@@ -119,6 +112,13 @@ fn all_developer_prompts_isolate_agents_from_git() {
             !prompt.contains("git add"),
             "Developer prompt should not tell agent to run git add"
         );
+
+        if prompt.contains("git status") || prompt.contains("git diff") {
+            assert!(
+                prompt.contains("Do NOT run ANY git command except read-only lookup commands"),
+                "git status/git diff references must appear only in read-only allowlist context"
+            );
+        }
     }
 }
 
@@ -207,14 +207,6 @@ fn test_context_based_prompts_isolate_from_git() {
 
     for prompt in prompts {
         assert!(
-            !prompt.contains("git diff"),
-            "Developer prompt should not tell agent to run git diff"
-        );
-        assert!(
-            !prompt.contains("git status"),
-            "Developer prompt should not tell agent to run git status"
-        );
-        assert!(
             !prompt.contains("git commit"),
             "Developer prompt should not tell agent to run git commit"
         );
@@ -222,6 +214,13 @@ fn test_context_based_prompts_isolate_from_git() {
             !prompt.contains("git add"),
             "Developer prompt should not tell agent to run git add"
         );
+
+        if prompt.contains("git status") || prompt.contains("git diff") {
+            assert!(
+                prompt.contains("Do NOT run ANY git command except read-only lookup commands"),
+                "git status/git diff references must appear only in read-only allowlist context"
+            );
+        }
     }
 }
 

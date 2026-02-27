@@ -1,1 +1,1 @@
-CRITICAL: Do NOT run ANY git command except read-only lookup commands (for example: `git log`, `git show`).
+CRITICAL: Do NOT run ANY git command except read-only lookup commands (for example: `git status`, `git diff`, `git log`, `git show`).
