@@ -341,8 +341,7 @@ fn log_event_loop_outcome(
 }
 
 fn should_exit_due_to_sigint(loop_result: &crate::app::event_loop::EventLoopResult) -> bool {
-    let pending_sigint_request = crate::interrupt::take_user_interrupt_request();
-    loop_result.final_state.interrupted_by_user || pending_sigint_request
+    loop_result.final_state.interrupted_by_user || crate::interrupt::user_interrupted_occurred()
 }
 
 fn save_complete_checkpoint_if_needed(
@@ -591,7 +590,7 @@ fn build_cloud_completion_payload(
 
 #[cfg(test)]
 mod cloud_completion_payload_tests {
-    use super::build_cloud_completion_payload;
+    use super::{build_cloud_completion_payload, should_exit_due_to_sigint};
 
     #[test]
     fn completion_payload_reports_completed_iteration_and_review_counts_from_metrics() {
@@ -619,6 +618,37 @@ mod cloud_completion_payload_tests {
             payload.review_passes_used, 2,
             "review_passes_used should report completed review passes (metrics)"
         );
+    }
+
+    #[test]
+    fn should_exit_due_to_sigint_uses_persistent_interrupt_flag_after_request_is_consumed() {
+        use crate::interrupt::{
+            request_user_interrupt, reset_user_interrupted_occurred, take_user_interrupt_request,
+        };
+
+        let _ = take_user_interrupt_request();
+        reset_user_interrupted_occurred();
+
+        request_user_interrupt();
+        assert!(
+            take_user_interrupt_request(),
+            "test precondition: interrupt request should be pending before explicit consume"
+        );
+
+        let loop_result = crate::app::event_loop::EventLoopResult {
+            completed: true,
+            events_processed: 0,
+            final_phase: crate::reducer::event::PipelinePhase::Complete,
+            final_state: crate::reducer::PipelineState::initial(1, 0),
+        };
+
+        assert!(
+            should_exit_due_to_sigint(&loop_result),
+            "shutdown path should still detect Ctrl+C after event loop consumed pending request"
+        );
+
+        let _ = take_user_interrupt_request();
+        reset_user_interrupted_occurred();
     }
 }
 
