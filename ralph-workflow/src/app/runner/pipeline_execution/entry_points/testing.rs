@@ -158,7 +158,14 @@ pub fn run_with_config_and_resolver<
     let config_path = std::path::PathBuf::from("test-config");
 
     // Resolve required agent names
-    let validated = resolve_required_agents(&config)?;
+    let validated = resolve_required_agents(
+        &config,
+        &crate::app::config_init::AgentResolutionSources {
+            local_config_path: None,
+            global_config_path: Some(config_path.clone()),
+            built_in_defaults: true,
+        },
+    )?;
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
 
@@ -386,7 +393,14 @@ where
     let config_path = std::path::PathBuf::from("test-config");
 
     // Resolve required agent names
-    let validated = resolve_required_agents(&config)?;
+    let validated = resolve_required_agents(
+        &config,
+        &crate::app::config_init::AgentResolutionSources {
+            local_config_path: None,
+            global_config_path: Some(config_path.clone()),
+            built_in_defaults: true,
+        },
+    )?;
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
 

@@ -50,10 +50,11 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         registry,
         config_path,
         config_sources,
+        agent_resolution_sources,
     } = init_result;
 
     // Resolve required agent names
-    let validated = resolve_required_agents(&config)?;
+    let validated = resolve_required_agents(&config, &agent_resolution_sources)?;
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
 
@@ -80,7 +81,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     }
 
     // Validate agent chains
-    validate_agent_chains(&registry, colors);
+    validate_agent_chains(&registry, &agent_resolution_sources, colors);
 
     // Create effect handler for production operations
     let mut handler = effect_handler::RealAppEffectHandler::new();

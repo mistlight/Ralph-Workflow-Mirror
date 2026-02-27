@@ -380,35 +380,35 @@ impl AgentRegistry {
     /// # Errors
     ///
     /// Returns error if the operation fails.
-    pub fn validate_agent_chains(&self) -> Result<(), String> {
+    pub fn validate_agent_chains(&self, searched_sources: &str) -> Result<(), String> {
         let has_developer = self.fallback.has_fallbacks(AgentRole::Developer);
         let has_reviewer = self.fallback.has_fallbacks(AgentRole::Reviewer);
 
         if !has_developer && !has_reviewer {
-            return Err("No agent chain configured. \
-                Searched: local config (.agent/ralph-workflow.toml), \
-                global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            return Err(format!(
+                "No agent chain configured. \
+                Searched: {searched_sources}.\n\
                 Please add an [agent_chain] section to your config.\n\
                 Run 'ralph --init-global' to create a default configuration."
-                .to_string());
+            ));
         }
 
         if !has_developer {
-            return Err("No developer agent chain configured. \
-                Searched: local config (.agent/ralph-workflow.toml), \
-                global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            return Err(format!(
+                "No developer agent chain configured. \
+                Searched: {searched_sources}.\n\
                 Add 'developer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
                 Use --list-agents to see available agents."
-                .to_string());
+            ));
         }
 
         if !has_reviewer {
-            return Err("No reviewer agent chain configured. \
-                Searched: local config (.agent/ralph-workflow.toml), \
-                global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            return Err(format!(
+                "No reviewer agent chain configured. \
+                Searched: {searched_sources}.\n\
                 Add 'reviewer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
                 Use --list-agents to see available agents."
-                .to_string());
+            ));
         }
 
         // Sanity check: ensure there is at least one workflow-capable agent per role.

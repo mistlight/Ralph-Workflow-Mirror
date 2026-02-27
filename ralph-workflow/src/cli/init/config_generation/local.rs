@@ -17,9 +17,20 @@ use crate::logger::Colors;
 /// Reads the global config (if available) and falls back to built-in defaults
 /// for any missing values. All values are shown as commented-out entries so
 /// users can selectively uncomment and override only what they need.
-fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
-    let effective = resolve_effective_init_template_config(env);
-    let default_chain = built_in_default_chain();
+fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> anyhow::Result<String> {
+    generate_local_config_template_with(env, built_in_default_chain)
+}
+
+fn generate_local_config_template_with<R, F>(
+    env: &R,
+    default_chain_loader: F,
+) -> anyhow::Result<String>
+where
+    R: ConfigEnvironment,
+    F: FnOnce() -> anyhow::Result<crate::agents::fallback::FallbackConfig>,
+{
+    let effective = resolve_effective_init_template_config(env)?;
+    let default_chain = default_chain_loader()?;
 
     let general = &effective.general;
     let chain = effective.agent_chain.as_ref();
@@ -33,7 +44,7 @@ fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
         |c| format_toml_string_array(&c.reviewer),
     );
 
-    format!(
+    Ok(format!(
         "# Local Ralph configuration (.agent/ralph-workflow.toml)\n\
          # Overrides ~/.config/ralph-workflow.toml for this project.\n\
          # Only uncomment settings you want to override.\n\
@@ -58,33 +69,45 @@ fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
         rev_ctx = general.reviewer_context,
         dev_chain = dev_chain,
         rev_chain = rev_chain,
-    )
+    ))
 }
 
-fn resolve_effective_init_template_config<R: ConfigEnvironment>(env: &R) -> UnifiedConfig {
+fn resolve_effective_init_template_config<R: ConfigEnvironment>(
+    env: &R,
+) -> anyhow::Result<UnifiedConfig> {
     let Some(global_path) = env.unified_config_path() else {
-        return UnifiedConfig::default();
+        return Ok(UnifiedConfig::default());
     };
 
     if !env.file_exists(&global_path) {
-        return UnifiedConfig::default();
+        return Ok(UnifiedConfig::default());
     }
 
-    let Ok(global_content) = env.read_file(&global_path) else {
-        return UnifiedConfig::default();
-    };
+    let global_content = env.read_file(&global_path).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to read global config {} while generating local config template: {e}",
+            global_path.display()
+        )
+    })?;
 
-    let Ok(global) = UnifiedConfig::load_from_content(&global_content) else {
-        return UnifiedConfig::default();
-    };
+    let global = UnifiedConfig::load_from_content(&global_content).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse global config {} while generating local config template: {e}",
+            global_path.display()
+        )
+    })?;
 
-    UnifiedConfig::default().merge_with_content(&global_content, &global)
+    Ok(UnifiedConfig::default().merge_with_content(&global_content, &global))
 }
 
-fn built_in_default_chain() -> crate::agents::fallback::FallbackConfig {
+fn built_in_default_chain() -> anyhow::Result<crate::agents::fallback::FallbackConfig> {
     AgentRegistry::new()
         .map(|registry| registry.fallback_config().clone())
-        .unwrap_or_default()
+        .map_err(map_registry_init_error)
+}
+
+fn map_registry_init_error(error: impl std::fmt::Display) -> anyhow::Error {
+    anyhow::anyhow!("Failed to load built-in default agent chains: {error}")
 }
 
 /// Format a string slice as a TOML array literal (e.g. `["claude", "codex"]`).
@@ -137,7 +160,7 @@ pub fn handle_init_local_config_with<R: ConfigEnvironment>(
     }
 
     // Generate template populated with current effective values
-    let template = generate_local_config_template(env);
+    let template = generate_local_config_template(env)?;
 
     // Create config using the environment's file operations
     env.write_file(&local_path, &template).map_err(|e| {
@@ -244,6 +267,28 @@ mod tests {
         assert!(
             content.contains("reviewer_reviews = 2"),
             "should show default reviewer_reviews=2, got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_init_local_config_fails_when_built_in_default_chain_cannot_be_loaded() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml");
+
+        let err = generate_local_config_template_with(&env, || {
+            Err(anyhow::anyhow!("simulated built-in agents load failure"))
+        })
+        .expect_err("template generation should fail when built-in defaults cannot be loaded");
+        let msg = err.to_string();
+
+        assert!(
+            msg.contains("simulated built-in agents load failure"),
+            "error should include built-in chain load failure reason, got:\n{msg}"
+        );
+        assert!(
+            !env.was_written(Path::new("/test/repo/.agent/ralph-workflow.toml")),
+            "local config should not be created when template generation fails"
         );
     }
 

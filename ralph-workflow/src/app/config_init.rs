@@ -37,6 +37,45 @@ pub struct ConfigInitResult {
     pub config_path: PathBuf,
     /// Sources from which agent configs were loaded.
     pub config_sources: Vec<ConfigSource>,
+    /// Description of config sources searched when resolving required agents.
+    pub agent_resolution_sources: AgentResolutionSources,
+}
+
+/// Describes which config sources were consulted for agent resolution.
+#[derive(Debug, Clone)]
+pub struct AgentResolutionSources {
+    /// Path to local config if local config lookup was active in this run.
+    pub local_config_path: Option<PathBuf>,
+    /// Path to global config if global config lookup was active in this run.
+    pub global_config_path: Option<PathBuf>,
+    /// Whether built-in defaults were part of resolution.
+    pub built_in_defaults: bool,
+}
+
+impl AgentResolutionSources {
+    /// Render a user-facing source list for diagnostics.
+    #[must_use]
+    pub fn describe_searched_sources(&self) -> String {
+        let mut sources = Vec::new();
+
+        if let Some(path) = self.local_config_path.as_ref() {
+            sources.push(format!("local config ({})", path.display()));
+        }
+
+        if let Some(path) = self.global_config_path.as_ref() {
+            sources.push(format!("global config ({})", path.display()));
+        }
+
+        if self.built_in_defaults {
+            sources.push("built-in defaults".to_string());
+        }
+
+        if sources.is_empty() {
+            "none".to_string()
+        } else {
+            sources.join(", ")
+        }
+    }
 }
 
 /// Initializes configuration and agent registry.
@@ -192,8 +231,29 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
         return Ok(None);
     }
 
+    let local_config_path = path_resolver.local_config_path();
+    let global_config_path = args
+        .config
+        .clone()
+        .or_else(|| path_resolver.unified_config_path());
+
+    let agent_resolution_sources = AgentResolutionSources {
+        local_config_path: if args.config.is_none() {
+            local_config_path.clone()
+        } else {
+            None
+        },
+        global_config_path,
+        built_in_defaults: true,
+    };
+
     // Initialize agent registry with built-in defaults + unified config.
-    let config_source_path = resolve_agent_config_source_path(config_path.as_path(), path_resolver);
+    let config_source_path = resolve_agent_config_source_path(
+        config_path.as_path(),
+        args.config.as_deref(),
+        local_config_path.as_deref(),
+        path_resolver,
+    );
     let (registry, config_sources) = load_agent_registry(
         unified.as_ref(),
         config_source_path.as_path(),
@@ -208,20 +268,27 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
         registry,
         config_path,
         config_sources,
+        agent_resolution_sources,
     }))
 }
 
 fn resolve_agent_config_source_path(
     config_path: &std::path::Path,
+    explicit_config_path: Option<&std::path::Path>,
+    local_config_path: Option<&std::path::Path>,
     env: &dyn ConfigEnvironment,
 ) -> PathBuf {
     if env.file_exists(config_path) {
         return config_path.to_path_buf();
     }
 
-    env.local_config_path()
+    if explicit_config_path.is_some() {
+        return config_path.to_path_buf();
+    }
+
+    local_config_path
         .filter(|path| env.file_exists(path))
-        .unwrap_or_else(|| config_path.to_path_buf())
+        .map_or_else(|| config_path.to_path_buf(), std::path::Path::to_path_buf)
 }
 
 fn load_agent_registry<L: CatalogLoader>(
@@ -326,7 +393,7 @@ fn apply_default_agents(config: &mut Config, registry: &AgentRegistry) {
 
 #[cfg(test)]
 mod tests {
-    use super::initialize_config_with;
+    use super::{initialize_config_with, AgentResolutionSources};
     use crate::agents::opencode_api::{
         ApiCatalog, CacheError, CatalogLoader, DEFAULT_CACHE_TTL_SECONDS,
     };
@@ -371,8 +438,72 @@ mod tests {
         assert_eq!(result.config_sources.len(), 1);
         assert_eq!(
             result.config_sources[0].path,
-            PathBuf::from("/test/repo/.agent/ralph-workflow.toml"),
-            "diagnostics source path should point to the local config that provided agent_chain"
+            PathBuf::from("/test/config/ralph-workflow.toml"),
+            "with explicit --config, diagnostics source path should point to the explicit config path"
+        );
+        assert_eq!(result.agent_resolution_sources.local_config_path, None);
+        assert_eq!(
+            result.agent_resolution_sources.global_config_path,
+            Some(PathBuf::from("/test/config/ralph-workflow.toml"))
+        );
+    }
+
+    #[test]
+    fn test_agent_resolution_sources_include_local_when_no_explicit_config() {
+        let args = Args::try_parse_from(["ralph"]).expect("args should parse");
+        let logger = Logger::new(Colors::new());
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml");
+
+        let result =
+            initialize_config_with(&args, Colors::new(), &logger, &StaticCatalogLoader, &env)
+                .expect("initialization should succeed")
+                .expect("normal execution should return config init result");
+
+        assert_eq!(
+            result.agent_resolution_sources.local_config_path,
+            Some(PathBuf::from("/test/repo/.agent/ralph-workflow.toml"))
+        );
+        assert_eq!(
+            result.agent_resolution_sources.global_config_path,
+            Some(PathBuf::from("/test/config/ralph-workflow.toml"))
+        );
+        assert!(result.agent_resolution_sources.built_in_defaults);
+    }
+
+    #[test]
+    fn test_agent_resolution_sources_exclude_local_with_explicit_config() {
+        let args = Args::try_parse_from(["ralph", "--config", "/custom/path.toml"])
+            .expect("args should parse");
+        let logger = Logger::new(Colors::new());
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml");
+
+        let result =
+            initialize_config_with(&args, Colors::new(), &logger, &StaticCatalogLoader, &env)
+                .expect("initialization should succeed")
+                .expect("normal execution should return config init result");
+
+        assert_eq!(result.agent_resolution_sources.local_config_path, None);
+        assert_eq!(
+            result.agent_resolution_sources.global_config_path,
+            Some(PathBuf::from("/custom/path.toml"))
+        );
+    }
+
+    #[test]
+    fn test_agent_resolution_sources_description_omits_missing_sources() {
+        let sources = AgentResolutionSources {
+            local_config_path: None,
+            global_config_path: Some(PathBuf::from("/custom/path.toml")),
+            built_in_defaults: true,
+        };
+
+        assert_eq!(
+            sources.describe_searched_sources(),
+            "global config (/custom/path.toml), built-in defaults"
         );
     }
 }

@@ -3,6 +3,9 @@
 use super::*;
 use crate::agents::JsonParserType;
 
+const TEST_SOURCES: &str =
+    "local config (.agent/ralph-workflow.toml), global config (~/.config/ralph-workflow.toml), built-in defaults";
+
 fn default_ccs() -> CcsConfig {
     CcsConfig::default()
 }
@@ -279,7 +282,7 @@ fn test_validate_agent_chains() {
     "#;
     let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
     registry.apply_unified_config(&unified);
-    assert!(registry.validate_agent_chains().is_ok());
+    assert!(registry.validate_agent_chains(TEST_SOURCES).is_ok());
 }
 
 #[test]
@@ -290,7 +293,7 @@ fn test_validate_agent_chains_error_mentions_searched_sources() {
     let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
     registry.apply_unified_config(&unified);
 
-    let err = registry.validate_agent_chains().unwrap_err();
+    let err = registry.validate_agent_chains(TEST_SOURCES).unwrap_err();
     assert!(
         err.contains("local config"),
         "error should mention local config: {err}"
@@ -302,6 +305,27 @@ fn test_validate_agent_chains_error_mentions_searched_sources() {
     assert!(
         err.contains("built-in defaults"),
         "error should mention built-in defaults: {err}"
+    );
+}
+
+#[test]
+fn test_validate_agent_chains_uses_provided_sources_verbatim() {
+    let mut registry = AgentRegistry::new().unwrap();
+    let toml_str = "\n[agent_chain]\ndeveloper = []\nreviewer = []\n";
+    let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+    registry.apply_unified_config(&unified);
+
+    let err = registry
+        .validate_agent_chains("global config (/custom/path.toml), built-in defaults")
+        .unwrap_err();
+
+    assert!(
+        err.contains("global config (/custom/path.toml), built-in defaults"),
+        "error should include provided sources: {err}"
+    );
+    assert!(
+        !err.contains("local config"),
+        "error should not mention local config when not part of provided sources: {err}"
     );
 }
 
@@ -410,7 +434,7 @@ fn test_ccs_in_fallback_chain() {
     );
 
     // Validate chains should pass
-    assert!(registry.validate_agent_chains().is_ok());
+    assert!(registry.validate_agent_chains(TEST_SOURCES).is_ok());
 }
 
 #[test]

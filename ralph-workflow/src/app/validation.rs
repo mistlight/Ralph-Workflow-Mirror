@@ -7,6 +7,7 @@
 //! - Validating agent chain configuration
 
 use crate::agents::AgentRegistry;
+use crate::app::config_init::AgentResolutionSources;
 use crate::config::Config;
 use crate::logger::Colors;
 use std::path::Path;
@@ -28,6 +29,7 @@ pub struct ValidatedAgents {
 /// # Arguments
 ///
 /// * `config` - The pipeline configuration
+/// * `sources` - Description of config sources consulted for resolution
 ///
 /// # Returns
 ///
@@ -36,18 +38,21 @@ pub struct ValidatedAgents {
 /// # Errors
 ///
 /// Returns error if the operation fails.
-pub fn resolve_required_agents(config: &Config) -> anyhow::Result<ValidatedAgents> {
+pub fn resolve_required_agents(
+    config: &Config,
+    sources: &AgentResolutionSources,
+) -> anyhow::Result<ValidatedAgents> {
+    let searched = sources.describe_searched_sources();
+
     let developer_agent = config.developer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
-            "No developer agent configured. Searched: local config (.agent/ralph-workflow.toml), \
-            global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            "No developer agent configured. Searched: {searched}.\n\
             Set via --developer-agent, RALPH_DEVELOPER_AGENT env, or [agent_chain] in config."
         )
     })?;
     let reviewer_agent = config.reviewer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
-            "No reviewer agent configured. Searched: local config (.agent/ralph-workflow.toml), \
-            global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            "No reviewer agent configured. Searched: {searched}.\n\
             Set via --reviewer-agent, RALPH_REVIEWER_AGENT env, or [agent_chain] in config."
         )
     })?;
@@ -208,9 +213,14 @@ pub fn validate_can_commit(
 /// # Arguments
 ///
 /// * `registry` - The agent registry
+/// * `sources` - Description of config sources consulted for resolution
 /// * `colors` - Color configuration for output
-pub fn validate_agent_chains(registry: &AgentRegistry, colors: Colors) {
-    if let Err(msg) = registry.validate_agent_chains() {
+pub fn validate_agent_chains(
+    registry: &AgentRegistry,
+    sources: &AgentResolutionSources,
+    colors: Colors,
+) {
+    if let Err(msg) = registry.validate_agent_chains(&sources.describe_searched_sources()) {
         eprintln!();
         eprintln!(
             "{}{}Error:{} {}",
@@ -294,7 +304,15 @@ mod tests {
             ..Config::default()
         };
 
-        let err = resolve_required_agents(&config).unwrap_err();
+        let err = resolve_required_agents(
+            &config,
+            &AgentResolutionSources {
+                local_config_path: Some(Path::new(".agent/ralph-workflow.toml").to_path_buf()),
+                global_config_path: Some(Path::new("~/.config/ralph-workflow.toml").to_path_buf()),
+                built_in_defaults: true,
+            },
+        )
+        .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("local config"),
@@ -318,7 +336,15 @@ mod tests {
             ..Config::default()
         };
 
-        let err = resolve_required_agents(&config).unwrap_err();
+        let err = resolve_required_agents(
+            &config,
+            &AgentResolutionSources {
+                local_config_path: Some(Path::new(".agent/ralph-workflow.toml").to_path_buf()),
+                global_config_path: Some(Path::new("~/.config/ralph-workflow.toml").to_path_buf()),
+                built_in_defaults: true,
+            },
+        )
+        .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("reviewer"),
@@ -327,6 +353,35 @@ mod tests {
         assert!(
             msg.contains("local config"),
             "error should mention local config: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_required_agents_error_with_explicit_config_omits_local_source() {
+        let config = Config {
+            developer_agent: None,
+            reviewer_agent: Some("claude".to_string()),
+            ..Config::default()
+        };
+
+        let err = resolve_required_agents(
+            &config,
+            &AgentResolutionSources {
+                local_config_path: None,
+                global_config_path: Some(Path::new("/custom/path.toml").to_path_buf()),
+                built_in_defaults: true,
+            },
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+
+        assert!(
+            msg.contains("global config (/custom/path.toml), built-in defaults"),
+            "error should include actual consulted sources: {msg}"
+        );
+        assert!(
+            !msg.contains("local config"),
+            "error should not mention local config when not consulted: {msg}"
         );
     }
 }
