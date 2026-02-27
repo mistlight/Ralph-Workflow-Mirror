@@ -45,7 +45,10 @@ fn create_test_pipeline_state(
     let mut state = PipelineState::initial(iterations, review_passes);
 
     for i in 0..history_size {
-        state.add_execution_step(create_test_step(i as u32), history_size);
+        state.add_execution_step(
+            create_test_step(u32::try_from(i).expect("index fits in u32")),
+            history_size,
+        );
     }
 
     state
@@ -63,8 +66,8 @@ fn benchmark_checkpoint_serialization_empty_state() {
     let size_kb = size_bytes / 1024;
 
     println!("\n=== Checkpoint Serialization (Empty State) ===");
-    println!("Serialization time: {:?}", duration);
-    println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
+    println!("Serialization time: {duration:?}");
+    println!("Checkpoint size: {size_bytes} bytes ({size_kb} KB)");
     println!(
         "Execution history entries: {}",
         state.execution_history_len()
@@ -94,8 +97,8 @@ fn benchmark_checkpoint_serialization_small_state() {
     let size_kb = size_bytes / 1024;
 
     println!("\n=== Checkpoint Serialization (Small State - 10 steps) ===");
-    println!("Serialization time: {:?}", duration);
-    println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
+    println!("Serialization time: {duration:?}");
+    println!("Checkpoint size: {size_bytes} bytes ({size_kb} KB)");
     println!(
         "Execution history entries: {}",
         state.execution_history_len()
@@ -129,8 +132,8 @@ fn benchmark_checkpoint_serialization_medium_state() {
     let size_kb = size_bytes / 1024;
 
     println!("\n=== Checkpoint Serialization (Medium State - 100 steps) ===");
-    println!("Serialization time: {:?}", duration);
-    println!("Checkpoint size: {} bytes ({} KB)", size_bytes, size_kb);
+    println!("Serialization time: {duration:?}");
+    println!("Checkpoint size: {size_bytes} bytes ({size_kb} KB)");
     println!(
         "Execution history entries: {}",
         state.execution_history_len()
@@ -156,15 +159,12 @@ fn benchmark_checkpoint_serialization_large_state() {
 
     let duration = start.elapsed();
     let size_bytes = json.len();
-    let size_kb = size_bytes / 1024;
-    let size_mb = size_kb / 1024;
+    let checkpoint_kb = size_bytes / 1024;
+    let checkpoint_megabytes = checkpoint_kb / 1024;
 
     println!("\n=== Checkpoint Serialization (Large State - 1000 steps) ===");
-    println!("Serialization time: {:?}", duration);
-    println!(
-        "Checkpoint size: {} bytes ({} KB, {} MB)",
-        size_bytes, size_kb, size_mb
-    );
+    println!("Serialization time: {duration:?}");
+    println!("Checkpoint size: {size_bytes} bytes ({checkpoint_kb} KB, {checkpoint_megabytes} MB)");
     println!(
         "Execution history entries: {}",
         state.execution_history_len()
@@ -192,7 +192,7 @@ fn benchmark_checkpoint_deserialization_small_state() {
     let duration = start.elapsed();
 
     println!("\n=== Checkpoint Deserialization (Small State - 10 steps) ===");
-    println!("Deserialization time: {:?}", duration);
+    println!("Deserialization time: {duration:?}");
     println!("Checkpoint size: {} bytes", json.len());
     println!(
         "Execution history entries: {}",
@@ -224,8 +224,8 @@ fn benchmark_checkpoint_deserialization_large_state() {
     let size_kb = json.len() / 1024;
 
     println!("\n=== Checkpoint Deserialization (Large State - 1000 steps) ===");
-    println!("Deserialization time: {:?}", duration);
-    println!("Checkpoint size: {} KB", size_kb);
+    println!("Deserialization time: {duration:?}");
+    println!("Checkpoint size: {size_kb} KB");
     println!(
         "Execution history entries: {}",
         deserialized.execution_history_len()
@@ -252,10 +252,10 @@ fn benchmark_checkpoint_round_trip() {
     let size_kb = json.len() / 1024;
 
     println!("\n=== Checkpoint Round Trip (100 steps) ===");
-    println!("Serialize time: {:?}", serialize_duration);
-    println!("Deserialize time: {:?}", deserialize_duration);
-    println!("Total time: {:?}", total_duration);
-    println!("Checkpoint size: {} KB", size_kb);
+    println!("Serialize time: {serialize_duration:?}");
+    println!("Deserialize time: {deserialize_duration:?}");
+    println!("Total time: {total_duration:?}");
+    println!("Checkpoint size: {size_kb} KB");
     println!(
         "Execution history entries: {}",
         restored.execution_history_len()
@@ -291,7 +291,7 @@ fn benchmark_serialization_scaling() {
     println!("-------------|----------------|----------------");
 
     for (size, duration, kb) in &results {
-        println!("{:12} | {:14?} | {:12} KB", size, duration, kb);
+        println!("{size:12} | {duration:14?} | {kb:12} KB");
     }
 
     // Verify we tested all sizes
@@ -314,16 +314,15 @@ fn benchmark_serialization_performance_ceiling() {
     let size_kb = json.len() / 1024;
 
     println!("\n=== Serialization Performance Ceiling ===");
-    println!("Duration: {:?}", duration);
-    println!("Size: {} KB", size_kb);
+    println!("Duration: {duration:?}");
+    println!("Size: {size_kb} KB");
 
     // With bounded history (1000 entries), serialization is expected to be fast.
     // Wall-clock ceilings are opt-in to avoid flaky failures on noisy CI hosts.
     if perf_ceiling_asserts_enabled() {
         assert!(
             duration.as_millis() < 100,
-            "Serialization performance regression detected: {:?} exceeds 100ms ceiling",
-            duration
+            "Serialization performance regression detected: {duration:?} exceeds 100ms ceiling"
         );
     }
 
@@ -341,8 +340,7 @@ fn benchmark_serialization_performance_ceiling() {
         const ONE_MIB: usize = 1024 * 1024;
         assert!(
             json.len() < ONE_MIB,
-            "Checkpoint size regression detected: {} KB exceeds 1 MiB ceiling",
-            size_kb
+            "Checkpoint size regression detected: {size_kb} KB exceeds 1 MiB ceiling"
         );
     }
 }
@@ -360,15 +358,14 @@ fn benchmark_deserialization_performance_ceiling() {
     let size_kb = json.len() / 1024;
 
     println!("\n=== Deserialization Performance Ceiling ===");
-    println!("Duration: {:?}", duration);
-    println!("Size: {} KB", size_kb);
+    println!("Duration: {duration:?}");
+    println!("Size: {size_kb} KB");
 
     // Wall-clock ceilings are opt-in to avoid flaky failures on noisy CI hosts.
     if perf_ceiling_asserts_enabled() {
         assert!(
             duration.as_millis() < 100,
-            "Deserialization performance regression detected: {:?} exceeds 100ms ceiling",
-            duration
+            "Deserialization performance regression detected: {duration:?} exceeds 100ms ceiling"
         );
     }
 }
@@ -390,18 +387,17 @@ fn benchmark_round_trip_performance_ceiling() {
     let size_kb = json.len() / 1024;
 
     println!("\n=== Round Trip Performance Ceiling ===");
-    println!("Serialize: {:?}", serialize_duration);
-    println!("Deserialize: {:?}", deserialize_duration);
-    println!("Total: {:?}", total_duration);
-    println!("Size: {} KB", size_kb);
+    println!("Serialize: {serialize_duration:?}");
+    println!("Deserialize: {deserialize_duration:?}");
+    println!("Total: {total_duration:?}");
+    println!("Size: {size_kb} KB");
 
     // Wall-clock ceilings are opt-in to avoid flaky failures on noisy CI hosts.
     if perf_ceiling_asserts_enabled() {
         // Total round-trip should be under 200ms with bounded history
         assert!(
             total_duration.as_millis() < 200,
-            "Round-trip performance regression detected: {:?} exceeds 200ms ceiling",
-            total_duration
+            "Round-trip performance regression detected: {total_duration:?} exceeds 200ms ceiling"
         );
     }
 }

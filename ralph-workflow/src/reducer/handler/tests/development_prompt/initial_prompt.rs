@@ -28,7 +28,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -60,7 +60,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let materialize = handler
-        .materialize_development_inputs(&mut ctx, 0)
+        .materialize_development_inputs(&ctx, 0)
         .expect("materialize_development_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -110,7 +110,7 @@ fn test_prepare_development_prompt_emits_template_rendered_on_validation_failure
         TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -140,7 +140,7 @@ fn test_prepare_development_prompt_emits_template_rendered_on_validation_failure
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let materialize = handler
-        .materialize_development_inputs(&mut ctx, 0)
+        .materialize_development_inputs(&ctx, 0)
         .expect("materialize_development_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -191,7 +191,7 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -236,7 +236,7 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
     });
 
     let materialize = handler
-        .materialize_development_inputs(&mut ctx, 0)
+        .materialize_development_inputs(&ctx, 0)
         .expect("materialize_development_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -287,7 +287,7 @@ fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() 
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 

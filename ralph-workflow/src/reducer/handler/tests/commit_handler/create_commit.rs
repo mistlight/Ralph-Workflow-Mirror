@@ -26,7 +26,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     // Use a unique, non-existent repo root so git discovery fails deterministically.
     // This avoids mutating process-wide CWD (which would be flaky under parallel test execution).
@@ -37,7 +37,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
     let repo_root = std::env::temp_dir().join(format!("ralph-nonexistent-repo-{unique}"));
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -60,7 +60,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         cloud: &cloud,
     };
 
-    let err = MainEffectHandler::create_commit(&mut ctx, "test message".to_string())
+    let err = MainEffectHandler::create_commit(&ctx, "test message".to_string())
         .expect_err("create_commit should fail when repo discovery fails");
 
     assert!(

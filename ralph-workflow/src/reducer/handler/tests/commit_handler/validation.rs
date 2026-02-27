@@ -29,11 +29,11 @@ fn validate_commit_xml_emits_ui_xml_output_even_when_xml_file_missing() {
     let executor = Arc::new(MockProcessExecutor::new());
 
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let cloud = crate::config::types::CloudConfig::disabled();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -58,7 +58,7 @@ fn validate_commit_xml_emits_ui_xml_output_even_when_xml_file_missing() {
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
 
-    let result = handler.validate_commit_xml(&mut ctx);
+    let result = handler.validate_commit_xml(&ctx);
 
     assert!(
         matches!(

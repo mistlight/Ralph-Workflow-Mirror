@@ -206,16 +206,19 @@ pub struct FixResultElements {
 
 impl FixResultElements {
     /// Returns true if all issues have been addressed or no issues were found.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.status == "all_issues_addressed" || self.status == "no_issues_found"
     }
 
     /// Returns true if issues remain.
+    #[must_use]
     pub fn has_remaining_issues(&self) -> bool {
         self.status == "issues_remain"
     }
 
     /// Returns true if no issues were found.
+    #[must_use]
     pub fn is_no_issues(&self) -> bool {
         self.status == "no_issues_found"
     }
@@ -227,9 +230,9 @@ mod tests {
 
     #[test]
     fn test_validate_valid_all_issues_addressed() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -241,9 +244,9 @@ mod tests {
 
     #[test]
     fn test_validate_valid_issues_remain() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>issues_remain</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -255,9 +258,9 @@ mod tests {
 
     #[test]
     fn test_validate_valid_no_issues_found() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>no_issues_found</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -268,10 +271,10 @@ mod tests {
 
     #[test]
     fn test_validate_valid_with_summary() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>All reported issues have been fixed</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_ok());
@@ -285,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_validate_missing_root_element() {
-        let xml = r#"Some random text without proper XML tags"#;
+        let xml = r"Some random text without proper XML tags";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -295,9 +298,9 @@ mod tests {
 
     #[test]
     fn test_validate_missing_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-summary>No status</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -307,9 +310,9 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>invalid_status_value</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -319,9 +322,9 @@ mod tests {
 
     #[test]
     fn test_validate_empty_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>   </ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
@@ -329,10 +332,10 @@ mod tests {
 
     #[test]
     fn test_validate_duplicate_status() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-status>issues_remain</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());

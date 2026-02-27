@@ -6,7 +6,6 @@ use crate::reducer::PipelineState;
 
 #[test]
 fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled() {
-    let _cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -36,7 +35,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         }
     }
 
-    impl<'ctx> EffectHandler<'ctx> for TestHandler {
+    impl EffectHandler<'_> for TestHandler {
         fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
             match effect {
                 Effect::SaveCheckpoint { trigger } => {
@@ -131,7 +130,6 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
 
 #[test]
 fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -148,7 +146,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
     #[derive(Debug)]
     struct PanicHandler;
 
-    impl<'ctx> EffectHandler<'ctx> for PanicHandler {
+    impl EffectHandler<'_> for PanicHandler {
         fn execute(
             &mut self,
             _effect: Effect,
@@ -162,6 +160,7 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
         fn update_state(&mut self, _state: PipelineState) {}
     }
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -228,7 +227,6 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
 
 #[test]
 fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -245,7 +243,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
     #[derive(Debug)]
     struct PanickingHandler;
 
-    impl<'ctx> EffectHandler<'ctx> for PanickingHandler {
+    impl EffectHandler<'_> for PanickingHandler {
         fn execute(
             &mut self,
             _effect: Effect,
@@ -259,6 +257,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         fn update_state(&mut self, _state: PipelineState) {}
     }
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -310,7 +309,6 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
 
 #[test]
 fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::{AgentRegistry, AgentRole};
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -340,7 +338,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         }
     }
 
-    impl<'ctx> EffectHandler<'ctx> for StallingHandler {
+    impl EffectHandler<'_> for StallingHandler {
         fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
             self.effects.push(effect.clone());
             let event = match effect {
@@ -360,6 +358,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         }
     }
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -424,7 +423,6 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
 
 #[test]
 fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -454,7 +452,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         }
     }
 
-    impl<'ctx> EffectHandler<'ctx> for BoundaryHandler {
+    impl EffectHandler<'_> for BoundaryHandler {
         fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
             self.effects.push(effect.clone());
             match effect {
@@ -494,6 +492,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         }
     }
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -556,7 +555,6 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
 
 #[test]
 fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -567,6 +565,8 @@ fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let config = Config {
         max_same_agent_retries: Some(5),
@@ -643,7 +643,7 @@ fn test_event_loop_honors_user_interrupt_by_transitioning_to_interrupted_and_che
         }
     }
 
-    impl<'ctx> EffectHandler<'ctx> for TestHandler {
+    impl EffectHandler<'_> for TestHandler {
         fn execute(
             &mut self,
             effect: Effect,
@@ -760,12 +760,11 @@ fn test_event_loop_honors_user_interrupt_by_transitioning_to_interrupted_and_che
     );
 }
 
-/// TDD test: run_event_loop_with_handler should accept a generic EffectHandler
-/// allowing MockEffectHandler to be injected for testing.
+/// TDD test: `run_event_loop_with_handler` should accept a generic `EffectHandler`
+/// allowing `MockEffectHandler` to be injected for testing.
 #[cfg(feature = "test-utils")]
 #[test]
 fn test_run_event_loop_with_mock_handler() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -779,6 +778,8 @@ fn test_run_event_loop_with_mock_handler() {
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     // Create test fixtures
     let config = Config::default();

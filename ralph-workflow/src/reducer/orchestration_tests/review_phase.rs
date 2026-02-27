@@ -63,7 +63,6 @@ fn test_review_runs_exactly_n_passes() {
                 state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
                 state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
             }
-            Effect::SaveCheckpoint { .. } => break,
             _ => break,
         }
     }
@@ -71,8 +70,7 @@ fn test_review_runs_exactly_n_passes() {
     assert_eq!(
         passes_run.len(),
         3,
-        "Should run exactly 3 review passes, ran: {:?}",
-        passes_run
+        "Should run exactly 3 review passes, ran: {passes_run:?}"
     );
     assert_eq!(passes_run, vec![0, 1, 2], "Should run passes 0-2");
     assert_eq!(
@@ -252,8 +250,7 @@ fn test_review_skips_fix_when_no_issues() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 1 }),
-        "Expected PrepareReviewContext pass 1, got {:?}",
-        effect
+        "Expected PrepareReviewContext pass 1, got {effect:?}"
     );
 }
 
@@ -320,7 +317,6 @@ fn test_review_context_prepared_invalidates_materialized_review_inputs() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::MaterializeReviewInputs { pass: 0 }),
-        "Expected MaterializeReviewInputs after context prepared, got {:?}",
-        effect
+        "Expected MaterializeReviewInputs after context prepared, got {effect:?}"
     );
 }

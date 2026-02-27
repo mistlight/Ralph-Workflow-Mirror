@@ -382,7 +382,7 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                     break;
                 }
             }
-            _ => panic!("Unexpected effect at step {}: {:?}", step, effect),
+            _ => panic!("Unexpected effect at step {step}: {effect:?}"),
         }
 
         if state.phase == PipelinePhase::Complete {
@@ -569,7 +569,7 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
             Effect::RestorePromptPermissions => {
                 state = reduce(state, PipelineEvent::prompt_permissions_restored());
             }
-            _ => panic!("Unexpected effect: {:?}", effect),
+            _ => panic!("Unexpected effect: {effect:?}"),
         }
     }
 

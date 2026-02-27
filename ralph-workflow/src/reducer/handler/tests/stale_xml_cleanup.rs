@@ -33,7 +33,7 @@ fn test_invoke_planning_agent_does_not_clear_stale_plan_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
     let mut ctx = crate::phases::PhaseContext {
@@ -82,10 +82,10 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -107,7 +107,7 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         cloud_reporter: None,
         cloud: &cloud,
     };
-    MainEffectHandler::cleanup_planning_xml(&mut ctx, 0);
+    MainEffectHandler::cleanup_planning_xml(&ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::PLAN_XML)));
 }
@@ -131,7 +131,7 @@ fn test_invoke_development_agent_does_not_clear_stale_dev_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
     let mut ctx = crate::phases::PhaseContext {
@@ -182,10 +182,10 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -208,7 +208,7 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         cloud: &cloud,
     };
 
-    MainEffectHandler::cleanup_development_xml(&mut ctx, 0);
+    MainEffectHandler::cleanup_development_xml(&ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::DEVELOPMENT_RESULT_XML)));
 }
@@ -229,7 +229,7 @@ fn test_invoke_review_agent_does_not_clear_stale_issues_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
     let mut ctx = crate::phases::PhaseContext {
@@ -278,10 +278,10 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -304,7 +304,7 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         cloud: &cloud,
     };
 
-    MainEffectHandler::cleanup_review_issues_xml(&mut ctx, 0);
+    MainEffectHandler::cleanup_review_issues_xml(&ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::ISSUES_XML)));
 }
@@ -328,7 +328,7 @@ fn test_invoke_fix_agent_does_not_clear_stale_fix_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
     let mut ctx = crate::phases::PhaseContext {
@@ -379,10 +379,10 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -405,7 +405,7 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         cloud: &cloud,
     };
 
-    MainEffectHandler::cleanup_fix_result_xml(&mut ctx, 0);
+    MainEffectHandler::cleanup_fix_result_xml(&ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::FIX_RESULT_XML)));
 }
@@ -429,7 +429,7 @@ fn test_invoke_commit_agent_does_not_clear_stale_commit_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
     let mut ctx = crate::phases::PhaseContext {
@@ -487,10 +487,10 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let repo_root = PathBuf::from("/mock/repo");
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -514,7 +514,7 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
-    let _ = handler.cleanup_commit_xml(&mut ctx);
+    let _ = handler.cleanup_commit_xml(&ctx);
 
     assert!(!workspace.exists(Path::new(xml_paths::COMMIT_MESSAGE_XML)));
 }

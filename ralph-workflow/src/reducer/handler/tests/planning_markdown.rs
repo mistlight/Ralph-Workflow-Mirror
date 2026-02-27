@@ -32,7 +32,7 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -63,7 +63,7 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
     });
 
     let result = handler
-        .write_planning_markdown(&mut ctx, 0)
+        .write_planning_markdown(&ctx, 0)
         .expect("write_planning_markdown should succeed");
 
     assert!(matches!(
@@ -97,7 +97,7 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -121,7 +121,7 @@ fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    let err = handler.write_planning_markdown(&mut ctx, 0).expect_err(
+    let err = handler.write_planning_markdown(&ctx, 0).expect_err(
         "write_planning_markdown should return error when validated outcome is missing",
     );
 

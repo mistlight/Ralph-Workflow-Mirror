@@ -261,9 +261,8 @@ mod tests {
         let content = workspace.read(log_path).unwrap();
         for i in 1..=5 {
             assert!(
-                content.contains(&format!("{} ts=", i)),
-                "Should contain sequence number {}",
-                i
+                content.contains(&format!("{i} ts=")),
+                "Should contain sequence number {i}"
             );
         }
     }

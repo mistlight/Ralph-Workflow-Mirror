@@ -54,10 +54,10 @@ mod tests {
 
     #[test]
     fn test_render_fix_result_all_addressed() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>Fixed all 3 reported issues</ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_render_fix_result_renders_diff_like_view_when_summary_contains_diff() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>
 <ralph-summary>Applied fix:
 diff --git a/src/a.rs b/src/a.rs
@@ -87,7 +87,7 @@ deleted file mode 100644
 @@ -1 +0,0 @@
 -fn a() {}
 </ralph-summary>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let output = render(xml, None);
 
@@ -107,9 +107,9 @@ deleted file mode 100644
 
     #[test]
     fn test_render_fix_result_issues_remain() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>issues_remain</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let output = render(xml, None);
 
@@ -122,9 +122,9 @@ deleted file mode 100644
 
     #[test]
     fn test_render_fix_result_no_issues() {
-        let xml = r#"<ralph-fix-result>
+        let xml = r"<ralph-fix-result>
 <ralph-status>no_issues_found</ralph-status>
-</ralph-fix-result>"#;
+</ralph-fix-result>";
 
         let output = render(xml, None);
 

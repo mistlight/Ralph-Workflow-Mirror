@@ -62,6 +62,7 @@ pub struct PrefixDebouncer {
 #[cfg(test)]
 impl PrefixDebouncer {
     /// Create a new prefix debouncer with the given configuration.
+    #[must_use] 
     pub const fn new(config: StreamingConfig) -> Self {
         Self {
             config,

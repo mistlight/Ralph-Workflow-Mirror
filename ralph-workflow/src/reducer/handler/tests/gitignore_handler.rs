@@ -303,7 +303,7 @@ impl<'a> FailingWriteWorkspace<'a> {
     }
 }
 
-impl<'a> Workspace for FailingWriteWorkspace<'a> {
+impl Workspace for FailingWriteWorkspace<'_> {
     fn root(&self) -> &std::path::Path {
         self.inner.root()
     }

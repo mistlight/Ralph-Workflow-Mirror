@@ -112,12 +112,12 @@ mod tests {
 
     #[test]
     fn test_render_development_result_completed() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Implemented feature X</ralph-summary>
 <ralph-files-changed>src/main.rs
 src/lib.rs</ralph-files-changed>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let output = render(xml, None);
 
@@ -176,11 +176,11 @@ new file mode 100644
 
     #[test]
     fn test_render_development_result_partial() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>partial</ralph-status>
 <ralph-summary>Started work on feature</ralph-summary>
 <ralph-next-steps>Continue with implementation</ralph-next-steps>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let output = render(xml, None);
 
@@ -193,10 +193,10 @@ new file mode 100644
 
     #[test]
     fn test_render_development_result_with_iteration() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let ctx = Some(XmlOutputContext {
             iteration: Some(2),
@@ -225,12 +225,12 @@ new file mode 100644
 
     #[test]
     fn test_development_result_multiline_summary() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>First line of summary
 Second line of summary
 Third line of summary</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let output = render(xml, None);
         assert!(
@@ -249,13 +249,13 @@ Third line of summary</ralph-summary>
 
     #[test]
     fn test_development_result_file_action_icons() {
-        let xml = r#"<ralph-development-result>
+        let xml = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Changes made</ralph-summary>
 <ralph-files-changed>src/new_file.rs (created)
 src/existing.rs
 src/old.rs (deleted)</ralph-files-changed>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let output = render(xml, None);
         assert!(

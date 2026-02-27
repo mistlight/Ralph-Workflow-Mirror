@@ -70,7 +70,7 @@ fn test_cloud_enabled_pending_push_configures_auth_first() {
                 "Should configure SSH auth"
             );
         }
-        other => panic!("Expected ConfigureGitAuth, got: {:?}", other),
+        other => panic!("Expected ConfigureGitAuth, got: {other:?}"),
     }
 }
 
@@ -95,7 +95,7 @@ fn test_cloud_enabled_auth_configured_emits_push() {
             assert!(!force, "Force push should be disabled by default");
             assert_eq!(commit_sha, "abc123", "Should push the pending commit");
         }
-        other => panic!("Expected PushToRemote, got: {:?}", other),
+        other => panic!("Expected PushToRemote, got: {other:?}"),
     }
 }
 
@@ -148,7 +148,7 @@ fn test_cloud_enabled_create_pr_in_finalizing() {
                 "Should have default title"
             );
         }
-        other => panic!("Expected CreatePullRequest, got: {:?}", other),
+        other => panic!("Expected CreatePullRequest, got: {other:?}"),
     }
 }
 
@@ -174,7 +174,7 @@ fn test_cloud_enabled_create_pr_renders_title_and_body_templates() {
             assert_eq!(title, "Ralph changes for run_123");
             assert_eq!(body, "Summary: Ralph workflow run run_123");
         }
-        other => panic!("Expected CreatePullRequest, got: {:?}", other),
+        other => panic!("Expected CreatePullRequest, got: {other:?}"),
     }
 }
 
@@ -224,8 +224,7 @@ fn test_cloud_enabled_create_pr_is_blocked_when_commits_failed_to_push() {
             );
         }
         other => panic!(
-            "Expected EmitCompletionMarkerAndTerminate when unpushed commits exist, got: {:?}",
-            other
+            "Expected EmitCompletionMarkerAndTerminate when unpushed commits exist, got: {other:?}"
         ),
     }
 }
@@ -246,7 +245,7 @@ fn test_cloud_enabled_token_auth_format() {
         Effect::ConfigureGitAuth { auth_method } => {
             assert_eq!(auth_method, "token:oauth2", "Should format token auth");
         }
-        other => panic!("Expected ConfigureGitAuth, got: {:?}", other),
+        other => panic!("Expected ConfigureGitAuth, got: {other:?}"),
     }
 }
 
@@ -269,7 +268,7 @@ fn test_cloud_enabled_credential_helper_format() {
                 "Should format credential helper"
             );
         }
-        other => panic!("Expected ConfigureGitAuth, got: {:?}", other),
+        other => panic!("Expected ConfigureGitAuth, got: {other:?}"),
     }
 }
 
@@ -287,7 +286,7 @@ fn test_cloud_enabled_force_push_when_configured() {
         Effect::PushToRemote { force, .. } => {
             assert!(force, "Force push should be enabled when configured");
         }
-        other => panic!("Expected PushToRemote, got: {:?}", other),
+        other => panic!("Expected PushToRemote, got: {other:?}"),
     }
 }
 
@@ -329,8 +328,7 @@ fn test_cloud_push_does_not_block_other_priorities() {
             effect,
             Effect::InvokeAnalysisAgent { .. } | Effect::InitializeAgentChain { .. }
         ),
-        "XSD retry effects should take precedence over cloud push, got: {:?}",
-        effect
+        "XSD retry effects should take precedence over cloud push, got: {effect:?}"
     );
 }
 

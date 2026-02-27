@@ -147,7 +147,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     let strict_workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
     let run_log_context = crate::logging::RunLogContext::new(&strict_workspace).unwrap();
 
-    let mut ctx = PhaseContext {
+    let ctx = PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -174,7 +174,7 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
     let state = PipelineState::initial(1, 0);
     trace.push(build_trace_entry(0, &state, "Effect::None", "Event::None"));
 
-    let dumped = dump_event_loop_trace(&mut ctx, &trace, &state, "test");
+    let dumped = dump_event_loop_trace(&ctx, &trace, &state, "test");
     assert!(
         dumped,
         "expected trace dump to succeed even when .agent/tmp is missing"
@@ -333,7 +333,6 @@ fn test_max_event_loop_iterations_is_one_million() {
 
 #[test]
 fn test_create_initial_state_with_config_counts_total_attempts() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -344,6 +343,8 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     // Semantics: max_dev_continuations counts *continuations beyond initial*.
     // Total attempts should be 1 + max_dev_continuations.
@@ -475,9 +476,9 @@ fn test_create_initial_state_with_config_injects_cloud_state() {
     );
 }
 
-/// Regression test: event loop must apply EffectResult.additional_events.
+/// Regression test: event loop must apply `EffectResult.additional_events`.
 ///
-/// Without this, AgentEvent::SessionEstablished is never reduced and same-session
+/// Without this, `AgentEvent::SessionEstablished` is never reduced and same-session
 /// XSD retry cannot work.
 #[test]
 fn test_event_loop_applies_additional_events_in_order() {
@@ -507,7 +508,7 @@ fn test_event_loop_applies_additional_events_in_order() {
         }
     }
 
-    impl<'ctx> EffectHandler<'ctx> for TestHandler {
+    impl EffectHandler<'_> for TestHandler {
         fn execute(
             &mut self,
             _effect: Effect,

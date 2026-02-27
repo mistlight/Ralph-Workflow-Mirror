@@ -890,7 +890,7 @@ mod cloud_tests {
             graceful_degradation: true,
             git_remote: GitRemoteConfig {
                 auth_method: GitAuthMethod::Token {
-                    token: "".to_string(),
+                    token: String::new(),
                     username: "x-access-token".to_string(),
                 },
                 ..GitRemoteConfig::default()

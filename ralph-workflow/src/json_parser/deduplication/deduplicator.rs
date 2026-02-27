@@ -31,6 +31,7 @@ pub struct DeltaDeduplicator {
 impl DeltaDeduplicator {
     /// Create a new delta deduplicator.
     #[cfg(test)]
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -84,6 +85,7 @@ impl DeltaDeduplicator {
     /// );
     /// ```
     #[cfg(test)]
+    #[must_use] 
     pub fn extract_new_content<'a>(delta: &'a str, accumulated: &str) -> Option<&'a str> {
         // Handle identical content (delta == accumulated) - return empty string
         if delta == accumulated {

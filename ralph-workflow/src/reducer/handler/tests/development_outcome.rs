@@ -39,7 +39,7 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
     let mut timer = Timer::new();

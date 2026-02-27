@@ -547,6 +547,7 @@ fn test_prompt_planning_xsd_retry_with_context_has_read_only_overrides() {
 #[test]
 fn test_continuation_prompt_contains_expected_elements() {
     use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+    use crate::workspace::MemoryWorkspace;
 
     let context = TemplateContext::default();
     let continuation_state = ContinuationState::new().trigger_continuation(
@@ -555,14 +556,12 @@ fn test_continuation_prompt_contains_expected_elements() {
         Some(vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]),
         Some("Add tests for the new functionality".to_string()),
     );
-
-    use crate::workspace::MemoryWorkspace;
     let workspace = MemoryWorkspace::new_test();
     let prompt =
         prompt_developer_iteration_continuation_xml(&context, &continuation_state, &workspace);
 
     // Debug: print the prompt to see what we're actually getting
-    eprintln!("Generated prompt:\n{}", prompt);
+    eprintln!("Generated prompt:\n{prompt}");
 
     // Verify the prompt contains key elements
     assert!(

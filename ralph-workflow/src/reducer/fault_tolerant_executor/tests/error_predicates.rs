@@ -1,7 +1,7 @@
 //! Error predicate and fallback tests
 //!
 //! Tests for error type predicates and fallback behavior:
-//! - Usage limit triggers rate_limited event (not timeout)
+//! - Usage limit triggers `rate_limited` event (not timeout)
 
 use super::*;
 
@@ -83,9 +83,8 @@ fn test_usage_limit_triggers_rate_limited_event_not_timeout() {
             assert_eq!(agent, "opencode");
         }
         other => panic!(
-            "Expected AgentEvent::RateLimited, got {:?}. \
-             This indicates usage limit errors are not triggering immediate agent fallback.",
-            other
+            "Expected AgentEvent::RateLimited, got {other:?}. \
+             This indicates usage limit errors are not triggering immediate agent fallback."
         ),
     }
 

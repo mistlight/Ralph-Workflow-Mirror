@@ -372,6 +372,7 @@ pub struct ValidationCheck {
 impl ValidationCheck {
     /// Create a passing validation check.
     #[cfg(test)]
+    #[must_use] 
     pub const fn pass(name: &'static str) -> Self {
         Self {
             name,
@@ -382,6 +383,7 @@ impl ValidationCheck {
 
     /// Create a failing validation check.
     #[cfg(test)]
+    #[must_use] 
     pub const fn fail(name: &'static str, error: String) -> Self {
         Self {
             name,

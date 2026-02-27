@@ -499,11 +499,13 @@ mod tests {
                 ctx.as_ref().unwrap().phase,
                 crate::checkpoint::PipelinePhase::Planning
             );
+            drop(ctx);
         }
 
         clear_interrupt_context();
         let ctx = INTERRUPT_CONTEXT.lock().unwrap();
         assert!(ctx.is_none());
+        drop(ctx);
     }
 
     #[test]

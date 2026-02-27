@@ -104,7 +104,7 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -120,7 +120,7 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
         scope.spawn(move || {
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
-                &mut runtime,
+                &runtime,
                 &[],
                 1,
                 Duration::from_millis(10),
@@ -135,11 +135,10 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
             let _ = tx.send(result);
         });
 
-        let mut exit_code = None;
-        if let Ok(result) = rx.recv_timeout(Duration::from_secs(10)) {
-            let result = result.expect("expected successful CommandResult");
-            exit_code = Some(result.exit_code);
-        }
+        let exit_code = rx
+            .recv_timeout(Duration::from_secs(10))
+            .ok()
+            .map(|result| result.expect("expected successful CommandResult").exit_code);
 
         still_running.store(false, Ordering::Release);
         assert_eq!(exit_code, Some(143));
@@ -274,7 +273,7 @@ fn test_run_with_agent_spawn_cancels_stderr_collector_on_idle_timeout() {
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -287,7 +286,7 @@ fn test_run_with_agent_spawn_cancels_stderr_collector_on_idle_timeout() {
 
     let result = run_with_agent_spawn_with_monitor_config(
         &cmd,
-        &mut runtime,
+        &runtime,
         &[],
         0,
         Duration::from_millis(10),
@@ -419,7 +418,7 @@ fn test_run_with_agent_spawn_regains_control_when_child_never_exits_after_sigkil
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -435,7 +434,7 @@ fn test_run_with_agent_spawn_regains_control_when_child_never_exits_after_sigkil
         scope.spawn(move || {
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
-                &mut runtime,
+                &runtime,
                 &[],
                 1,
                 Duration::from_millis(10),
@@ -582,7 +581,7 @@ fn test_run_with_agent_spawn_regains_control_when_stdout_read_blocks_and_idle_ti
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -598,7 +597,7 @@ fn test_run_with_agent_spawn_regains_control_when_stdout_read_blocks_and_idle_ti
         scope.spawn(move || {
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
-                &mut runtime,
+                &runtime,
                 &[],
                 0,
                 Duration::from_millis(10),

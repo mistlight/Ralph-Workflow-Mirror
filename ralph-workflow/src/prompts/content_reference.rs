@@ -327,11 +327,8 @@ mod tests {
     #[test]
     fn test_exactly_max_size_is_inline() {
         let content = "x".repeat(MAX_INLINE_CONTENT_SIZE);
-        let reference = PromptContentReference::from_content(
-            content.clone(),
-            Path::new("/backup/path"),
-            "test",
-        );
+        let reference =
+            PromptContentReference::from_content(content, Path::new("/backup/path"), "test");
         assert!(reference.is_inline());
     }
 
@@ -364,7 +361,7 @@ mod tests {
     #[test]
     fn test_prompt_file_path_constructor() {
         let path = PathBuf::from("/path/to/file.md");
-        let reference = PromptContentReference::file_path(path.clone(), "Description");
+        let reference = PromptContentReference::file_path(path, "Description");
         assert!(!reference.is_inline());
         let rendered = reference.render_for_template();
         assert!(rendered.contains("/path/to/file.md"));

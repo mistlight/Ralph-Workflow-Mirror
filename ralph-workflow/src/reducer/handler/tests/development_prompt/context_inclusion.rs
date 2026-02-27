@@ -14,12 +14,12 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -43,11 +43,9 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let err = handler
-        .materialize_development_inputs(&mut ctx, 0)
-        .expect_err(
-            "materialize_development_inputs should return an error when PROMPT.md is missing",
-        );
+    let err = handler.materialize_development_inputs(&ctx, 0).expect_err(
+        "materialize_development_inputs should return an error when PROMPT.md is missing",
+    );
 
     assert!(
         err.to_string().contains("PROMPT.md"),
@@ -69,12 +67,12 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -98,11 +96,9 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let err = handler
-        .materialize_development_inputs(&mut ctx, 0)
-        .expect_err(
-            "materialize_development_inputs should return an error when PLAN.md is missing",
-        );
+    let err = handler.materialize_development_inputs(&ctx, 0).expect_err(
+        "materialize_development_inputs should return an error when PLAN.md is missing",
+    );
 
     assert!(
         err.to_string().contains("PLAN.md"),
@@ -112,10 +108,11 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
 
 #[test]
 fn test_materialize_development_inputs_stores_workspace_relative_file_references() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputRepresentation;
     use std::path::PathBuf;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     // Make PROMPT exceed inline budget so it becomes a file reference.
     let oversize_prompt = "x".repeat(150 * 1024);
@@ -132,12 +129,12 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -162,7 +159,7 @@ fn test_materialize_development_inputs_stores_workspace_relative_file_references
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let result = handler
-        .materialize_development_inputs(&mut ctx, 0)
+        .materialize_development_inputs(&ctx, 0)
         .expect("materialize_development_inputs should succeed");
 
     match &result.event {

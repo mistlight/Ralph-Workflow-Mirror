@@ -376,7 +376,7 @@ mod tests {
         {
             let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
             let should_stop_for_thread = Arc::clone(&monitor_should_stop);
-            let activity_for_thread = activity_timestamp.clone();
+            let activity_for_thread = activity_timestamp;
             std::thread::spawn(move || {
                 let poll = Duration::from_millis(50);
                 loop {

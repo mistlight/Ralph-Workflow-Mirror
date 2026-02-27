@@ -347,7 +347,7 @@ fn test_pipeline_state_from_checkpoint_restores_substitution_log() {
         unsubstituted: vec!["PLAN".to_string()],
     };
 
-    checkpoint.last_substitution_log = Some(log.clone());
+    checkpoint.last_substitution_log = Some(log);
 
     let state: PipelineState = checkpoint.into();
     let restored_log = state

@@ -229,7 +229,7 @@ impl ReviewGuidelines {
     }
 }
 
-/// Test-only methods for ReviewGuidelines.
+/// Test-only methods for `ReviewGuidelines`.
 /// These are used by tests to format guidelines into prompts.
 #[cfg(test)]
 impl ReviewGuidelines {

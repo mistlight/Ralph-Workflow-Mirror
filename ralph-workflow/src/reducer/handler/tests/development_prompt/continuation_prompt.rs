@@ -19,7 +19,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -87,7 +87,7 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -125,7 +125,7 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
     });
 
     let materialize = handler
-        .materialize_development_inputs(&mut ctx, 0)
+        .materialize_development_inputs(&ctx, 0)
         .expect("materialize_development_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -176,7 +176,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -214,7 +214,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
     });
 
     let materialize = handler
-        .materialize_development_inputs(&mut ctx, 0)
+        .materialize_development_inputs(&ctx, 0)
         .expect("materialize_development_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -267,7 +267,7 @@ fn test_prepare_development_prompt_continuation_emits_template_rendered() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -338,7 +338,7 @@ fn test_prepare_development_prompt_continuation_replay_skips_template_rendered()
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -391,9 +391,10 @@ fn test_prepare_development_prompt_continuation_replay_skips_template_rendered()
 
 #[test]
 fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_output() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()
@@ -409,7 +410,7 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -454,9 +455,10 @@ fn test_prepare_development_prompt_xsd_retry_emits_oversize_detected_for_last_ou
 
 #[test]
 fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()
@@ -472,7 +474,7 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 

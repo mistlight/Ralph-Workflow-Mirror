@@ -297,8 +297,7 @@ mod tests {
         // (11 bytes phase + 14 bytes step_type + ~25 bytes timestamp + 10 bytes agent)
         assert!(
             heap_size <= 60,
-            "Memory regression: {} bytes per entry exceeds 60 byte target (expected ~40-45 bytes)",
-            heap_size
+            "Memory regression: {heap_size} bytes per entry exceeds 60 byte target (expected ~40-45 bytes)"
         );
     }
 

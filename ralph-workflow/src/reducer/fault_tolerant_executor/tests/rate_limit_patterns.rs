@@ -1,13 +1,13 @@
 //! Rate limit pattern classification tests
 //!
 //! Comprehensive tests for rate limit error detection across different providers:
-//! - OpenCode gateway patterns (usage limit, quota exhaustion)
-//! - OpenAI patterns (HTTP 429, rate_limit_exceeded)
-//! - Anthropic patterns (rate_limit_error, overloaded_error)
-//! - Google Gemini patterns (RESOURCE_EXHAUSTED)
-//! - Azure OpenAI patterns (quota exceeded, throttled)
+//! - `OpenCode` gateway patterns (usage limit, quota exhaustion)
+//! - `OpenAI` patterns (HTTP 429, `rate_limit_exceeded`)
+//! - Anthropic patterns (`rate_limit_error`, `overloaded_error`)
+//! - Google Gemini patterns (`RESOURCE_EXHAUSTED`)
+//! - Azure `OpenAI` patterns (quota exceeded, throttled)
 //! - Generic HTTP patterns (HTTP 429, status 429)
-//! - Negative cases (usage_limit in filenames, comments, non-error contexts)
+//! - Negative cases (`usage_limit` in filenames, comments, non-error contexts)
 //!
 //! Each test documents the provider, error pattern, official documentation,
 //! and verification steps to ensure accuracy.
@@ -403,7 +403,7 @@ mod opencode {
     }
 }
 
-/// OpenAI API rate limit patterns
+/// `OpenAI` API rate limit patterns
 mod openai {
     use super::*;
 
@@ -553,7 +553,7 @@ mod google {
     }
 }
 
-/// Azure OpenAI rate limit patterns
+/// Azure `OpenAI` rate limit patterns
 mod azure {
     use super::*;
 

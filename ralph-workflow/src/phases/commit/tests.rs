@@ -206,7 +206,7 @@ mod tests {
             MockProcessExecutor::new()
                 .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
         );
-        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+        let executor_arc: Arc<dyn ProcessExecutor> = executor;
 
         let repo_root = PathBuf::from("/mock/repo");
         let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
@@ -340,7 +340,7 @@ mod tests {
             MockProcessExecutor::new()
                 .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
         );
-        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+        let executor_arc: Arc<dyn ProcessExecutor> = executor;
         let executor_ref: &dyn ProcessExecutor = executor_arc.as_ref();
         let executor_arc_for_runtime: Arc<dyn ProcessExecutor> = executor_arc.clone();
 
@@ -371,7 +371,7 @@ mod tests {
             CommitMessageOutcome::Skipped { reason } => {
                 assert_eq!(reason, "No changes found");
             }
-            other => panic!("expected skipped outcome, got: {other:?}"),
+            other @ CommitMessageOutcome::Message(_) => panic!("expected skipped outcome, got: {other:?}"),
         }
     }
 
@@ -460,16 +460,17 @@ mod tests {
     fn test_truncation_exactly_at_budget_returns_unchanged() {
         // Create diff exactly at budget size
         let budget = 1000u64;
-        let diff_content = "a".repeat(budget as usize);
-        let diff = format!("diff --git a/a b/a\n{}", diff_content);
+        let budget_usize = usize::try_from(budget).expect("budget fits in usize");
+        let diff_content = "a".repeat(budget_usize);
+        let diff = format!("diff --git a/a b/a\n{diff_content}");
         // Ensure we're above budget so truncation occurs
-        assert!(diff.len() > budget as usize);
+        assert!(diff.len() > budget_usize);
 
         let (result, truncated) = truncate_diff_to_model_budget(&diff, budget);
 
         // When above budget, should be truncated
         assert!(truncated);
-        assert!(result.len() <= budget as usize + 200); // +200 for truncation message
+        assert!(result.len() <= budget_usize + 200); // +200 for truncation message
     }
 
     #[test]
@@ -613,15 +614,14 @@ mod tests {
         // Should succeed because claude succeeded after ccs failed
         assert!(
             result.is_ok(),
-            "Expected success after fallback, got: {:?}",
-            result
+            "Expected success after fallback, got: {result:?}"
         );
         let result = result.unwrap();
         match result.outcome {
             CommitMessageOutcome::Message(message) => {
                 assert_eq!(message, "feat: fallback worked");
             }
-            other => panic!("expected message outcome, got: {other:?}"),
+            other @ CommitMessageOutcome::Skipped { .. } => panic!("expected message outcome, got: {other:?}"),
         }
 
         // Verify both agents were tried
@@ -653,7 +653,7 @@ mod tests {
             MockProcessExecutor::new()
                 .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
         );
-        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+        let executor_arc: Arc<dyn ProcessExecutor> = executor;
 
         let repo_root = PathBuf::from("/mock/repo");
         let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();

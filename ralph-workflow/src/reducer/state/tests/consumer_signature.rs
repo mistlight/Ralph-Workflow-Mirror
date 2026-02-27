@@ -20,7 +20,7 @@ fn test_consumer_signature_stable_across_agent_index_changes() {
 
     let chain2 = AgentChainState {
         current_agent_index: 1,
-        ..chain.clone()
+        ..chain
     };
     let sig2 = chain2.consumer_signature_sha256();
 
@@ -42,7 +42,7 @@ fn test_consumer_signature_stable_across_model_index_changes() {
 
     let chain2 = AgentChainState {
         current_model_index: 1,
-        ..chain.clone()
+        ..chain
     };
     let sig2 = chain2.consumer_signature_sha256();
 
@@ -64,7 +64,7 @@ fn test_consumer_signature_stable_across_retry_cycle_changes() {
 
     let chain2 = AgentChainState {
         retry_cycle: 3,
-        ..chain.clone()
+        ..chain
     };
     let sig2 = chain2.consumer_signature_sha256();
 

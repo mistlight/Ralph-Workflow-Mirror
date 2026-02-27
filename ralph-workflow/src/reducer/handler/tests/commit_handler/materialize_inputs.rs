@@ -27,12 +27,12 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -71,7 +71,7 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
     // `.agent/tmp/commit_diff.txt` is intentionally missing. The effect should not abort;
     // it should invalidate diff-prepared state to force rerunning CheckCommitDiff.
     let result = handler
-        .materialize_commit_inputs(&mut ctx, 1)
+        .materialize_commit_inputs(&ctx, 1)
         .expect("materialize_commit_inputs should return an EffectResult");
 
     assert!(
@@ -86,9 +86,9 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
 
 #[test]
 fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(250_000));
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_diff.txt", &large_diff)
@@ -102,12 +102,12 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -146,7 +146,7 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     );
 
     let result = handler
-        .materialize_commit_inputs(&mut ctx, 1)
+        .materialize_commit_inputs(&ctx, 1)
         .expect("materialize_commit_inputs should succeed");
 
     let materialized = match result.event {
@@ -177,10 +177,10 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
 
 #[test]
 fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::ui_event::UIEvent;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Create diff that exceeds model budget (100KB for qwen) but not inline budget
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
     let workspace = MemoryWorkspace::new_test()
@@ -195,12 +195,12 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -236,7 +236,7 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
     );
 
     let result = handler
-        .materialize_commit_inputs(&mut ctx, 1)
+        .materialize_commit_inputs(&ctx, 1)
         .expect("materialize_commit_inputs should succeed");
 
     // Verify main event has correct sizes
@@ -270,10 +270,10 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
 
 #[test]
 fn test_materialize_commit_inputs_records_correct_materialization_reason() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Create diff that exceeds model budget
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
     let workspace = MemoryWorkspace::new_test()
@@ -288,12 +288,12 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -329,7 +329,7 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
     );
 
     let result = handler
-        .materialize_commit_inputs(&mut ctx, 1)
+        .materialize_commit_inputs(&ctx, 1)
         .expect("materialize_commit_inputs should succeed");
 
     match &result.event {
@@ -348,11 +348,11 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
 
 #[test]
 fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_referenced() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::{PromptInputRepresentation, PromptMaterializationReason};
     use std::path::PathBuf;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Create diff that exceeds both model budget (claude: 300KB) and inline budget (~100KB).
     // Use many medium-sized lines so truncation still leaves a large payload.
     let mut large_diff = String::from("diff --git a/a b/a\n");
@@ -373,12 +373,12 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -414,7 +414,7 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
     );
 
     let result = handler
-        .materialize_commit_inputs(&mut ctx, 1)
+        .materialize_commit_inputs(&ctx, 1)
         .expect("materialize_commit_inputs should succeed");
 
     match &result.event {
@@ -451,10 +451,10 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
 
 #[test]
 fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     // Create small diff within all budgets
     let small_diff = "diff --git a/a b/a\n+small change\n";
     let workspace = MemoryWorkspace::new_test()
@@ -469,12 +469,12 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -509,7 +509,7 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
     );
 
     let result = handler
-        .materialize_commit_inputs(&mut ctx, 1)
+        .materialize_commit_inputs(&ctx, 1)
         .expect("materialize_commit_inputs should succeed");
 
     match &result.event {

@@ -12,12 +12,13 @@ use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{
     AgentChainState, CommitState, ContinuationState, MaterializedCommitInputs,
     MaterializedPromptInput, PipelineState, PromptInputKind, PromptInputRepresentation,
-    PromptMaterializationReason, PromptMode, SameAgentRetryReason,
+    PromptInputsState, PromptMaterializationReason, PromptMode, SameAgentRetryReason,
 };
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
 use std::fs;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -35,7 +36,7 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -109,7 +110,7 @@ fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
     let template_context =
         TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -196,7 +197,7 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -262,7 +263,6 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
 #[test]
 fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch() {
     let cloud = crate::config::types::CloudConfig::disabled();
-    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
@@ -276,7 +276,7 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -355,7 +355,7 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -439,7 +439,7 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -525,18 +525,14 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
     );
 }
 
-/// Test that prepare_commit_prompt reads from materialized model-safe diff file.
+/// Test that `prepare_commit_prompt` reads from materialized model-safe diff file.
 ///
-/// Once commit inputs are materialized, the prepare_commit_prompt effect should
-/// read from .agent/tmp/commit_diff.model_safe.txt, ensuring the prompt uses
+/// Once commit inputs are materialized, the `prepare_commit_prompt` effect should
+/// read from .`agent/tmp/commit_diff.model_safe.txt`, ensuring the prompt uses
 /// the already-truncated content instead of re-truncating.
 #[test]
 fn test_prepare_commit_prompt_uses_materialized_diff() {
     let cloud = crate::config::types::CloudConfig::disabled();
-    use crate::reducer::state::{
-        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
-        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
-    };
 
     // Original large diff (will be truncated)
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
@@ -556,7 +552,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -642,10 +638,6 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
 #[test]
 fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_diff_missing() {
     let cloud = crate::config::types::CloudConfig::disabled();
-    use crate::reducer::state::{
-        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
-        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
-    };
 
     let workspace = MemoryWorkspace::new_test()
         .with_file(
@@ -662,7 +654,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
@@ -738,10 +730,6 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
 #[test]
 fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_reference_missing() {
     let cloud = crate::config::types::CloudConfig::disabled();
-    use crate::reducer::state::{
-        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
-        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
-    };
 
     let workspace = MemoryWorkspace::new_test()
         .with_file(
@@ -758,7 +746,7 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 

@@ -24,8 +24,7 @@ mod tests {
         fn execute(&mut self, effect: AppEffect) -> AppEffectResult {
             self.captured.push(effect.clone());
             match effect {
-                AppEffect::SetCurrentDir { .. } => AppEffectResult::Ok,
-                AppEffect::GitRequireRepo => AppEffectResult::Ok,
+                AppEffect::SetCurrentDir { .. } | AppEffect::GitRequireRepo => AppEffectResult::Ok,
                 AppEffect::GitGetRepoRoot => AppEffectResult::Path(self.repo_root.clone()),
                 other => panic!("unexpected effect in test handler: {other:?}"),
             }

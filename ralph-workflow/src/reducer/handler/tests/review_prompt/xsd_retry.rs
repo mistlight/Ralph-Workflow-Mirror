@@ -19,9 +19,10 @@ use std::sync::Arc;
 
 #[test]
 fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -106,9 +107,10 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
 
 #[test]
 fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()

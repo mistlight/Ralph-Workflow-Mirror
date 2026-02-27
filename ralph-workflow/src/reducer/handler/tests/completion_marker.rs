@@ -218,8 +218,8 @@ impl Workspace for FailingMarkerWorkspace {
     }
 }
 
-/// Parameters for building a test PhaseContext.
-/// Groups related parameters to avoid clippy::too_many_arguments.
+/// Parameters for building a test `PhaseContext`.
+/// Groups related parameters to avoid `clippy::too_many_arguments`.
 struct ContextParams<'a> {
     workspace: &'a dyn Workspace,
     workspace_arc: &'a Arc<dyn Workspace>,
@@ -235,7 +235,7 @@ struct ContextParams<'a> {
 }
 
 fn build_context<'a>(
-    params: ContextParams<'a>,
+    params: &'a mut ContextParams<'a>,
     cloud: &'a crate::config::types::CloudConfig,
 ) -> PhaseContext<'a> {
     PhaseContext {
@@ -277,22 +277,20 @@ fn emit_completion_marker_creates_tmp_dir_before_write() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        ContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            timer: &mut timer,
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut params = ContextParams {
+        workspace: &workspace,
+        workspace_arc: &workspace_arc,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    };
+    let mut ctx = build_context(&mut params, &cloud);
 
     let state = PipelineState::initial(1, 0);
     let mut handler = MainEffectHandler::new(state);
@@ -332,22 +330,20 @@ fn emit_completion_marker_with_write_failure_emits_event() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        ContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            timer: &mut timer,
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut params = ContextParams {
+        workspace: &workspace,
+        workspace_arc: &workspace_arc,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    };
+    let mut ctx = build_context(&mut params, &cloud);
 
     let state = PipelineState::initial(1, 0);
     let mut handler = MainEffectHandler::new(state);
@@ -390,22 +386,20 @@ fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        ContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            timer: &mut timer,
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut params = ContextParams {
+        workspace: &workspace,
+        workspace_arc: &workspace_arc,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    };
+    let mut ctx = build_context(&mut params, &cloud);
     ctx.developer_agent = "missing-agent";
 
     let state = PipelineState::initial(1, 0);
@@ -474,22 +468,20 @@ fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_age
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        ContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            timer: &mut timer,
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut params = ContextParams {
+        workspace: &workspace,
+        workspace_arc: &workspace_arc,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        timer: &mut timer,
+        run_log_context: &run_log_context,
+    };
+    let mut ctx = build_context(&mut params, &cloud);
     ctx.developer_agent = "claude";
 
     let mut state = PipelineState::initial(1, 0);
@@ -519,6 +511,92 @@ fn trigger_dev_fix_flow_invokes_configured_developer_agent_not_current_chain_age
     assert_eq!(calls[0].command, "claude");
 }
 
+#[derive(Debug)]
+struct FailingAgentLogWorkspace {
+    inner: MemoryWorkspace,
+}
+
+impl Workspace for FailingAgentLogWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        if relative.to_string_lossy().starts_with(".agent/logs-") {
+            return Err(io::Error::other("usage limit exceeded"));
+        }
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}
+
 #[test]
 fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
     let config = Config::default();
@@ -526,92 +604,6 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
     let template_context = TemplateContext::default();
     let registry = AgentRegistry::new().unwrap();
     let repo_root = PathBuf::from("/test/repo");
-
-    #[derive(Debug)]
-    struct FailingAgentLogWorkspace {
-        inner: MemoryWorkspace,
-    }
-
-    impl Workspace for FailingAgentLogWorkspace {
-        fn root(&self) -> &Path {
-            self.inner.root()
-        }
-
-        fn read(&self, relative: &Path) -> io::Result<String> {
-            self.inner.read(relative)
-        }
-
-        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
-            self.inner.read_bytes(relative)
-        }
-
-        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
-            self.inner.write(relative, content)
-        }
-
-        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-            self.inner.write_bytes(relative, content)
-        }
-
-        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-            if relative.to_string_lossy().starts_with(".agent/logs-") {
-                return Err(io::Error::other("usage limit exceeded"));
-            }
-            self.inner.append_bytes(relative, content)
-        }
-
-        fn exists(&self, relative: &Path) -> bool {
-            self.inner.exists(relative)
-        }
-
-        fn is_file(&self, relative: &Path) -> bool {
-            self.inner.is_file(relative)
-        }
-
-        fn is_dir(&self, relative: &Path) -> bool {
-            self.inner.is_dir(relative)
-        }
-
-        fn remove(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove(relative)
-        }
-
-        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_if_exists(relative)
-        }
-
-        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_dir_all(relative)
-        }
-
-        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
-            self.inner.remove_dir_all_if_exists(relative)
-        }
-
-        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
-            self.inner.create_dir_all(relative)
-        }
-
-        fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
-            self.inner.read_dir(relative)
-        }
-
-        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
-            self.inner.rename(from, to)
-        }
-
-        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
-            self.inner.write_atomic(relative, content)
-        }
-
-        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
-            self.inner.set_readonly(relative)
-        }
-
-        fn set_writable(&self, relative: &Path) -> io::Result<()> {
-            self.inner.set_writable(relative)
-        }
-    }
 
     let workspace = std::sync::Arc::new(FailingAgentLogWorkspace {
         inner: MemoryWorkspace::new(repo_root.clone()),
@@ -625,7 +617,7 @@ fn dev_fix_agent_unavailable_log_does_not_claim_termination() {
     );
 
     let executor = std::sync::Arc::new(MockProcessExecutor::new());
-    let executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
+    let executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor> = executor;
 
     let cloud = crate::config::types::CloudConfig::disabled();
     let workspace_arc = std::sync::Arc::clone(&workspace) as std::sync::Arc<dyn Workspace>;

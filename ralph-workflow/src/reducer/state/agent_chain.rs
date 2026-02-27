@@ -249,7 +249,7 @@ impl AgentChainState {
                 let models: &[String] = self
                     .models_per_agent
                     .get(idx)
-                    .map_or(&[], std::vec::Vec::as_slice);
+                    .map_or([].as_slice(), std::vec::Vec::as_slice);
                 (agent.as_str(), models)
             })
             .collect();
@@ -305,8 +305,7 @@ impl AgentChainState {
                 let models = self
                     .models_per_agent
                     .get(idx)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]);
+                    .map_or([].as_slice(), std::vec::Vec::as_slice);
                 format!("{}|{}", agent, models.join(","))
             })
             .collect();
@@ -815,11 +814,11 @@ mod consumer_signature_tests {
         hasher.update(b",");
         hasher.update(b"m2");
         hasher.update(b"\n");
-        let expected = hasher
-            .finalize()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
+        let expected = hasher.finalize().iter().fold(String::new(), |mut acc, b| {
+            use std::fmt::Write;
+            write!(acc, "{b:02x}").unwrap();
+            acc
+        });
 
         assert_eq!(
             state.consumer_signature_sha256(),

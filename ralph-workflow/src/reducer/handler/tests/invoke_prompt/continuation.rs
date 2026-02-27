@@ -88,7 +88,7 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
     );
 }
 
-/// Test that when rate_limit_continuation_prompt is None, the fresh prompt is used.
+/// Test that when `rate_limit_continuation_prompt` is None, the fresh prompt is used.
 #[test]
 fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
     let cloud = crate::config::types::CloudConfig::disabled();

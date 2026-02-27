@@ -255,7 +255,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -280,7 +280,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with sentinel PLAN");
 
     assert!(
@@ -327,7 +327,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -352,7 +352,7 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should create .agent/ and write sentinel PLAN");
 
     let plan_content = workspace
@@ -388,7 +388,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -413,7 +413,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound PLAN read failures");
 
     let error_event = err
@@ -459,7 +459,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -484,7 +484,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound DIFF read failures");
 
     let error_event = err
@@ -527,7 +527,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -552,7 +552,7 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect_err("materialize_review_inputs should surface non-NotFound baseline read failures");
 
     let error_event = err
@@ -592,7 +592,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -617,7 +617,7 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with sentinel PLAN in isolation mode");
 
     assert!(
@@ -660,7 +660,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -685,7 +685,7 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
 
     assert!(
@@ -723,7 +723,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -748,7 +748,7 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should return an EffectResult");
 
     assert!(

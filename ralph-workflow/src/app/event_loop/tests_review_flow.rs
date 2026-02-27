@@ -3,7 +3,6 @@ use super::{run_event_loop_with_handler, EventLoopConfig};
 
 #[test]
 fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -19,6 +18,7 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config {
         developer_iters: 1,
         reviewer_reviews: 1,
@@ -80,7 +80,6 @@ fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
 
 #[test]
 fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev_iteration() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -96,6 +95,7 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config {
         developer_iters: 1,
         reviewer_reviews: 0,
@@ -169,7 +169,6 @@ fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev
 
 #[test]
 fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -185,6 +184,11 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    fn idx(effects: &[Effect], pred: impl Fn(&Effect) -> bool) -> Option<usize> {
+        effects.iter().position(pred)
+    }
+
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config {
         developer_iters: 1,
         reviewer_reviews: 1,
@@ -237,10 +241,6 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
 
     let effects = handler.captured_effects();
 
-    fn idx(effects: &[Effect], pred: impl Fn(&Effect) -> bool) -> Option<usize> {
-        effects.iter().position(pred)
-    }
-
     let dev_idx = idx(&effects, |e| {
         matches!(e, Effect::ApplyDevelopmentOutcome { .. })
     })
@@ -270,7 +270,6 @@ fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
 
 #[test]
 fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -286,6 +285,7 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config {
         developer_iters: 0,
         reviewer_reviews: 1,
@@ -367,7 +367,6 @@ fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
 
 #[test]
 fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_reviews_nonzero() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -383,6 +382,7 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    let cloud = crate::config::types::CloudConfig::disabled();
     let config = Config {
         developer_iters: 0,
         reviewer_reviews: 1,
@@ -450,7 +450,6 @@ fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_re
 
 #[test]
 fn test_event_trace_buffer_keeps_last_n_entries() {
-    let _cloud = crate::config::types::CloudConfig::disabled();
     fn entry(iteration: usize) -> EventTraceEntry {
         EventTraceEntry {
             iteration,
@@ -466,6 +465,7 @@ fn test_event_trace_buffer_keeps_last_n_entries() {
         }
     }
 
+    let _cloud = crate::config::types::CloudConfig::disabled();
     let mut buf = EventTraceBuffer::new(3);
     for i in 0..5 {
         buf.push(entry(i));

@@ -396,13 +396,11 @@ fn test_auth_error_triggers_auth_fallback_classification() {
         assert_eq!(
             error_kind,
             AgentErrorKind::Authentication,
-            "Pattern '{}' should classify as Authentication",
-            pattern
+            "Pattern '{pattern}' should classify as Authentication"
         );
         assert!(
             is_auth_error(&error_kind),
-            "Authentication error kind should trigger auth fallback for pattern '{}'",
-            pattern
+            "Authentication error kind should trigger auth fallback for pattern '{pattern}'"
         );
     }
 }
@@ -425,13 +423,11 @@ fn test_rate_limit_error_triggers_rate_limit_fallback_classification() {
         assert_eq!(
             error_kind,
             AgentErrorKind::RateLimit,
-            "Pattern '{}' should classify as RateLimit",
-            pattern
+            "Pattern '{pattern}' should classify as RateLimit"
         );
         assert!(
             is_rate_limit_error(&error_kind),
-            "RateLimit error kind should trigger rate limit fallback for pattern '{}'",
-            pattern
+            "RateLimit error kind should trigger rate limit fallback for pattern '{pattern}'"
         );
     }
 }

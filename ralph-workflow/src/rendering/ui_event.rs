@@ -108,10 +108,10 @@ mod tests {
     fn test_render_xml_output_routes_to_xml_module() {
         let event = UIEvent::XmlOutput {
             xml_type: XmlOutputType::DevelopmentResult,
-            content: r#"<ralph-development-result>
+            content: r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#
+</ralph-development-result>"
                 .to_string(),
             context: Some(XmlOutputContext::default()),
         };
@@ -136,7 +136,7 @@ mod tests {
         ];
         for phase in phases {
             let emoji = UIEvent::phase_emoji(&phase);
-            assert!(!emoji.is_empty(), "Phase {:?} should have an emoji", phase);
+            assert!(!emoji.is_empty(), "Phase {phase:?} should have an emoji");
         }
     }
 }

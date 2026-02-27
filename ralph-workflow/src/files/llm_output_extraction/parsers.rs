@@ -233,7 +233,7 @@ fn extract_gemini_result(content: &str) -> Option<String> {
     last_assistant_content.map(|content| remove_thought_process_patterns(&content))
 }
 
-/// Extract text from an OpenCode text event JSON.
+/// Extract text from an `OpenCode` text event JSON.
 ///
 /// Returns `Some(text)` if the JSON contains a valid text part with non-empty content.
 fn extract_opencode_text_part(json: &JsonValue) -> Option<&str> {

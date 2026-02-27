@@ -74,7 +74,7 @@ fn test_prepare_review_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         ..PipelineState::initial(0, 1)
     });
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -160,7 +160,7 @@ fn test_prepare_review_prompt_same_agent_retry_does_not_stack_retry_notes() {
         ..PipelineState::initial(0, 1)
     });
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {

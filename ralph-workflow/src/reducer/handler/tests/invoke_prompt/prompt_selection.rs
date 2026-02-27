@@ -141,7 +141,7 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
     handler.state.agent_chain.rate_limit_continuation_prompt =
         Some(crate::reducer::state::RateLimitContinuationPrompt {
             role: crate::agents::AgentRole::Developer,
-            prompt: saved_prompt.clone(),
+            prompt: saved_prompt,
         });
     handler.state.continuation.same_agent_retry_count = 1;
     handler.state.continuation.same_agent_retry_reason =
@@ -157,13 +157,7 @@ RETRY PROMPT MARKER"
     );
 
     let _ = handler
-        .invoke_agent(
-            &mut ctx,
-            AgentRole::Developer,
-            "claude",
-            None,
-            retry_prompt.clone(),
-        )
+        .invoke_agent(&mut ctx, AgentRole::Developer, "claude", None, retry_prompt)
         .expect("invoke_agent should succeed");
 
     let calls = executor.agent_calls();
@@ -261,9 +255,10 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
 
 #[test]
 fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
-    let _cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRole;
     use crate::executor::AgentCommandResult;
+
+    let _cloud = crate::config::types::CloudConfig::disabled();
 
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n\n- Do the thing\n");
@@ -341,8 +336,9 @@ fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
 
 #[test]
 fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() {
-    let _cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::state_reduction::reduce;
+
+    let _cloud = crate::config::types::CloudConfig::disabled();
 
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");

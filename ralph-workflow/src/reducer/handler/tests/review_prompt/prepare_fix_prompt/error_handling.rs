@@ -298,8 +298,8 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")

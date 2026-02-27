@@ -13,7 +13,12 @@
 /// from Claude Code's plan mode implementation.
 ///
 /// Reference: <https://github.com/Piebald-AI/claude-code-system-prompts>
+///
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined.
 #[cfg(test)]
+#[must_use]
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     use crate::workspace::{Workspace, WorkspaceFs};
     use std::env;

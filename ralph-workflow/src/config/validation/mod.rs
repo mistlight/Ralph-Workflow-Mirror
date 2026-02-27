@@ -185,21 +185,21 @@ mod tests {
 
     #[test]
     fn test_validate_config_file_valid_toml() {
-        let content = r#"
+        let content = r"
 [general]
 verbosity = 2
 developer_iters = 5
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_validate_config_file_invalid_toml() {
-        let content = r#"
+        let content = r"
 [general
 verbosity = 2
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_err());
 
@@ -265,11 +265,11 @@ verbosity = 2
 
     #[test]
     fn test_validate_config_file_unknown_key() {
-        let content = r#"
+        let content = r"
 [general]
 develper_iters = 5
 verbosity = 2
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         // Unknown keys are now detected via custom validation
         assert!(result.is_err());
@@ -418,12 +418,12 @@ opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
 
     #[test]
     fn test_validate_config_file_deprecated_key_warning() {
-        let content = r#"
+        let content = r"
 [general]
 verbosity = 2
 auto_rebase = true
 max_recovery_attempts = 3
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok(), "Deprecated keys should not cause errors");
 
@@ -442,11 +442,11 @@ max_recovery_attempts = 3
 
     #[test]
     fn test_validate_config_file_no_warnings_without_deprecated() {
-        let content = r#"
+        let content = r"
 [general]
 verbosity = 2
 developer_iters = 5
-"#;
+";
         let result = validate_config_file(Path::new("test.toml"), content);
         assert!(result.is_ok(), "Valid config should pass");
 

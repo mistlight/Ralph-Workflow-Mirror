@@ -13,7 +13,7 @@ fn test_truncate_prompt_large_content_with_marker() {
     let logger = test_logger();
     let prefix = "Task: Do something\n\n---\n";
     let large_content = "x".repeat(MAX_PROMPT_SIZE + 50000);
-    let content = format!("{}{}", prefix, large_content);
+    let content = format!("{prefix}{large_content}");
 
     let result = truncate_prompt_if_needed(&content, &logger);
 
@@ -39,7 +39,7 @@ fn test_truncate_prompt_preserves_end() {
     let prefix = "Instructions\n\n---\n";
     let middle = "m".repeat(MAX_PROMPT_SIZE);
     let suffix = "\nIMPORTANT_END_MARKER";
-    let content = format!("{}{}{}", prefix, middle, suffix);
+    let content = format!("{prefix}{middle}{suffix}");
 
     let result = truncate_prompt_if_needed(&content, &logger);
     assert!(result.contains("IMPORTANT_END_MARKER"));

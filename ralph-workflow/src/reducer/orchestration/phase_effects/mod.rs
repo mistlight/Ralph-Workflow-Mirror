@@ -312,9 +312,8 @@ mod tests {
                 assert_eq!(trigger, crate::reducer::event::CheckpointTrigger::Interrupt);
             }
             other => panic!(
-                "Expected SaveCheckpoint effect when interrupted_by_user=true, got {:?}. \
-                 User interrupt should skip pre-termination safety check.",
-                other
+                "Expected SaveCheckpoint effect when interrupted_by_user=true, got {other:?}. \
+                 User interrupt should skip pre-termination safety check."
             ),
         }
     }
@@ -336,9 +335,8 @@ mod tests {
                 // Expected - safety check required
             }
             other => panic!(
-                "Expected CheckUncommittedChangesBeforeTermination when interrupted_by_user=false, got {:?}. \
-                 Programmatic interrupts must commit uncommitted work before terminating.",
-                other
+                "Expected CheckUncommittedChangesBeforeTermination when interrupted_by_user=false, got {other:?}. \
+                 Programmatic interrupts must commit uncommitted work before terminating."
             ),
         }
     }
@@ -359,8 +357,7 @@ mod tests {
                 // Expected - safety check required
             }
             other => panic!(
-                "Expected CheckUncommittedChangesBeforeTermination before Complete, got {:?}",
-                other
+                "Expected CheckUncommittedChangesBeforeTermination before Complete, got {other:?}"
             ),
         }
     }
@@ -380,8 +377,7 @@ mod tests {
                 // Expected - safety check required
             }
             other => panic!(
-                "Expected CheckUncommittedChangesBeforeTermination before FinalValidation, got {:?}",
-                other
+                "Expected CheckUncommittedChangesBeforeTermination before FinalValidation, got {other:?}"
             ),
         }
     }
@@ -404,8 +400,7 @@ mod tests {
                 // Expected - proceed after safety check and restoration
             }
             other => panic!(
-                "Expected SaveCheckpoint after safety check and restoration complete, got {:?}",
-                other
+                "Expected SaveCheckpoint after safety check and restoration complete, got {other:?}"
             ),
         }
     }

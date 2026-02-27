@@ -254,8 +254,7 @@ fn test_check_config_fails_on_invalid_toml() {
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Configuration validation failed") || err_msg.contains("TOML"),
-        "Error should mention validation failure: {}",
-        err_msg
+        "Error should mention validation failure: {err_msg}"
     );
 }
 
@@ -290,7 +289,6 @@ fn test_check_config_fails_on_invalid_type() {
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Configuration validation failed") || err_msg.contains("Invalid value") || err_msg.contains("expected"),
-        "Error should mention validation failure or type error: {}",
-        err_msg
+        "Error should mention validation failure or type error: {err_msg}"
     );
 }

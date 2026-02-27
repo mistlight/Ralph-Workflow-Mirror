@@ -103,9 +103,11 @@ impl PromptValidationResult {
 ///
 /// # Returns
 ///
-/// - `Ok(true)` - File exists and has content (no action needed)
-/// - `Ok(false)` - File was restored from backup
-/// - `Err` - File missing/empty and no valid backup available
+/// Restores the PROMPT.md file from backup if it's missing or empty.
+///
+/// # Errors
+///
+/// Returns an error if the prompt file is missing/empty and no valid backup is available.
 #[cfg(test)]
 pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     let prompt_path = Path::new("PROMPT.md");

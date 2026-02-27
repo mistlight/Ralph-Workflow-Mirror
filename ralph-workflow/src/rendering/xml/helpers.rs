@@ -202,12 +202,12 @@ index 1111111..2222222 100644
 
     #[test]
     fn test_parse_unified_diff_files_new_file() {
-        let diff = r#"diff --git a/src/new.rs b/src/new.rs
+        let diff = r"diff --git a/src/new.rs b/src/new.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/new.rs
 @@ -0,0 +1 @@
-+fn new() {}"#;
++fn new() {}";
 
         let sections = parse_unified_diff_files(diff);
         assert_eq!(sections.len(), 1);
@@ -217,12 +217,12 @@ new file mode 100644
 
     #[test]
     fn test_parse_unified_diff_files_deleted() {
-        let diff = r#"diff --git a/src/old.rs b/src/old.rs
+        let diff = r"diff --git a/src/old.rs b/src/old.rs
 deleted file mode 100644
 --- a/src/old.rs
 +++ /dev/null
 @@ -1 +0,0 @@
--fn old() {}"#;
+-fn old() {}";
 
         let sections = parse_unified_diff_files(diff);
         assert_eq!(sections.len(), 1);
@@ -232,9 +232,9 @@ deleted file mode 100644
 
     #[test]
     fn test_parse_files_changed_list_basic() {
-        let files = r#"src/main.rs
+        let files = r"src/main.rs
 src/lib.rs (created)
-src/old.rs (deleted)"#;
+src/old.rs (deleted)";
 
         let result = parse_files_changed_list(files);
         assert_eq!(result.len(), 3);

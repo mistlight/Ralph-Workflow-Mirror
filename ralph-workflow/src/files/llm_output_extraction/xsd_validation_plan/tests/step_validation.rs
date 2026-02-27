@@ -296,7 +296,7 @@ fn test_step_all_priorities_valid() {
 </scope-items>
 </ralph-summary>
 <ralph-implementation-steps>
-<step number="1" type="action" priority="{}">
+<step number="1" type="action" priority="{priority_str}">
 <title>Test</title>
 <content><paragraph>Test</paragraph></content>
 </step>
@@ -310,8 +310,7 @@ fn test_step_all_priorities_valid() {
 <ralph-verification-strategy>
 <verification><method>M</method><expected-outcome>O</expected-outcome></verification>
 </ralph-verification-strategy>
-</ralph-plan>"#,
-            priority_str
+</ralph-plan>"#
         );
 
         let result = validate_plan_xml(&xml);

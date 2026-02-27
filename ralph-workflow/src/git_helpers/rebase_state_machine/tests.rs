@@ -81,6 +81,10 @@ mod tests {
         use test_helpers::with_temp_cwd;
 
         with_temp_cwd(|_dir| {
+            use super::super::rebase_checkpoint::{
+                save_rebase_checkpoint, RebaseCheckpoint, RebasePhase,
+            };
+
             let mut machine1 = RebaseStateMachine::new("feature-branch".to_string());
             machine1
                 .transition_to(RebasePhase::ConflictDetected)
@@ -88,9 +92,6 @@ mod tests {
 
             // Note: record_conflict only updates in-memory state, need to save checkpoint
             // For the test, let's create a checkpoint with conflicts and save it
-            use super::super::rebase_checkpoint::{
-                save_rebase_checkpoint, RebaseCheckpoint, RebasePhase,
-            };
             let checkpoint = RebaseCheckpoint::new("feature-branch".to_string())
                 .with_phase(RebasePhase::ConflictDetected)
                 .with_conflicted_file("test.rs".to_string());
@@ -231,7 +232,7 @@ mod tests {
             // Create a lock file with an old timestamp
             let lock_path = rebase_lock_path();
             let old_timestamp = chrono::Utc::now()
-                - chrono::Duration::seconds(DEFAULT_LOCK_TIMEOUT_SECONDS as i64 + 60);
+                - chrono::Duration::seconds(DEFAULT_LOCK_TIMEOUT_SECONDS.cast_signed() + 60);
             let lock_content = format!("pid=12345\ntimestamp={}\n", old_timestamp.to_rfc3339());
 
             fs::create_dir_all(".agent").unwrap();

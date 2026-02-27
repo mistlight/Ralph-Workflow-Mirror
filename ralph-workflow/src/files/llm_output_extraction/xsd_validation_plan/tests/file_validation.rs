@@ -142,7 +142,7 @@ fn test_target_file_all_actions_valid() {
 <step number="1" type="file-change">
 <title>Test</title>
 <target-files>
-<file path="src/test.rs" action="{}"/>
+<file path="src/test.rs" action="{action}"/>
 </target-files>
 <content><paragraph>Test</paragraph></content>
 </step>
@@ -156,8 +156,7 @@ fn test_target_file_all_actions_valid() {
 <ralph-verification-strategy>
 <verification><method>M</method><expected-outcome>O</expected-outcome></verification>
 </ralph-verification-strategy>
-</ralph-plan>"#,
-            action
+</ralph-plan>"#
         );
 
         let result = validate_plan_xml(&xml);

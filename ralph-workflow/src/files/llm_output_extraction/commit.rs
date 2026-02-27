@@ -120,6 +120,7 @@ pub fn try_extract_xml_commit_with_trace(
 }
 
 /// Check if a string is a valid conventional commit subject line.
+#[must_use]
 pub fn is_conventional_commit_subject(subject: &str) -> bool {
     let valid_types = [
         "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
@@ -332,8 +333,7 @@ mod tests {
         let (result, skip, reason) = try_extract_xml_commit_with_trace(content);
         assert!(
             result.is_some(),
-            "Should extract from basic XML. Reason: {}",
-            reason
+            "Should extract from basic XML. Reason: {reason}"
         );
         assert!(skip.is_none());
         assert_eq!(result.unwrap(), "feat: add new feature");
@@ -524,11 +524,11 @@ Line 3</ralph-body>
     fn test_xsd_validation_integrated_in_extraction() {
         // The XSD validation is called within try_extract_xml_commit_with_trace
         // This test ensures that path is exercised
-        let xml = r#"Some text before
+        let xml = r"Some text before
 <ralph-commit>
 <ralph-subject>fix: resolve bug</ralph-subject>
 </ralph-commit>
-Some text after"#;
+Some text after";
         let (msg, _skip, trace) = try_extract_xml_commit_with_trace(xml);
         assert!(msg.is_some(), "Should extract valid message");
         // The trace should contain XSD validation result

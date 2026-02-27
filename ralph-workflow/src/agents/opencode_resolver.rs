@@ -304,13 +304,13 @@ mod tests {
                     id: "claude-sonnet-4-5".to_string(),
                     name: "Claude Sonnet 4.5".to_string(),
                     description: "Latest Claude Sonnet".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
                 Model {
                     id: "claude-opus-4".to_string(),
                     name: "Claude Opus 4".to_string(),
                     description: "Most capable Claude".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
             ],
         );

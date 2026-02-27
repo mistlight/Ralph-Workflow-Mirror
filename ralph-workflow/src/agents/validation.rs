@@ -93,7 +93,7 @@ pub fn get_opencode_refs(fallback: &FallbackConfig) -> Vec<String> {
         .collect()
 }
 
-/// Count the number of OpenCode agent references in the fallback configuration.
+/// Count the number of `OpenCode` agent references in the fallback configuration.
 #[cfg(test)]
 fn count_opencode_refs(fallback: &FallbackConfig) -> usize {
     fallback
@@ -132,7 +132,7 @@ mod tests {
                 id: "claude-sonnet-4-5".to_string(),
                 name: "Claude Sonnet 4.5".to_string(),
                 description: "Latest Claude Sonnet".to_string(),
-                context_length: Some(200000),
+                context_length: Some(200_000),
             }],
         );
 
@@ -144,7 +144,7 @@ mod tests {
         }
     }
 
-    fn create_fallback_with_refs(refs: Vec<&str>) -> FallbackConfig {
+    fn create_fallback_with_refs(refs: &[&str]) -> FallbackConfig {
         FallbackConfig {
             developer: refs.iter().map(|s| (*s).to_string()).collect(),
             ..FallbackConfig::default()
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn test_validate_opencode_agents_valid() {
         let catalog = mock_catalog();
-        let fallback = create_fallback_with_refs(vec!["opencode/anthropic/claude-sonnet-4-5"]);
+        let fallback = create_fallback_with_refs(&["opencode/anthropic/claude-sonnet-4-5"]);
 
         let result = validate_opencode_agents(&fallback, &catalog);
         assert!(result.is_ok());
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn test_validate_opencode_agents_invalid_provider() {
         let catalog = mock_catalog();
-        let fallback = create_fallback_with_refs(vec!["opencode/unknown/claude-sonnet-4-5"]);
+        let fallback = create_fallback_with_refs(&["opencode/unknown/claude-sonnet-4-5"]);
 
         let result = validate_opencode_agents(&fallback, &catalog);
         assert!(result.is_err());
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn test_validate_opencode_agents_invalid_model() {
         let catalog = mock_catalog();
-        let fallback = create_fallback_with_refs(vec!["opencode/anthropic/unknown-model"]);
+        let fallback = create_fallback_with_refs(&["opencode/anthropic/unknown-model"]);
 
         let result = validate_opencode_agents(&fallback, &catalog);
         assert!(result.is_err());
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_count_opencode_refs() {
-        let fallback = create_fallback_with_refs(vec![
+        let fallback = create_fallback_with_refs(&[
             "opencode/anthropic/claude-sonnet-4-5",
             "claude",
             "opencode/openai/gpt-4",
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_get_opencode_refs() {
-        let fallback = create_fallback_with_refs(vec![
+        let fallback = create_fallback_with_refs(&[
             "opencode/anthropic/claude-sonnet-4-5",
             "claude",
             "opencode/openai/gpt-4",

@@ -27,12 +27,12 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -66,7 +66,7 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
         max_attempts: 2,
     };
 
-    let result = handler.extract_commit_xml(&mut ctx);
+    let result = handler.extract_commit_xml(&ctx);
 
     assert!(matches!(
         result.event,

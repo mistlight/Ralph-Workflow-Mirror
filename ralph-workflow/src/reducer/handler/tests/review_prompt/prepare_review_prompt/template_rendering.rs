@@ -68,7 +68,7 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -147,7 +147,7 @@ fn test_prepare_review_prompt_emits_template_rendered_on_validation_failure() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -226,7 +226,7 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -295,7 +295,7 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
     });
 
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {

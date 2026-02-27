@@ -22,7 +22,7 @@ fn mock_effect_handler_returns_commit_created_for_create_commit() {
     assert_eq!(handler.effect_count(), 0);
 }
 
-/// TDD test: MockEffectHandler must implement EffectHandler trait
+/// TDD test: `MockEffectHandler` must implement `EffectHandler` trait
 /// and return appropriate events without making real git calls.
 #[test]
 fn mock_effect_handler_implements_effect_handler_trait() {
@@ -56,12 +56,11 @@ fn mock_effect_handler_implements_effect_handler_trait() {
     );
 }
 
-/// Test that MockEffectHandler properly implements the EffectHandler trait
-/// with a real PhaseContext. This proves it can be a drop-in replacement
-/// for MainEffectHandler in tests.
+/// Test that `MockEffectHandler` properly implements the `EffectHandler` trait
+/// with a real `PhaseContext`. This proves it can be a drop-in replacement
+/// for `MainEffectHandler` in tests.
 #[test]
 fn mock_effect_handler_trait_execute_with_phase_context() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -73,6 +72,8 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
     use crate::workspace::MemoryWorkspace;
     use std::path::PathBuf;
     use std::sync::Arc;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     // Create test fixtures
     let config = Config::default();
@@ -132,7 +133,7 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
             assert_eq!(hash, "mock_commit_hash_abc123");
             assert_eq!(message, "test via trait");
         }
-        other => panic!("Expected CommitCreated, got {:?}", other),
+        other => panic!("Expected CommitCreated, got {other:?}"),
     }
 
     // Effect should be captured
@@ -140,7 +141,7 @@ fn mock_effect_handler_trait_execute_with_phase_context() {
     assert_eq!(handler.effect_count(), 1);
 }
 
-/// Test that MockEffectHandler captures UI events for development extraction.
+/// Test that `MockEffectHandler` captures UI events for development extraction.
 #[test]
 fn mock_effect_handler_captures_iteration_progress_ui() {
     let state = PipelineState::initial(3, 1);
@@ -161,7 +162,7 @@ fn mock_effect_handler_captures_iteration_progress_ui() {
     }));
 }
 
-/// Test that MockEffectHandler captures phase transition UI events.
+/// Test that `MockEffectHandler` captures phase transition UI events.
 #[test]
 fn mock_effect_handler_captures_phase_transition_ui() {
     let state = PipelineState::initial(1, 0);

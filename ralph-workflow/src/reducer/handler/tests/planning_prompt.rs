@@ -174,7 +174,7 @@ fn test_prepare_planning_prompt_same_agent_retry_uses_previous_prepared_prompt()
     });
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -366,7 +366,7 @@ fn test_prepare_planning_prompt_workspace_write_failure_is_non_fatal() {
     });
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -444,7 +444,7 @@ fn test_prepare_planning_prompt_same_agent_retry_does_not_stack_retry_notes() {
     });
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -534,7 +534,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
     );
 
     let materialize = handler
-        .materialize_planning_inputs(&mut ctx, 0)
+        .materialize_planning_inputs(&ctx, 0)
         .expect("materialize_planning_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -576,7 +576,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -606,7 +606,7 @@ fn test_materialize_planning_inputs_errors_when_prompt_missing() {
         crate::agents::AgentRole::Developer,
     );
 
-    let result = handler.materialize_planning_inputs(&mut ctx, 0);
+    let result = handler.materialize_planning_inputs(&ctx, 0);
     assert!(
         result.is_err(),
         "Expected Err when PROMPT.md is missing, got {result:?}",
@@ -735,9 +735,10 @@ fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
 
 #[test]
 fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_output() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()
@@ -811,9 +812,10 @@ fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_outpu
 
 #[test]
 fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;
+
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
     let workspace = MemoryWorkspace::new_test()

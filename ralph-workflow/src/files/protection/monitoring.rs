@@ -557,7 +557,7 @@ mod tests {
         let (tx, _rx) = bounded_event_queue::<u8>();
 
         for i in 0..NOTIFY_EVENT_QUEUE_CAPACITY {
-            tx.try_send((i % 255) as u8)
+            tx.try_send(u8::try_from(i % 255).expect("value fits in u8"))
                 .expect("expected send within capacity");
         }
 

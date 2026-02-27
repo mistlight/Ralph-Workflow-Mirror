@@ -371,8 +371,7 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::TriggerDevFixFlow { .. }),
-        "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
-        effect
+        "Should trigger dev-fix flow when in AwaitingDevFix phase; got {effect:?}"
     );
 }
 
@@ -443,9 +442,9 @@ fn test_continuation_budget_with_missing_config_key() {
 
 /// Test that continuation cap is enforced at the reducer level.
 ///
-/// This test verifies that when continuation_attempt reaches max_continue_count,
-/// the continuations_exhausted() check correctly identifies budget exhaustion.
-/// The orchestration layer uses this signal to fire ContinuationBudgetExhausted event.
+/// This test verifies that when `continuation_attempt` reaches `max_continue_count`,
+/// the `continuations_exhausted()` check correctly identifies budget exhaustion.
+/// The orchestration layer uses this signal to fire `ContinuationBudgetExhausted` event.
 #[test]
 fn test_orchestration_fires_budget_exhausted_at_cap() {
     use crate::reducer::state::DevelopmentStatus;

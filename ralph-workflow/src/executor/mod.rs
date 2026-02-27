@@ -220,7 +220,7 @@ mod tests {
                 command: "env".to_string(),
                 args: vec![],
                 env,
-                prompt: "".to_string(),
+                prompt: String::new(),
                 logfile: logfile_path.to_string_lossy().to_string(),
                 parser_type: JsonParserType::OpenCode,
             };

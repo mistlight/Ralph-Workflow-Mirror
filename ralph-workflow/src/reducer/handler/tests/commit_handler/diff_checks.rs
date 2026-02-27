@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 #[test]
 fn test_check_commit_diff_emits_prepared_event() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     use crate::reducer::prompt_inputs::sha256_hex_str;
+    let cloud = crate::config::types::CloudConfig::disabled();
 
     let workspace = MemoryWorkspace::new_test();
 
@@ -29,12 +29,12 @@ fn test_check_commit_diff_emits_prepared_event() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -57,7 +57,7 @@ fn test_check_commit_diff_emits_prepared_event() {
         cloud: &cloud,
     };
 
-    let result = MainEffectHandler::check_commit_diff_with_content(&mut ctx, "")
+    let result = MainEffectHandler::check_commit_diff_with_content(&ctx, "")
         .expect("check_commit_diff_with_content should succeed");
 
     assert!(matches!(
@@ -83,12 +83,12 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -111,11 +111,9 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
         cloud: &cloud,
     };
 
-    let result = MainEffectHandler::check_commit_diff_with_result(
-        &mut ctx,
-        Err(anyhow::anyhow!("diff failed")),
-    )
-    .expect("check_commit_diff_with_result should succeed");
+    let result =
+        MainEffectHandler::check_commit_diff_with_result(&ctx, Err(anyhow::anyhow!("diff failed")))
+            .expect("check_commit_diff_with_result should succeed");
 
     // New behavior: diff failure uses fallback instructions instead of DiffFailed event
     // The event should be DiffPrepared with fallback content
@@ -149,7 +147,7 @@ fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
 
     let repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -161,7 +159,7 @@ fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let cloud = crate::config::types::CloudConfig::disabled();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -184,7 +182,7 @@ fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
         cloud: &cloud,
     };
 
-    let _result = MainEffectHandler::check_commit_diff(&mut ctx)
+    let _result = MainEffectHandler::check_commit_diff(&ctx)
         .expect("check_commit_diff should succeed when repo_root is set");
 
     let diff = workspace

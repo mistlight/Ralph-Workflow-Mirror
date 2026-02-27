@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use super::*;
 
-/// When transitioning from Development to Review (via CommitCreated or CommitSkipped),
-/// the agent chain must be cleared so that orchestration will emit InitializeAgentChain
+/// When transitioning from Development to Review (via `CommitCreated` or `CommitSkipped`),
+/// the agent chain must be cleared so that orchestration will emit `InitializeAgentChain`
 /// for the Reviewer role. This ensures the reviewer fallback chain is used.
 #[test]
 fn test_commit_created_clears_agent_chain_when_dev_to_review() {
@@ -56,7 +56,7 @@ fn test_commit_created_clears_agent_chain_when_dev_to_review() {
     );
 }
 
-/// Same test for CommitSkipped - should also clear agent chain for dev->review transition
+/// Same test for `CommitSkipped` - should also clear agent chain for dev->review transition
 #[test]
 fn test_commit_skipped_clears_agent_chain_when_dev_to_review() {
     let mut state = PipelineState {
@@ -89,8 +89,8 @@ fn test_commit_skipped_clears_agent_chain_when_dev_to_review() {
     assert_eq!(new_state.agent_chain.current_role, AgentRole::Reviewer);
 }
 
-/// Verify that after ChainInitialized for Reviewer, the reducer correctly populates
-/// state.agent_chain with the fallback agents in order.
+/// Verify that after `ChainInitialized` for Reviewer, the reducer correctly populates
+/// `state.agent_chain` with the fallback agents in order.
 #[test]
 fn test_chain_initialized_populates_reviewer_chain() {
     let mut state = create_test_state();
@@ -175,7 +175,7 @@ fn test_auth_failure_during_review_advances_reducer_chain() {
     assert_eq!(new_state.agent_chain.current_agent_index, 1);
 }
 
-/// Orchestration should emit InitializeAgentChain when entering Review phase
+/// Orchestration should emit `InitializeAgentChain` when entering Review phase
 /// with an empty agent chain.
 #[test]
 fn test_orchestration_emits_init_chain_for_reviewer_after_dev_review_transition() {
@@ -199,8 +199,7 @@ fn test_orchestration_emits_init_chain_for_reviewer_after_dev_review_transition(
                 role: AgentRole::Reviewer
             }
         ),
-        "Orchestration should emit InitializeAgentChain for Reviewer when chain is empty, got {:?}",
-        effect
+        "Orchestration should emit InitializeAgentChain for Reviewer when chain is empty, got {effect:?}"
     );
 }
 
@@ -255,12 +254,11 @@ fn test_review_phase_agent_selection_uses_reducer_state() {
             effect,
             crate::reducer::effect::Effect::PrepareReviewContext { .. }
         ),
-        "Should emit PrepareReviewContext when chain is already initialized, got {:?}",
-        effect
+        "Should emit PrepareReviewContext when chain is already initialized, got {effect:?}"
     );
 }
 
-/// When transitioning from Review → CommitMessage → Review (between review passes),
+/// When transitioning from Review → `CommitMessage` → Review (between review passes),
 /// the agent chain should be cleared or reset to Reviewer role so orchestration
 /// uses the reviewer chain, not the commit chain.
 #[test]
@@ -304,7 +302,7 @@ fn test_commit_created_after_review_fix_clears_or_resets_chain() {
     // If empty, orchestration will initialize for Reviewer role (tested elsewhere)
 }
 
-/// Same test for CommitSkipped
+/// Same test for `CommitSkipped`
 #[test]
 fn test_commit_skipped_after_review_fix_clears_or_resets_chain() {
     let mut state = PipelineState {
@@ -340,7 +338,7 @@ fn test_commit_skipped_after_review_fix_clears_or_resets_chain() {
     }
 }
 
-/// When transitioning from Review back to Review (via CommitCreated after a fix),
+/// When transitioning from Review back to Review (via `CommitCreated` after a fix),
 /// the agent chain must be reset to ensure the Reviewer role chain is used.
 /// This prevents the Commit agent chain from leaking into review passes.
 #[test]
@@ -391,7 +389,7 @@ fn test_commit_created_resets_chain_when_review_to_review() {
     );
 }
 
-/// Same test for CommitSkipped - should also reset chain for review->review transition
+/// Same test for `CommitSkipped` - should also reset chain for review->review transition
 #[test]
 fn test_commit_skipped_resets_chain_when_review_to_review() {
     let mut state = PipelineState {

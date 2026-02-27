@@ -131,8 +131,7 @@ mod tests {
 
         assert!(
             elapsed < Duration::from_millis(500),
-            "drop should return promptly; elapsed={:?}",
-            elapsed
+            "drop should return promptly; elapsed={elapsed:?}"
         );
     }
 
@@ -176,8 +175,7 @@ mod tests {
 
         assert!(
             elapsed < Duration::from_millis(150),
-            "drop should not block on stalled heartbeat; elapsed={:?}",
-            elapsed
+            "drop should not block on stalled heartbeat; elapsed={elapsed:?}"
         );
     }
 }

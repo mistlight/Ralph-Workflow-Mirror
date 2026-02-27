@@ -1,7 +1,7 @@
 //! Error handling tests for review prompt preparation.
 //!
 //! Covers scenarios where review input reading fails with various error conditions,
-//! verifying that non-NotFound errors are properly surfaced as ErrorEvents.
+//! verifying that non-NotFound errors are properly surfaced as `ErrorEvents`.
 
 use super::super::AtomicWriteEnforcingWorkspace;
 use super::helpers::ReadFailingWorkspace;
@@ -129,7 +129,7 @@ fn test_prepare_review_prompt_workspace_write_failure_is_non_fatal() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {

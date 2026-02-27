@@ -438,7 +438,7 @@ mod tests {
                 .first()
                 .expect("should record at least one snapshot")
                 .iteration,
-            2000 - snapshots.len() as u32 + 1
+            2000 - u32::try_from(snapshots.len()).expect("snapshot count fits in u32") + 1
         );
     }
 

@@ -260,6 +260,7 @@ pub struct RestoredContext {
 #[cfg(test)]
 impl RestoredContext {
     /// Create a restored context from a checkpoint.
+    #[must_use]
     pub fn from_checkpoint(checkpoint: &PipelineCheckpoint) -> Self {
         // Determine if CLI args are meaningful (non-default values)
         let cli_args = if checkpoint.cli_args.developer_iters > 0
@@ -286,6 +287,7 @@ impl RestoredContext {
     ///
     /// Returns true if the checkpoint has meaningful CLI args that should
     /// override the current configuration.
+    #[must_use]
     pub fn should_use_checkpoint_iterations(&self) -> bool {
         self.cli_args
             .as_ref()
@@ -293,6 +295,7 @@ impl RestoredContext {
     }
 
     /// Check if we should use checkpoint values for reviewer counts.
+    #[must_use]
     pub fn should_use_checkpoint_reviewer_passes(&self) -> bool {
         self.cli_args
             .as_ref()

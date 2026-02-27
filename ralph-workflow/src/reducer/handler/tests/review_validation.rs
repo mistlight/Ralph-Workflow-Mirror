@@ -132,12 +132,12 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -161,7 +161,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler.validate_review_issues_xml(&mut ctx, 0);
+    let result = handler.validate_review_issues_xml(&ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -204,12 +204,12 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -233,7 +233,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler.validate_fix_result_xml(&mut ctx, 0);
+    let result = handler.validate_fix_result_xml(&ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -270,12 +270,12 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -308,7 +308,7 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
     });
 
     let result = handler
-        .write_issues_markdown(&mut ctx, 0)
+        .write_issues_markdown(&ctx, 0)
         .expect("write_issues_markdown should succeed");
 
     assert!(matches!(
@@ -341,12 +341,12 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -378,7 +378,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
         no_issues_found: None,
     });
     let result = handler
-        .extract_review_issue_snippets(&mut ctx, 0)
+        .extract_review_issue_snippets(&ctx, 0)
         .expect("extract_review_issue_snippets should succeed");
 
     assert!(matches!(
@@ -423,12 +423,12 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -461,7 +461,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
         no_issues_found: None,
     });
     let result = handler
-        .extract_review_issue_snippets(&mut ctx, 0)
+        .extract_review_issue_snippets(&ctx, 0)
         .expect("extract_review_issue_snippets should succeed");
 
     assert!(matches!(
@@ -505,12 +505,12 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -542,11 +542,9 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
         no_issues_found: None,
     });
 
-    let err = handler
-        .extract_review_issue_snippets(&mut ctx, 0)
-        .expect_err(
-            "extract_review_issue_snippets should surface non-NotFound issues.xml read failures",
-        );
+    let err = handler.extract_review_issue_snippets(&ctx, 0).expect_err(
+        "extract_review_issue_snippets should surface non-NotFound issues.xml read failures",
+    );
 
     let error_event = err
         .downcast_ref::<ErrorEvent>()
@@ -577,12 +575,12 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
     let template_context = TemplateContext::default();
 
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -607,7 +605,7 @@ fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
-        .write_issues_markdown(&mut ctx, 0)
+        .write_issues_markdown(&ctx, 0)
         .expect_err("write_issues_markdown should return error when validated outcome is missing");
 
     assert!(

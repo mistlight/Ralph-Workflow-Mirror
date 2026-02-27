@@ -24,7 +24,7 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -76,7 +76,7 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -133,7 +133,7 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -194,7 +194,7 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -251,7 +251,7 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -312,7 +312,7 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -379,7 +379,7 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -453,7 +453,7 @@ fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() 
 
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let mut ctx = crate::phases::PhaseContext {
         config: &config,

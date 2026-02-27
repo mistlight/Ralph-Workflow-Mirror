@@ -23,8 +23,7 @@ fn test_orchestration_derives_lock_permissions_before_planning() {
     // Then: Should derive LockPromptPermissions before planning work
     assert!(
         matches!(effect, Effect::LockPromptPermissions),
-        "Expected LockPromptPermissions, got {:?}",
-        effect
+        "Expected LockPromptPermissions, got {effect:?}"
     );
 }
 
@@ -62,8 +61,7 @@ fn test_orchestration_skips_lock_when_already_locked() {
             effect,
             Effect::MaterializePlanningInputs { .. } | Effect::PreparePlanningPrompt { .. }
         ),
-        "Expected planning work, got {:?}",
-        effect
+        "Expected planning work, got {effect:?}"
     );
 }
 
@@ -89,8 +87,7 @@ fn test_orchestration_derives_restore_permissions_on_interrupted() {
     // Then: Should derive RestorePromptPermissions before SaveCheckpoint
     assert!(
         matches!(effect, Effect::RestorePromptPermissions),
-        "Expected RestorePromptPermissions, got {:?}",
-        effect
+        "Expected RestorePromptPermissions, got {effect:?}"
     );
 }
 
@@ -116,8 +113,7 @@ fn test_orchestration_saves_checkpoint_after_restore_on_interrupted() {
     // Then: Must still run the pre-termination commit safety check before checkpointing.
     assert!(
         matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
-        "Expected CheckUncommittedChangesBeforeTermination, got {:?}",
-        effect
+        "Expected CheckUncommittedChangesBeforeTermination, got {effect:?}"
     );
 }
 
@@ -143,8 +139,7 @@ fn test_orchestration_saves_checkpoint_after_restore_and_safety_check_on_interru
 
     assert!(
         matches!(effect, Effect::SaveCheckpoint { .. }),
-        "Expected SaveCheckpoint, got {:?}",
-        effect
+        "Expected SaveCheckpoint, got {effect:?}"
     );
 }
 
@@ -168,14 +163,13 @@ fn test_finalizing_always_derives_restore_permissions() {
     // Then: Should always derive RestorePromptPermissions
     assert!(
         matches!(effect, Effect::RestorePromptPermissions),
-        "Finalizing must derive RestorePromptPermissions, got {:?}",
-        effect
+        "Finalizing must derive RestorePromptPermissions, got {effect:?}"
     );
 }
 
-/// Test that RestorePromptPermissions is emitted on user interrupt even when restore_needed=false.
+/// Test that `RestorePromptPermissions` is emitted on user interrupt even when `restore_needed=false`.
 ///
-/// This covers Gap 1: early Ctrl+C before LockPromptPermissions executed.
+/// This covers Gap 1: early Ctrl+C before `LockPromptPermissions` executed.
 /// Even if this run didn't lock PROMPT.md, a prior crashed run may have left it read-only.
 #[test]
 fn test_interrupted_phase_restores_prompt_md_when_restore_not_needed() {
@@ -196,9 +190,8 @@ fn test_interrupted_phase_restores_prompt_md_when_restore_not_needed() {
 
     assert!(
         matches!(effect, Effect::RestorePromptPermissions),
-        "Expected RestorePromptPermissions even when restore_needed=false, got {:?}. \
-         User interrupts should ALWAYS attempt restoration for safety.",
-        effect
+        "Expected RestorePromptPermissions even when restore_needed=false, got {effect:?}. \
+         User interrupts should ALWAYS attempt restoration for safety."
     );
 }
 
@@ -226,7 +219,6 @@ fn test_programmatic_interrupt_requires_pre_termination_safety_check() {
 
     assert!(
         matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
-        "Expected CheckUncommittedChangesBeforeTermination for programmatic interrupt, got {:?}",
-        effect
+        "Expected CheckUncommittedChangesBeforeTermination for programmatic interrupt, got {effect:?}"
     );
 }

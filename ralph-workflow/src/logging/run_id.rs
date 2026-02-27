@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn test_run_id_display() {
         let run_id = RunId::new();
-        let displayed = format!("{}", run_id);
+        let displayed = format!("{run_id}");
         assert_eq!(displayed, run_id.as_str());
     }
 

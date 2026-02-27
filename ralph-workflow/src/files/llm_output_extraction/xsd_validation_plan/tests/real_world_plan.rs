@@ -122,14 +122,14 @@ fn test_comprehensive_real_world_plan() {
     assert_eq!(step2.depends_on, vec![1]);
 
     // Verify step 2 has multiple code blocks
-    let code_blocks: Vec<_> = step2
+    let code_block_count = step2
         .content
         .elements
         .iter()
         .filter(|e| matches!(e, ContentElement::CodeBlock(_)))
-        .collect();
+        .count();
     assert!(
-        code_blocks.len() >= 3,
+        code_block_count >= 3,
         "Step 2 should have multiple code blocks"
     );
 
@@ -196,7 +196,7 @@ fn test_comprehensive_real_world_plan() {
     // Steps 8-14: Various content sections, verify they have valid numbers and content
     for i in 7..14 {
         let step = &plan.steps[i];
-        assert_eq!(step.number, (i + 1) as u32);
+        assert_eq!(step.number, u32::try_from(i + 1).unwrap());
         assert!(!step.title.is_empty(), "Step {} should have a title", i + 1);
         assert!(
             !step.content.elements.is_empty(),
@@ -206,13 +206,16 @@ fn test_comprehensive_real_world_plan() {
     }
 
     // Step 15: Final step
-    let step15 = &plan.steps[14];
-    assert_eq!(step15.number, 15);
-    assert!(step15.priority.is_some(), "Step 15 should have a priority");
-    assert!(!step15.title.is_empty(), "Step 15 should have a title");
+    let final_step = &plan.steps[14];
+    assert_eq!(final_step.number, 15);
+    assert!(
+        final_step.priority.is_some(),
+        "Step 15 should have a priority"
+    );
+    assert!(!final_step.title.is_empty(), "Step 15 should have a title");
     // Should have at least one dependency
     assert!(
-        !step15.depends_on.is_empty(),
+        !final_step.depends_on.is_empty(),
         "Final step should have at least one dependency"
     );
 

@@ -4,7 +4,7 @@
 ///
 /// This test verifies the fix for the GLM/ccs-glm bug where the agent emits both:
 /// 1. A "success" Result event when completing its work
-/// 2. An "error_during_execution" Result event when exiting with code 1
+/// 2. An "`error_during_execution`" Result event when exiting with code 1
 ///
 /// The fix suppresses the spurious error event to avoid confusing duplicate output.
 #[cfg(test)]
@@ -59,11 +59,11 @@ fn test_suppress_duplicate_error_result_after_success() {
 /// Test for suppressing error Result events that arrive BEFORE success Result event.
 ///
 /// This test verifies the fix works when events arrive in reverse order:
-/// 1. error_during_execution Result event (arrives first)
+/// 1. `error_during_execution` Result event (arrives first)
 /// 2. success Result event (arrives second)
 ///
 /// The enhanced suppression logic identifies spurious GLM error events by their
-/// characteristics (duration_ms < 100, error field is null/empty) and suppresses
+/// characteristics (`duration_ms` < 100, error field is null/empty) and suppresses
 /// them regardless of event order.
 #[cfg(test)]
 #[test]

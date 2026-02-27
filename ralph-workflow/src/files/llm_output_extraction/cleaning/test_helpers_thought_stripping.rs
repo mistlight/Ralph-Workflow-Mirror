@@ -152,6 +152,7 @@ fn filter_analysis_with_embedded_types(content: &str) -> Option<String> {
     None
 }
 
+#[must_use] 
 pub fn remove_thought_process_patterns(content: &str) -> String {
     let mut result = content.to_string();
 
@@ -295,6 +296,7 @@ fn looks_like_commit_message_start(text: &str) -> bool {
     false
 }
 
+#[must_use] 
 pub fn find_conventional_commit_start(text: &str) -> Option<usize> {
     let conventional_types = [
         "feat", "fix", "chore", "docs", "test", "refactor", "perf", "style", "build", "ci",
@@ -327,6 +329,7 @@ pub fn find_conventional_commit_start(text: &str) -> Option<usize> {
     None
 }
 
+#[must_use] 
 pub fn looks_like_analysis_text(text: &str) -> bool {
     let text_lower = text.to_lowercase();
 

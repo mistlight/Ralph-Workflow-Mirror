@@ -55,14 +55,16 @@ impl RunContext {
 
     /// Update the actual developer runs count.
     #[cfg(test)]
-    pub fn with_developer_runs(mut self, runs: u32) -> Self {
+    #[must_use]
+    pub const fn with_developer_runs(mut self, runs: u32) -> Self {
         self.actual_developer_runs = runs;
         self
     }
 
     /// Update the actual reviewer runs count.
     #[cfg(test)]
-    pub fn with_reviewer_runs(mut self, runs: u32) -> Self {
+    #[must_use]
+    pub const fn with_reviewer_runs(mut self, runs: u32) -> Self {
         self.actual_reviewer_runs = runs;
         self
     }

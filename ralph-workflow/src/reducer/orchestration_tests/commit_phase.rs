@@ -202,7 +202,7 @@ fn test_commit_generated_creates_commit() {
         Effect::CreateCommit { message } => {
             assert_eq!(message, "test commit message");
         }
-        _ => panic!("Expected CreateCommit effect, got {:?}", effect),
+        _ => panic!("Expected CreateCommit effect, got {effect:?}"),
     }
 }
 
@@ -289,8 +289,7 @@ fn test_commit_diff_prepared_invalidates_materialized_commit_inputs() {
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::MaterializeCommitInputs { attempt: 1 }),
-        "Expected MaterializeCommitInputs after diff prepared, got {:?}",
-        effect
+        "Expected MaterializeCommitInputs after diff prepared, got {effect:?}"
     );
 }
 
@@ -351,7 +350,6 @@ fn test_commit_inputs_materialization_invalidated_when_diff_content_id_changes()
     let effect = determine_next_effect(&state);
     assert!(
         matches!(effect, Effect::MaterializeCommitInputs { attempt: 1 }),
-        "Expected MaterializeCommitInputs when diff content id changes, got {:?}",
-        effect
+        "Expected MaterializeCommitInputs when diff content id changes, got {effect:?}"
     );
 }

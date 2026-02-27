@@ -34,7 +34,7 @@ fn test_effect_serialization() {
 #[test]
 fn test_effect_result_event_only() {
     let event = PipelineEvent::pipeline_started();
-    let result = EffectResult::event(event.clone());
+    let result = EffectResult::event(event);
 
     assert!(matches!(
         result.event,

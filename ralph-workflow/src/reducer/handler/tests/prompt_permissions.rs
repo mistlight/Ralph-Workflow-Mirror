@@ -30,7 +30,7 @@ struct ContextDeps<'a> {
 }
 
 fn build_context<'a>(
-    deps: ContextDeps<'a>,
+    deps: &ContextDeps<'a>,
     timer: &'a mut Timer,
     cloud: &'a crate::config::types::CloudConfig,
 ) -> crate::phases::PhaseContext<'a> {
@@ -74,22 +74,19 @@ fn restore_prompt_permissions_emits_complete_transition_in_finalizing() {
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
     let mut timer = Timer::new();
 
-    let mut ctx = build_context(
-        ContextDeps {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            repo_root: &repo_root,
-            executor: &executor,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            template_context: &template_context,
-            run_log_context: &run_log_context,
-        },
-        &mut timer,
-        &cloud,
-    );
+    let deps = ContextDeps {
+        workspace: &workspace,
+        workspace_arc: &workspace_arc,
+        repo_root: &repo_root,
+        executor: &executor,
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        template_context: &template_context,
+        run_log_context: &run_log_context,
+    };
+    let mut ctx = build_context(&deps, &mut timer, &cloud);
 
     let mut state = PipelineState::initial(1, 0);
     state.phase = PipelinePhase::Finalizing;

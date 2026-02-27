@@ -368,7 +368,7 @@ fn test_continuation_context_written_preserves_state() {
     );
 
     let new_state = reduce(
-        state.clone(),
+        state,
         PipelineEvent::development_continuation_context_written(2, 1),
     );
 

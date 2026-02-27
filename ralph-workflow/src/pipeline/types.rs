@@ -81,12 +81,12 @@ mod tests {
     use std::path::Path;
     use test_helpers::{init_git_repo, with_temp_cwd};
 
-    /// Test that AgentPhaseGuard::drop() restores PROMPT.md permissions.
+    /// Test that `AgentPhaseGuard::drop()` restores PROMPT.md permissions.
     ///
-    /// This verifies that when AgentPhaseGuard is dropped without calling disarm(),
+    /// This verifies that when `AgentPhaseGuard` is dropped without calling `disarm()`,
     /// the RAII cleanup executes including PROMPT.md permission restoration.
     ///
-    /// We use WorkspaceFs (real filesystem) here to ensure the test actually
+    /// We use `WorkspaceFs` (real filesystem) here to ensure the test actually
     /// exercises permissions rather than a no-op implementation.
     #[test]
     fn test_agent_phase_guard_drop_restores_prompt_md() {
@@ -141,7 +141,7 @@ mod tests {
 
     /// Test that disarmed guard does NOT run cleanup.
     ///
-    /// When disarm() is called, the guard should not execute cleanup on drop.
+    /// When `disarm()` is called, the guard should not execute cleanup on drop.
     /// This verifies the active flag works correctly.
     #[test]
     fn test_agent_phase_guard_disarm_prevents_cleanup() {
@@ -171,7 +171,7 @@ mod tests {
 
     /// Test that guard cleanup handles missing PROMPT.md gracefully.
     ///
-    /// The make_prompt_writable_with_workspace function should not panic
+    /// The `make_prompt_writable_with_workspace` function should not panic
     /// if PROMPT.md doesn't exist (edge case during early interrupts).
     #[test]
     fn test_agent_phase_guard_drop_handles_missing_prompt_md() {

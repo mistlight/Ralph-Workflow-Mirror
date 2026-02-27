@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_format_simple_xml() {
-        let xml = r#"<ralph-plan><ralph-summary>Summary</ralph-summary></ralph-plan>"#;
+        let xml = r"<ralph-plan><ralph-summary>Summary</ralph-summary></ralph-plan>";
         let formatted = format_xml_for_display(xml);
         assert!(formatted.contains("<ralph-plan>"));
         assert!(formatted.contains("<ralph-summary>"));
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_format_nested_xml() {
-        let xml = r#"<ralph-issues><ralph-issue>Issue 1</ralph-issue><ralph-issue>Issue 2</ralph-issue></ralph-issues>"#;
+        let xml = r"<ralph-issues><ralph-issue>Issue 1</ralph-issue><ralph-issue>Issue 2</ralph-issue></ralph-issues>";
         let formatted = format_xml_for_display(xml);
         assert!(formatted.contains("<ralph-issues>"));
         assert!(formatted.contains("<ralph-issue>"));
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_format_with_attributes() {
-        let xml = r#"<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>"#;
+        let xml = r"<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>";
         let formatted = format_xml_for_display(xml);
         assert!(formatted.contains("<ralph-fix-result>"));
         assert!(formatted.contains("<ralph-status>"));

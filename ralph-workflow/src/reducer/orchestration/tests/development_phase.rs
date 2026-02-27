@@ -430,7 +430,7 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::LockPromptPermissions => {
                 state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
             }
-            _ => panic!("Unexpected effect: {:?}", effect),
+            _ => panic!("Unexpected effect: {effect:?}"),
         }
     }
 
@@ -438,8 +438,7 @@ fn test_development_runs_exactly_n_iterations() {
     assert_eq!(
         iterations_run.len(),
         5,
-        "Should run exactly 5 iterations, ran: {:?}",
-        iterations_run
+        "Should run exactly 5 iterations, ran: {iterations_run:?}"
     );
     assert_eq!(
         iterations_run,
@@ -488,8 +487,7 @@ fn test_resume_at_final_iteration_should_run_development_not_skip() {
     // This test verifies the fix: previously would fail, now passes
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-        "Expected PrepareDevelopmentContext, got {:?}",
-        effect
+        "Expected PrepareDevelopmentContext, got {effect:?}"
     );
 }
 
@@ -517,8 +515,7 @@ fn test_resume_iteration_0_total_1_should_run_development() {
 
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { .. }),
-        "Expected PrepareDevelopmentContext for iteration 0, got {:?}",
-        effect
+        "Expected PrepareDevelopmentContext for iteration 0, got {effect:?}"
     );
 }
 
@@ -563,8 +560,7 @@ fn test_completed_final_iteration_should_transition_not_rerun() {
     // NOT re-run development work
     assert!(
         matches!(effect, Effect::ApplyDevelopmentOutcome { .. }),
-        "Expected ApplyDevelopmentOutcome for completed iteration, got {:?}",
-        effect
+        "Expected ApplyDevelopmentOutcome for completed iteration, got {effect:?}"
     );
 }
 
@@ -593,8 +589,7 @@ fn test_resume_at_final_iteration_with_partial_progress_continues() {
     // The next effect should be InvokeAnalysisAgent or ExtractDevelopmentXml
     assert!(
         !matches!(effect, Effect::SaveCheckpoint { .. }),
-        "Should not SaveCheckpoint with partial progress, got {:?}",
-        effect
+        "Should not SaveCheckpoint with partial progress, got {effect:?}"
     );
 }
 
@@ -621,7 +616,6 @@ fn test_resume_at_iteration_zero_with_total_one_runs_work() {
     // iteration < total_iterations (0 < 1), so should run
     assert!(
         matches!(effect, Effect::PrepareDevelopmentContext { iteration: 0 }),
-        "Expected PrepareDevelopmentContext but got {:?}",
-        effect
+        "Expected PrepareDevelopmentContext but got {effect:?}"
     );
 }

@@ -47,10 +47,10 @@ mod tests {
 
     #[test]
     fn test_render_xml_routes_to_development_result() {
-        let content = r#"<ralph-development-result>
+        let content = r"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Done</ralph-summary>
-</ralph-development-result>"#;
+</ralph-development-result>";
 
         let output = render_xml(&XmlOutputType::DevelopmentResult, content, &None);
         assert!(
@@ -61,9 +61,9 @@ mod tests {
 
     #[test]
     fn test_render_xml_routes_to_review_issues() {
-        let content = r#"<ralph-issues>
+        let content = r"<ralph-issues>
 <ralph-issue>Test issue</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let output = render_xml(&XmlOutputType::ReviewIssues, content, &None);
         assert!(
@@ -74,9 +74,9 @@ mod tests {
 
     #[test]
     fn test_render_xml_routes_to_commit_message() {
-        let content = r#"<ralph-commit>
+        let content = r"<ralph-commit>
 <ralph-subject>feat: add feature</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
         let output = render_xml(&XmlOutputType::CommitMessage, content, &None);
         assert!(

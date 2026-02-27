@@ -463,14 +463,14 @@ mod tests {
         assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
     }
 
-    /// This test enforces the FROZEN policy on LifecycleEvent.
+    /// This test enforces the FROZEN policy on `LifecycleEvent`.
     ///
     /// If you're here because this test failed to compile after adding
     /// a variant, you are violating the freeze policy. See the FROZEN
-    /// comment on LifecycleEvent for alternatives.
+    /// comment on `LifecycleEvent` for alternatives.
     #[test]
     fn lifecycle_event_is_frozen() {
-        fn exhaustive_match(e: LifecycleEvent) -> &'static str {
+        fn exhaustive_match(e: &LifecycleEvent) -> &'static str {
             match e {
                 LifecycleEvent::Started => "started",
                 LifecycleEvent::Resumed { .. } => "resumed",
@@ -480,17 +480,17 @@ mod tests {
             }
         }
         // Just needs to compile; actual call proves exhaustiveness
-        let _ = exhaustive_match(LifecycleEvent::Started);
+        let _ = exhaustive_match(&LifecycleEvent::Started);
     }
 
-    /// This test enforces the FROZEN policy on PipelineEvent.
+    /// This test enforces the FROZEN policy on `PipelineEvent`.
     ///
     /// If you're here because this test failed to compile after adding
     /// a variant, you are violating the freeze policy. See the FROZEN
-    /// comment on PipelineEvent for alternatives.
+    /// comment on `PipelineEvent` for alternatives.
     #[test]
     fn pipeline_event_is_frozen() {
-        fn exhaustive_match(e: PipelineEvent) -> &'static str {
+        fn exhaustive_match(e: &PipelineEvent) -> &'static str {
             match e {
                 PipelineEvent::Lifecycle(_) => "lifecycle",
                 PipelineEvent::Planning(_) => "planning",
@@ -509,6 +509,6 @@ mod tests {
                 // DO NOT ADD _ WILDCARD - intentionally exhaustive
             }
         }
-        let _ = exhaustive_match(PipelineEvent::ContextCleaned);
+        let _ = exhaustive_match(&PipelineEvent::ContextCleaned);
     }
 }

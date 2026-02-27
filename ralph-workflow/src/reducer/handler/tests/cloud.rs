@@ -136,8 +136,7 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
     assert!(args.contains(&"origin".to_string()));
     assert!(
         args.iter().any(|a| a.contains("refs/heads/main")),
-        "expected refspec containing 'refs/heads/main', got {:?}",
-        args
+        "expected refspec containing 'refs/heads/main', got {args:?}"
     );
 }
 

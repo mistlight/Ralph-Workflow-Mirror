@@ -179,12 +179,11 @@ mod tests {
         ];
 
         for (invalid_str, expected_code) in test_cases {
-            let content = format!("text{}here", invalid_str);
+            let content = format!("text{invalid_str}here");
             let result = check_for_illegal_xml_characters(&content);
             assert!(
                 result.is_err(),
-                "Control character {} should be rejected",
-                expected_code
+                "Control character {expected_code} should be rejected"
             );
 
             let error = result.unwrap_err();
@@ -240,7 +239,7 @@ mod tests {
         prefix.push_str(&"b".repeat(remaining));
         assert_eq!(prefix.len(), 60);
 
-        let content = format!("{}\0tail", prefix);
+        let content = format!("{prefix}\0tail");
 
         let result = std::panic::catch_unwind(|| check_for_illegal_xml_characters(&content));
         assert!(result.is_ok(), "Should not panic on multibyte boundaries");

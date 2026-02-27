@@ -42,7 +42,12 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
+///
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined.
 #[cfg(test)]
+#[must_use]
 pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
     use crate::workspace::WorkspaceFs;
     use std::env;
@@ -211,7 +216,12 @@ END OF FILES SECTION
 /// changes before calling this function to avoid wasting LLM API calls.
 /// The `generate_commit_message` function in phases/commit.rs handles empty
 /// diffs by returning the hardcoded fallback commit message.
+///
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined.
 #[cfg(test)]
+#[must_use]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     use crate::workspace::WorkspaceFs;
     use std::env;

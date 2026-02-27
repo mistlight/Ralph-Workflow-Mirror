@@ -169,10 +169,11 @@ impl ApiCatalog {
     }
 }
 
-/// Helper methods for ApiCatalog (test-only).
+/// Helper methods for `ApiCatalog` (test-only).
 #[cfg(test)]
 impl ApiCatalog {
     /// Get a model by provider and model ID.
+    #[must_use]
     pub fn get_model(&self, provider: &str, model_id: &str) -> Option<&Model> {
         self.models
             .get(provider)
@@ -180,6 +181,7 @@ impl ApiCatalog {
     }
 
     /// Find providers that start with the given prefix.
+    #[must_use]
     pub fn find_providers_by_prefix(&self, prefix: &str) -> Vec<String> {
         let prefix_lower = prefix.to_lowercase();
         self.provider_names()
@@ -189,6 +191,7 @@ impl ApiCatalog {
     }
 
     /// Find models for a provider that start with the given prefix.
+    #[must_use]
     pub fn find_models_by_prefix(&self, provider: &str, prefix: &str) -> Vec<String> {
         let prefix_lower = prefix.to_lowercase();
         self.get_model_ids(provider)
@@ -256,13 +259,13 @@ mod tests {
                     id: "claude-sonnet-4-5".to_string(),
                     name: "Claude Sonnet 4.5".to_string(),
                     description: "Latest Claude Sonnet".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
                 Model {
                     id: "claude-opus-4".to_string(),
                     name: "Claude Opus 4".to_string(),
                     description: "Most capable Claude".to_string(),
-                    context_length: Some(200000),
+                    context_length: Some(200_000),
                 },
             ],
         );
@@ -294,7 +297,8 @@ mod tests {
     fn test_catalog_expired_when_old() {
         let mut catalog = create_test_catalog();
         catalog.cached_at = Some(
-            chrono::Utc::now() - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS as i64 + 1),
+            chrono::Utc::now()
+                - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS.cast_signed() + 1),
         );
         assert!(catalog.is_expired());
     }

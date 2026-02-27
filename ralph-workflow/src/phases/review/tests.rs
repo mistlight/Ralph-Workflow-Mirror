@@ -86,19 +86,19 @@ impl TestFixture {
 #[test]
 fn test_validate_and_process_issues_xml_archives_and_writes_markdown() {
     let _cloud = crate::config::types::CloudConfig::disabled();
-    let xml_content = r#"<ralph-issues>
+    let xml_content = r"<ralph-issues>
  <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
- </ralph-issues>"#;
+ </ralph-issues>";
 
     let workspace = MemoryWorkspace::new_test().with_file(
         crate::files::llm_output_extraction::xml_paths::ISSUES_XML,
         xml_content,
     );
     let mut fixture = TestFixture::new(workspace);
-    let mut ctx = fixture.ctx();
+    let ctx = fixture.ctx();
 
     let _ = super::xml_processing::validate_and_process_issues_xml(
-        &mut ctx,
+        &ctx,
         xml_content,
         Path::new(".agent/ISSUES.md"),
     )

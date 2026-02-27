@@ -91,14 +91,14 @@ mod tests {
 
     #[test]
     fn test_render_commit_with_subject_and_body() {
-        let xml = r#"<ralph-commit>
+        let xml = r"<ralph-commit>
 <ralph-subject>feat: add new authentication system</ralph-subject>
 <ralph-body>This commit introduces a new JWT-based authentication system.
 
 - Added auth middleware
 - Created user session management
 - Updated API endpoints</ralph-body>
-</ralph-commit>"#;
+</ralph-commit>";
 
         let output = render(xml);
 
@@ -122,9 +122,9 @@ mod tests {
 
     #[test]
     fn test_render_commit_subject_only() {
-        let xml = r#"<ralph-commit>
+        let xml = r"<ralph-commit>
 <ralph-subject>fix: resolve null pointer exception</ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
         let output = render(xml);
 
@@ -136,9 +136,9 @@ mod tests {
 
     #[test]
     fn test_render_commit_falls_back_to_raw_with_warning_when_subject_is_blank() {
-        let xml = r#"<ralph-commit>
+        let xml = r"<ralph-commit>
 <ralph-subject>   </ralph-subject>
-</ralph-commit>"#;
+</ralph-commit>";
 
         let output = render(xml);
 

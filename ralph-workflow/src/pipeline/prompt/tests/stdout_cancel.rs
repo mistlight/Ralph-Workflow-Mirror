@@ -129,7 +129,7 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -145,7 +145,7 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
         scope.spawn(move || {
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
-                &mut runtime,
+                &runtime,
                 &[],
                 1,
                 Duration::from_millis(10),

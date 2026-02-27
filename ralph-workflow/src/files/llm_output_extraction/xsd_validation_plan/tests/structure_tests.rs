@@ -129,7 +129,7 @@ fn test_insufficient_scope_items() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.element_path.contains("scope-items"));
-    assert!(err.found.contains("2"));
+    assert!(err.found.contains('2'));
 }
 
 #[test]

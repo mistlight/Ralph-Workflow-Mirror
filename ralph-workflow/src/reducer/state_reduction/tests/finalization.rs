@@ -41,17 +41,17 @@ fn test_reduce_finalization_full_flow() {
     assert_eq!(state.phase, PipelinePhase::Complete);
 }
 
-/// Test the complete finalization flow from FinalValidation through effects.
+/// Test the complete finalization flow from `FinalValidation` through effects.
 ///
 /// This tests the orchestration + reduction path:
-/// 0. FinalValidation phase -> CheckUncommittedChangesBeforeTermination effect (safety check)
-/// 1. PreTerminationSafetyCheckPassed event -> FinalValidation phase (unchanged)
-/// 2. FinalValidation phase -> ValidateFinalState effect
-/// 3. ValidateFinalState effect -> FinalizingStarted event
-/// 4. FinalizingStarted event -> Finalizing phase
-/// 5. Finalizing phase -> RestorePromptPermissions effect
-/// 6. RestorePromptPermissions effect -> PromptPermissionsRestored event
-/// 7. PromptPermissionsRestored event -> Complete phase
+/// 0. `FinalValidation` phase -> `CheckUncommittedChangesBeforeTermination` effect (safety check)
+/// 1. `PreTerminationSafetyCheckPassed` event -> `FinalValidation` phase (unchanged)
+/// 2. `FinalValidation` phase -> `ValidateFinalState` effect
+/// 3. `ValidateFinalState` effect -> `FinalizingStarted` event
+/// 4. `FinalizingStarted` event -> Finalizing phase
+/// 5. Finalizing phase -> `RestorePromptPermissions` effect
+/// 6. `RestorePromptPermissions` effect -> `PromptPermissionsRestored` event
+/// 7. `PromptPermissionsRestored` event -> Complete phase
 #[test]
 fn test_finalization_orchestration_integration() {
     use crate::reducer::mock_effect_handler::MockEffectHandler;
@@ -87,7 +87,7 @@ fn test_finalization_orchestration_integration() {
     );
 
     // Reduce state with safety check event
-    let state0 = reduce(initial_state.clone(), result0.event);
+    let state0 = reduce(initial_state, result0.event);
     assert_eq!(state0.phase, PipelinePhase::FinalValidation);
     assert!(
         state0.pre_termination_commit_checked,
@@ -136,18 +136,18 @@ fn test_finalization_orchestration_integration() {
     assert!(final_state.is_complete(), "Complete should be complete");
 
     // Verify effects were captured
-    let effects = handler.captured_effects();
-    assert_eq!(effects.len(), 3);
+    let captured = handler.captured_effects();
+    assert_eq!(captured.len(), 3);
     assert!(matches!(
-        effects[0],
+        captured[0],
         crate::reducer::effect::Effect::CheckUncommittedChangesBeforeTermination
     ));
     assert!(matches!(
-        effects[1],
+        captured[1],
         crate::reducer::effect::Effect::ValidateFinalState
     ));
     assert!(matches!(
-        effects[2],
+        captured[2],
         crate::reducer::effect::Effect::RestorePromptPermissions
     ));
 }

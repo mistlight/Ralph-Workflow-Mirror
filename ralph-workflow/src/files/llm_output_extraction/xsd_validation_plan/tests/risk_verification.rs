@@ -229,7 +229,7 @@ fn test_risk_pair_all_severities() {
 <primary-files><file path="test.rs" action="create"/></primary-files>
 </ralph-critical-files>
 <ralph-risks-mitigations>
-<risk-pair severity="{}">
+<risk-pair severity="{severity}">
 <risk>R</risk>
 <mitigation>M</mitigation>
 </risk-pair>
@@ -237,8 +237,7 @@ fn test_risk_pair_all_severities() {
 <ralph-verification-strategy>
 <verification><method>M</method><expected-outcome>O</expected-outcome></verification>
 </ralph-verification-strategy>
-</ralph-plan>"#,
-            severity
+</ralph-plan>"#
         );
 
         let result = validate_plan_xml(&xml);

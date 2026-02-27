@@ -290,7 +290,7 @@ fn mock_attempt_recovery_never_targets_awaiting_dev_fix() {
     ));
 }
 
-/// Test that UIEvents do not affect pipeline state.
+/// Test that `UIEvents` do not affect pipeline state.
 #[test]
 fn ui_events_do_not_affect_state() {
     // This test verifies that UIEvents are purely display-only
@@ -299,16 +299,16 @@ fn ui_events_do_not_affect_state() {
     let state_clone = state.clone();
 
     // UIEvent exists but reducer never sees it
-    let _ui_event = UIEvent::PhaseTransition {
+    drop(UIEvent::PhaseTransition {
         from: None,
         to: PipelinePhase::Development,
-    };
+    });
 
     // State should be unchanged
     assert_eq!(state.phase, state_clone.phase);
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for plan validation.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for plan validation.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_plan() {
     let state = PipelineState::initial(1, 0);
@@ -329,7 +329,7 @@ fn mock_effect_handler_emits_xml_output_for_plan() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for development extraction.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for development extraction.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_development() {
     let state = PipelineState::initial(1, 0);
@@ -350,7 +350,7 @@ fn mock_effect_handler_emits_xml_output_for_development() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for review pass.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for review pass.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_review_snippets() {
     let state = PipelineState::initial(1, 1);
@@ -371,7 +371,7 @@ fn mock_effect_handler_emits_xml_output_for_review_snippets() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for fix attempt.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for fix attempt.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_fix() {
     let state = PipelineState::initial(1, 1);
@@ -392,7 +392,7 @@ fn mock_effect_handler_emits_xml_output_for_fix() {
     );
 }
 
-/// Test that MockEffectHandler emits XmlOutput events for commit message.
+/// Test that `MockEffectHandler` emits `XmlOutput` events for commit message.
 #[test]
 fn mock_effect_handler_emits_xml_output_for_commit() {
     let state = PipelineState::initial(1, 0);
@@ -489,7 +489,8 @@ fn mock_save_checkpoint_persists_interrupted_by_user_flag() {
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid checkpoint json");
 
     assert_eq!(
-        v.get("interrupted_by_user").and_then(|v| v.as_bool()),
+        v.get("interrupted_by_user")
+            .and_then(serde_json::Value::as_bool),
         Some(true),
         "Mock checkpoint must persist interrupted_by_user=true for parity with real handler"
     );

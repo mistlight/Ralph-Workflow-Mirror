@@ -4,7 +4,7 @@
 //! - Basic execution with timeout and usage limit handling
 //! - Error classification for agent errors (rate limit, auth, network, crashes)
 //! - Error classification for I/O errors (timeout, filesystem, network)
-//! - Error type predicates (is_timeout, is_rate_limit, is_auth, is_retriable)
+//! - Error type predicates (`is_timeout`, `is_rate_limit`, `is_auth`, `is_retriable`)
 //! - Fallback behavior triggered by different error types
 //!
 //! ## Test Organization

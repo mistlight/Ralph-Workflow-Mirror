@@ -543,7 +543,7 @@ DIFF:
     #[test]
     fn test_substitution_log_empty_with_default() {
         let template = Template::new("Hello {{NAME|default=\"Guest\"}}");
-        let variables = HashMap::from([("NAME", "".to_string())]);
+        let variables = HashMap::from([("NAME", String::new())]);
 
         let rendered = template
             .render_with_log("test", &variables, &HashMap::new())
@@ -575,7 +575,7 @@ DIFF:
     #[test]
     fn test_substitution_log_empty_without_default_is_unsubstituted() {
         let template = Template::new("Hello {{NAME}}");
-        let variables = HashMap::from([("NAME", "".to_string())]);
+        let variables = HashMap::from([("NAME", String::new())]);
 
         let rendered = template
             .render_with_log("test", &variables, &HashMap::new())
@@ -614,8 +614,8 @@ DIFF:
             .render_with_log("test", &variables, &HashMap::new())
             .unwrap();
 
-        assert!(rendered.content.contains("a"));
-        assert!(rendered.content.contains("b"));
+        assert!(rendered.content.contains('a'));
+        assert!(rendered.content.contains('b'));
         assert!(
             rendered
                 .log

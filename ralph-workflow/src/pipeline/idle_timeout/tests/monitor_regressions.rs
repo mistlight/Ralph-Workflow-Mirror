@@ -72,7 +72,7 @@ fn monitor_does_not_hold_child_lock_while_waiting_between_sigterm_checks() {
 
     let monitor = thread::spawn({
         let child_for_monitor = Arc::clone(&child);
-        let timestamp_for_monitor = timestamp.clone();
+        let timestamp_for_monitor = timestamp;
         let should_stop_for_monitor = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
@@ -150,7 +150,7 @@ fn monitor_reports_timeout_even_if_sigkill_confirmation_times_out() {
 
     let monitor_handle = thread::spawn({
         let child_for_monitor = Arc::clone(&child);
-        let timestamp_for_monitor = timestamp.clone();
+        let timestamp_for_monitor = timestamp;
         let should_stop_for_monitor = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
@@ -275,7 +275,7 @@ fn monitor_escalates_to_sigkill_when_sigterm_ignored() {
 
     let monitor_handle = thread::spawn({
         let child_clone = Arc::clone(&child);
-        let timestamp_clone = timestamp.clone();
+        let timestamp_clone = timestamp;
         let should_stop_clone = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(
@@ -337,7 +337,7 @@ fn monitor_succeeds_with_sigterm_when_process_terminates() {
 
     let monitor_handle = thread::spawn({
         let child_clone = Arc::clone(&child);
-        let timestamp_clone = timestamp.clone();
+        let timestamp_clone = timestamp;
         let should_stop_clone = Arc::clone(&should_stop);
         move || {
             monitor_idle_timeout_with_interval_and_kill_config(

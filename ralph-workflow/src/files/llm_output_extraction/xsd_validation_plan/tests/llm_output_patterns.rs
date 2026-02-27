@@ -125,7 +125,7 @@ fn test_llm_plan_with_html_template_in_cdata() {
 fn test_llm_plan_with_inline_code_escaped() {
     // LLM correctly escapes inline code references
     let xml = wrap_in_plan(
-        r#"<paragraph>The function <code>compare&lt;T&gt;</code> should return <code>Option&lt;Ordering&gt;</code> when <code>a &lt; b</code>.</paragraph>"#,
+        r"<paragraph>The function <code>compare&lt;T&gt;</code> should return <code>Option&lt;Ordering&gt;</code> when <code>a &lt; b</code>.</paragraph>",
     );
 
     let result = validate_plan_xml(&xml);
@@ -235,7 +235,7 @@ fn compare(a: i32, b: i32) -> bool {
 #[test]
 fn test_llm_mistake_unescaped_inline_generic_fails() {
     // LLM forgets to escape inline generic - this SHOULD fail
-    let xml = wrap_in_plan(r#"<paragraph>Use the Vec<String> type for the list.</paragraph>"#);
+    let xml = wrap_in_plan(r"<paragraph>Use the Vec<String> type for the list.</paragraph>");
 
     let result = validate_plan_xml(&xml);
     assert!(

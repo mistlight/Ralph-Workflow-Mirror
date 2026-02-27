@@ -166,7 +166,7 @@ fn test_rebase_aborted_is_noop() {
         ..create_test_state()
     };
     let new_state = reduce(
-        state.clone(),
+        state,
         PipelineEvent::rebase_aborted(RebasePhase::Initial, "abc123".to_string()),
     );
 
@@ -196,7 +196,7 @@ fn test_rebase_conflict_detected_from_not_started_preserves_state() {
         ..create_test_state()
     };
     let new_state = reduce(
-        state.clone(),
+        state,
         PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
@@ -232,7 +232,7 @@ fn test_rebase_conflict_detected_from_skipped_preserves_state() {
         ..create_test_state()
     };
     let new_state = reduce(
-        state.clone(),
+        state,
         PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
@@ -247,7 +247,7 @@ fn test_rebase_conflict_resolved_from_not_started_preserves_state() {
         ..create_test_state()
     };
     let new_state = reduce(
-        state.clone(),
+        state,
         PipelineEvent::rebase_conflict_resolved(vec![PathBuf::from("file.rs")]),
     );
 

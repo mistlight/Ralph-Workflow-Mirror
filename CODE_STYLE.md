@@ -229,8 +229,8 @@ All code (production and tests) must pass clippy with strict lint levels configu
 Run clippy on all targets:
 
 ```bash
-# Library
-cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
+# Library + unit tests + benchmarks + examples
+cargo clippy -p ralph-workflow --all-targets --all-features -- -D warnings
 
 # Integration tests
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings

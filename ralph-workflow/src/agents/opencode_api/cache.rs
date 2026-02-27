@@ -393,15 +393,16 @@ mod tests {
 
     #[test]
     fn test_catalog_serialization() {
-        // Test that catalog serialization produces valid JSON
-        let catalog = create_test_catalog();
-
-        // Serialize using the same method as save_catalog
         #[derive(serde::Serialize)]
         struct SerializableCatalog<'a> {
             providers: &'a std::collections::HashMap<String, crate::agents::opencode_api::Provider>,
             models: &'a std::collections::HashMap<String, Vec<crate::agents::opencode_api::Model>>,
         }
+
+        // Test that catalog serialization produces valid JSON
+        let catalog = create_test_catalog();
+
+        // Serialize using the same method as save_catalog
         let serializable = SerializableCatalog {
             providers: &catalog.providers,
             models: &catalog.models,
@@ -423,7 +424,8 @@ mod tests {
 
         // Old catalog should be expired
         catalog.cached_at = Some(
-            chrono::Utc::now() - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS as i64 + 1),
+            chrono::Utc::now()
+                - chrono::Duration::seconds(DEFAULT_CACHE_TTL_SECONDS.cast_signed() + 1),
         );
         assert!(catalog.is_expired());
     }

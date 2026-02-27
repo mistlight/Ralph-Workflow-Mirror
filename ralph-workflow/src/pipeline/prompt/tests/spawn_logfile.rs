@@ -140,7 +140,7 @@ fn test_run_with_agent_spawn_creates_parent_directory_for_logfile() {
         env_vars: &env_vars,
     };
 
-    let mut runtime = PipelineRuntime {
+    let runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
@@ -151,7 +151,7 @@ fn test_run_with_agent_spawn_creates_parent_directory_for_logfile() {
         workspace_arc: std::sync::Arc::new(workspace.clone()),
     };
 
-    let result = run_with_agent_spawn(&cmd, &mut runtime, &[]);
+    let result = run_with_agent_spawn(&cmd, &runtime, &[]);
     assert!(result.is_ok(), "expected agent run to succeed");
 
     let content = workspace

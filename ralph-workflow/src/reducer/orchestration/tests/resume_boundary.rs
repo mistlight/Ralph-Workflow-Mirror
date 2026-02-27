@@ -6,7 +6,7 @@
 use super::*;
 use crate::reducer::event::CheckpointTrigger;
 
-/// Helper to create a minimal PipelineState for testing resume scenarios.
+/// Helper to create a minimal `PipelineState` for testing resume scenarios.
 fn create_resume_state(
     phase: PipelinePhase,
     iteration: u32,
@@ -80,7 +80,7 @@ fn create_resume_state(
         completion_marker_is_failure: false,
         completion_marker_reason: None,
         gitignore_entries_ensured: false,
-        prompt_inputs: Default::default(),
+        prompt_inputs: crate::reducer::state::PromptInputsState::default(),
         // Simulate that permissions were locked at original startup (resume scenario)
         prompt_permissions: crate::reducer::state::PromptPermissionsState {
             locked: true,
@@ -125,8 +125,7 @@ fn test_resume_at_final_iteration_runs_development_work() {
     assert!(
         !matches!(effect, Effect::SaveCheckpoint { .. }),
         "Bug: Orchestration incorrectly derived SaveCheckpoint at iteration boundary. \
-         Expected development work to be executed. Got: {:?}",
-        effect
+         Expected development work to be executed. Got: {effect:?}"
     );
 
     // Should be a development-related effect
@@ -138,8 +137,7 @@ fn test_resume_at_final_iteration_runs_development_work() {
     );
     assert!(
         is_dev_effect,
-        "Expected development effect at iteration=1, total=1. Got: {:?}",
-        effect
+        "Expected development effect at iteration=1, total=1. Got: {effect:?}"
     );
 }
 
@@ -156,8 +154,7 @@ fn test_resume_at_final_review_pass_runs_review_work() {
     assert!(
         !matches!(effect, Effect::SaveCheckpoint { .. }),
         "Bug: Orchestration incorrectly derived SaveCheckpoint at review pass boundary. \
-         Expected review work to be executed. Got: {:?}",
-        effect
+         Expected review work to be executed. Got: {effect:?}"
     );
 
     // Should be a review-related effect
@@ -169,8 +166,7 @@ fn test_resume_at_final_review_pass_runs_review_work() {
     );
     assert!(
         is_review_effect,
-        "Expected review effect at reviewer_pass=2, total=2. Got: {:?}",
-        effect
+        "Expected review effect at reviewer_pass=2, total=2. Got: {effect:?}"
     );
 }
 
@@ -191,8 +187,7 @@ fn test_resume_with_zero_indexed_iteration() {
     );
     assert!(
         is_dev_effect,
-        "Expected development work for iteration=0, total=1. Got: {:?}",
-        effect
+        "Expected development work for iteration=0, total=1. Got: {effect:?}"
     );
 }
 
@@ -213,8 +208,7 @@ fn test_resume_mid_pipeline_continues_normally() {
     );
     assert!(
         is_dev_effect,
-        "Mid-pipeline resume should derive development effects. Got: {:?}",
-        effect
+        "Mid-pipeline resume should derive development effects. Got: {effect:?}"
     );
 }
 
@@ -248,8 +242,7 @@ fn test_resume_at_boundary_with_zero_total_iterations() {
             }
         ),
         "With total_iterations=0 in Development phase (abnormal state), \
-         should transition to next phase via PhaseTransition. Got: {:?}",
-        effect
+         should transition to next phase via PhaseTransition. Got: {effect:?}"
     );
 }
 
@@ -273,7 +266,6 @@ fn test_resume_iteration_exceeds_total() {
     // iteration_needs_work is false, so should derive SaveCheckpoint
     assert!(
         matches!(effect, Effect::SaveCheckpoint { .. }),
-        "When iteration exceeds total (abnormal state), should transition. Got: {:?}",
-        effect
+        "When iteration exceeds total (abnormal state), should transition. Got: {effect:?}"
     );
 }

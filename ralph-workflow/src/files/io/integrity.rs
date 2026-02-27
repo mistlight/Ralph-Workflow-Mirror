@@ -476,8 +476,7 @@ mod tests {
                     .unwrap();
             assert!(
                 report.contains("2 writable"),
-                "Should find 2 XML files, got: {}",
-                report
+                "Should find 2 XML files, got: {report}"
             );
         }
 

@@ -169,12 +169,8 @@ mod tests {
         );
 
         // Should not have any other events
-        let events_without_completion: Vec<_> = events
-            .iter()
-            .filter(|e| *e != &CliEvent::CliProcessingComplete)
-            .collect();
         assert!(
-            events_without_completion.is_empty(),
+            !events.iter().any(|e| e != &CliEvent::CliProcessingComplete),
             "Should have no other events for empty args"
         );
     }

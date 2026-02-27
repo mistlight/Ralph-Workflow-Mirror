@@ -25,7 +25,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -82,7 +82,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -139,7 +139,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -196,7 +196,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();
@@ -255,7 +255,7 @@ fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
     let registry = AgentRegistry::new().unwrap();
     let template_context = TemplateContext::default();
     let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_arc: Arc<dyn ProcessExecutor> = executor;
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/test/repo");
     let workspace = MemoryWorkspace::new_test();

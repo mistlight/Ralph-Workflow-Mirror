@@ -80,7 +80,7 @@ fn test_sanitize_command_env_preserves_explicitly_set_anthropic_vars() {
     ]);
 
     // First, insert agent env vars into env_vars (mimics production code pattern)
-    for (key, value) in agent_env_vars.iter() {
+    for (key, value) in &agent_env_vars {
         env_vars.insert(key.clone(), value.clone());
     }
 

@@ -219,11 +219,11 @@ dependencies = ["django", "pytest"]
     fn test_detect_ruby() {
         let workspace = MemoryWorkspace::new_test().with_file(
             "Gemfile",
-            r#"
+            r"
 source 'https://rubygems.org'
 gem 'rails', '~> 7.0'
 gem 'rspec-rails', group: :test
-"#,
+",
         );
 
         let (frameworks, test_fw, pkg_mgr) =

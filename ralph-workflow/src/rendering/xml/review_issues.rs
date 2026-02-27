@@ -286,10 +286,10 @@ mod tests {
 
     #[test]
     fn test_render_issues_with_issues() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>Variable unused in src/main.rs</ralph-issue>
 <ralph-issue>Missing error handling</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_render_issues_groups_by_file_and_renders_line_ranges_and_snippets() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>[High] src/main.rs:12-18 - Avoid unwrap in production code
 ```rust
 let x = foo().unwrap();
@@ -321,7 +321,7 @@ let x = foo().unwrap();
 </ralph-issue>
 <ralph-issue>src/lib.rs:44:3 - Rename variable for clarity</ralph-issue>
 <ralph-issue>General suggestion with no file</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let output = render(xml, None);
 
@@ -346,9 +346,9 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_uses_context_snippets_when_issue_has_location_but_no_fenced_code() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>./src/lib.rs:44-44 - Rename variable for clarity</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
@@ -371,9 +371,9 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_no_issues() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>The code looks good, no issues detected</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let output = render(xml, None);
 
@@ -415,9 +415,9 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_celebration_on_approval() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-no-issues-found>All code looks great!</ralph-no-issues-found>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let output = render(xml, None);
         assert!(output.contains("🎉"), "Should celebrate approval");
@@ -429,9 +429,9 @@ let x = foo().unwrap();
 
     #[test]
     fn test_render_issues_shows_snippet_from_context_when_not_in_issue_text() {
-        let xml = r#"<ralph-issues>
+        let xml = r"<ralph-issues>
 <ralph-issue>[High] src/lib.rs:2 Missing semicolon</ralph-issue>
-</ralph-issues>"#;
+</ralph-issues>";
 
         let ctx = Some(XmlOutputContext {
             iteration: None,
@@ -448,13 +448,11 @@ let x = foo().unwrap();
 
         assert!(
             output.contains("fn example()"),
-            "Should render snippet content when provided via context: {}",
-            output
+            "Should render snippet content when provided via context: {output}"
         );
         assert!(
             output.contains("src/lib.rs"),
-            "Should show file context: {}",
-            output
+            "Should show file context: {output}"
         );
     }
 }

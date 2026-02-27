@@ -10,9 +10,9 @@ use std::sync::Arc;
 use super::types::{PipelineRuntime, PromptCommand};
 
 #[cfg(test)]
-pub(crate) fn run_with_agent_spawn_with_monitor_config(
+pub fn run_with_agent_spawn_with_monitor_config(
     cmd: &PromptCommand<'_>,
-    runtime: &mut PipelineRuntime<'_>,
+    runtime: &PipelineRuntime<'_>,
     anthropic_env_vars_to_sanitize: &[&str],
     idle_timeout_secs: u64,
     monitor_check_interval: std::time::Duration,
@@ -45,7 +45,7 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
     runtime.workspace.write(logfile_path, "")?;
 
     let mut complete_env: std::collections::HashMap<String, String> = std::env::vars().collect();
-    for (key, value) in cmd.env_vars.iter() {
+    for (key, value) in cmd.env_vars {
         complete_env.insert(key.clone(), value.clone());
     }
     super::environment::sanitize_command_env(

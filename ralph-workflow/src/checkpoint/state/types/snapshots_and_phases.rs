@@ -153,6 +153,7 @@ impl CliArgsSnapshot {
     /// This is a convenience method for test code.
     /// For production code, use [`CliArgsSnapshotBuilder`] for better readability.
     #[cfg(test)]
+    #[must_use] 
     pub fn new(
         developer_iters: u32,
         reviewer_reviews: u32,

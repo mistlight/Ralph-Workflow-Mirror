@@ -22,6 +22,7 @@ use std::fmt::Write;
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 #[cfg(test)]
+#[must_use] 
 pub fn prompt_developer_iteration(
     iteration: u32,
     total: u32,

@@ -64,7 +64,7 @@ fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untr
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed (diff is optional for review)");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -144,7 +144,7 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed");
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
     for ev in materialize.additional_events {
@@ -216,7 +216,7 @@ fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_in
 
     // Materialize review inputs (should succeed despite missing DIFF.backup)
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
 
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
@@ -298,7 +298,7 @@ fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_
 
     // Materialize review inputs (should succeed despite missing DIFF.backup and baseline)
     let materialize = handler
-        .materialize_review_inputs(&mut ctx, 0)
+        .materialize_review_inputs(&ctx, 0)
         .expect("materialize_review_inputs should succeed with generic fallback");
 
     handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);

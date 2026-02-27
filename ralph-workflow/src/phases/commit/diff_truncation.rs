@@ -235,8 +235,7 @@ mod diff_truncation_tests {
         let files_included = 1;
         let total_files = 2;
         let summary = format!(
-            "\n[Truncated: {} of {} files shown]\n",
-            files_included, total_files
+            "\n[Truncated: {files_included} of {total_files} files shown]\n"
         );
 
         let max_size = 1_000usize;
@@ -287,10 +286,10 @@ mod diff_truncation_tests {
     // Exhaustive edge case tests for truncation invariants
     // =========================================================================
 
-    /// Test that truncation output never exceeds max_size for various edge cases.
+    /// Test that truncation output never exceeds `max_size` for various edge cases.
     ///
     /// This exhaustively tests boundary conditions around the truncation summary
-    /// appending logic to ensure the invariant "output.len() <= max_size" holds.
+    /// appending logic to ensure the invariant "`output.len()` <= `max_size`" holds.
     #[test]
     fn truncate_diff_invariant_never_exceeds_max_size_edge_cases() {
         // Test various max_size values around the summary length
@@ -359,7 +358,7 @@ mod diff_truncation_tests {
         }
     }
 
-    /// Test that single-file diffs that exceed max_size are properly truncated.
+    /// Test that single-file diffs that exceed `max_size` are properly truncated.
     #[test]
     fn truncate_single_large_file_stays_within_budget() {
         let max_size = 100usize;
@@ -388,7 +387,7 @@ mod diff_truncation_tests {
 
         // Unicode content: each emoji is 4 bytes
         let emoji_line = "🎉".repeat(20); // 80 bytes
-        let diff = format!("diff --git a/a b/a\n+{}\n", emoji_line);
+        let diff = format!("diff --git a/a b/a\n+{emoji_line}\n");
 
         let (truncated, was_truncated) = truncate_diff_to_model_budget(&diff, max_size as u64);
         assert!(was_truncated, "unicode diff should be truncated");
