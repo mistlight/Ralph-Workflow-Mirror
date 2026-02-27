@@ -2,34 +2,72 @@
 //!
 //! Handles `--init-local-config` flag to create a local config file at
 //! `.agent/ralph-workflow.toml` in the current directory.
+//!
+//! The generated template shows the user's current effective values
+//! (from global config or built-in defaults) as commented-out entries,
+//! so they know what they can override.
 
+use crate::config::unified::UnifiedConfig;
 use crate::config::{ConfigEnvironment, RealConfigEnvironment};
 use crate::logger::Colors;
 
-/// Local config template with minimal override examples.
-const LOCAL_CONFIG_TEMPLATE: &str = r#"# Local Ralph configuration (.agent/ralph-workflow.toml)
-# Overrides ~/.config/ralph-workflow.toml for this project.
-# Only include settings you want to override.
-# Run `ralph --check-config` to validate and see effective settings.
+/// Generate a local config template populated with effective values.
+///
+/// Reads the global config (if available) and falls back to built-in defaults
+/// for any missing values. All values are shown as commented-out entries so
+/// users can selectively uncomment and override only what they need.
+fn generate_local_config_template<R: ConfigEnvironment>(env: &R) -> String {
+    let effective = UnifiedConfig::load_with_env(env).unwrap_or_default();
 
-[general]
-# Project-specific iteration limits
-# developer_iters = 5
-# reviewer_reviews = 2
+    let general = &effective.general;
+    let chain = effective.agent_chain.as_ref();
 
-# Project-specific context levels
-# developer_context = 1
-# reviewer_context = 0
+    let default_chain = || r#"["claude"]"#.to_string();
+    let dev_chain = chain.map_or_else(&default_chain, |c| format_toml_string_array(&c.developer));
+    let rev_chain = chain.map_or_else(&default_chain, |c| format_toml_string_array(&c.reviewer));
 
-# [agent_chain]
-# Project-specific agent chains
-# developer = ["claude"]
-# reviewer = ["claude"]
-"#;
+    format!(
+        "# Local Ralph configuration (.agent/ralph-workflow.toml)\n\
+         # Overrides ~/.config/ralph-workflow.toml for this project.\n\
+         # Only uncomment settings you want to override.\n\
+         # Run `ralph --check-config` to validate and see effective settings.\n\
+         \n\
+         [general]\n\
+         # Project-specific iteration limits\n\
+         # developer_iters = {dev_iters}\n\
+         # reviewer_reviews = {rev_reviews}\n\
+         \n\
+         # Project-specific context levels\n\
+         # developer_context = {dev_ctx}\n\
+         # reviewer_context = {rev_ctx}\n\
+         \n\
+         # [agent_chain]\n\
+         # Project-specific agent chains\n\
+         # developer = {dev_chain}\n\
+         # reviewer = {rev_chain}\n",
+        dev_iters = general.developer_iters,
+        rev_reviews = general.reviewer_reviews,
+        dev_ctx = general.developer_context,
+        rev_ctx = general.reviewer_context,
+        dev_chain = dev_chain,
+        rev_chain = rev_chain,
+    )
+}
+
+/// Format a string slice as a TOML array literal (e.g. `["claude", "codex"]`).
+fn format_toml_string_array(items: &[String]) -> String {
+    if items.is_empty() {
+        return r#"["claude"]"#.to_string();
+    }
+    let inner: Vec<String> = items.iter().map(|s| format!(r#""{s}""#)).collect();
+    format!("[{}]", inner.join(", "))
+}
 
 /// Handle the `--init-local-config` flag with a custom path resolver.
 ///
 /// Creates a local config file at `.agent/ralph-workflow.toml` in the current directory.
+/// The generated template shows the user's current effective configuration values
+/// (from global config or built-in defaults) as commented-out entries.
 ///
 /// # Arguments
 ///
@@ -68,15 +106,17 @@ pub fn handle_init_local_config_with<R: ConfigEnvironment>(
         return Ok(true);
     }
 
+    // Generate template populated with current effective values
+    let template = generate_local_config_template(env);
+
     // Create config using the environment's file operations
-    env.write_file(&local_path, LOCAL_CONFIG_TEMPLATE)
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to create local config file {}: {}",
-                local_path.display(),
-                e
-            )
-        })?;
+    env.write_file(&local_path, &template).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to create local config file {}: {}",
+            local_path.display(),
+            e
+        )
+    })?;
 
     // Try to show absolute path, fall back to the path as-is if canonicalization fails
     let display_path = local_path
@@ -109,4 +149,161 @@ pub fn handle_init_local_config_with<R: ConfigEnvironment>(
 /// Returns error if the operation fails.
 pub fn handle_init_local_config(colors: Colors, force: bool) -> anyhow::Result<bool> {
     handle_init_local_config_with(colors, &RealConfigEnvironment, force)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::path_resolver::MemoryConfigEnvironment;
+    use std::path::Path;
+
+    #[test]
+    fn test_init_local_config_shows_global_values() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "\n[general]\ndeveloper_iters = 8\nreviewer_reviews = 3\n\
+                 developer_context = 2\nreviewer_context = 1\n",
+            );
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        let content = env
+            .get_file(Path::new("/test/repo/.agent/ralph-workflow.toml"))
+            .expect("local config should be written");
+
+        // Should reflect global values, not built-in defaults
+        assert!(
+            content.contains("developer_iters = 8"),
+            "should show global developer_iters=8, got:\n{content}"
+        );
+        assert!(
+            content.contains("reviewer_reviews = 3"),
+            "should show global reviewer_reviews=3, got:\n{content}"
+        );
+        assert!(
+            content.contains("developer_context = 2"),
+            "should show global developer_context=2, got:\n{content}"
+        );
+        assert!(
+            content.contains("reviewer_context = 1"),
+            "should show global reviewer_context=1, got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_init_local_config_uses_defaults_without_global() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml");
+        // No global config file exists
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        let content = env
+            .get_file(Path::new("/test/repo/.agent/ralph-workflow.toml"))
+            .expect("local config should be written");
+
+        // Should fall back to built-in defaults
+        assert!(
+            content.contains("developer_iters = 5"),
+            "should show default developer_iters=5, got:\n{content}"
+        );
+        assert!(
+            content.contains("reviewer_reviews = 2"),
+            "should show default reviewer_reviews=2, got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_init_local_config_shows_global_agent_chains() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                r#"
+[agent_chain]
+developer = ["codex", "claude"]
+reviewer = ["claude"]
+"#,
+            );
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        let content = env
+            .get_file(Path::new("/test/repo/.agent/ralph-workflow.toml"))
+            .expect("local config should be written");
+
+        assert!(
+            content.contains(r#"developer = ["codex", "claude"]"#),
+            "should show global developer chain, got:\n{content}"
+        );
+        assert!(
+            content.contains(r#"reviewer = ["claude"]"#),
+            "should show global reviewer chain, got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_init_local_config_generates_valid_toml_structure() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\ndeveloper_iters = 8",
+            );
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        let content = env
+            .get_file(Path::new("/test/repo/.agent/ralph-workflow.toml"))
+            .expect("local config should be written");
+
+        // All value lines should be comments (starts with #)
+        // so the file is valid TOML as-is (all commented out)
+        assert!(
+            content.contains("[general]"),
+            "should have [general] section, got:\n{content}"
+        );
+        assert!(
+            content.contains("# developer_iters"),
+            "values should be commented out, got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_format_toml_string_array() {
+        assert_eq!(
+            format_toml_string_array(&["claude".to_string()]),
+            r#"["claude"]"#
+        );
+        assert_eq!(
+            format_toml_string_array(&["codex".to_string(), "claude".to_string()]),
+            r#"["codex", "claude"]"#
+        );
+        // Empty falls back to default
+        assert_eq!(format_toml_string_array(&[]), r#"["claude"]"#);
+    }
+
+    #[test]
+    fn test_init_local_config_at_worktree_root() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_worktree_root("/test/main-repo")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\nverbosity = 2",
+            );
+
+        handle_init_local_config_with(Colors::new(), &env, false).unwrap();
+
+        assert!(
+            env.was_written(Path::new("/test/main-repo/.agent/ralph-workflow.toml")),
+            "Config should be written at canonical repo root"
+        );
+    }
 }

@@ -12,6 +12,7 @@ use crate::logger::Colors;
 use std::path::Path;
 
 /// Result of agent validation containing the resolved agent names.
+#[derive(Debug)]
 pub struct ValidatedAgents {
     /// The validated developer agent name.
     pub developer_agent: String,
@@ -38,14 +39,16 @@ pub struct ValidatedAgents {
 pub fn resolve_required_agents(config: &Config) -> anyhow::Result<ValidatedAgents> {
     let developer_agent = config.developer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
-            "No developer agent configured.\n\
-            Set via --developer-agent, RALPH_DEVELOPER_AGENT env, or [agent_chain] in ~/.config/ralph-workflow.toml."
+            "No developer agent configured. Searched: local config (.agent/ralph-workflow.toml), \
+            global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            Set via --developer-agent, RALPH_DEVELOPER_AGENT env, or [agent_chain] in config."
         )
     })?;
     let reviewer_agent = config.reviewer_agent.clone().ok_or_else(|| {
         anyhow::anyhow!(
-            "No reviewer agent configured.\n\
-            Set via --reviewer-agent, RALPH_REVIEWER_AGENT env, or [agent_chain] in ~/.config/ralph-workflow.toml."
+            "No reviewer agent configured. Searched: local config (.agent/ralph-workflow.toml), \
+            global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+            Set via --reviewer-agent, RALPH_REVIEWER_AGENT env, or [agent_chain] in config."
         )
     })?;
 
@@ -281,5 +284,49 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("can_commit=false"));
+    }
+
+    #[test]
+    fn resolve_required_agents_error_mentions_searched_sources() {
+        let config = Config {
+            developer_agent: None,
+            reviewer_agent: Some("claude".to_string()),
+            ..Config::default()
+        };
+
+        let err = resolve_required_agents(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("local config"),
+            "error should mention local config: {msg}"
+        );
+        assert!(
+            msg.contains("global config"),
+            "error should mention global config: {msg}"
+        );
+        assert!(
+            msg.contains("built-in defaults"),
+            "error should mention built-in defaults: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_required_agents_error_for_reviewer_mentions_sources() {
+        let config = Config {
+            developer_agent: Some("claude".to_string()),
+            reviewer_agent: None,
+            ..Config::default()
+        };
+
+        let err = resolve_required_agents(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("reviewer"),
+            "error should name the missing role: {msg}"
+        );
+        assert!(
+            msg.contains("local config"),
+            "error should mention local config: {msg}"
+        );
     }
 }

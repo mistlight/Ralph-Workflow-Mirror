@@ -283,6 +283,29 @@ fn test_validate_agent_chains() {
 }
 
 #[test]
+fn test_validate_agent_chains_error_mentions_searched_sources() {
+    let mut registry = AgentRegistry::new().unwrap();
+    // Override chains with empty values via apply_unified_config
+    let toml_str = "\n[agent_chain]\ndeveloper = []\nreviewer = []\n";
+    let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+    registry.apply_unified_config(&unified);
+
+    let err = registry.validate_agent_chains().unwrap_err();
+    assert!(
+        err.contains("local config"),
+        "error should mention local config: {err}"
+    );
+    assert!(
+        err.contains("global config"),
+        "error should mention global config: {err}"
+    );
+    assert!(
+        err.contains("built-in defaults"),
+        "error should mention built-in defaults: {err}"
+    );
+}
+
+#[test]
 fn test_ccs_aliases_registration() {
     // Test that CCS aliases are registered correctly
     let mut registry = AgentRegistry::new().unwrap();

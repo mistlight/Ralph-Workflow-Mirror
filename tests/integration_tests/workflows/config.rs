@@ -1044,6 +1044,143 @@ fn test_local_config_only_with_defaults_fallback() {
     });
 }
 
+/// Test that --init-local-config populates values from global config.
+///
+/// When global config has custom values (e.g. `developer_iters = 8`),
+/// the generated local config should show those values (commented out)
+/// rather than built-in defaults.
+#[test]
+fn test_init_local_config_populates_from_global() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"))
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\ndeveloper_iters = 8\nreviewer_reviews = 4",
+            )
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        run_ralph_cli_with_env(
+            &["--init-local-config"],
+            executor,
+            config,
+            &mut handler,
+            &env,
+        )
+        .unwrap();
+
+        let local_path = std::path::Path::new("/test/repo/.agent/ralph-workflow.toml");
+        assert!(
+            env.was_written(local_path),
+            "local config should be created"
+        );
+
+        let content = env.get_file(local_path).expect("local config content");
+        assert!(
+            content.contains("developer_iters = 8"),
+            "should reflect global value 8, got:\n{content}"
+        );
+        assert!(
+            content.contains("reviewer_reviews = 4"),
+            "should reflect global value 4, got:\n{content}"
+        );
+    });
+}
+
+/// Test that --init-local-config uses built-in defaults when no global config exists.
+#[test]
+fn test_init_local_config_uses_defaults_when_no_global() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"))
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_local_config_path("/test/repo/.agent/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            // No global config file exists
+            .with_file("/test/repo/PROMPT.md", STANDARD_PROMPT);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        run_ralph_cli_with_env(
+            &["--init-local-config"],
+            executor,
+            config,
+            &mut handler,
+            &env,
+        )
+        .unwrap();
+
+        let local_path = std::path::Path::new("/test/repo/.agent/ralph-workflow.toml");
+        let content = env.get_file(local_path).expect("local config content");
+        // Should use built-in defaults (developer_iters=5, reviewer_reviews=2)
+        assert!(
+            content.contains("developer_iters = 5"),
+            "should use default developer_iters=5, got:\n{content}"
+        );
+        assert!(
+            content.contains("reviewer_reviews = 2"),
+            "should use default reviewer_reviews=2, got:\n{content}"
+        );
+    });
+}
+
+/// Test that --init-local-config from deep worktree subdirectory writes to canonical root.
+///
+/// When running from a deeply nested directory inside a worktree,
+/// the config must be written at the canonical repository root.
+#[test]
+fn test_init_local_config_from_deep_worktree_subdirectory() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/worktree/src/components/deep"));
+
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_worktree_root("/test/main-repo")
+            .with_prompt_path("/test/main-repo/PROMPT.md")
+            .with_file(
+                "/test/config/ralph-workflow.toml",
+                "[general]\nverbosity = 2",
+            )
+            .with_file("/test/main-repo/PROMPT.md", STANDARD_PROMPT);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        run_ralph_cli_with_env(
+            &["--init-local-config"],
+            executor,
+            config,
+            &mut handler,
+            &env,
+        )
+        .unwrap();
+
+        assert!(
+            env.was_written(std::path::Path::new(
+                "/test/main-repo/.agent/ralph-workflow.toml"
+            )),
+            "Config should be at canonical repo root, not deep subdirectory"
+        );
+    });
+}
+
 /// Regression test: prompt validation failures must abort pipeline startup.
 ///
 /// This guards against accidentally swallowing `validate_prompt_and_setup_backup()`

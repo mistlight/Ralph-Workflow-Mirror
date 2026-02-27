@@ -385,21 +385,27 @@ impl AgentRegistry {
         let has_reviewer = self.fallback.has_fallbacks(AgentRole::Reviewer);
 
         if !has_developer && !has_reviewer {
-            return Err("No agent chain configured.\n\
-                Please add an [agent_chain] section to ~/.config/ralph-workflow.toml.\n\
+            return Err("No agent chain configured. \
+                Searched: local config (.agent/ralph-workflow.toml), \
+                global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
+                Please add an [agent_chain] section to your config.\n\
                 Run 'ralph --init-global' to create a default configuration."
                 .to_string());
         }
 
         if !has_developer {
-            return Err("No developer agent chain configured.\n\
+            return Err("No developer agent chain configured. \
+                Searched: local config (.agent/ralph-workflow.toml), \
+                global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
                 Add 'developer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
                 Use --list-agents to see available agents."
                 .to_string());
         }
 
         if !has_reviewer {
-            return Err("No reviewer agent chain configured.\n\
+            return Err("No reviewer agent chain configured. \
+                Searched: local config (.agent/ralph-workflow.toml), \
+                global config (~/.config/ralph-workflow.toml), built-in defaults.\n\
                 Add 'reviewer = [\"your-agent\", ...]' to your [agent_chain] section.\n\
                 Use --list-agents to see available agents."
                 .to_string());
