@@ -133,13 +133,13 @@ fn continue_rebase_impl(
 /// Returns error if the operation fails.
 pub fn rebase_in_progress() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    rebase_in_progress_impl(&repo)
+    Ok(rebase_in_progress_impl(&repo))
 }
 
 /// Implementation of `rebase_in_progress`.
-fn rebase_in_progress_impl(repo: &git2::Repository) -> io::Result<bool> {
+fn rebase_in_progress_impl(repo: &git2::Repository) -> bool {
     let state = repo.state();
-    Ok(state == git2::RepositoryState::Rebase
+    state == git2::RepositoryState::Rebase
         || state == git2::RepositoryState::RebaseMerge
-        || state == git2::RepositoryState::RebaseInteractive)
+        || state == git2::RepositoryState::RebaseInteractive
 }

@@ -451,19 +451,19 @@ pub(super) fn stream_agent_output_from_handle(
     cmd: &PromptCommand<'_>,
     runtime: &PipelineRuntime<'_>,
     activity_timestamp: SharedActivityTimestamp,
-    cancel: Arc<AtomicBool>,
+    cancel: &Arc<AtomicBool>,
 ) -> io::Result<()> {
     // Bounded channel: prevents unbounded buffering when stdout pumping outpaces parsing.
     //
     // Backpressure is acceptable here: if the parser stalls, we prefer blocking the pump thread
     // (and therefore the child stdout pipe) over unbounded memory growth.
     let (tx, rx) = mpsc::sync_channel(STDOUT_PUMP_CHANNEL_CAPACITY);
-    let pump_handle = spawn_stdout_pump(stdout, activity_timestamp, tx, Arc::clone(&cancel));
+    let pump_handle = spawn_stdout_pump(stdout, activity_timestamp, tx, Arc::clone(cancel));
 
     // Cancel-aware buffering: lets the main thread stop parsing promptly when the
     // idle-timeout monitor fires, even if the underlying stdout read is blocked.
     let receiver_reader =
-        CancelAwareReceiverBufRead::new(rx, Arc::clone(&cancel), Duration::from_millis(50));
+        CancelAwareReceiverBufRead::new(rx, Arc::clone(cancel), Duration::from_millis(50));
     let reader = StreamingLineReader::new(receiver_reader);
 
     let parse_result = (|| {
@@ -547,7 +547,7 @@ pub(super) fn stream_agent_output_from_handle(
         Ok(())
     })();
 
-    cleanup_stdout_pump(pump_handle, &cancel, runtime, &parse_result);
+    cleanup_stdout_pump(pump_handle, cancel, runtime, &parse_result);
     parse_result
 }
 

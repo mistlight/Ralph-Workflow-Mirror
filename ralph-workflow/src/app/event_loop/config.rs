@@ -55,7 +55,7 @@ pub fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState
     let mut state = PipelineState::initial_with_continuation(
         ctx.config.developer_iters,
         ctx.config.reviewer_reviews,
-        continuation,
+        &continuation,
     );
 
     // Inject a checkpoint-safe (redacted) view of runtime cloud config.
@@ -165,10 +165,7 @@ mod resume_overlay_tests {
         // Runtime (env-derived) redacted config is preserved.
         assert!(base.cloud.enabled);
         assert_eq!(base.cloud.run_id.as_deref(), Some("run_from_env"));
-        assert_eq!(
-            base.cloud.git_remote.push_branch.as_str(),
-            "env_branch"
-        );
+        assert_eq!(base.cloud.git_remote.push_branch.as_str(), "env_branch");
 
         // Cloud resume state is restored.
         assert_eq!(base.pending_push_commit.as_deref(), Some("abc123"));

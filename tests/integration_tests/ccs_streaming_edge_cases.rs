@@ -20,9 +20,9 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
-use std::fmt::Write;
 
 #[test]
 fn test_empty_and_whitespace_deltas_no_spam() {
@@ -129,7 +129,7 @@ fn test_single_character_deltas_no_spam() {
 
         let text = "Hello World!";
         for ch in text.chars() {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{ch}"}}}}}}"#
             ).unwrap();
         }
@@ -179,7 +179,7 @@ fn test_tool_input_chunked_deltas_no_spam() {
             let chunk_str = std::str::from_utf8(chunk).unwrap();
             // Escape for JSON
             let escaped = chunk_str.replace('\\', "\\\\").replace('"', "\\\"");
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":"{escaped}"}}}}}}"#).unwrap();
         }
 

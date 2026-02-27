@@ -4,7 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 pub(super) fn wait_for_completion_and_collect_stderr(
-    child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>>,
+    child_arc: &Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>>,
     stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
     monitor_handle: &mut Option<std::thread::JoinHandle<MonitorResult>>,
     runtime: &PipelineRuntime<'_>,
@@ -229,7 +229,7 @@ mod tests {
 
         let start = Instant::now();
         let result = wait_for_completion_and_collect_stderr(
-            Arc::clone(&child_arc),
+            &child_arc,
             &mut stderr_join_handle,
             &mut monitor_handle,
             &runtime,
@@ -301,7 +301,7 @@ mod tests {
 
             let start = Instant::now();
             let result = wait_for_completion_and_collect_stderr(
-                Arc::clone(&child_arc),
+                &child_arc,
                 &mut stderr_join_handle,
                 &mut monitor_handle,
                 &runtime,

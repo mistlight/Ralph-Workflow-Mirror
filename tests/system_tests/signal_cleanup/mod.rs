@@ -215,9 +215,9 @@ fn spawn_ralph_pipeline(repo_dir: &Path) -> Option<Child> {
             // Best-effort emergency cleanup on system test timeout.
             // Avoid killing a recycled PID: only SIGKILL if we can still signal the process.
             unsafe {
-                let check = libc::kill(child_id as i32, 0);
+                let check = libc::kill(child_id.cast_signed(), 0);
                 if check == 0 {
-                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
+                    let _ = libc::kill(child_id.cast_signed(), libc::SIGKILL);
                 }
             }
         }
@@ -261,7 +261,7 @@ fn wait_for_marker_size(repo_dir: &Path, timeout: Duration, expected_size: u64) 
 
 /// Send SIGINT to process.
 fn send_sigint(child: &Child) {
-    let rc = unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+    let rc = unsafe { libc::kill(child.id().cast_signed(), libc::SIGINT) };
     assert_eq!(rc, 0, "expected SIGINT delivery via kill() to succeed");
 }
 

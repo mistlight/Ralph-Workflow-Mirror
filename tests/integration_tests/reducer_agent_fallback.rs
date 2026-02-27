@@ -277,7 +277,10 @@ fn test_chain_initialized_event_populates_state() {
             state,
             PipelineEvent::agent_chain_initialized(
                 AgentRole::Developer,
-                EXPECTED_AGENTS.iter().map(std::string::ToString::to_string).collect(),
+                EXPECTED_AGENTS
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
                 3,
                 1000,
                 2.0,

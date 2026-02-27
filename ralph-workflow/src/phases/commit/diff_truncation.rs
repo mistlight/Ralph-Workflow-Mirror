@@ -159,6 +159,20 @@ fn prioritize_file_path(path: &str) -> i32 {
     }
 }
 
+fn truncate_to_utf8_boundary(s: &mut String, max_bytes: usize) {
+    if s.len() <= max_bytes {
+        return;
+    }
+    let mut cut = 0usize;
+    for (idx, _) in s.char_indices() {
+        if idx > max_bytes {
+            break;
+        }
+        cut = idx;
+    }
+    s.truncate(cut);
+}
+
 fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
     let mut result = Vec::new();
     let mut current_size = 0;
@@ -175,20 +189,6 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
 
     let suffix = " [truncated...]";
     let suffix_len = suffix.len();
-
-    fn truncate_to_utf8_boundary(s: &mut String, max_bytes: usize) {
-        if s.len() <= max_bytes {
-            return;
-        }
-        let mut cut = 0usize;
-        for (idx, _) in s.char_indices() {
-            if idx > max_bytes {
-                break;
-            }
-            cut = idx;
-        }
-        s.truncate(cut);
-    }
 
     if !result.is_empty() {
         // current_size tracks line lengths + '\n' for each included line.

@@ -77,7 +77,7 @@ fn test_finalization_orchestration_integration() {
     );
 
     // Execute safety check, get PreTerminationSafetyCheckPassed event
-    let result0 = handler.execute_mock(effect0);
+    let result0 = handler.execute_mock(&effect0);
     assert!(
         matches!(
             result0.event,
@@ -102,7 +102,7 @@ fn test_finalization_orchestration_integration() {
     );
 
     // Step 2: Execute effect, get event
-    let result1 = handler.execute_mock(effect1);
+    let result1 = handler.execute_mock(&effect1);
     assert!(
         matches!(result1.event, PipelineEvent::FinalizingStarted),
         "ValidateFinalState should return FinalizingStarted"
@@ -124,7 +124,7 @@ fn test_finalization_orchestration_integration() {
     );
 
     // Step 5: Execute effect, get event
-    let result2 = handler.execute_mock(effect2);
+    let result2 = handler.execute_mock(&effect2);
     assert!(
         matches!(result2.event, PipelineEvent::PromptPermissionsRestored),
         "RestorePromptPermissions should return PromptPermissionsRestored"

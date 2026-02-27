@@ -279,7 +279,7 @@ impl VirtualTerminal {
     /// assert!(term.would_cursor_up_leave_orphans(&long_content));
     /// ```
     pub fn would_cursor_up_leave_orphans(&self, content: &str) -> bool {
-        if let Some(cols) = self.cols {
+        self.cols.is_some_and(|cols| {
             // This helper is used by tests to model the cursor-up/clear-line failure mode
             // under wrapping. We intentionally approximate terminal width here:
             // - strip ANSI escape sequences (colors, cursor movement) since they do not
@@ -297,9 +297,7 @@ impl VirtualTerminal {
             let content_len = stripped.chars().count();
             let rows_needed = content_len.div_ceil(cols);
             rows_needed > 1 // If content needs >1 row, cursor-up-1 leaves orphans
-        } else {
-            false // Unbounded terminal, no wrapping
-        }
+        })
     }
 
     /// Get a debug summary of the terminal state for diagnostics.
@@ -359,9 +357,12 @@ impl VirtualTerminal {
     ///     "Should not have waterfall pattern with append-only streaming");
     /// ```
     pub fn has_waterfall_pattern(&self, prefix: &str) -> bool {
-        let lines = self.get_visible_lines();
-        let prefix_lines: Vec<_> = lines.iter().filter(|l| l.contains(prefix)).collect();
-        prefix_lines.len() > 1
+        self.get_visible_lines()
+            .iter()
+            .filter(|line| line.contains(prefix))
+            .take(2)
+            .count()
+            > 1
     }
 }
 

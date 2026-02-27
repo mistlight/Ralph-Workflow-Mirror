@@ -37,7 +37,7 @@ fn mock_effect_handler_implements_effect_handler_trait() {
 
     // Create a minimal mock PhaseContext - this requires test-utils
     // For now we test that the handler implements the trait by calling execute_mock
-    let result = handler.execute_mock(effect.clone());
+    let result = handler.execute_mock(&effect);
 
     // Effect should be captured
     assert!(
@@ -147,7 +147,7 @@ fn mock_effect_handler_captures_iteration_progress_ui() {
     let mut handler = MockEffectHandler::new(state);
 
     // Simulate development XML extraction
-    let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+    let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
     // Verify UI event was emitted
     assert!(handler.was_ui_event_emitted(|e| {
@@ -168,7 +168,7 @@ fn mock_effect_handler_captures_phase_transition_ui() {
     let mut handler = MockEffectHandler::new(state);
 
     // ValidateFinalState should emit phase transition to Finalizing
-    let _result = handler.execute_mock(Effect::ValidateFinalState);
+    let _result = handler.execute_mock(&Effect::ValidateFinalState);
 
     // Verify UI event was emitted
     assert!(
@@ -189,7 +189,7 @@ fn mock_effect_handler_restore_prompt_permissions_skips_phase_transition_outside
     state.phase = PipelinePhase::Interrupted;
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::RestorePromptPermissions);
+    let _result = handler.execute_mock(&Effect::RestorePromptPermissions);
 
     assert!(
         !handler.was_ui_event_emitted(|e| matches!(

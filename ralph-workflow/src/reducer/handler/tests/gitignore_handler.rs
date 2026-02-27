@@ -8,7 +8,6 @@ use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::LifecycleEvent;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
 use crate::workspace::{MemoryWorkspace, Workspace};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -74,7 +73,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
+    let ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
             workspace_arc: &workspace_arc,
@@ -92,10 +91,7 @@ fn test_ensure_gitignore_creates_file_when_missing() {
         &cloud,
     );
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let result = handler
-        .ensure_gitignore_entries(&mut ctx)
-        .expect("handler should succeed");
+    let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
     // Verify event
     match result.event {
@@ -139,7 +135,7 @@ fn test_ensure_gitignore_appends_when_file_exists() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
+    let ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
             workspace_arc: &workspace_arc,
@@ -157,10 +153,7 @@ fn test_ensure_gitignore_appends_when_file_exists() {
         &cloud,
     );
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let result = handler
-        .ensure_gitignore_entries(&mut ctx)
-        .expect("handler should succeed");
+    let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
     // Verify event
     match result.event {
@@ -203,7 +196,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
+    let ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
             workspace_arc: &workspace_arc,
@@ -221,10 +214,7 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
         &cloud,
     );
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let result = handler
-        .ensure_gitignore_entries(&mut ctx)
-        .expect("handler should succeed");
+    let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
     // Verify event
     match result.event {
@@ -263,7 +253,7 @@ fn test_ensure_gitignore_partial_entries() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
+    let ctx = create_test_context(
         TestContextParams {
             workspace: &workspace,
             workspace_arc: &workspace_arc,
@@ -281,10 +271,7 @@ fn test_ensure_gitignore_partial_entries() {
         &cloud,
     );
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let result = handler
-        .ensure_gitignore_entries(&mut ctx)
-        .expect("handler should succeed");
+    let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
     // Verify event
     match result.event {
@@ -423,7 +410,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
+    let ctx = create_test_context(
         TestContextParams {
             workspace: &failing_workspace,
             workspace_arc: &workspace_arc,
@@ -441,10 +428,7 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
         &cloud,
     );
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let result = handler
-        .ensure_gitignore_entries(&mut ctx)
-        .expect("handler should succeed even on write failure");
+    let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
     // Verify event - should have empty entries_added because write failed
     match result.event {
@@ -493,7 +477,7 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
     let repo_root = PathBuf::from("/mock/repo");
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
 
-    let mut ctx = create_test_context(
+    let ctx = create_test_context(
         TestContextParams {
             workspace: &failing_workspace,
             workspace_arc: &workspace_arc,
@@ -511,10 +495,7 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
         &cloud,
     );
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let result = handler
-        .ensure_gitignore_entries(&mut ctx)
-        .expect("handler should succeed even on write failure");
+    let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
     // Verify event - should have empty entries_added because write failed
     match result.event {

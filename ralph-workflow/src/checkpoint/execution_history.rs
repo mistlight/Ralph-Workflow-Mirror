@@ -24,8 +24,20 @@ where
     })
 }
 
+fn serialize_option_boxed_string_slice_empty_if_none_field<S, V>(
+    value: V,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+    V: std::ops::Deref<Target = Option<Box<[String]>>>,
+{
+    let values = (*value).as_deref();
+    serialize_option_boxed_string_slice_empty_if_none(values, serializer)
+}
+
 fn serialize_option_boxed_string_slice_empty_if_none<S>(
-    value: &Option<Box<[String]>>,
+    value: Option<&[String]>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -56,7 +68,7 @@ pub enum StepOutcome {
         #[serde(
             default,
             deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty",
-            serialize_with = "serialize_option_boxed_string_slice_empty_if_none"
+            serialize_with = "serialize_option_boxed_string_slice_empty_if_none_field"
         )]
         files_modified: Option<Box<[String]>>,
         #[serde(default)]
@@ -71,7 +83,7 @@ pub enum StepOutcome {
         #[serde(
             default,
             deserialize_with = "deserialize_option_boxed_string_slice_none_if_empty",
-            serialize_with = "serialize_option_boxed_string_slice_empty_if_none"
+            serialize_with = "serialize_option_boxed_string_slice_empty_if_none_field"
         )]
         signals: Option<Box<[String]>>,
     },

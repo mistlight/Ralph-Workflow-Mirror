@@ -25,7 +25,7 @@ use crate::test_timeout::with_default_timeout;
 fn test_dev_continuation_budget_enforced() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Attempt 0 (initial) - already happened, continuation_attempt = 0
@@ -56,7 +56,7 @@ fn test_fix_continuation_budget_enforced() {
     with_default_timeout(|| {
         let mut continuation = ContinuationState::with_limits(99, 3, 2);
         continuation.max_fix_continue_count = 2; // Set fix budget explicitly to 2
-        let mut state = PipelineState::initial_with_continuation(0, 3, continuation);
+        let mut state = PipelineState::initial_with_continuation(0, 3, &continuation);
 
         // Simulate fix continuations (max_fix_continue_count = 2)
         // Attempt 0 is initial, attempts 1 and 2 are continuations
@@ -108,7 +108,7 @@ fn test_continuation_state_resets_across_iterations() {
 fn test_continuation_budget_exhaustion_switches_agent() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 2, 2); // max_continue_count = 2
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         let initial_agent_index = state.agent_chain.current_agent_index;
@@ -151,7 +151,7 @@ fn test_continuation_budget_exhaustion_switches_agent() {
 fn test_fix_continuation_budget_exhaustion_proceeds_to_commit() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 1); // max_fix_continue_count = 1
-        let mut state = PipelineState::initial_with_continuation(0, 3, continuation);
+        let mut state = PipelineState::initial_with_continuation(0, 3, &continuation);
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
         state.reviewer_pass = 1;
 
@@ -249,7 +249,7 @@ fn test_continuation_metrics_track_correctly() {
 fn test_dev_continuation_metrics_match_state() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(3, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Initial: no continuations yet
@@ -297,7 +297,7 @@ fn test_dev_continuation_metrics_match_state() {
 fn test_fix_continuation_metrics_match_state() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(0, 1, continuation);
+        let mut state = PipelineState::initial_with_continuation(0, 1, &continuation);
         state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
         state.reviewer_pass = 0;
 
@@ -342,7 +342,7 @@ fn test_fix_continuation_metrics_match_state() {
 fn test_continuation_exhaustion_matches_metrics() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(3, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(3, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Exhaust continuations (3 attempts total: 0, 1, 2)
@@ -387,7 +387,7 @@ fn test_missing_max_dev_continuations_applies_default() {
             2,  // max_same_agent_retries
         );
 
-        let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(1, 0, &continuation);
 
         // Verify default is applied correctly
         assert_eq!(
@@ -467,7 +467,7 @@ fn test_missing_config_key_caps_continuations_at_three() {
             2,  // max_same_agent_retries
         );
 
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Initial attempt (continuation_attempt = 0)
@@ -550,7 +550,7 @@ fn test_continuation_stops_with_unwrap_or_default() {
             2,  // max_same_agent_retries
         );
 
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
 
         // Verify the default was applied correctly
         assert_eq!(
@@ -645,7 +645,7 @@ fn test_outcome_applied_exhausts_too_early() {
     with_default_timeout(|| {
         // max_continue_count = 3 means attempts 0, 1, 2 should be allowed (3 total)
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Simulate attempt 0 completing with Partial outcome
@@ -727,7 +727,7 @@ fn test_outcome_applied_exhausts_too_early() {
 fn test_continuation_attempt_numbering_and_boundary() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(10, 3, 2);
-        let mut state = PipelineState::initial_with_continuation(5, 0, continuation);
+        let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
         // Initial attempt (attempt 0)

@@ -29,7 +29,7 @@ use std::path::PathBuf;
 
 use crate::common::{
     create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_env,
-    run_ralph_cli_with_handlers,
+    run_ralph_cli_with_handler, run_ralph_cli_with_handlers,
 };
 use crate::test_timeout::with_default_timeout;
 
@@ -924,5 +924,42 @@ fn test_config_discovery_outside_git_repo() {
         .is_ok();
 
         assert!(ok, "Config discovery should work outside git repo");
+    });
+}
+
+/// Regression test: prompt validation failures must abort pipeline startup.
+///
+/// This guards against accidentally swallowing `validate_prompt_and_setup_backup()`
+/// errors during `execution_core` refactors.
+#[test]
+fn test_pipeline_fails_fast_on_invalid_prompt_content() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            // Empty prompt is always a hard validation error (strict/non-strict)
+            .with_file("PROMPT.md", "")
+            .with_file(".agent/PLAN.md", "Test plan\n");
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        let result = run_ralph_cli_with_handler(&[], executor, config, &mut handler);
+
+        assert!(
+            result.is_err(),
+            "Pipeline should fail when PROMPT.md validation fails"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("PROMPT.md validation errors"),
+            "Error should include PROMPT.md validation failure: {err_msg}"
+        );
+
+        // Ensure backup creation was never reached after validation failure.
+        assert!(
+            !handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+            "Backup must not be created when validation fails"
+        );
     });
 }

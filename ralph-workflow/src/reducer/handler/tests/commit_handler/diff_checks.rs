@@ -8,7 +8,6 @@ use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::{AgentChainState, PipelineState};
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
@@ -58,14 +57,7 @@ fn test_check_commit_diff_emits_prepared_event() {
         cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    handler.state.agent_chain = AgentChainState::initial().with_agents(
-        vec!["claude".to_string()],
-        vec![vec![]],
-        crate::agents::AgentRole::Commit,
-    );
-    let result = handler
-        .check_commit_diff_with_content(&mut ctx, "")
+    let result = MainEffectHandler::check_commit_diff_with_content(&mut ctx, "")
         .expect("check_commit_diff_with_content should succeed");
 
     assert!(matches!(
@@ -119,15 +111,11 @@ fn test_check_commit_diff_emits_failed_event_on_error() {
         cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    handler.state.agent_chain = AgentChainState::initial().with_agents(
-        vec!["claude".to_string()],
-        vec![vec![]],
-        crate::agents::AgentRole::Commit,
-    );
-    let result = handler
-        .check_commit_diff_with_result(&mut ctx, Err(anyhow::anyhow!("diff failed")))
-        .expect("check_commit_diff_with_result should succeed");
+    let result = MainEffectHandler::check_commit_diff_with_result(
+        &mut ctx,
+        Err(anyhow::anyhow!("diff failed")),
+    )
+    .expect("check_commit_diff_with_result should succeed");
 
     // New behavior: diff failure uses fallback instructions instead of DiffFailed event
     // The event should be DiffPrepared with fallback content
@@ -196,15 +184,7 @@ fn test_check_commit_diff_discovers_repo_from_ctx_repo_root_not_process_cwd() {
         cloud: &cloud,
     };
 
-    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    handler.state.agent_chain = AgentChainState::initial().with_agents(
-        vec!["claude".to_string()],
-        vec![vec![]],
-        crate::agents::AgentRole::Commit,
-    );
-
-    let _result = handler
-        .check_commit_diff(&mut ctx)
+    let _result = MainEffectHandler::check_commit_diff(&mut ctx)
         .expect("check_commit_diff should succeed when repo_root is set");
 
     let diff = workspace

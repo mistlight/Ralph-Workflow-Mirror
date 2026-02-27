@@ -69,23 +69,14 @@ fn rebase_detects_pre_rebase_hook_rejection() {
             // Try to rebase - hook should reject
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::Failed(err)) => {
-                    // Should report hook rejection or other failure
-                    assert!(
-                        err.description().contains("hook")
-                            || err.description().contains("Hook")
-                            || err.description().contains("reject")
-                            || err.description().contains("script")
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // On some systems, hooks may not execute (e.g., Windows without Git Bash)
-                }
-                Ok(RebaseResult::NoOp { .. }) => {
-                    // May be considered no-op if nothing to rebase
-                }
-                _ => {}
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Should report hook rejection or other failure
+                assert!(
+                    err.description().contains("hook")
+                        || err.description().contains("Hook")
+                        || err.description().contains("reject")
+                        || err.description().contains("script")
+                );
             }
 
             // Clean up
@@ -166,23 +157,14 @@ fn rebase_detects_commit_hook_rejection_mid_rebase() {
             // Try to rebase - hook should reject during commit creation
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::Failed(err)) => {
-                    // Should report hook rejection or commit creation failure
-                    assert!(
-                        err.description().contains("hook")
-                            || err.description().contains("Hook")
-                            || err.description().contains("commit")
-                            || err.description().contains("Commit")
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // On some systems, hooks may not execute
-                }
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // May have conflicts instead
-                }
-                _ => {}
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Should report hook rejection or commit creation failure
+                assert!(
+                    err.description().contains("hook")
+                        || err.description().contains("Hook")
+                        || err.description().contains("commit")
+                        || err.description().contains("Commit")
+                );
             }
 
             // Clean up

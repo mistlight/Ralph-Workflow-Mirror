@@ -100,7 +100,7 @@ pub fn read_text_until_end(
             }
             Ok(_) => {} // Skip comments, processing instructions, nested elements
             Err(e) => {
-                return Err(make_parse_error(end_tag, e));
+                return Err(make_parse_error(end_tag, &e));
             }
         }
         buf.clear();
@@ -152,7 +152,7 @@ pub fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), Xsd
             }
             Ok(_) => {}
             Err(e) => {
-                return Err(make_parse_error(end_tag, e));
+                return Err(make_parse_error(end_tag, &e));
             }
         }
         buf.clear();
@@ -162,7 +162,7 @@ pub fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), Xsd
 }
 
 /// Create a parse error with CDATA suggestion if the element is code-related.
-fn make_parse_error(element: &[u8], error: quick_xml::Error) -> XsdValidationError {
+fn make_parse_error(element: &[u8], error: &quick_xml::Error) -> XsdValidationError {
     let element_name = String::from_utf8_lossy(element);
     let error_str = error.to_string();
 
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn test_make_parse_error_suggests_cdata_for_code_element() {
         let error = quick_xml::Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag);
-        let result = make_parse_error(b"code-block", error);
+        let result = make_parse_error(b"code-block", &error);
         // Should suggest CDATA for code-block element
         assert!(result.suggestion.contains("CDATA"));
         assert!(result.suggestion.contains("code-block"));

@@ -472,7 +472,7 @@ impl PipelineState {
 
     #[must_use] 
     pub fn initial(developer_iters: u32, reviewer_reviews: u32) -> Self {
-        Self::initial_with_continuation(developer_iters, reviewer_reviews, ContinuationState::new())
+        Self::initial_with_continuation(developer_iters, reviewer_reviews, &ContinuationState::new())
     }
 
     /// Create initial state with custom continuation limits from config.
@@ -494,7 +494,7 @@ impl PipelineState {
     pub fn initial_with_continuation(
         developer_iters: u32,
         reviewer_reviews: u32,
-        continuation: ContinuationState,
+        continuation: &ContinuationState,
     ) -> Self {
         // Determine initial phase based on what work needs to be done
         let initial_phase = if developer_iters == 0 {
@@ -576,7 +576,7 @@ impl PipelineState {
             last_substitution_log: None,
             template_validation_failed: false,
             template_validation_unsubstituted: Vec::new(),
-            metrics: RunMetrics::new(developer_iters, reviewer_reviews, &continuation),
+            metrics: RunMetrics::new(developer_iters, reviewer_reviews, continuation),
             interrupted_by_user: false,
             termination_resume_phase: None,
             pre_termination_commit_checked: false,

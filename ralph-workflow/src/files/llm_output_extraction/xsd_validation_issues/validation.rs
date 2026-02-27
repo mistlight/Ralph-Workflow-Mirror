@@ -132,7 +132,7 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
             Ok(Event::Text(_) | _) => {
                 // Text before root element or other events - continue to EOF error which is more informative
             }
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
         buf.clear();
     }
@@ -207,7 +207,7 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
                 });
             }
             Ok(_) => {} // Skip comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
     }
 

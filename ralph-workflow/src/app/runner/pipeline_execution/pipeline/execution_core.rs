@@ -74,16 +74,16 @@
 /// - State initialization fails
 /// - Event loop execution fails
 /// - Finalization operations fail
-pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
-    use crate::app::event_loop::EventLoopConfig;
-    use crate::cloud::{CloudReporter, HeartbeatGuard, HttpCloudReporter, NoopCloudReporter};
-    use crate::reducer::MainEffectHandler;
-    use crate::reducer::PipelineState;
-    use std::sync::Arc;
-    use std::time::Duration;
+struct ResumeAndConfigState {
+    config: crate::config::Config,
+    run_context: crate::checkpoint::RunContext,
+    resume_checkpoint: Option<crate::checkpoint::PipelineCheckpoint>,
+}
+
+
+fn load_resume_and_config_state(ctx: &PipelineContext) -> anyhow::Result<ResumeAndConfigState> {
     use crate::checkpoint::RunContext;
 
-    // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
         &ctx.args,
         &ctx.config,
@@ -94,7 +94,6 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         &*ctx.workspace,
     );
 
-    // If interactive resume didn't happen, check for --resume flag
     let resume_result = match resume_result {
         Some(result) => Some(result),
         None => handle_resume_with_validation(
@@ -109,37 +108,32 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
     };
 
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
+    let run_context = resume_checkpoint
+        .as_ref()
+        .map_or_else(RunContext::new, RunContext::from_checkpoint);
 
-    // Create run context - either new or from checkpoint
-    let run_context = resume_checkpoint.as_ref().map_or_else(
-        RunContext::new,
-        RunContext::from_checkpoint
-    );
-
-    // Apply checkpoint configuration restoration if resuming
-    let mut config = resume_checkpoint.as_ref().map_or_else(
-        || ctx.config.clone(),
-        |checkpoint| {
+    let mut config = resume_checkpoint
+        .as_ref()
+        .map_or_else(|| ctx.config.clone(), |checkpoint| {
             use crate::checkpoint::apply_checkpoint_to_config;
             let mut restored_config = ctx.config.clone();
             apply_checkpoint_to_config(&mut restored_config, checkpoint);
-        ctx.logger.info("Restored configuration from checkpoint:");
-        if checkpoint.cli_args.developer_iters > 0 {
-            ctx.logger.info(&format!(
-                "  Developer iterations: {} (from checkpoint)",
-                checkpoint.cli_args.developer_iters
-            ));
-        }
-        if checkpoint.cli_args.reviewer_reviews > 0 {
-            ctx.logger.info(&format!(
-                "  Reviewer passes: {} (from checkpoint)",
-                checkpoint.cli_args.reviewer_reviews
-            ));
-        }
-        restored_config        }
-    );
+            ctx.logger.info("Restored configuration from checkpoint:");
+            if checkpoint.cli_args.developer_iters > 0 {
+                ctx.logger.info(&format!(
+                    "  Developer iterations: {} (from checkpoint)",
+                    checkpoint.cli_args.developer_iters
+                ));
+            }
+            if checkpoint.cli_args.reviewer_reviews > 0 {
+                ctx.logger.info(&format!(
+                    "  Reviewer passes: {} (from checkpoint)",
+                    checkpoint.cli_args.reviewer_reviews
+                ));
+            }
+            restored_config
+        });
 
-    // Restore environment variables from checkpoint if resuming
     if let Some(ref checkpoint) = resume_checkpoint {
         use crate::checkpoint::restore::restore_environment_from_checkpoint;
         let restored_count = restore_environment_from_checkpoint(checkpoint);
@@ -150,24 +144,22 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         }
     }
 
-    // Cloud mode git defaults must be resolved from repo reality.
-    // In particular, push/PR head branches must be explicit branch names.
     if config.cloud.enabled {
         resolve_cloud_git_defaults(&mut config, ctx)?;
-        // Fail-fast if config is still invalid after resolving defaults.
         config
             .cloud
             .validate()
             .map_err(|e| anyhow::anyhow!("Cloud config validation failed: {e}"))?;
     }
 
-    // Set up git helpers and agent phase
-    // Use workspace-aware marker operations; then attempt hook install / wrapper.
-    // This is best-effort: failures must not terminate the pipeline.
-    let mut git_helpers = crate::git_helpers::GitHelpers::new();
+    Ok(ResumeAndConfigState {
+        config,
+        run_context,
+        resume_checkpoint,
+    })
+}
 
-    // Marker cleanup/creation are filesystem concerns; use Workspace so tests can run
-    // with MemoryWorkspace, and production stays consistent.
+fn prepare_agent_phase(ctx: &PipelineContext, git_helpers: &mut crate::git_helpers::GitHelpers) {
     if let Err(err) =
         crate::git_helpers::cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)
     {
@@ -175,10 +167,6 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             .warn(&format!("Failed to cleanup orphaned marker: {err}"));
     }
 
-    // Restore PROMPT.md permissions if left read-only by a prior crashed run.
-    // This handles the SIGKILL case where neither the RAII guard nor the reducer
-    // could run cleanup. Best-effort: only warn on failure since this is expected
-    // recovery behavior after a crash (success is silent).
     if let Some(warning) = crate::files::make_prompt_writable_with_workspace(&*ctx.workspace) {
         ctx.logger
             .warn(&format!("PROMPT.md permission restore on startup: {warning}"));
@@ -189,27 +177,11 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             .warn(&format!("Failed to create agent phase marker: {err}"));
     }
 
-    // Hook install / wrapper require a real repo; treat as best-effort.
-    // IMPORTANT: do not call std::fs-based orphan marker cleanup here, because we just
-    // created the marker via workspace. The wrapper cleanup would consider it "orphaned"
-    // and remove it immediately, defeating the safety mechanism.
-
-    // Restore git hooks if left in Ralph-managed state by a prior crashed run.
-    //
-    // IMPORTANT: Avoid noisy startup warnings in normal repos that do not have
-    // Ralph-managed hooks installed. We only attempt an uninstall if a Ralph
-    // marker is present in a known hook file.
-    //
-    // This handles the SIGKILL case where neither the RAII guard nor the reducer
-    // could run cleanup. Best-effort: only warn on failure.
     let hooks_dir = crate::git_helpers::get_hooks_dir_in_repo(&ctx.repo_root);
     let ralph_hook_detected = hooks_dir.ok().is_some_and(|dir| {
         ["pre-commit", "pre-push"].into_iter().any(|name| {
-            crate::files::file_contains_marker(
-                &dir.join(name),
-                crate::git_helpers::HOOK_MARKER,
-            )
-            .unwrap_or(false)
+            crate::files::file_contains_marker(&dir.join(name), crate::git_helpers::HOOK_MARKER)
+                .unwrap_or(false)
         })
     });
 
@@ -221,38 +193,29 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         }
     }
 
-    if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
+    if let Err(err) = crate::git_helpers::start_agent_phase(git_helpers) {
         ctx.logger
             .warn(&format!("Failed to start agent phase: {err}"));
     }
+}
 
-    let mut agent_phase_guard =
-        AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
+fn create_cloud_runtime(
+    config: &crate::config::Config,
+) -> (
+    std::sync::Arc<dyn crate::cloud::CloudReporter>,
+    Option<crate::cloud::HeartbeatGuard>,
+) {
+    use crate::cloud::{CloudReporter, HeartbeatGuard, HttpCloudReporter, NoopCloudReporter};
+    use std::sync::Arc;
+    use std::time::Duration;
 
-    // Print welcome banner and validate PROMPT.md
-    print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
-    print_pipeline_info_with_config(ctx, &config);
-    validate_prompt_and_setup_backup(ctx)?;
-
-    // Set up PROMPT.md monitoring
-    let mut prompt_monitor = setup_prompt_monitor(ctx);
-
-    // Detect project stack and review guidelines
-    let (_project_stack, review_guidelines) =
-        detect_project_stack(&config, &ctx.repo_root, &ctx.logger, ctx.colors);
-
-    print_review_guidelines(ctx, review_guidelines.as_ref());
-    println!();
-
-    // Initialize cloud reporter if cloud mode is enabled
     let cloud_reporter: Arc<dyn CloudReporter> = if config.cloud.enabled {
         Arc::new(HttpCloudReporter::new(config.cloud.clone()))
     } else {
         Arc::new(NoopCloudReporter)
     };
 
-    // Start heartbeat if cloud mode enabled
-    let _heartbeat_guard = if config.cloud.enabled {
+    let heartbeat_guard = if config.cloud.enabled {
         Some(HeartbeatGuard::start(
             Arc::clone(&cloud_reporter),
             Duration::from_secs(u64::from(config.cloud.heartbeat_interval_secs)),
@@ -261,76 +224,30 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         None
     };
 
-    // Create phase context and save starting commit
-    let mut timer = Timer::new();
-    let mut phase_ctx = create_phase_context_with_config(
-        ctx,
-        &config,
-        &mut timer,
-        review_guidelines.as_ref(),
-        &run_context,
-        resume_checkpoint.as_ref(),
-        cloud_reporter.as_ref(),
+    (cloud_reporter, heartbeat_guard)
+}
+
+fn compute_initial_state(
+    phase_ctx: &PhaseContext<'_>,
+    resume_checkpoint: Option<&crate::checkpoint::PipelineCheckpoint>,
+    should_run_rebase: bool,
+) -> crate::reducer::PipelineState {
+    let mut initial_state = resume_checkpoint.map_or_else(
+        || crate::app::event_loop::create_initial_state_with_config(phase_ctx),
+        |checkpoint| {
+            let mut base_state = crate::app::event_loop::create_initial_state_with_config(phase_ctx);
+            let migrated = crate::reducer::PipelineState::from_checkpoint_with_execution_history_limit(
+                checkpoint.clone(),
+                phase_ctx.config.execution_history_limit,
+            );
+            crate::app::event_loop::overlay_checkpoint_progress_onto_base_state(
+                &mut base_state,
+                migrated,
+                phase_ctx.config.execution_history_limit,
+            );
+            base_state
+        },
     );
-    save_start_commit_or_warn(ctx);
-
-    // Set up interrupt context for checkpoint saving on Ctrl+C
-    // This must be done after phase_ctx is created
-    let initial_phase = resume_checkpoint.as_ref().map_or(
-        PipelinePhase::Planning,
-        |checkpoint| checkpoint.phase
-    );
-    setup_interrupt_context_for_pipeline(
-        initial_phase,
-        config.developer_iters,
-        config.reviewer_reviews,
-        &phase_ctx.execution_history,
-        &phase_ctx.prompt_history,
-        &run_context,
-        std::sync::Arc::clone(&ctx.workspace),
-    );
-
-    // Ensure interrupt context is cleared on completion
-    let _interrupt_guard = defer_clear_interrupt_context();
-
-    // Determine if we should run rebase based on current args only.
-    let should_run_rebase = ctx.args.rebase_flags.with_rebase;
-
-    // Update interrupt context before entering the reducer event loop.
-    update_interrupt_context_from_phase(
-        &phase_ctx,
-        initial_phase,
-        config.developer_iters,
-        config.reviewer_reviews,
-        &run_context,
-        std::sync::Arc::clone(&ctx.workspace),
-    );
-
-    // ============================================
-    // RUN PIPELINE PHASES VIA REDUCER EVENT LOOP
-    // ============================================
-
-    // Initialize pipeline state
-    let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
-        // Restore progress from checkpoint, but keep budgets/limits config-driven.
-        // Initialize a config-aware base state first, then overlay checkpoint progress.
-        let mut base_state = crate::app::event_loop::create_initial_state_with_config(&phase_ctx);
-        let migrated = PipelineState::from_checkpoint_with_execution_history_limit(
-            checkpoint.clone(),
-            phase_ctx.config.execution_history_limit,
-        );
-
-        crate::app::event_loop::overlay_checkpoint_progress_onto_base_state(
-            &mut base_state,
-            migrated,
-            phase_ctx.config.execution_history_limit,
-        );
-
-        base_state
-    } else {
-        // Create new initial state with config-derived continuation limits.
-        crate::app::event_loop::create_initial_state_with_config(&phase_ctx)
-    };
 
     if should_run_rebase {
         if matches!(
@@ -351,26 +268,28 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
         initial_state.rebase = crate::reducer::state::RebaseState::Skipped;
     }
 
-    // Configure event loop
+    initial_state
+}
+
+fn run_event_loop_with_default_handler(
+    phase_ctx: &mut PhaseContext<'_>,
+    initial_state: crate::reducer::PipelineState,
+) -> anyhow::Result<crate::app::event_loop::EventLoopResult> {
+    use crate::app::event_loop::{EventLoopConfig, run_event_loop_with_handler};
+    use crate::reducer::MainEffectHandler;
+
     let event_loop_config = EventLoopConfig {
         max_iterations: event_loop::MAX_EVENT_LOOP_ITERATIONS,
     };
 
-    // Create effect handler and run event loop.
-    let loop_result = {
-        use crate::app::event_loop::run_event_loop_with_handler;
-        let mut handler = MainEffectHandler::new(initial_state.clone());
-        let phase_ctx_ref = &mut phase_ctx;
-        run_event_loop_with_handler(
-            phase_ctx_ref,
-            Some(initial_state),
-            event_loop_config,
-            &mut handler,
-        )
-    };
+    let mut handler = MainEffectHandler::new(initial_state.clone());
+    run_event_loop_with_handler(phase_ctx, Some(initial_state), event_loop_config, &mut handler)
+}
 
-    // Handle event loop result
-    let loop_result = loop_result?;
+fn log_event_loop_outcome(
+    ctx: &PipelineContext,
+    loop_result: &crate::app::event_loop::EventLoopResult,
+) {
     if loop_result.completed {
         match loop_result.final_phase {
             crate::reducer::event::PipelinePhase::Complete => {
@@ -382,7 +301,7 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
                     .info("Pipeline completed with Interrupted phase (failure handled)");
                 ctx.logger.info(
                     "Completion marker was written during failure handling. \
-                     External orchestration can detect termination via .agent/tmp/completion_marker"
+                     External orchestration can detect termination via .agent/tmp/completion_marker",
                 );
             }
             _ => {
@@ -394,141 +313,242 @@ pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow
             "Total events processed: {}",
             loop_result.events_processed
         ));
-    } else {
-        ctx.logger
-            .error("⚠️  EXCEPTIONAL: Pipeline exited without normal completion");
-        ctx.logger.warn(&format!(
-            "This indicates a bug in the event loop or reducer. \
-             Expected final phase: Complete or Interrupted+checkpoint. \
-             Actual: completed=false, final_phase={:?}, events_processed={}",
-            loop_result.final_phase, loop_result.events_processed
-        ));
+        return;
+    }
 
-        // If we exited from AwaitingDevFix without completing, this is the specific bug
-        // we're trying to fix - log it explicitly with state details
-        if matches!(
-            loop_result.final_phase,
-            crate::reducer::event::PipelinePhase::AwaitingDevFix
-        ) {
-            ctx.logger.error(
-                "BUG DETECTED: Event loop exited from AwaitingDevFix without completing dev-fix flow. \
-                 This should transition to Interrupted and save checkpoint. \
-                 Check: Was TriggerDevFixFlow executed? Was completion marker written? \
-                 See .agent/tmp/event_loop_trace.jsonl for execution trace."
+    ctx.logger
+        .error("⚠️  EXCEPTIONAL: Pipeline exited without normal completion");
+    ctx.logger.warn(&format!(
+        "This indicates a bug in the event loop or reducer. \
+         Expected final phase: Complete or Interrupted+checkpoint. \
+         Actual: completed=false, final_phase={:?}, events_processed={}",
+        loop_result.final_phase, loop_result.events_processed
+    ));
+
+    if matches!(
+        loop_result.final_phase,
+        crate::reducer::event::PipelinePhase::AwaitingDevFix
+    ) {
+        ctx.logger.error(
+            "BUG DETECTED: Event loop exited from AwaitingDevFix without completing dev-fix flow. \
+             This should transition to Interrupted and save checkpoint. \
+             Check: Was TriggerDevFixFlow executed? Was completion marker written? \
+             See .agent/tmp/event_loop_trace.jsonl for execution trace.",
+        );
+    }
+
+    write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
+}
+
+fn should_exit_due_to_sigint(loop_result: &crate::app::event_loop::EventLoopResult) -> bool {
+    let pending_sigint_request = crate::interrupt::take_user_interrupt_request();
+    loop_result.final_state.interrupted_by_user || pending_sigint_request
+}
+
+fn save_complete_checkpoint_if_needed(
+    ctx: &PipelineContext,
+    config: &crate::config::Config,
+    run_context: &crate::checkpoint::RunContext,
+    phase_ctx: &PhaseContext<'_>,
+    loop_result: &crate::app::event_loop::EventLoopResult,
+) {
+    if !config.features.checkpoint_enabled || !should_write_complete_checkpoint(loop_result.final_phase)
+    {
+        return;
+    }
+
+    let builder = CheckpointBuilder::new()
+        .phase(
+            PipelinePhase::Complete,
+            config.developer_iters,
+            config.developer_iters,
+        )
+        .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
+        .capture_from_context(
+            config,
+            &ctx.registry,
+            &ctx.developer_agent,
+            &ctx.reviewer_agent,
+            &ctx.logger,
+            run_context,
+        )
+        .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
+
+    let builder = builder
+        .with_execution_history(phase_ctx.execution_history.clone())
+        .with_prompt_history(phase_ctx.clone_prompt_history())
+        .with_log_run_id(ctx.run_log_context.run_id().to_string());
+
+    if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
+        let mut checkpoint = checkpoint;
+        if loop_result.final_state.cloud.enabled {
+            checkpoint.cloud_state = Some(
+                crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(
+                    &loop_result.final_state,
+                ),
             );
         }
+        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+    }
+}
 
-        // DEFENSIVE: Emit completion marker for orchestration
-        // This ensures external systems can detect termination even if the
-        // event loop exited unexpectedly before SaveCheckpoint was processed.
-        write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
+fn report_cloud_completion(
+    ctx: &PipelineContext,
+    config: &crate::config::Config,
+    cloud_reporter: &dyn crate::cloud::CloudReporter,
+    loop_result: &crate::app::event_loop::EventLoopResult,
+    timer: &Timer,
+) -> anyhow::Result<()> {
+    if !config.cloud.enabled {
+        return Ok(());
     }
 
-    // If SIGINT was requested while the reducer event loop was active, we must
-    // exit with code 130 (SIGINT convention) after reducer-driven cleanup.
-    //
-    // We intentionally check this AFTER the event loop completes because:
-    // - The SIGINT handler only sets a flag when the event loop is active
-    // - The event loop translates it into reducer state (interrupted_by_user=true)
-    // - We still want checkpoint/permission/hook cleanup to run normally
-    //
-    // IMPORTANT: A SIGINT may arrive very late (after the event loop has already
-    // passed its per-iteration interrupt check). In that case, the reducer will not
-    // observe the request, so `interrupted_by_user` may remain false. We still
-    // treat this run as user-interrupted for exit-code purposes.
-    let pending_sigint_request = crate::interrupt::take_user_interrupt_request();
-    let exit_after_cleanup_due_to_sigint =
-        loop_result.final_state.interrupted_by_user || pending_sigint_request;
-
-    // Save Complete checkpoint before clearing (for idempotent resume)
-    if config.features.checkpoint_enabled
-        && should_write_complete_checkpoint(loop_result.final_phase)
-    {
-        let builder = CheckpointBuilder::new()
-            .phase(
-                PipelinePhase::Complete,
-                config.developer_iters,
-                config.developer_iters,
-            )
-            .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
-            .capture_from_context(
-                &config,
-                &ctx.registry,
-                &ctx.developer_agent,
-                &ctx.reviewer_agent,
-                &ctx.logger,
-                &run_context,
-            )
-            .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
-
-        let builder = builder
-            .with_execution_history(phase_ctx.execution_history.clone())
-            .with_prompt_history(phase_ctx.clone_prompt_history())
-            .with_log_run_id(ctx.run_log_context.run_id().to_string());
-
-        if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
-            let mut checkpoint = checkpoint;
-            if loop_result.final_state.cloud.enabled {
-                checkpoint.cloud_state = Some(
-                    crate::checkpoint::state::CloudCheckpointState::from_pipeline_state(
-                        &loop_result.final_state,
-                    ),
-                );
-            }
-            let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+    let result_payload = build_cloud_completion_payload(loop_result, timer);
+    if let Err(e) = cloud_reporter.report_completion(&result_payload) {
+        let error = crate::cloud::redaction::redact_secrets(&e.to_string());
+        if !config.cloud.graceful_degradation {
+            return Err(anyhow::anyhow!("Cloud completion report failed: {error}"));
         }
+        ctx.logger
+            .warn(&format!("Cloud completion report failed: {error}"));
     }
 
-    // Cloud completion reporting - notify orchestrator of final result
-    // This is done after checkpoint saving to ensure all state is persisted first
-    if config.cloud.enabled {
-        let result_payload = build_cloud_completion_payload(&loop_result, &timer);
+    Ok(())
+}
 
-        if let Err(e) = cloud_reporter.report_completion(&result_payload) {
-            let error = crate::cloud::redaction::redact_secrets(&e.to_string());
-            if !config.cloud.graceful_degradation {
-                return Err(anyhow::anyhow!("Cloud completion report failed: {error}"));
-            }
-            ctx.logger
-                .warn(&format!("Cloud completion report failed: {error}"));
-        }
-    }
-
-    // Post-pipeline operations
-    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
+fn finish_pipeline(
+    ctx: &PipelineContext,
+    config: &crate::config::Config,
+    timer: &Timer,
+    agent_phase_guard: &mut AgentPhaseGuard<'_>,
+    prompt_monitor: &mut Option<PromptMonitor>,
+    loop_result: &crate::app::event_loop::EventLoopResult,
+    exit_after_cleanup_due_to_sigint: bool,
+) -> anyhow::Result<()> {
+    check_prompt_restoration(ctx, prompt_monitor, "event loop");
     update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;
 
-    // Finalization
-    //
-    // IMPORTANT: If the user hit Ctrl+C (either observed by the reducer or late),
-    // avoid running finalization. Finalization includes user-visible output and may
-    // clear checkpoints; a Ctrl+C should behave like an abort after cleanup.
-    //
-    // Cleanup is still guaranteed by AgentPhaseGuard::drop() and reducer effects.
     if !exit_after_cleanup_due_to_sigint {
         finalize_pipeline(
-            &mut agent_phase_guard,
+            agent_phase_guard,
             crate::app::finalization::FinalizeContext {
                 logger: &ctx.logger,
                 colors: ctx.colors,
-                config: &config,
-                timer: &timer,
+                config,
+                timer,
                 workspace: &*ctx.workspace,
             },
             &loop_result.final_state,
-            prompt_monitor,
+            prompt_monitor.take(),
         );
     }
 
     if exit_after_cleanup_due_to_sigint {
-        // Exit after cleanup so SIGINT has the conventional exit code.
-        // IMPORTANT: do NOT call `process::exit(130)` here; it would bypass RAII
-        // cleanup (AgentPhaseGuard::drop). Instead, request the exit code and let
-        // `main()` perform the exit after stack unwinding.
         crate::interrupt::request_exit_130_after_run();
     }
 
     Ok(())
+}
+
+/// Runs the pipeline with the default `MainEffectHandler`.
+///
+/// This is the production entry point - it creates a `MainEffectHandler` internally.
+pub(super) fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
+    let resume_state = load_resume_and_config_state(ctx)?;
+    let mut git_helpers = crate::git_helpers::GitHelpers::new();
+    prepare_agent_phase(ctx, &mut git_helpers);
+    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
+
+    let (cloud_reporter, _heartbeat_guard) = create_cloud_runtime(&resume_state.config);
+
+    print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
+    print_pipeline_info_with_config(ctx, &resume_state.config);
+    validate_prompt_and_setup_backup(ctx)?;
+
+    let mut prompt_monitor = setup_prompt_monitor(ctx);
+    let (_project_stack, review_guidelines) = detect_project_stack(
+        &resume_state.config,
+        &ctx.repo_root,
+        &ctx.logger,
+        ctx.colors,
+    );
+    print_review_guidelines(ctx, review_guidelines.as_ref());
+    println!();
+
+    let mut timer = Timer::new();
+    let mut phase_ctx = create_phase_context_with_config(
+        ctx,
+        &resume_state.config,
+        &mut timer,
+        review_guidelines.as_ref(),
+        &resume_state.run_context,
+        resume_state.resume_checkpoint.as_ref(),
+        cloud_reporter.as_ref(),
+    );
+    save_start_commit_or_warn(ctx);
+
+    let initial_phase = resume_state
+        .resume_checkpoint
+        .as_ref()
+        .map_or(PipelinePhase::Planning, |checkpoint| checkpoint.phase);
+
+    setup_interrupt_context_for_pipeline(
+        initial_phase,
+        resume_state.config.developer_iters,
+        resume_state.config.reviewer_reviews,
+        &phase_ctx.execution_history,
+        &phase_ctx.prompt_history,
+        &resume_state.run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
+
+    let _interrupt_guard = defer_clear_interrupt_context();
+
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        initial_phase,
+        resume_state.config.developer_iters,
+        resume_state.config.reviewer_reviews,
+        &resume_state.run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
+
+    let initial_state = compute_initial_state(
+        &phase_ctx,
+        resume_state.resume_checkpoint.as_ref(),
+        ctx.args.rebase_flags.with_rebase,
+    );
+
+    let loop_result = run_event_loop_with_default_handler(&mut phase_ctx, initial_state)?;
+    log_event_loop_outcome(ctx, &loop_result);
+
+    let exit_after_cleanup_due_to_sigint = should_exit_due_to_sigint(&loop_result);
+
+    save_complete_checkpoint_if_needed(
+        ctx,
+        &resume_state.config,
+        &resume_state.run_context,
+        &phase_ctx,
+        &loop_result,
+    );
+
+    report_cloud_completion(
+        ctx,
+        &resume_state.config,
+        cloud_reporter.as_ref(),
+        &loop_result,
+        &timer,
+    )?;
+
+    finish_pipeline(
+        ctx,
+        &resume_state.config,
+        &timer,
+        &mut agent_phase_guard,
+        &mut prompt_monitor,
+        &loop_result,
+        exit_after_cleanup_due_to_sigint,
+    )
 }
 
 fn build_cloud_completion_payload(

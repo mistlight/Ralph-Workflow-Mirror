@@ -45,9 +45,9 @@ impl MockEffectHandler {
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_development_effect(
         &self,
-        effect: Effect,
+        effect: &Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
-        match effect {
+        match *effect {
             Effect::PrepareDevelopmentContext { iteration } => Some((
                 PipelineEvent::development_context_prepared(iteration),
                 vec![],

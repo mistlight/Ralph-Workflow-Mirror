@@ -47,7 +47,7 @@ use super::state::PipelineState;
 pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
     match event {
         // Route to category-specific reducers
-        PipelineEvent::Lifecycle(e) => lifecycle::reduce_lifecycle_event(state, e),
+        PipelineEvent::Lifecycle(ref e) => lifecycle::reduce_lifecycle_event(state, e),
         PipelineEvent::Planning(e) => planning::reduce_planning_event(state, e),
         PipelineEvent::Development(e) => development::reduce_development_event(state, e),
         PipelineEvent::Review(e) => review::reduce_review_event(state, e),

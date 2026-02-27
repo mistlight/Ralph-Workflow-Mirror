@@ -136,7 +136,7 @@ fn test_collision_handling() {
 
     // Now create a RunLogContext with the fixed base run_id
     // It should skip base and collisions 1-5 and create collision variant 06
-    let ctx = RunLogContext::for_testing(fixed_id, &workspace).unwrap();
+    let ctx = RunLogContext::for_testing(&fixed_id, &workspace).unwrap();
 
     // Verify the run_id has a collision suffix -06
     let run_id_str = ctx.run_id().as_str();
@@ -179,7 +179,7 @@ fn test_collision_exhaustion() {
     }
 
     // Now try to create a RunLogContext with the fixed base run_id - it should fail
-    let result = RunLogContext::for_testing(fixed_id, &workspace);
+    let result = RunLogContext::for_testing(&fixed_id, &workspace);
     assert!(
         result.is_err(),
         "Should fail when all collision variants are exhausted"

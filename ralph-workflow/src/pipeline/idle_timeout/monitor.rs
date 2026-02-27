@@ -21,6 +21,7 @@ pub struct FileActivityConfig {
 }
 
 /// Configuration for the idle timeout monitor.
+#[derive(Debug, Clone, Copy)]
 pub struct MonitorConfig {
     /// Timeout duration in seconds.
     pub timeout_secs: u64,
@@ -92,11 +93,11 @@ fn sleep_until_next_check_or_stop(
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
 pub fn monitor_idle_timeout(
-    activity_timestamp: SharedActivityTimestamp,
-    child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
+    activity_timestamp: &SharedActivityTimestamp,
+    child: &Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
     timeout_secs: u64,
-    should_stop: Arc<std::sync::atomic::AtomicBool>,
-    executor: Arc<dyn ProcessExecutor>,
+    should_stop: &Arc<std::sync::atomic::AtomicBool>,
+    executor: &Arc<dyn ProcessExecutor>,
 ) -> MonitorResult {
     monitor_idle_timeout_with_interval_and_kill_config(
         activity_timestamp,
@@ -114,11 +115,11 @@ pub fn monitor_idle_timeout(
 
 /// Like [`monitor_idle_timeout`] but with a configurable check interval.
 pub fn monitor_idle_timeout_with_interval(
-    activity_timestamp: SharedActivityTimestamp,
-    child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
+    activity_timestamp: &SharedActivityTimestamp,
+    child: &Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
     timeout_secs: u64,
-    should_stop: Arc<std::sync::atomic::AtomicBool>,
-    executor: Arc<dyn ProcessExecutor>,
+    should_stop: &Arc<std::sync::atomic::AtomicBool>,
+    executor: &Arc<dyn ProcessExecutor>,
     check_interval: Duration,
 ) -> MonitorResult {
     monitor_idle_timeout_with_interval_and_kill_config(
@@ -139,11 +140,11 @@ pub fn monitor_idle_timeout_with_interval(
 ///
 /// May panic if internal synchronization primitives (mutex, atomic) are in an invalid state.
 pub fn monitor_idle_timeout_with_interval_and_kill_config(
-    activity_timestamp: SharedActivityTimestamp,
-    file_activity_config: Option<FileActivityConfig>,
-    child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
-    should_stop: Arc<std::sync::atomic::AtomicBool>,
-    executor: Arc<dyn ProcessExecutor>,
+    activity_timestamp: &SharedActivityTimestamp,
+    file_activity_config: Option<&FileActivityConfig>,
+    child: &Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
+    should_stop: &Arc<std::sync::atomic::AtomicBool>,
+    executor: &Arc<dyn ProcessExecutor>,
     config: MonitorConfig,
 ) -> MonitorResult {
     use std::sync::atomic::Ordering;
@@ -213,9 +214,9 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             if now.duration_since(state.triggered_at) >= kill_config.post_sigkill_hard_cap()
                 && state.escalated
             {
-                let child_for_reaper = Arc::clone(&child);
-                let executor_for_reaper = Arc::clone(&executor);
-                let should_stop_for_reaper = Arc::clone(&should_stop);
+                let child_for_reaper = Arc::clone(child);
+                let executor_for_reaper = Arc::clone(executor);
+                let should_stop_for_reaper = Arc::clone(should_stop);
                 let config_for_reaper = kill_config;
                 let pid = state.pid;
                 std::thread::spawn(move || {
@@ -262,19 +263,19 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             continue;
         }
 
-        if !is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
+        if !is_idle_timeout_exceeded(activity_timestamp, timeout_secs) {
             continue;
         }
 
         // Log diagnostic information about timeout trigger
-        let time_since_output = super::time_since_activity(&activity_timestamp);
+        let time_since_output = super::time_since_activity(activity_timestamp);
         eprintln!(
             "Idle timeout exceeded: no output activity for {} seconds",
             time_since_output.as_secs()
         );
 
         // Check file activity if config provided
-        if let Some(ref config) = file_activity_config {
+        if let Some(config) = file_activity_config {
             let mut locked_tracker = config
                 .tracker
                 .lock()
@@ -310,7 +311,7 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             locked_child.id()
         };
 
-        let kill_result = kill_process(child_id, executor.as_ref(), Some(&child), kill_config);
+        let kill_result = kill_process(child_id, executor.as_ref(), Some(child), kill_config);
         match kill_result {
             KillResult::TerminatedByTerm => return MonitorResult::TimedOut { escalated: false },
             KillResult::TerminatedByKill => return MonitorResult::TimedOut { escalated: true },

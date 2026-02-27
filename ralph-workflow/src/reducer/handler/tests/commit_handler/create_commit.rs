@@ -8,7 +8,6 @@ use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::ErrorEvent;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -61,10 +60,7 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
         cloud: &cloud,
     };
 
-    let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-
-    let err = handler
-        .create_commit(&mut ctx, "test message".to_string())
+    let err = MainEffectHandler::create_commit(&mut ctx, "test message".to_string())
         .expect_err("create_commit should fail when repo discovery fails");
 
     assert!(

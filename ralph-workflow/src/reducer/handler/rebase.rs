@@ -6,10 +6,9 @@ use anyhow::Result;
 
 impl MainEffectHandler {
     pub(super) fn run_rebase(
-        &self,
         ctx: &mut PhaseContext<'_>,
         phase: RebasePhase,
-        target_branch: String,
+        target_branch: &str,
     ) -> Result<EffectResult> {
         use crate::git_helpers::{get_conflicted_files, rebase_onto};
 
@@ -29,7 +28,7 @@ impl MainEffectHandler {
             return Ok(EffectResult::event(event));
         }
 
-        match rebase_onto(&target_branch, ctx.executor) {
+        match rebase_onto(target_branch, ctx.executor) {
             Ok(_) => {
                 let conflicted_files = get_conflicted_files().unwrap_or_default();
 
@@ -68,10 +67,9 @@ impl MainEffectHandler {
     }
 
     pub(super) fn resolve_rebase_conflicts(
-        &self,
         ctx: &PhaseContext<'_>,
         strategy: ConflictStrategy,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::git_helpers::{abort_rebase, continue_rebase, get_conflicted_files};
 
         match strategy {
@@ -83,14 +81,12 @@ impl MainEffectHandler {
                         .map(std::convert::Into::into)
                         .collect();
 
-                    Ok(EffectResult::event(
-                        PipelineEvent::rebase_conflict_resolved(files),
-                    ))
+                    EffectResult::event(PipelineEvent::rebase_conflict_resolved(files))
                 }
-                Err(e) => Ok(EffectResult::event(PipelineEvent::rebase_failed(
+                Err(e) => EffectResult::event(PipelineEvent::rebase_failed(
                     RebasePhase::PostReview,
                     e.to_string(),
-                ))),
+                )),
             },
             ConflictStrategy::Abort => match abort_rebase(ctx.executor) {
                 Ok(()) => {
@@ -107,19 +103,19 @@ impl MainEffectHandler {
                         },
                     );
 
-                    Ok(EffectResult::event(PipelineEvent::rebase_aborted(
+                    EffectResult::event(PipelineEvent::rebase_aborted(
                         RebasePhase::PostReview,
                         restored_to,
-                    )))
+                    ))
                 }
-                Err(e) => Ok(EffectResult::event(PipelineEvent::rebase_failed(
+                Err(e) => EffectResult::event(PipelineEvent::rebase_failed(
                     RebasePhase::PostReview,
                     e.to_string(),
-                ))),
+                )),
             },
-            ConflictStrategy::Skip => Ok(EffectResult::event(
-                PipelineEvent::rebase_conflict_resolved(Vec::new()),
-            )),
+            ConflictStrategy::Skip => {
+                EffectResult::event(PipelineEvent::rebase_conflict_resolved(Vec::new()))
+            }
         }
     }
 }

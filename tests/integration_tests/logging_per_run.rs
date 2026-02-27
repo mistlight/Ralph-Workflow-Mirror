@@ -147,11 +147,11 @@ fn test_per_run_log_directory_creation_impl() -> Result<()> {
 #[test]
 fn test_event_loop_log_redaction() {
     crate::test_timeout::with_default_timeout(|| {
-        test_event_loop_log_redaction_impl().unwrap();
+        test_event_loop_log_redaction_impl();
     });
 }
 
-fn test_event_loop_log_redaction_impl() -> Result<()> {
+fn test_event_loop_log_redaction_impl() {
     // Create sentinel strings that should NOT appear in event_loop.log
     let sentinel_prompt = "SENTINEL_PROMPT_CONTENT_SHOULD_NOT_APPEAR_IN_LOG";
     let sentinel_secret = "SENTINEL_SECRET_sk-1234567890abcdef";
@@ -220,8 +220,6 @@ fn test_event_loop_log_redaction_impl() -> Result<()> {
         !event_loop_log.trim().is_empty(),
         "event_loop.log should contain some entries"
     );
-
-    Ok(())
 }
 
 #[test]
@@ -261,7 +259,7 @@ fn test_collision_handling_impl() -> Result<()> {
 
     // Now create a RunLogContext with the fixed base run_id
     // It should skip base and collisions 1-5 and create collision variant 06
-    let ctx = RunLogContext::for_testing(fixed_id, &workspace)?;
+    let ctx = RunLogContext::for_testing(&fixed_id, &workspace)?;
 
     // Verify the run_id has a collision suffix -06
     let run_id_str = ctx.run_id().as_str();
@@ -287,11 +285,11 @@ fn test_collision_handling_impl() -> Result<()> {
 #[test]
 fn test_no_legacy_logs_created() {
     crate::test_timeout::with_default_timeout(|| {
-        test_no_legacy_logs_created_impl().unwrap();
+        test_no_legacy_logs_created_impl();
     });
 }
 
-fn test_no_legacy_logs_created_impl() -> Result<()> {
+fn test_no_legacy_logs_created_impl() {
     // Create mock handlers
     let mut app_handler = MockAppEffectHandler::new()
         .with_head_oid("a".repeat(40))
@@ -335,18 +333,16 @@ fn test_no_legacy_logs_created_impl() -> Result<()> {
             );
         }
     }
-
-    Ok(())
 }
 
 #[test]
 fn test_agent_log_headers() {
     crate::test_timeout::with_default_timeout(|| {
-        test_agent_log_headers_impl().unwrap();
+        test_agent_log_headers_impl();
     });
 }
 
-fn test_agent_log_headers_impl() -> Result<()> {
+fn test_agent_log_headers_impl() {
     // Create mock handlers
     let mut app_handler = MockAppEffectHandler::new()
         .with_head_oid("a".repeat(40))
@@ -407,7 +403,7 @@ fn test_agent_log_headers_impl() -> Result<()> {
     // there won't be agent logs. This is expected behavior.
     if agent_logs.is_empty() {
         // Skip test if no agent logs exist (pipeline completed without agent invocation)
-        return Ok(());
+        return;
     }
 
     // Verify each agent log has a header with required metadata
@@ -444,18 +440,16 @@ fn test_agent_log_headers_impl() -> Result<()> {
             "Agent log {path_str} should have timestamp"
         );
     }
-
-    Ok(())
 }
 
 #[test]
 fn test_resume_logging_continuity() {
     crate::test_timeout::with_default_timeout(|| {
-        test_resume_logging_continuity_impl().unwrap();
+        test_resume_logging_continuity_impl();
     });
 }
 
-fn test_resume_logging_continuity_impl() -> Result<()> {
+fn test_resume_logging_continuity_impl() {
     // First run: create a checkpoint
     let mut app_handler = MockAppEffectHandler::new()
         .with_head_oid("a".repeat(40))
@@ -627,18 +621,16 @@ fn test_resume_logging_continuity_impl() -> Result<()> {
         resumed_event_loop_log.lines().count() >= first_event_loop_log.lines().count(),
         "event_loop.log should be appended to, not overwritten"
     );
-
-    Ok(())
 }
 
 #[test]
 fn test_event_loop_log_structure() {
     crate::test_timeout::with_default_timeout(|| {
-        test_event_loop_log_structure_impl().unwrap();
+        test_event_loop_log_structure_impl();
     });
 }
 
-fn test_event_loop_log_structure_impl() -> Result<()> {
+fn test_event_loop_log_structure_impl() {
     // Create mock handlers
     let mut app_handler = MockAppEffectHandler::new()
         .with_head_oid("a".repeat(40))
@@ -704,22 +696,13 @@ fn test_event_loop_log_structure_impl() -> Result<()> {
             line.contains("ts="),
             "Line should contain timestamp: {line}"
         );
-        assert!(
-            line.contains("phase="),
-            "Line should contain phase: {line}"
-        );
+        assert!(line.contains("phase="), "Line should contain phase: {line}");
         assert!(
             line.contains("effect="),
             "Line should contain effect: {line}"
         );
-        assert!(
-            line.contains("event="),
-            "Line should contain event: {line}"
-        );
-        assert!(
-            line.contains("ms="),
-            "Line should contain duration: {line}"
-        );
+        assert!(line.contains("event="), "Line should contain event: {line}");
+        assert!(line.contains("ms="), "Line should contain duration: {line}");
 
         // Verify sequence numbers are present and monotonically increasing
         let seq_start = line.find(char::is_numeric);
@@ -734,6 +717,4 @@ fn test_event_loop_log_structure_impl() -> Result<()> {
             );
         }
     }
-
-    Ok(())
 }

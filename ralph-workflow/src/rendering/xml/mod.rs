@@ -31,7 +31,9 @@ pub fn render_xml(
     output_context: &Option<XmlOutputContext>,
 ) -> String {
     match xml_type {
-        XmlOutputType::DevelopmentResult => development_result::render(content, output_context.as_ref()),
+        XmlOutputType::DevelopmentResult => {
+            development_result::render(content, output_context.as_ref())
+        }
         XmlOutputType::DevelopmentPlan => development_plan::render(content),
         XmlOutputType::ReviewIssues => review_issues::render(content, output_context.as_ref()),
         XmlOutputType::FixResult => fix_result::render(content, output_context.as_ref()),

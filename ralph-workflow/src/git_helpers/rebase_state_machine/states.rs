@@ -110,7 +110,7 @@ impl RebaseStateMachine {
     /// Returns `Ok(state_machine)` with either backup loaded or fresh state.
     fn try_load_backup_or_create(upstream_branch: String) -> io::Result<Self> {
         let workspace = WorkspaceFs::new(std::env::current_dir()?);
-        Self::try_load_backup_or_create_with_workspace(&workspace, upstream_branch)
+        Ok(Self::try_load_backup_or_create_with_workspace(&workspace, upstream_branch))
     }
 
     /// Load backup checkpoint or create fresh state using workspace abstraction.
@@ -119,7 +119,7 @@ impl RebaseStateMachine {
     fn try_load_backup_or_create_with_workspace(
         workspace: &dyn Workspace,
         upstream_branch: String,
-    ) -> io::Result<Self> {
+    ) -> Self {
         use super::rebase_checkpoint::rebase_checkpoint_backup_path;
 
         let backup_path_str = rebase_checkpoint_backup_path();
@@ -132,10 +132,10 @@ impl RebaseStateMachine {
                 Ok(content) => match serde_json::from_str::<RebaseCheckpoint>(&content) {
                     Ok(checkpoint) => {
                         eprintln!("Successfully recovered from backup checkpoint");
-                        return Ok(Self {
+                        return Self {
                             checkpoint,
                             max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
-                        });
+                        };
                     }
                     Err(e) => {
                         eprintln!("Backup checkpoint is also corrupted: {e}");
@@ -149,7 +149,7 @@ impl RebaseStateMachine {
 
         // No backup available or backup is corrupted - create fresh state
         eprintln!("Creating fresh state machine (checkpoint data lost)");
-        Ok(Self::new(upstream_branch))
+        Self::new(upstream_branch)
     }
 
     /// Set the maximum number of recovery attempts.

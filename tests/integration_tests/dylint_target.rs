@@ -76,8 +76,9 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
         );
 
         // Unset HOME should yield an actionable message before bash -u fails.
+        let guarded_home_pattern = concat!("HOME_DIR=\"$$", "{HOME:-}\"");
         assert!(
-            dylint_body.contains("HOME_DIR=\"$${HOME:-}\""),
+            dylint_body.contains(guarded_home_pattern),
             "dylint target should guard access to HOME under bash -u"
         );
     });

@@ -307,7 +307,7 @@ impl ClaudeParser {
                 session_id,
                 cwd,
             } => self.format_system_event(subtype.as_ref(), session_id, cwd),
-            ClaudeEvent::Assistant { message } => self.format_assistant_event(message),
+            ClaudeEvent::Assistant { message } => self.format_assistant_event(message.as_ref()),
             ClaudeEvent::User { message } => self.format_user_event(message),
             ClaudeEvent::Result {
                 subtype,

@@ -12,7 +12,6 @@ use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
-use anyhow::Result;
 use std::path::Path;
 
 const DEVELOPMENT_XSD_ERROR_PATH: &str = ".agent/tmp/development_xsd_error.txt";
@@ -37,7 +36,7 @@ impl MainEffectHandler {
         &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let xml_path = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
         let mut ui_events = vec![UIEvent::IterationProgress {
             current: iteration,
@@ -55,18 +54,18 @@ impl MainEffectHandler {
                         snippets: Vec::new(),
                     }),
                 });
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::development_xml_extracted(iteration),
                     ui_events,
-                ))
+                )
             }
-            Err(_) => Ok(EffectResult::with_ui(
+            Err(_) => EffectResult::with_ui(
                 PipelineEvent::development_xml_missing(
                     iteration,
                     self.state.continuation.invalid_output_attempts,
                 ),
                 ui_events,
-            )),
+            ),
         }
     }
 
@@ -102,18 +101,16 @@ impl MainEffectHandler {
         &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::validate_development_result_xml;
 
         let Ok(xml) = ctx
             .workspace
             .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
         else {
-            return Ok(EffectResult::event(
-                PipelineEvent::development_output_validation_failed(
-                    iteration,
-                    self.state.continuation.invalid_output_attempts,
-                ),
+            return EffectResult::event(PipelineEvent::development_output_validation_failed(
+                iteration,
+                self.state.continuation.invalid_output_attempts,
             ));
         };
 
@@ -135,14 +132,12 @@ impl MainEffectHandler {
                     .as_ref()
                     .map(|f| f.lines().map(std::string::ToString::to_string).collect());
 
-                Ok(EffectResult::event(
-                    PipelineEvent::development_xml_validated(
-                        iteration,
-                        status,
-                        elements.summary.clone(),
-                        files_changed,
-                        elements.next_steps,
-                    ),
+                EffectResult::event(PipelineEvent::development_xml_validated(
+                    iteration,
+                    status,
+                    elements.summary.clone(),
+                    files_changed,
+                    elements.next_steps,
                 ))
             }
             Err(err) => {
@@ -150,11 +145,9 @@ impl MainEffectHandler {
                     Path::new(DEVELOPMENT_XSD_ERROR_PATH),
                     &err.format_for_ai_retry(),
                 );
-                Ok(EffectResult::event(
-                    PipelineEvent::development_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
+                EffectResult::event(PipelineEvent::development_output_validation_failed(
+                    iteration,
+                    self.state.continuation.invalid_output_attempts,
                 ))
             }
         }

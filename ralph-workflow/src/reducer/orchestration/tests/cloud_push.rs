@@ -158,8 +158,7 @@ fn test_cloud_enabled_create_pr_renders_title_and_body_templates() {
     let mut state = create_cloud_enabled_state();
     state.cloud.git_remote.create_pr = true;
     state.cloud.git_remote.pr_base_branch = Some("main".to_string());
-    state.cloud.git_remote.pr_title_template =
-        Some("Ralph changes for {run_id}".to_string());
+    state.cloud.git_remote.pr_title_template = Some("Ralph changes for {run_id}".to_string());
     state.cloud.git_remote.pr_body_template = Some("Summary: {prompt_summary}".to_string());
     state.phase = PipelinePhase::Finalizing;
     state.pr_created = false;

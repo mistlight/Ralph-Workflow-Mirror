@@ -122,11 +122,11 @@ pub fn execute_agent_fault_tolerantly(
         try_agent_execution(config, runtime)
     }));
 
-    result.unwrap_or_else(|_| {
+    Ok(result.unwrap_or_else(|_| {
         let error_kind = AgentErrorKind::InternalError;
         let retriable = is_retriable_agent_error(&error_kind);
 
-        Ok(AgentExecutionResult {
+        AgentExecutionResult {
             event: PipelineEvent::agent_invocation_failed(
                 role,
                 config.agent_name.to_string(),
@@ -135,8 +135,8 @@ pub fn execute_agent_fault_tolerantly(
                 retriable,
             ),
             session_id: None,
-        })
-    })
+        }
+    }))
 }
 
 /// Try to execute agent without panic catching.
@@ -147,7 +147,7 @@ pub fn execute_agent_fault_tolerantly(
 fn try_agent_execution(
     config: AgentExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
-) -> Result<AgentExecutionResult> {
+) -> AgentExecutionResult {
     let prompt_cmd = PromptCommand {
         label: config.agent_name,
         display_name: config.display_name,
@@ -162,13 +162,13 @@ fn try_agent_execution(
     };
 
     match run_with_prompt(&prompt_cmd, runtime) {
-        Ok(result) if result.exit_code == 0 => Ok(AgentExecutionResult {
+        Ok(result) if result.exit_code == 0 => AgentExecutionResult {
             event: PipelineEvent::agent_invocation_succeeded(
                 config.role,
                 config.agent_name.to_string(),
             ),
             session_id: result.session_id,
-        }),
+        },
         Ok(result) => {
             let exit_code = result.exit_code;
 
@@ -255,42 +255,42 @@ fn try_agent_execution(
                     config.agent_name, error_source, preview
                 ));
 
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_rate_limited(
                         config.role,
                         config.agent_name.to_string(),
                         Some(config.prompt.to_string()),
                     ),
                     session_id: None,
-                });
+                };
             }
 
             // Special handling for auth failure: emit fact event without prompt context
             if is_auth_error(&error_kind) {
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_auth_failed(
                         config.role,
                         config.agent_name.to_string(),
                     ),
                     session_id: None,
-                });
+                };
             }
 
             // Special handling for timeout: emit fact event (reducer decides retry/fallback)
             // Unlike rate limits, timeouts do not preserve prompt context.
             if is_timeout_error(&error_kind) {
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
                     ),
                     session_id: None,
-                });
+                };
             }
 
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(AgentExecutionResult {
+            AgentExecutionResult {
                 event: PipelineEvent::agent_invocation_failed(
                     config.role,
                     config.agent_name.to_string(),
@@ -299,7 +299,7 @@ fn try_agent_execution(
                     retriable,
                 ),
                 session_id: None,
-            })
+            }
         }
         Err(e) => {
             // `run_with_prompt` returns `io::Error` directly. Classify based on the error kind
@@ -310,17 +310,17 @@ fn try_agent_execution(
             // If `run_with_prompt` itself returns an error classified as Timeout,
             // emit TimedOut so the reducer can decide retry vs fallback deterministically.
             if is_timeout_error(&error_kind) {
-                return Ok(AgentExecutionResult {
+                return AgentExecutionResult {
                     event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
                     ),
                     session_id: None,
-                });
+                };
             }
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(AgentExecutionResult {
+            AgentExecutionResult {
                 event: PipelineEvent::agent_invocation_failed(
                     config.role,
                     config.agent_name.to_string(),
@@ -329,7 +329,7 @@ fn try_agent_execution(
                     retriable,
                 ),
                 session_id: None,
-            })
+            }
         }
     }
 }

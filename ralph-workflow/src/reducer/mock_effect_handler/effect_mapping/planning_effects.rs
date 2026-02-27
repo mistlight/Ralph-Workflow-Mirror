@@ -39,9 +39,9 @@ impl MockEffectHandler {
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_planning_effect(
         &self,
-        effect: Effect,
+        effect: &Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
-        match effect {
+        match *effect {
             Effect::PreparePlanningPrompt {
                 iteration,
                 prompt_mode: _,

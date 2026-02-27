@@ -125,7 +125,7 @@ fn test_fix_chain_applies_all_issues_addressed_to_fix_attempt_completed() {
     // Then: handler should emit the existing completion event used by reducer today
     // (until fix outcome is fully refactored).
     let handler_event = crate::reducer::mock_effect_handler::MockEffectHandler::new(state)
-        .execute_mock(Effect::ApplyFixOutcome { pass: 0 })
+        .execute_mock(&Effect::ApplyFixOutcome { pass: 0 })
         .event;
 
     assert!(matches!(

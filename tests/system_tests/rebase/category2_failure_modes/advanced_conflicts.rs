@@ -97,9 +97,6 @@ fn rebase_handles_rename_rename_conflicts() {
                             || err.description().contains("rename")
                     );
                 }
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve rename/rename automatically in some versions
-                }
                 _ => {}
             }
 
@@ -167,9 +164,6 @@ fn rebase_handles_directory_file_conflicts() {
                         err.description().contains("Conflict")
                             || err.description().contains("conflict")
                     );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may handle this in some versions
                 }
                 _ => {}
             }
@@ -248,9 +242,6 @@ fn rebase_handles_rename_delete_conflicts() {
                             || err.description().contains("conflict")
                             || err.description().contains("delete")
                     );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve automatically
                 }
                 _ => {}
             }
@@ -332,9 +323,6 @@ fn rebase_handles_symlink_conflicts() {
                             || err.description().contains("conflict")
                             || err.description().contains("link")
                     );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve automatically
                 }
                 _ => {}
             }
@@ -419,9 +407,6 @@ fn rebase_handles_line_ending_conflicts() {
                             || err.description().contains("conflict")
                     );
                 }
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve automatically
-                }
                 _ => {}
             }
 
@@ -498,9 +483,6 @@ fn rebase_handles_whitespace_only_conflicts() {
                         err.description().contains("Conflict")
                             || err.description().contains("conflict")
                     );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve automatically (often with conflict markers)
                 }
                 _ => {}
             }

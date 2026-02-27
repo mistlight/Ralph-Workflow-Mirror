@@ -21,6 +21,8 @@ use ralph_workflow::app::effectful::{
     get_head_oid, handle_reset_start_commit, is_on_main_branch, require_repo, save_start_commit,
 };
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 use crate::common::{create_test_config_struct, mock_executor_with_success};
@@ -373,9 +375,6 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
             )
             .with_file(".agent/PLAN.md", "# Plan\nTest plan");
 
-        use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-        use ralph_workflow::reducer::PipelineState;
-
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
@@ -442,9 +441,6 @@ fn full_pipeline_uses_handler_for_all_git_operations() {
 /// - NO real git calls are made at any layer
 #[test]
 fn full_pipeline_with_both_handlers_makes_no_real_git_calls() {
-    use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-    use ralph_workflow::reducer::PipelineState;
-
     with_default_timeout(|| {
         let expected_oid = "a".repeat(40);
         let mut app_handler = MockAppEffectHandler::new()

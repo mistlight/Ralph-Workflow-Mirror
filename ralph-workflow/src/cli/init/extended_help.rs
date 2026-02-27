@@ -1,10 +1,4 @@
-/// Handle the `--extended-help` / `--man` flag.
-///
-/// Displays comprehensive help including shell completion, all presets,
-/// troubleshooting information, and the difference between Work Guides and Agent Prompts.
-pub fn handle_extended_help() {
-    println!(
-        r#"RALPH EXTENDED HELP
+const EXTENDED_HELP_TEXT: &str = r#"RALPH EXTENDED HELP
 ===============================================================================
 
 Ralph is a PROMPT-driven multi-agent orchestrator for git repos. It runs a
@@ -173,6 +167,12 @@ EXAMPLES
     ralph --init bug-fix --force-overwrite  Overwrite existing PROMPT.md
 
 ===============================================================================
-"#
-    );
+"#;
+
+/// Handle the `--extended-help` / `--man` flag.
+///
+/// Displays comprehensive help including shell completion, all presets,
+/// troubleshooting information, and the difference between Work Guides and Agent Prompts.
+pub fn handle_extended_help() {
+    println!("{EXTENDED_HELP_TEXT}");
 }

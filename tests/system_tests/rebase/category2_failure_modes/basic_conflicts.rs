@@ -152,19 +152,13 @@ fn rebase_handles_patch_application_failure() {
             // Try to rebase - may fail or have conflicts
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // Conflicts are expected
-                }
-                Ok(RebaseResult::Failed(err)) => {
-                    // Patch application failure is possible
-                    assert!(
-                        err.description().contains("patch")
-                            || err.description().contains("Conflict")
-                            || err.description().contains("conflict")
-                    );
-                }
-                _ => {}
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Patch application failure is possible
+                assert!(
+                    err.description().contains("patch")
+                        || err.description().contains("Conflict")
+                        || err.description().contains("conflict")
+                );
             }
 
             // Clean up
@@ -226,27 +220,20 @@ fn rebase_handles_empty_commits() {
             // Try to rebase - the feature commit should be empty
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::NoOp { reason }) => {
-                    // Git may skip empty commits
-                    assert!(
-                        reason.contains("up-to-date")
-                            || reason.contains("empty")
-                            || reason.contains("NoOp")
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may have handled it automatically
-                }
-                Ok(RebaseResult::Failed(err)) => {
-                    // May report empty commit
-                    assert!(
-                        err.description().contains("empty")
-                            || err.description().contains("skip")
-                            || err.description().contains("redundant")
-                    );
-                }
-                _ => {}
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                // Git may skip empty commits
+                assert!(
+                    reason.contains("up-to-date")
+                        || reason.contains("empty")
+                        || reason.contains("NoOp")
+                );
+            } else if let Ok(RebaseResult::Failed(err)) = result {
+                // May report empty commit
+                assert!(
+                    err.description().contains("empty")
+                        || err.description().contains("skip")
+                        || err.description().contains("redundant")
+                );
             }
 
             // Clean up

@@ -81,10 +81,7 @@ fn test_pipeline_transitions_to_review_after_all_dev_iterations() {
             // Simulate commit created (to advance to next iteration)
             state = reduce(
                 state,
-                PipelineEvent::commit_created(
-                    format!("hash{i}"),
-                    format!("Commit message {i}"),
-                ),
+                PipelineEvent::commit_created(format!("hash{i}"), format!("Commit message {i}")),
             );
         }
 

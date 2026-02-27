@@ -213,14 +213,17 @@ fn parse_issue(issue: &str) -> ParsedIssue {
         working = SNIPPET_RE.replace(&working, "").to_string();
     }
 
-    let (file, line_start, line_end) = LOCATION_RE.captures(&working)
+    let (file, line_start, line_end) = LOCATION_RE
+        .captures(&working)
         .or_else(|| GH_LOCATION_RE.captures(&working))
         .map_or_else(
-            || (
-                extract_file_from_issue(&working).map(std::string::ToString::to_string),
-                None,
-                None,
-            ),
+            || {
+                (
+                    extract_file_from_issue(&working).map(std::string::ToString::to_string),
+                    None,
+                    None,
+                )
+            },
             |cap| {
                 let file = cap.name("file").map(|m| m.as_str().to_string());
                 let start = cap
@@ -231,7 +234,7 @@ fn parse_issue(issue: &str) -> ParsedIssue {
                     .and_then(|m| m.as_str().parse::<u32>().ok())
                     .or(start);
                 (file, start, end)
-            }
+            },
         );
 
     let description = working

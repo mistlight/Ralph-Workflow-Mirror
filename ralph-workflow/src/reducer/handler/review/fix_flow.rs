@@ -282,7 +282,7 @@ impl MainEffectHandler {
             .cloned()
             .unwrap_or_else(|| ctx.reviewer_agent.to_string());
 
-        let mut result = self.invoke_agent(ctx, AgentRole::Reviewer, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Reviewer, &agent, None, prompt)?;
         if result.additional_events.iter().any(|e| {
             matches!(
                 e,
@@ -295,30 +295,29 @@ impl MainEffectHandler {
     }
 
     pub(super) fn cleanup_fix_result_xml(
-        &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
         let _ = ctx.workspace.remove_if_exists(fix_xml);
-        Ok(EffectResult::event(PipelineEvent::fix_result_xml_cleaned(
+        EffectResult::event(PipelineEvent::fix_result_xml_cleaned(
             pass,
-        )))
+        ))
     }
 
     pub(super) fn extract_fix_result_xml(
         &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
         let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
         match ctx.workspace.read(fix_xml) {
-            Ok(_) => Ok(EffectResult::event(
+            Ok(_) => EffectResult::event(
                 PipelineEvent::fix_result_xml_extracted(pass),
-            )),
+            ),
             Err(err) => {
                 let detail = if err.kind() == std::io::ErrorKind::NotFound {
                     None
@@ -329,11 +328,11 @@ impl MainEffectHandler {
                         err
                     ))
                 };
-                Ok(EffectResult::event(PipelineEvent::fix_result_xml_missing(
+                EffectResult::event(PipelineEvent::fix_result_xml_missing(
                     pass,
                     self.state.continuation.invalid_output_attempts,
                     detail,
-                )))
+                ))
             }
         }
     }
@@ -342,7 +341,7 @@ impl MainEffectHandler {
         &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use crate::files::llm_output_extraction::validate_fix_result_xml;
         use std::path::Path;
@@ -359,13 +358,13 @@ impl MainEffectHandler {
                         err
                     ))
                 };
-                return Ok(EffectResult::event(
+                return EffectResult::event(
                     PipelineEvent::fix_output_validation_failed(
                         pass,
                         self.state.continuation.invalid_output_attempts,
                         detail,
                     ),
-                ));
+                );
             }
         };
 
@@ -373,7 +372,7 @@ impl MainEffectHandler {
             Ok(elements) => {
                 let status = crate::reducer::state::FixStatus::parse(&elements.status)
                     .unwrap_or(crate::reducer::state::FixStatus::Failed);
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::fix_result_xml_validated(pass, status, elements.summary),
                     vec![UIEvent::XmlOutput {
                         xml_type: XmlOutputType::FixResult,
@@ -384,15 +383,15 @@ impl MainEffectHandler {
                             snippets: Vec::new(),
                         }),
                     }],
-                ))
+                )
             }
-            Err(err) => Ok(EffectResult::event(
+            Err(err) => EffectResult::event(
                 PipelineEvent::fix_output_validation_failed(
                     pass,
                     self.state.continuation.invalid_output_attempts,
                     Some(err.format_for_ai_retry()),
                 ),
-            )),
+            ),
         }
     }
 
@@ -413,17 +412,16 @@ impl MainEffectHandler {
     }
 
     pub(super) fn archive_fix_result_xml(
-        &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
         archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::FIX_RESULT_XML));
-        Ok(EffectResult::event(PipelineEvent::fix_result_xml_archived(
+        EffectResult::event(PipelineEvent::fix_result_xml_archived(
             pass,
-        )))
+        ))
     }
 }

@@ -1,11 +1,7 @@
 // Detailed display functions for checkpoint inspection.
 // This module handles comprehensive checkpoint inspection output.
 
-/// Display detailed checkpoint information for inspection.
-///
-/// This function shows comprehensive checkpoint details when the user
-/// runs with the --inspect-checkpoint flag.
-fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+fn log_detailed_header_and_time(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     use chrono::Local;
 
     logger.info(&format!("Phase: {}", checkpoint.phase));
@@ -15,19 +11,11 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
     if let Some(checkpoint_time) = parse_checkpoint_timestamp_as_local(&checkpoint.timestamp) {
         let now = Local::now();
         let duration = now.signed_duration_since(checkpoint_time);
-
-        let time_str = if duration.num_days() > 0 {
-            format!("{} day(s) ago", duration.num_days())
-        } else if duration.num_hours() > 0 {
-            format!("{} hour(s) ago", duration.num_hours())
-        } else if duration.num_minutes() > 0 {
-            format!("{} minute(s) ago", duration.num_minutes())
-        } else {
-            "just now".to_string()
-        };
-        logger.info(&format!("Time elapsed: {time_str}"));
+        logger.info(&format!("Time elapsed: {}", format_time_ago(duration)));
     }
+}
 
+fn log_detailed_configuration(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     logger.info("");
     logger.info("Configuration:");
 
@@ -52,7 +40,9 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
             progress_bar, checkpoint.actual_reviewer_runs, checkpoint.total_reviewer_passes
         ));
     }
+}
 
+fn log_detailed_agents_and_command(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     logger.info("");
     logger.info("Agents:");
     logger.info(&format!("  Developer: {}", checkpoint.developer_agent));
@@ -93,7 +83,9 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
     if let Some(ref parent_id) = checkpoint.parent_run_id {
         logger.info(&format!("Parent Run ID: {parent_id}"));
     }
+}
 
+fn log_detailed_rebase_state(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show rebase state if applicable
     if matches!(
         checkpoint.rebase_state,
@@ -110,7 +102,9 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
             }
         }
     }
+}
 
+fn log_detailed_execution_history(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show execution history if available
     if let Some(ref history) = checkpoint.execution_history {
         if !history.steps.is_empty() {
@@ -137,7 +131,9 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
             }
         }
     }
+}
 
+fn log_detailed_file_system_state(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show file system state if available
     if let Some(ref fs_state) = checkpoint.file_system_state {
         logger.info("");
@@ -162,7 +158,9 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
             }
         }
     }
+}
 
+fn log_detailed_environment_snapshot(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show environment snapshot if available
     if let Some(ref env_snap) = checkpoint.env_snapshot {
         if !env_snap.ralph_vars.is_empty() {
@@ -182,6 +180,20 @@ fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Lo
             }
         }
     }
+}
+
+/// Display detailed checkpoint information for inspection.
+///
+/// This function shows comprehensive checkpoint details when the user
+/// runs with the --inspect-checkpoint flag.
+fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    log_detailed_header_and_time(checkpoint, logger);
+    log_detailed_configuration(checkpoint, logger);
+    log_detailed_agents_and_command(checkpoint, logger);
+    log_detailed_rebase_state(checkpoint, logger);
+    log_detailed_execution_history(checkpoint, logger);
+    log_detailed_file_system_state(checkpoint, logger);
+    log_detailed_environment_snapshot(checkpoint, logger);
 
     // Show working directory
     logger.info("");

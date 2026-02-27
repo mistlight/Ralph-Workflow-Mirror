@@ -39,11 +39,11 @@ fn monitor_prevents_timeout_with_file_activity() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
-            file_activity_config,
-            child,
-            should_stop_clone,
-            executor,
+            &timestamp,
+            file_activity_config.as_ref(),
+            &child,
+            &should_stop_clone,
+            &executor,
             config,
         )
     });
@@ -94,11 +94,11 @@ fn monitor_times_out_without_any_activity() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
-            file_activity_config,
-            child,
-            should_stop_clone,
-            executor,
+            &timestamp,
+            file_activity_config.as_ref(),
+            &child,
+            &should_stop_clone,
+            &executor,
             config,
         )
     });
@@ -145,11 +145,11 @@ fn monitor_respects_output_activity() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
-            file_activity_config,
-            child,
-            should_stop_clone,
-            executor,
+            &timestamp,
+            file_activity_config.as_ref(),
+            &child,
+            &should_stop_clone,
+            &executor,
             config,
         )
     });
@@ -190,11 +190,11 @@ fn monitor_uses_configurable_check_interval() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
+            &timestamp,
             None, // No file activity
-            child,
-            should_stop_clone,
-            executor,
+            &child,
+            &should_stop_clone,
+            &executor,
             config,
         )
     });
@@ -241,11 +241,11 @@ fn monitor_file_activity_with_old_files_times_out() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
-            file_activity_config,
-            child,
-            should_stop_clone,
-            executor,
+            &timestamp,
+            file_activity_config.as_ref(),
+            &child,
+            &should_stop_clone,
+            &executor,
             config,
         )
     });
@@ -293,11 +293,11 @@ fn monitor_does_not_timeout_on_file_activity_check_error() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
-            file_activity_config,
-            child,
-            should_stop_clone,
-            executor_dyn,
+            &timestamp,
+            file_activity_config.as_ref(),
+            &child,
+            &should_stop_clone,
+            &executor_dyn,
             config,
         )
     });
@@ -340,11 +340,11 @@ fn monitor_without_file_activity_config_works() {
 
     let handle = thread::spawn(move || {
         monitor_idle_timeout_with_interval_and_kill_config(
-            timestamp,
+            &timestamp,
             None, // No file activity config
-            child,
-            should_stop_clone,
-            executor,
+            &child,
+            &should_stop_clone,
+            &executor,
             config,
         )
     });

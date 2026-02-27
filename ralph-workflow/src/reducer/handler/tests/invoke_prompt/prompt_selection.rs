@@ -160,7 +160,7 @@ RETRY PROMPT MARKER"
         .invoke_agent(
             &mut ctx,
             AgentRole::Developer,
-            "claude".to_string(),
+            "claude",
             None,
             retry_prompt.clone(),
         )
@@ -245,7 +245,7 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
         .invoke_agent(
             &mut ctx,
             AgentRole::Developer,
-            "claude".to_string(),
+            "claude",
             None,
             xsd_retry_prompt.clone(),
         )

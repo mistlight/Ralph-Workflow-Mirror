@@ -205,7 +205,7 @@ If you determine there are NO actual changes to commit, respond with:
                 }
 
                 // Delegate to execute_mock for effect capture + mock event emission.
-                Ok(self.execute_mock(Effect::SaveCheckpoint { trigger }))
+                Ok(self.execute_mock(&Effect::SaveCheckpoint { trigger }))
             }
             Effect::TriggerDevFixFlow {
                 failed_phase,
@@ -261,12 +261,14 @@ If you determine there are NO actual changes to commit, respond with:
                 }
 
                 // Delegate to execute_mock for effect capture + mock event emission.
-                Ok(self.execute_mock(Effect::EmitCompletionMarkerAndTerminate {
-                    is_failure,
-                    reason: reason_for_record,
-                }))
+                Ok(
+                    self.execute_mock(&Effect::EmitCompletionMarkerAndTerminate {
+                        is_failure,
+                        reason: reason_for_record,
+                    }),
+                )
             }
-            _ => Ok(self.execute_mock(effect)),
+            _ => Ok(self.execute_mock(&effect)),
         }
     }
 }

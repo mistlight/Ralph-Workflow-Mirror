@@ -23,6 +23,19 @@ pub struct OpenCodeParser {
     fallback_step_counter: Cell<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MonitorEventClassification {
+    Parsed,
+    Partial,
+    Control,
+    Unknown,
+    ParseError,
+    Ignored,
+}
+
+const MAX_XML_SEARCH_BYTES: usize = 512 * 1024;
+const MAX_XML_BYTES: usize = 128 * 1024;
+
 impl OpenCodeParser {
     pub(crate) fn new(colors: Colors, verbosity: Verbosity) -> Self {
         Self::with_printer(colors, verbosity, super::printer::shared_stdout())
@@ -232,6 +245,248 @@ impl OpenCodeParser {
         }
     }
 
+    fn process_stream_json_line(
+        &self,
+        line: &str,
+        monitor: &HealthMonitor,
+        logging_enabled: bool,
+        log_buffer: &mut Vec<u8>,
+    ) -> io::Result<()> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+
+        self.maybe_write_debug_event(line)?;
+
+        match self.parse_event(line) {
+            Some(output) => {
+                Self::record_monitor_event(monitor, Self::classify_successful_parse_for_monitor(line, trimmed));
+                let mut printer = self.printer.borrow_mut();
+                write!(printer, "{output}")?;
+                printer.flush()?;
+            }
+            None => {
+                Self::record_monitor_event(monitor, Self::classify_empty_output_for_monitor(line, trimmed));
+            }
+        }
+
+        if logging_enabled {
+            writeln!(log_buffer, "{line}")?;
+        }
+        Ok(())
+    }
+
+    fn maybe_write_debug_event(&self, line: &str) -> io::Result<()> {
+        if !self.verbosity.is_debug() {
+            return Ok(());
+        }
+
+        let c = &self.colors;
+        let mut printer = self.printer.borrow_mut();
+        writeln!(
+            printer,
+            "{}[DEBUG]{} {}{}{}",
+            c.dim(),
+            c.reset(),
+            c.dim(),
+            line,
+            c.reset()
+        )?;
+        printer.flush()?;
+        Ok(())
+    }
+
+    fn classify_successful_parse_for_monitor(
+        line: &str,
+        trimmed: &str,
+    ) -> MonitorEventClassification {
+        if trimmed.starts_with('{') {
+            if let Ok(event) = serde_json::from_str::<OpenCodeEvent>(line) {
+                if Self::is_partial_event(&event) {
+                    return MonitorEventClassification::Partial;
+                }
+            }
+        }
+        MonitorEventClassification::Parsed
+    }
+
+    fn classify_empty_output_for_monitor(
+        line: &str,
+        trimmed: &str,
+    ) -> MonitorEventClassification {
+        if !trimmed.starts_with('{') {
+            return MonitorEventClassification::Ignored;
+        }
+
+        serde_json::from_str::<OpenCodeEvent>(line).map_or(
+            MonitorEventClassification::ParseError,
+            |event| {
+                if Self::is_control_event(&event) {
+                    MonitorEventClassification::Control
+                } else {
+                    MonitorEventClassification::Unknown
+                }
+            },
+        )
+    }
+
+    fn record_monitor_event(monitor: &HealthMonitor, classification: MonitorEventClassification) {
+        match classification {
+            MonitorEventClassification::Parsed => monitor.record_parsed(),
+            MonitorEventClassification::Partial => monitor.record_partial_event(),
+            MonitorEventClassification::Control => monitor.record_control_event(),
+            MonitorEventClassification::Unknown => monitor.record_unknown_event(),
+            MonitorEventClassification::ParseError => monitor.record_parse_error(),
+            MonitorEventClassification::Ignored => monitor.record_ignored(),
+        }
+    }
+
+    fn process_incremental_stream<R: BufRead>(
+        &self,
+        reader: &mut R,
+        parser: &mut super::incremental_parser::IncrementalNdjsonParser,
+        monitor: &HealthMonitor,
+        logging_enabled: bool,
+        log_buffer: &mut Vec<u8>,
+    ) -> io::Result<()> {
+        let mut byte_buffer = Vec::new();
+        loop {
+            byte_buffer.clear();
+            let chunk = reader.fill_buf()?;
+            if chunk.is_empty() {
+                break;
+            }
+
+            byte_buffer.extend_from_slice(chunk);
+            let consumed = chunk.len();
+            reader.consume(consumed);
+
+            for line in parser.feed(&byte_buffer) {
+                self.process_stream_json_line(&line, monitor, logging_enabled, log_buffer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_remaining_buffered_event(
+        &self,
+        remaining: &str,
+        monitor: &HealthMonitor,
+        logging_enabled: bool,
+        log_buffer: &mut Vec<u8>,
+    ) -> io::Result<()> {
+        let trimmed = remaining.trim();
+        if trimmed.is_empty()
+            || !trimmed.starts_with('{')
+            || serde_json::from_str::<OpenCodeEvent>(remaining).is_err()
+        {
+            return Ok(());
+        }
+
+        match self.parse_event(remaining) {
+            Some(output) => {
+                monitor.record_parsed();
+                let mut printer = self.printer.borrow_mut();
+                write!(printer, "{output}")?;
+                printer.flush()?;
+            }
+            None => {
+                Self::record_monitor_event(
+                    monitor,
+                    Self::classify_empty_output_for_monitor(remaining, trimmed),
+                );
+            }
+        }
+
+        if logging_enabled {
+            writeln!(log_buffer, "{remaining}")?;
+        }
+        Ok(())
+    }
+
+    fn write_log_buffer_if_enabled(
+        &self,
+        workspace: &dyn crate::workspace::Workspace,
+        log_buffer: &[u8],
+    ) -> io::Result<()> {
+        if let Some(log_path) = &self.log_path {
+            workspace.append_bytes(log_path, log_buffer)?;
+        }
+        Ok(())
+    }
+
+    fn with_xml_tail_bound(accumulated: &str, max_bytes: usize) -> &str {
+        if accumulated.len() <= max_bytes {
+            return accumulated;
+        }
+
+        let mut start = accumulated.len() - max_bytes;
+        while start < accumulated.len() && !accumulated.is_char_boundary(start) {
+            start += 1;
+        }
+        &accumulated[start..]
+    }
+
+    fn persist_extracted_xml(
+        workspace: &dyn crate::workspace::Workspace,
+        output_path: &str,
+        xml: &str,
+    ) -> io::Result<()> {
+        if xml.len() > MAX_XML_BYTES {
+            return Ok(());
+        }
+
+        workspace.create_dir_all(Path::new(".agent/tmp"))?;
+        workspace.write(Path::new(output_path), xml)?;
+        Ok(())
+    }
+
+    fn persist_extracted_xml_artifacts(
+        &self,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> io::Result<()> {
+        let maybe_accumulated = self
+            .streaming_session
+            .borrow()
+            .get_accumulated(ContentType::Text, "main")
+            .map(str::to_owned);
+
+        let Some(accumulated) = maybe_accumulated else {
+            return Ok(());
+        };
+
+        let accumulated_tail = Self::with_xml_tail_bound(&accumulated, MAX_XML_SEARCH_BYTES);
+
+        if let Some(xml) = crate::files::llm_output_extraction::xml_extraction::extract_xml_commit(
+            accumulated_tail,
+        ) {
+            Self::persist_extracted_xml(
+                workspace,
+                crate::files::llm_output_extraction::file_based_extraction::paths::COMMIT_MESSAGE_XML,
+                &xml,
+            )?;
+        }
+
+        if let Some(xml) = crate::files::llm_output_extraction::extract_issues_xml(accumulated_tail) {
+            Self::persist_extracted_xml(
+                workspace,
+                crate::files::llm_output_extraction::file_based_extraction::paths::ISSUES_XML,
+                &xml,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn write_monitor_warning_if_needed(&self, monitor: &HealthMonitor) -> io::Result<()> {
+        if let Some(warning) = monitor.check_and_warn(self.colors) {
+            let mut printer = self.printer.borrow_mut();
+            writeln!(printer, "{warning}")?;
+        }
+        Ok(())
+    }
+
     /// Parse a stream of `OpenCode` NDJSON events
     pub(crate) fn parse_stream<R: BufRead>(
         &self,
@@ -240,182 +495,31 @@ impl OpenCodeParser {
     ) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
-        const MAX_XML_SEARCH_BYTES: usize = 512 * 1024;
-        const MAX_XML_BYTES: usize = 128 * 1024;
-
-        let c = &self.colors;
         let monitor = HealthMonitor::new("OpenCode");
-        // Accumulate log content in memory, write to workspace at the end
         let logging_enabled = self.log_path.is_some();
         let mut log_buffer: Vec<u8> = Vec::new();
-
-        // Use incremental parser for true real-time streaming
-        // This processes JSON as soon as it's complete, not waiting for newlines
         let mut incremental_parser = IncrementalNdjsonParser::new();
-        let mut byte_buffer = Vec::new();
 
-        loop {
-            // Read available bytes
-            byte_buffer.clear();
-            let chunk = reader.fill_buf()?;
-            if chunk.is_empty() {
-                break;
-            }
+        self.process_incremental_stream(
+            &mut reader,
+            &mut incremental_parser,
+            &monitor,
+            logging_enabled,
+            &mut log_buffer,
+        )?;
 
-            // Process all bytes immediately
-            byte_buffer.extend_from_slice(chunk);
-            let consumed = chunk.len();
-            reader.consume(consumed);
-
-            // Feed bytes to incremental parser
-            let json_events = incremental_parser.feed(&byte_buffer);
-
-            // Process each complete JSON event immediately
-            for line in json_events {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                if self.verbosity.is_debug() {
-                    let mut printer = self.printer.borrow_mut();
-                    writeln!(
-                        printer,
-                        "{}[DEBUG]{} {}{}{}",
-                        c.dim(),
-                        c.reset(),
-                        c.dim(),
-                        &line,
-                        c.reset()
-                    )?;
-                    printer.flush()?;
-                }
-
-                // Parse the event once - parse_event handles malformed JSON by returning None
-                match self.parse_event(&line) {
-                    Some(output) => {
-                        // Check if this is a partial/delta event (streaming content)
-                        if trimmed.starts_with('{') {
-                            if let Ok(event) = serde_json::from_str::<OpenCodeEvent>(&line) {
-                                if Self::is_partial_event(&event) {
-                                    monitor.record_partial_event();
-                                } else {
-                                    monitor.record_parsed();
-                                }
-                            } else {
-                                monitor.record_parsed();
-                            }
-                        } else {
-                            monitor.record_parsed();
-                        }
-                        // Write output to printer
-                        let mut printer = self.printer.borrow_mut();
-                        write!(printer, "{output}")?;
-                        printer.flush()?;
-                    }
-                    None => {
-                        // Check if this was a control event (state management with no user output)
-                        if trimmed.starts_with('{') {
-                            if let Ok(event) = serde_json::from_str::<OpenCodeEvent>(&line) {
-                                if Self::is_control_event(&event) {
-                                    monitor.record_control_event();
-                                } else {
-                                    // Valid JSON but not a control event - track as unknown
-                                    monitor.record_unknown_event();
-                                }
-                            } else {
-                                // Failed to deserialize - track as parse error
-                                monitor.record_parse_error();
-                            }
-                        } else {
-                            monitor.record_ignored();
-                        }
-                    }
-                }
-
-                if logging_enabled {
-                    writeln!(log_buffer, "{line}")?;
-                }
-            }
-        }
-
-        // Handle any remaining buffered data when the stream ends.
-        // Only process if it's valid JSON - incomplete buffered data should be skipped.
         if let Some(remaining) = incremental_parser.finish() {
-            let trimmed = remaining.trim();
-            if !trimmed.is_empty()
-                && trimmed.starts_with('{')
-                && serde_json::from_str::<OpenCodeEvent>(&remaining).is_ok()
-            {
-                // Process the remaining event
-                if let Some(output) = self.parse_event(&remaining) {
-                    monitor.record_parsed();
-                    let mut printer = self.printer.borrow_mut();
-                    write!(printer, "{output}")?;
-                    printer.flush()?;
-                }
-                // Write to log buffer
-                if logging_enabled {
-                    writeln!(log_buffer, "{remaining}")?;
-                }
-            }
+            self.process_remaining_buffered_event(
+                &remaining,
+                &monitor,
+                logging_enabled,
+                &mut log_buffer,
+            )?;
         }
 
-        // Write accumulated log content to workspace
-        if let Some(log_path) = &self.log_path {
-            workspace.append_bytes(log_path, &log_buffer)?;
-        }
-
-        // OpenCode models may emit XML directly in text output (without using tools to write
-        // `.agent/tmp/*.xml`). Capture known XML artifacts from the accumulated text stream and
-        // write them to standard artifact paths so phase extractors can validate them via
-        // file-based extraction.
-        //
-        // SECURITY: Bound the amount of accumulated text we scan and the size of the extracted
-        // XML we write. This prevents pathological model output from causing unbounded memory/IO.
-        if let Some(accumulated) = self
-            .streaming_session
-            .borrow()
-            .get_accumulated(ContentType::Text, "main")
-        {
-            let accumulated_tail = if accumulated.len() > MAX_XML_SEARCH_BYTES {
-                let mut start = accumulated.len() - MAX_XML_SEARCH_BYTES;
-                while start < accumulated.len() && !accumulated.is_char_boundary(start) {
-                    start += 1;
-                }
-                &accumulated[start..]
-            } else {
-                accumulated
-            };
-
-            if let Some(xml) = crate::files::llm_output_extraction::xml_extraction::extract_xml_commit(
-                accumulated_tail,
-            ) {
-                if xml.len() <= MAX_XML_BYTES {
-                    workspace.create_dir_all(Path::new(".agent/tmp"))?;
-                    workspace.write(
-                        Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::COMMIT_MESSAGE_XML),
-                        &xml,
-                    )?;
-                }
-            }
-
-            if let Some(xml) = crate::files::llm_output_extraction::extract_issues_xml(
-                accumulated_tail,
-            ) {
-                if xml.len() <= MAX_XML_BYTES {
-                    workspace.create_dir_all(Path::new(".agent/tmp"))?;
-                    workspace.write(
-                        Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::ISSUES_XML),
-                        &xml,
-                    )?;
-                }
-            }
-        }
-        if let Some(warning) = monitor.check_and_warn(*c) {
-            let mut printer = self.printer.borrow_mut();
-            writeln!(printer, "{warning}")?;
-        }
+        self.write_log_buffer_if_enabled(workspace, &log_buffer)?;
+        self.persist_extracted_xml_artifacts(workspace)?;
+        self.write_monitor_warning_if_needed(&monitor)?;
         Ok(())
     }
 }

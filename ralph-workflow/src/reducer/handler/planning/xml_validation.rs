@@ -19,18 +19,16 @@ impl MainEffectHandler {
         &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let plan_xml = Path::new(xml_paths::PLAN_XML);
         let content = ctx.workspace.read(plan_xml);
 
         match content {
-            Ok(_) => Ok(EffectResult::event(PipelineEvent::planning_xml_extracted(
-                iteration,
-            ))),
-            Err(_) => Ok(EffectResult::event(PipelineEvent::planning_xml_missing(
+            Ok(_) => EffectResult::event(PipelineEvent::planning_xml_extracted(iteration)),
+            Err(_) => EffectResult::event(PipelineEvent::planning_xml_missing(
                 iteration,
                 self.state.continuation.invalid_output_attempts,
-            ))),
+            )),
         }
     }
 

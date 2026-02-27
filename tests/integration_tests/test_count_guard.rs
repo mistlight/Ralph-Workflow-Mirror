@@ -641,13 +641,13 @@ fn resolve_module_path(module_dir: &str, module_name: &str) -> String {
 }
 
 fn module_dir_from_path(path: &str) -> String {
-    if let Some(stripped) = path.strip_suffix("/mod.rs") {
-        stripped.to_string()
-    } else if let Some((dir, _)) = path.rsplit_once('/') {
-        dir.to_string()
-    } else {
-        String::new()
-    }
+    path.strip_suffix("/mod.rs").map_or_else(
+        || {
+            path.rsplit_once('/')
+                .map_or_else(String::new, |(dir, _)| dir.to_string())
+        },
+        std::string::ToString::to_string,
+    )
 }
 
 #[test]

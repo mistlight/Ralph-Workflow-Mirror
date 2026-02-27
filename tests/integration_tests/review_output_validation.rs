@@ -164,7 +164,7 @@ fn test_has_valid_xml_output_handles_leading_whitespace() {
     with_default_timeout(|| {
         let workspace = MemoryWorkspace::new_test().with_file(
             paths::ISSUES_XML,
-            r"  
+            r"
    <ralph-issues>
 <ralph-no-issues-found>No issues</ralph-no-issues-found>
 </ralph-issues>",

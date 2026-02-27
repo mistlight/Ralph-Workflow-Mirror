@@ -18,9 +18,9 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
-use std::fmt::Write;
 
 /// Generate a stream with N deltas for a single content block.
 fn generate_text_delta_stream(n: usize, _agent_type: &str) -> String {
@@ -36,7 +36,7 @@ fn generate_text_delta_stream(n: usize, _agent_type: &str) -> String {
 
     // Many text deltas
     for i in 0..n {
-        write!(stream, 
+        write!(stream,
             r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#
         ).unwrap();
         stream.push('\n');
@@ -62,14 +62,14 @@ fn generate_thinking_delta_stream(n: usize, thinking_type: &str) -> String {
     stream.push('\n');
 
     // Thinking block start
-    write!(stream, 
+    write!(stream,
         r#"{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"{thinking_type}","{thinking_type}":""}}}}}}"#
     ).unwrap();
     stream.push('\n');
 
     // Many thinking deltas
     for i in 0..n {
-        write!(stream, 
+        write!(stream,
             r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"{thinking_type}_delta","{thinking_type}":"thought{i} "}}}}}}"#
         ).unwrap();
         stream.push('\n');
@@ -102,7 +102,7 @@ fn generate_codex_reasoning_stream(n: usize) -> String {
 
     // Many deltas
     for i in 0..n {
-        write!(stream, 
+        write!(stream,
             r#"{{"type":"event","event":"item.content.delta","item_id":"r1","item_type":"reasoning","delta":"reason{i} "}}"#
         ).unwrap();
         stream.push('\n');
@@ -333,7 +333,7 @@ fn test_ccs_glm_multi_turn_extreme_streaming() {
         let mut stream = String::new();
         for turn in 0..3 {
             // Message start
-            write!(stream, 
+            write!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"message_start","message":{{"id":"msg{turn}","content":[]}}}}}}"#
             ).unwrap();
             stream.push('\n');
@@ -343,7 +343,7 @@ fn test_ccs_glm_multi_turn_extreme_streaming() {
             stream.push('\n');
 
             for i in 0..200 {
-                write!(stream, 
+                write!(stream,
                     r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"turn{turn}word{i} "}}}}}}"#
                 ).unwrap();
                 stream.push('\n');
@@ -399,19 +399,19 @@ fn test_ccs_codex_multi_item_extreme_streaming() {
         stream.push('\n');
 
         for item in 0..3 {
-            write!(stream, 
+            write!(stream,
                 r#"{{"type":"event","event":"item.started","item_type":"reasoning","item_id":"r{item}"}}"#
             ).unwrap();
             stream.push('\n');
 
             for i in 0..200 {
-                write!(stream, 
+                write!(stream,
                     r#"{{"type":"event","event":"item.content.delta","item_id":"r{item}","item_type":"reasoning","delta":"item{item}reason{i} "}}"#
                 ).unwrap();
                 stream.push('\n');
             }
 
-            write!(stream, 
+            write!(stream,
                 r#"{{"type":"event","event":"item.completed","item_type":"reasoning","item_id":"r{item}"}}"#
             ).unwrap();
             stream.push('\n');

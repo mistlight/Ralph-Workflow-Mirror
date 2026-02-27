@@ -149,19 +149,16 @@ fn print_config_info(
     println!("{}Configuration:{}", colors.bold(), colors.reset());
     println!("  Unified config: {}", config_path.display());
     let exists_status = if config_path.is_absolute() {
-        config_path
-            .strip_prefix(workspace.root())
-            .ok()
-            .map_or_else(
-                || "unknown (outside workspace)".to_string(),
-                |relative| {
-                    if workspace.exists(relative) {
-                        "yes".to_string()
-                    } else {
-                        "no".to_string()
-                    }
-                },
-            )
+        config_path.strip_prefix(workspace.root()).ok().map_or_else(
+            || "unknown (outside workspace)".to_string(),
+            |relative| {
+                if workspace.exists(relative) {
+                    "yes".to_string()
+                } else {
+                    "no".to_string()
+                }
+            },
+        )
     } else if workspace.exists(config_path) {
         "yes".to_string()
     } else {

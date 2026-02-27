@@ -161,9 +161,7 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
-        .validate_review_issues_xml(&mut ctx, 0)
-        .expect("validate_review_issues_xml should succeed");
+    let result = handler.validate_review_issues_xml(&mut ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -235,9 +233,7 @@ fn test_validate_fix_result_xml_emits_ui_output() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
-        .validate_fix_result_xml(&mut ctx, 0)
-        .expect("validate_fix_result_xml should succeed");
+    let result = handler.validate_fix_result_xml(&mut ctx, 0);
 
     assert!(matches!(
         result.event,

@@ -266,7 +266,7 @@ where
     f();
     let after = SPAWNED_PROCESSES.load(Ordering::Acquire);
 
-    assert!(after <= before, 
+    assert!(after <= before,
         "INTEGRATION TEST VIOLATION: Test spawned {} external process(es). \
         Integration tests MUST NOT spawn ANY external processes (no git, ls, cargo, ralph binary, or any subprocess). \
         For CLI testing, use run_ralph_cli() which calls app::run() directly instead of spawning a binary process. \

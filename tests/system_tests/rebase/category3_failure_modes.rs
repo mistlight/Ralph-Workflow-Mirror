@@ -202,17 +202,8 @@ fn rebase_successful_rebase_has_no_validation_error() {
             let result =
                 ralph_workflow::git_helpers::rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(ralph_workflow::git_helpers::RebaseResult::Success) => {
-                    // Rebase completed successfully
-                }
-                Ok(ralph_workflow::git_helpers::RebaseResult::NoOp { .. }) => {
-                    // Also acceptable - no commits to rebase
-                }
-                _ => {
-                    // Other outcomes may occur depending on git state
-                }
-            }
+            // Any outcome is acceptable here; this test verifies no validation error path.
+            let _ = result;
         });
     });
 }

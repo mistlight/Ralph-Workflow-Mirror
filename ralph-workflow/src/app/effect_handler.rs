@@ -75,6 +75,248 @@ impl RealAppEffectHandler {
             path.to_path_buf()
         }
     }
+
+    fn execute_set_current_dir(&self, path: &Path) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        match std::env::set_current_dir(&resolved) {
+            Ok(()) => AppEffectResult::Ok,
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to set current directory to '{}': {}",
+                resolved.display(),
+                error
+            )),
+        }
+    }
+
+    fn execute_write_file(&self, path: &Path, content: String) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        if let Some(parent) = resolved.parent() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                return AppEffectResult::Error(format!(
+                    "Failed to create parent directories for '{}': {}",
+                    resolved.display(),
+                    error
+                ));
+            }
+        }
+
+        match std::fs::write(&resolved, content) {
+            Ok(()) => AppEffectResult::Ok,
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to write file '{}': {}",
+                resolved.display(),
+                error
+            )),
+        }
+    }
+
+    fn execute_read_file(&self, path: &Path) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        match std::fs::read_to_string(&resolved) {
+            Ok(content) => AppEffectResult::String(content),
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to read file '{}': {}",
+                resolved.display(),
+                error
+            )),
+        }
+    }
+
+    fn execute_delete_file(&self, path: &Path) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        match std::fs::remove_file(&resolved) {
+            Ok(()) => AppEffectResult::Ok,
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to delete file '{}': {}",
+                resolved.display(),
+                error
+            )),
+        }
+    }
+
+    fn execute_create_dir(&self, path: &Path) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        match std::fs::create_dir_all(&resolved) {
+            Ok(()) => AppEffectResult::Ok,
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to create directory '{}': {}",
+                resolved.display(),
+                error
+            )),
+        }
+    }
+
+    fn execute_path_exists(&self, path: &Path) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        AppEffectResult::Bool(resolved.exists())
+    }
+
+    fn execute_set_read_only(&self, path: &Path, readonly: bool) -> AppEffectResult {
+        let resolved = self.resolve_path(path);
+        match std::fs::metadata(&resolved) {
+            Ok(metadata) => {
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(readonly);
+                match std::fs::set_permissions(&resolved, permissions) {
+                    Ok(()) => AppEffectResult::Ok,
+                    Err(error) => AppEffectResult::Error(format!(
+                        "Failed to set permissions on '{}': {}",
+                        resolved.display(),
+                        error
+                    )),
+                }
+            }
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to get metadata for '{}': {}",
+                resolved.display(),
+                error
+            )),
+        }
+    }
+
+    fn execute_git_require_repo() -> AppEffectResult {
+        match crate::git_helpers::require_git_repo() {
+            Ok(()) => AppEffectResult::Ok,
+            Err(error) => AppEffectResult::Error(format!("Not in a git repository: {error}")),
+        }
+    }
+
+    fn execute_git_get_repo_root() -> AppEffectResult {
+        match crate::git_helpers::get_repo_root() {
+            Ok(root) => AppEffectResult::Path(root),
+            Err(error) => AppEffectResult::Error(format!("Failed to get repository root: {error}")),
+        }
+    }
+
+    fn execute_git_get_head_oid() -> AppEffectResult {
+        match crate::git_helpers::get_current_head_oid() {
+            Ok(oid) => AppEffectResult::String(oid),
+            Err(error) => AppEffectResult::Error(format!("Failed to get HEAD OID: {error}")),
+        }
+    }
+
+    fn execute_git_diff() -> AppEffectResult {
+        match crate::git_helpers::git_diff() {
+            Ok(diff) => AppEffectResult::String(diff),
+            Err(error) => AppEffectResult::Error(format!("Failed to get git diff: {error}")),
+        }
+    }
+
+    fn execute_git_diff_from(start_oid: &str) -> AppEffectResult {
+        match crate::git_helpers::git_diff_from(start_oid) {
+            Ok(diff) => AppEffectResult::String(diff),
+            Err(error) => AppEffectResult::Error(format!(
+                "Failed to get git diff from '{start_oid}': {error}"
+            )),
+        }
+    }
+
+    fn execute_git_diff_from_start() -> AppEffectResult {
+        match crate::git_helpers::get_git_diff_from_start() {
+            Ok(diff) => AppEffectResult::String(diff),
+            Err(error) => {
+                AppEffectResult::Error(format!("Failed to get diff from start commit: {error}"))
+            }
+        }
+    }
+
+    fn execute_git_snapshot() -> AppEffectResult {
+        match crate::git_helpers::git_snapshot() {
+            Ok(snapshot) => AppEffectResult::String(snapshot),
+            Err(error) => AppEffectResult::Error(format!("Failed to create git snapshot: {error}")),
+        }
+    }
+
+    fn execute_git_add_all() -> AppEffectResult {
+        match crate::git_helpers::git_add_all() {
+            Ok(staged) => AppEffectResult::Bool(staged),
+            Err(error) => AppEffectResult::Error(format!("Failed to stage all changes: {error}")),
+        }
+    }
+
+    fn execute_git_commit(
+        message: &str,
+        user_name: Option<&str>,
+        user_email: Option<&str>,
+    ) -> AppEffectResult {
+        match crate::git_helpers::git_commit(message, user_name, user_email, None) {
+            Ok(Some(oid)) => AppEffectResult::Commit(CommitResult::Success(oid.to_string())),
+            Ok(None) => AppEffectResult::Commit(CommitResult::NoChanges),
+            Err(error) => AppEffectResult::Error(format!("Failed to create commit: {error}")),
+        }
+    }
+
+    fn execute_git_save_start_commit() -> AppEffectResult {
+        match crate::git_helpers::save_start_commit() {
+            Ok(()) => AppEffectResult::Ok,
+            Err(error) => AppEffectResult::Error(format!("Failed to save start commit: {error}")),
+        }
+    }
+
+    fn execute_git_reset_start_commit() -> AppEffectResult {
+        match crate::git_helpers::reset_start_commit() {
+            Ok(result) => AppEffectResult::String(result.oid),
+            Err(error) => AppEffectResult::Error(format!("Failed to reset start commit: {error}")),
+        }
+    }
+
+    fn execute_git_rebase_onto(_upstream_branch: String) -> AppEffectResult {
+        AppEffectResult::Error(
+            "GitRebaseOnto requires executor injection - use pipeline runner".to_string(),
+        )
+    }
+
+    fn execute_git_get_conflicted_files() -> AppEffectResult {
+        match crate::git_helpers::get_conflicted_files() {
+            Ok(files) => AppEffectResult::StringList(files),
+            Err(error) => {
+                AppEffectResult::Error(format!("Failed to get conflicted files: {error}"))
+            }
+        }
+    }
+
+    fn execute_git_continue_rebase() -> AppEffectResult {
+        AppEffectResult::Error(
+            "GitContinueRebase requires executor injection - use pipeline runner".to_string(),
+        )
+    }
+
+    fn execute_git_abort_rebase() -> AppEffectResult {
+        AppEffectResult::Error(
+            "GitAbortRebase requires executor injection - use pipeline runner".to_string(),
+        )
+    }
+
+    fn execute_git_get_default_branch() -> AppEffectResult {
+        match crate::git_helpers::get_default_branch() {
+            Ok(branch) => AppEffectResult::String(branch),
+            Err(error) => AppEffectResult::Error(format!("Failed to get default branch: {error}")),
+        }
+    }
+
+    fn execute_git_is_main_branch() -> AppEffectResult {
+        match crate::git_helpers::is_main_or_master_branch() {
+            Ok(is_main) => AppEffectResult::Bool(is_main),
+            Err(error) => AppEffectResult::Error(format!("Failed to check branch: {error}")),
+        }
+    }
+
+    fn execute_get_env_var(name: &str) -> AppEffectResult {
+        match std::env::var(name) {
+            Ok(value) => AppEffectResult::String(value),
+            Err(std::env::VarError::NotPresent) => {
+                AppEffectResult::Error(format!("Environment variable '{name}' not set"))
+            }
+            Err(std::env::VarError::NotUnicode(_)) => AppEffectResult::Error(format!(
+                "Environment variable '{name}' contains invalid Unicode"
+            )),
+        }
+    }
+
+    fn execute_set_env_var(name: &str, value: &str) -> AppEffectResult {
+        std::env::set_var(name, value);
+        AppEffectResult::Ok
+    }
 }
 
 impl Default for RealAppEffectHandler {
@@ -86,250 +328,40 @@ impl Default for RealAppEffectHandler {
 impl AppEffectHandler for RealAppEffectHandler {
     fn execute(&mut self, effect: AppEffect) -> AppEffectResult {
         match effect {
-            // =========================================================================
-            // Working Directory Effects
-            // =========================================================================
-            AppEffect::SetCurrentDir { path } => {
-                let resolved = self.resolve_path(&path);
-                match std::env::set_current_dir(&resolved) {
-                    Ok(()) => AppEffectResult::Ok,
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to set current directory to '{}': {}",
-                        resolved.display(),
-                        e
-                    )),
-                }
-            }
-
-            // =========================================================================
-            // Filesystem Effects
-            // =========================================================================
-            AppEffect::WriteFile { path, content } => {
-                let resolved = self.resolve_path(&path);
-                // Ensure parent directories exist
-                if let Some(parent) = resolved.parent() {
-                    if let Err(e) = std::fs::create_dir_all(parent) {
-                        return AppEffectResult::Error(format!(
-                            "Failed to create parent directories for '{}': {}",
-                            resolved.display(),
-                            e
-                        ));
-                    }
-                }
-                match std::fs::write(&resolved, content) {
-                    Ok(()) => AppEffectResult::Ok,
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to write file '{}': {}",
-                        resolved.display(),
-                        e
-                    )),
-                }
-            }
-
-            AppEffect::ReadFile { path } => {
-                let resolved = self.resolve_path(&path);
-                match std::fs::read_to_string(&resolved) {
-                    Ok(content) => AppEffectResult::String(content),
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to read file '{}': {}",
-                        resolved.display(),
-                        e
-                    )),
-                }
-            }
-
-            AppEffect::DeleteFile { path } => {
-                let resolved = self.resolve_path(&path);
-                match std::fs::remove_file(&resolved) {
-                    Ok(()) => AppEffectResult::Ok,
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to delete file '{}': {}",
-                        resolved.display(),
-                        e
-                    )),
-                }
-            }
-
-            AppEffect::CreateDir { path } => {
-                let resolved = self.resolve_path(&path);
-                match std::fs::create_dir_all(&resolved) {
-                    Ok(()) => AppEffectResult::Ok,
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to create directory '{}': {}",
-                        resolved.display(),
-                        e
-                    )),
-                }
-            }
-
-            AppEffect::PathExists { path } => {
-                let resolved = self.resolve_path(&path);
-                AppEffectResult::Bool(resolved.exists())
-            }
-
+            AppEffect::SetCurrentDir { path } => self.execute_set_current_dir(&path),
+            AppEffect::WriteFile { path, content } => self.execute_write_file(&path, content),
+            AppEffect::ReadFile { path } => self.execute_read_file(&path),
+            AppEffect::DeleteFile { path } => self.execute_delete_file(&path),
+            AppEffect::CreateDir { path } => self.execute_create_dir(&path),
+            AppEffect::PathExists { path } => self.execute_path_exists(&path),
             AppEffect::SetReadOnly { path, readonly } => {
-                let resolved = self.resolve_path(&path);
-                match std::fs::metadata(&resolved) {
-                    Ok(metadata) => {
-                        let mut permissions = metadata.permissions();
-                        permissions.set_readonly(readonly);
-                        match std::fs::set_permissions(&resolved, permissions) {
-                            Ok(()) => AppEffectResult::Ok,
-                            Err(e) => AppEffectResult::Error(format!(
-                                "Failed to set permissions on '{}': {}",
-                                resolved.display(),
-                                e
-                            )),
-                        }
-                    }
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to get metadata for '{}': {}",
-                        resolved.display(),
-                        e
-                    )),
-                }
+                self.execute_set_read_only(&path, readonly)
             }
-
-            // =========================================================================
-            // Git Effects
-            // =========================================================================
-            AppEffect::GitRequireRepo => match crate::git_helpers::require_git_repo() {
-                Ok(()) => AppEffectResult::Ok,
-                Err(e) => AppEffectResult::Error(format!("Not in a git repository: {e}")),
-            },
-
-            AppEffect::GitGetRepoRoot => match crate::git_helpers::get_repo_root() {
-                Ok(root) => AppEffectResult::Path(root),
-                Err(e) => AppEffectResult::Error(format!("Failed to get repository root: {e}")),
-            },
-
-            AppEffect::GitGetHeadOid => match crate::git_helpers::get_current_head_oid() {
-                Ok(oid) => AppEffectResult::String(oid),
-                Err(e) => AppEffectResult::Error(format!("Failed to get HEAD OID: {e}")),
-            },
-
-            AppEffect::GitDiff => match crate::git_helpers::git_diff() {
-                Ok(diff) => AppEffectResult::String(diff),
-                Err(e) => AppEffectResult::Error(format!("Failed to get git diff: {e}")),
-            },
-
-            AppEffect::GitDiffFrom { start_oid } => {
-                match crate::git_helpers::git_diff_from(&start_oid) {
-                    Ok(diff) => AppEffectResult::String(diff),
-                    Err(e) => AppEffectResult::Error(format!(
-                        "Failed to get git diff from '{start_oid}': {e}"
-                    )),
-                }
-            }
-
-            AppEffect::GitDiffFromStart => match crate::git_helpers::get_git_diff_from_start() {
-                Ok(diff) => AppEffectResult::String(diff),
-                Err(e) => {
-                    AppEffectResult::Error(format!("Failed to get diff from start commit: {e}"))
-                }
-            },
-
-            AppEffect::GitSnapshot => match crate::git_helpers::git_snapshot() {
-                Ok(snapshot) => AppEffectResult::String(snapshot),
-                Err(e) => AppEffectResult::Error(format!("Failed to create git snapshot: {e}")),
-            },
-
-            AppEffect::GitAddAll => match crate::git_helpers::git_add_all() {
-                Ok(staged) => AppEffectResult::Bool(staged),
-                Err(e) => AppEffectResult::Error(format!("Failed to stage all changes: {e}")),
-            },
-
+            AppEffect::GitRequireRepo => Self::execute_git_require_repo(),
+            AppEffect::GitGetRepoRoot => Self::execute_git_get_repo_root(),
+            AppEffect::GitGetHeadOid => Self::execute_git_get_head_oid(),
+            AppEffect::GitDiff => Self::execute_git_diff(),
+            AppEffect::GitDiffFrom { start_oid } => Self::execute_git_diff_from(&start_oid),
+            AppEffect::GitDiffFromStart => Self::execute_git_diff_from_start(),
+            AppEffect::GitSnapshot => Self::execute_git_snapshot(),
+            AppEffect::GitAddAll => Self::execute_git_add_all(),
             AppEffect::GitCommit {
                 message,
                 user_name,
                 user_email,
-            } => {
-                match crate::git_helpers::git_commit(
-                    &message,
-                    user_name.as_deref(),
-                    user_email.as_deref(),
-                    None, // No executor needed for basic commit
-                ) {
-                    Ok(Some(oid)) => {
-                        AppEffectResult::Commit(CommitResult::Success(oid.to_string()))
-                    }
-                    Ok(None) => AppEffectResult::Commit(CommitResult::NoChanges),
-                    Err(e) => AppEffectResult::Error(format!("Failed to create commit: {e}")),
-                }
+            } => Self::execute_git_commit(&message, user_name.as_deref(), user_email.as_deref()),
+            AppEffect::GitSaveStartCommit => Self::execute_git_save_start_commit(),
+            AppEffect::GitResetStartCommit => Self::execute_git_reset_start_commit(),
+            AppEffect::GitRebaseOnto { upstream_branch } => {
+                Self::execute_git_rebase_onto(upstream_branch)
             }
-
-            AppEffect::GitSaveStartCommit => match crate::git_helpers::save_start_commit() {
-                Ok(()) => AppEffectResult::Ok,
-                Err(e) => AppEffectResult::Error(format!("Failed to save start commit: {e}")),
-            },
-
-            AppEffect::GitResetStartCommit => match crate::git_helpers::reset_start_commit() {
-                Ok(result) => AppEffectResult::String(result.oid),
-                Err(e) => AppEffectResult::Error(format!("Failed to reset start commit: {e}")),
-            },
-
-            AppEffect::GitRebaseOnto { upstream_branch: _ } => {
-                // Rebase operations require a process executor which we don't have here.
-                // This effect should be handled by a higher-level component that has
-                // access to a ProcessExecutor.
-                AppEffectResult::Error(
-                    "GitRebaseOnto requires executor injection - use pipeline runner".to_string(),
-                )
-            }
-
-            AppEffect::GitGetConflictedFiles => match crate::git_helpers::get_conflicted_files() {
-                Ok(files) => AppEffectResult::StringList(files),
-                Err(e) => AppEffectResult::Error(format!("Failed to get conflicted files: {e}")),
-            },
-
-            AppEffect::GitContinueRebase => {
-                // Continue rebase requires a process executor.
-                AppEffectResult::Error(
-                    "GitContinueRebase requires executor injection - use pipeline runner"
-                        .to_string(),
-                )
-            }
-
-            AppEffect::GitAbortRebase => {
-                // Abort rebase requires a process executor.
-                AppEffectResult::Error(
-                    "GitAbortRebase requires executor injection - use pipeline runner".to_string(),
-                )
-            }
-
-            AppEffect::GitGetDefaultBranch => match crate::git_helpers::get_default_branch() {
-                Ok(branch) => AppEffectResult::String(branch),
-                Err(e) => AppEffectResult::Error(format!("Failed to get default branch: {e}")),
-            },
-
-            AppEffect::GitIsMainBranch => match crate::git_helpers::is_main_or_master_branch() {
-                Ok(is_main) => AppEffectResult::Bool(is_main),
-                Err(e) => AppEffectResult::Error(format!("Failed to check branch: {e}")),
-            },
-
-            // =========================================================================
-            // Environment Effects
-            // =========================================================================
-            AppEffect::GetEnvVar { name } => match std::env::var(&name) {
-                Ok(value) => AppEffectResult::String(value),
-                Err(std::env::VarError::NotPresent) => {
-                    AppEffectResult::Error(format!("Environment variable '{name}' not set"))
-                }
-                Err(std::env::VarError::NotUnicode(_)) => AppEffectResult::Error(format!(
-                    "Environment variable '{name}' contains invalid Unicode"
-                )),
-            },
-
-            AppEffect::SetEnvVar { name, value } => {
-                std::env::set_var(&name, &value);
-                AppEffectResult::Ok
-            }
-
-            // =========================================================================
-            // Logging Effects
-            // =========================================================================
-            // Logging is handled elsewhere (by the logger), so these are no-ops.
-            // The effect system captures them for testing/recording purposes.
+            AppEffect::GitGetConflictedFiles => Self::execute_git_get_conflicted_files(),
+            AppEffect::GitContinueRebase => Self::execute_git_continue_rebase(),
+            AppEffect::GitAbortRebase => Self::execute_git_abort_rebase(),
+            AppEffect::GitGetDefaultBranch => Self::execute_git_get_default_branch(),
+            AppEffect::GitIsMainBranch => Self::execute_git_is_main_branch(),
+            AppEffect::GetEnvVar { name } => Self::execute_get_env_var(&name),
+            AppEffect::SetEnvVar { name, value } => Self::execute_set_env_var(&name, &value),
             AppEffect::LogInfo { message: _ }
             | AppEffect::LogSuccess { message: _ }
             | AppEffect::LogWarn { message: _ }

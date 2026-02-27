@@ -164,7 +164,8 @@ fn test_execution_history_bounded_growth_prevents_oom() {
         // After Step 11: This will pass with 1,000 entries (bounded)
         let max_allowed = 1000;
 
-        assert!(state.execution_history.len() <= max_allowed, 
+        assert!(
+            state.execution_history.len() <= max_allowed,
             "Execution history grew unbounded! Expected <= {}, got {}. \
              This test will pass after Step 11 implements bounding.",
             max_allowed,
@@ -330,9 +331,7 @@ fn test_execution_history_bounded_with_10000_iterations() {
         let json = serde_json::to_string(&state).expect("Serialization should succeed");
         let kilobytes = json.len() / 1024;
 
-        println!(
-            "Checkpoint size after 10,000 iterations (bounded to 1000): {kilobytes} KB"
-        );
+        println!("Checkpoint size after 10,000 iterations (bounded to 1000): {kilobytes} KB");
 
         // Size should be reasonable (< 500 KB) with bounded history
         assert!(
@@ -380,12 +379,12 @@ fn test_checkpoint_size_remains_stable_with_bounded_history() {
         let tolerance = size_after_1000 / 10; // 10% tolerance
 
         assert!(
-            (size_after_2000 as i32 - size_after_1000 as i32).abs() <= tolerance as i32,
+            size_after_2000.abs_diff(size_after_1000) <= tolerance,
             "Checkpoint size should remain stable between 1000 and 2000 iterations: {size_after_1000} KB vs {size_after_2000} KB"
         );
 
         assert!(
-            (size_after_3000 as i32 - size_after_1000 as i32).abs() <= tolerance as i32,
+            size_after_3000.abs_diff(size_after_1000) <= tolerance,
             "Checkpoint size should remain stable between 1000 and 3000 iterations: {size_after_1000} KB vs {size_after_3000} KB"
         );
     });
@@ -423,11 +422,11 @@ fn test_memory_does_not_grow_with_many_checkpoint_cycles() {
         let first_size = final_states[0].1;
 
         for (cycle, size) in &final_states {
-            let diff = (*size as i32 - first_size as i32).abs();
+            let diff = (*size).abs_diff(first_size);
             let tolerance = first_size / 100; // 1% tolerance
 
             assert!(
-                diff <= tolerance as i32,
+                diff <= tolerance,
                 "Checkpoint size should remain stable across cycles. Cycle {cycle}: {size} bytes vs initial {first_size} bytes (diff: {diff} bytes)"
             );
         }

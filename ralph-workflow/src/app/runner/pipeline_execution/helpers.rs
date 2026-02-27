@@ -235,7 +235,7 @@ pub fn handle_rebase_only(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
+    executor: &std::sync::Arc<dyn ProcessExecutor>,
     repo_root: &std::path::Path,
 ) -> anyhow::Result<()> {
     // Check if we're on main/master branch
@@ -249,7 +249,7 @@ pub fn handle_rebase_only(
 
     logger.header("Rebase to default branch", Colors::cyan);
 
-    match run_rebase_to_default(logger, colors, &*executor) {
+    match run_rebase_to_default(logger, colors, &**executor) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
             Ok(())
@@ -267,7 +267,7 @@ pub fn handle_rebase_only(
             let conflicted_files = get_conflicted_files()?;
             if conflicted_files.is_empty() {
                 logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase(&*executor);
+                let _ = abort_rebase(&**executor);
                 return Ok(());
             }
 
@@ -283,20 +283,20 @@ pub fn handle_rebase_only(
                 template_context,
                 logger,
                 colors,
-                std::sync::Arc::clone(&executor),
+                executor,
                 repo_root,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase(&*executor) {
+                    match continue_rebase(&**executor) {
                         Ok(()) => {
                             logger.success("Rebase completed successfully after AI resolution");
                             Ok(())
                         }
                         Err(e) => {
                             logger.error(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase(&*executor);
+                            let _ = abort_rebase(&**executor);
                             anyhow::bail!("Rebase failed after conflict resolution")
                         }
                     }
@@ -304,12 +304,12 @@ pub fn handle_rebase_only(
                 Ok(false) => {
                     // AI resolution failed
                     logger.error("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase(&*executor);
+                    let _ = abort_rebase(&**executor);
                     anyhow::bail!("Rebase conflicts could not be resolved by AI")
                 }
                 Err(e) => {
                     logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase(&*executor);
+                    let _ = abort_rebase(&**executor);
                     anyhow::bail!("Rebase conflict resolution failed: {e}")
                 }
             }

@@ -17,9 +17,9 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
-use std::fmt::Write;
 
 #[test]
 fn test_ccs_glm_basic_mode_500_text_deltas_must_produce_one_line() {
@@ -40,7 +40,7 @@ fn test_ccs_glm_basic_mode_500_text_deltas_must_produce_one_line() {
         );
 
         for i in 0..500 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#
             ).unwrap();
         }
@@ -101,8 +101,11 @@ fn test_ccs_codex_basic_mode_500_reasoning_deltas_must_produce_one_line() {
         let mut stream = String::new();
 
         for i in 0..500 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#
+            )
+            .unwrap();
         }
 
         stream.push_str(

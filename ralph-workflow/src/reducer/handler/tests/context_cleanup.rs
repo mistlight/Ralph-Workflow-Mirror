@@ -8,7 +8,6 @@ use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
 use crate::workspace::{DirEntry, MemoryWorkspace, Workspace};
 use std::collections::HashMap;
 use std::io;
@@ -257,7 +256,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -280,9 +279,7 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
         cloud: &cloud,
     };
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let err = handler
-        .cleanup_context(&mut ctx)
+    let err = MainEffectHandler::cleanup_context(&ctx)
         .expect_err("cleanup_context should surface remove failures as typed error event");
 
     let error_event = err
@@ -324,7 +321,7 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -347,9 +344,7 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
         cloud: &cloud,
     };
 
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-    let err = handler
-        .cleanup_context(&mut ctx)
+    let err = MainEffectHandler::cleanup_context(&ctx)
         .expect_err("cleanup_context should surface read_dir failures as typed error event");
 
     let error_event = err

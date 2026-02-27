@@ -39,14 +39,11 @@ impl MainEffectHandler {
     }
 
     pub(in crate::reducer::handler) fn archive_planning_xml(
-        &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::PLAN_XML));
-        Ok(EffectResult::event(PipelineEvent::planning_xml_archived(
-            iteration,
-        )))
+        EffectResult::event(PipelineEvent::planning_xml_archived(iteration))
     }
 
     pub(in crate::reducer::handler) fn apply_planning_outcome(
@@ -54,14 +51,14 @@ impl MainEffectHandler {
         _ctx: &mut PhaseContext<'_>,
         iteration: u32,
         valid: bool,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let mut ui_events = Vec::new();
         if valid {
             ui_events.push(self.phase_transition_ui(PipelinePhase::Development));
         }
-        Ok(EffectResult::with_ui(
+        EffectResult::with_ui(
             PipelineEvent::plan_generation_completed(iteration, valid),
             ui_events,
-        ))
+        )
     }
 }

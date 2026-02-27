@@ -24,9 +24,9 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
-use std::fmt::Write;
 
 // ============================================================================
 // CCS/GLM (ClaudeParser) Tests
@@ -504,7 +504,7 @@ fn test_ccs_glm_extreme_text_deltas_no_spam_in_none_mode() {
         );
 
         for i in 0..100 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{i} "}}}}}}"#
             ).unwrap();
         }
@@ -619,7 +619,7 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
 "#,
         );
         for i in 0..20 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"think{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -633,7 +633,7 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
 "#,
         );
         for i in 0..30 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"text{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -647,7 +647,7 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
 "#,
         );
         for i in 0..15 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"cmd{i} "}}}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -661,7 +661,7 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
 "#,
         );
         for i in 0..25 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":3,"delta":{{"type":"thinking_delta","thinking":"more{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -675,7 +675,7 @@ fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
 "#,
         );
         for i in 0..20 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":4,"delta":{{"type":"text_delta","text":"final{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -739,8 +739,11 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
 
         // First turn - 30 reasoning deltas
         for i in 0..30 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason1_{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason1_{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -749,8 +752,11 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
 
         // First turn - 25 agent_message deltas
         for i in 0..25 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg1_{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg1_{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}
@@ -759,8 +765,11 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
 
         // Second turn - 20 reasoning deltas
         for i in 0..20 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason2_{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason2_{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -769,8 +778,11 @@ fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
 
         // Second turn - 15 agent_message deltas
         for i in 0..15 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg2_{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg2_{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"agent_message"}}

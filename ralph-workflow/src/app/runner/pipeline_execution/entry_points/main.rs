@@ -109,7 +109,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     // Note: repo_root is discovered again here (same as early_repo_root) but also
     // does additional setup like PROMPT.md creation that plumbing commands don't need
     let Some(repo_root) = validate_and_setup_agents(
-        AgentSetupParams {
+        &AgentSetupParams {
             config: &config,
             registry: &registry,
             developer_agent: &developer_agent,

@@ -116,8 +116,7 @@ impl ExecutionHistoryBaseline {
     ///
     /// Returns error if the operation fails.
     pub fn check_heap_size(&self, measured: usize) -> Result<(), String> {
-        let max_f64 = self.heap_size_bytes as f64 * self.tolerance;
-        let max_allowed = max_f64.max(0.0) as usize;
+        let max_allowed = tolerance_ceiling(self.heap_size_bytes, self.tolerance);
         if measured > max_allowed {
             Err(format!(
                 "Heap size {} bytes exceeds baseline {} bytes (tolerance: {}x)",
@@ -134,8 +133,7 @@ impl ExecutionHistoryBaseline {
     ///
     /// Returns error if the operation fails.
     pub fn check_serialized_size(&self, measured: usize) -> Result<(), String> {
-        let max_f64 = self.serialized_size_bytes as f64 * self.tolerance;
-        let max_allowed = max_f64.max(0.0) as usize;
+        let max_allowed = tolerance_ceiling(self.serialized_size_bytes, self.tolerance);
         if measured > max_allowed {
             Err(format!(
                 "Serialized size {} bytes exceeds baseline {} bytes (tolerance: {}x)",
@@ -145,6 +143,31 @@ impl ExecutionHistoryBaseline {
             Ok(())
         }
     }
+}
+
+fn tolerance_ceiling(baseline: usize, tolerance: f64) -> usize {
+    if !tolerance.is_finite() {
+        return usize::MAX;
+    }
+
+    let baseline_f = baseline.to_string().parse::<f64>().unwrap_or(f64::MAX);
+    let scaled = baseline_f * tolerance;
+    if !scaled.is_finite() {
+        return usize::MAX;
+    }
+
+    let ceil = scaled.ceil();
+    if ceil <= 0.0 {
+        return 0;
+    }
+
+    let max_f = usize::MAX.to_string().parse::<f64>().unwrap_or(f64::MAX);
+    if ceil >= max_f {
+        return usize::MAX;
+    }
+
+    let ceil_str = format!("{ceil:.0}");
+    ceil_str.parse::<usize>().unwrap_or(usize::MAX)
 }
 
 /// Checkpoint serialization performance baseline.

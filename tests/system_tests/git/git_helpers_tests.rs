@@ -243,7 +243,9 @@ fn test_cleanup_orphaned_marker() {
 fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
     let missing =
         std::env::temp_dir().join(format!("ralph-nonexistent-repo-{}", std::process::id()));
-    let Err(err) = git2::Repository::discover(&missing) else { panic!("expected repo discovery to fail for missing path") };
+    let Err(err) = git2::Repository::discover(&missing) else {
+        panic!("expected repo discovery to fail for missing path")
+    };
 
     let io_err = git_helpers::git2_to_io_error(&err);
     assert_eq!(

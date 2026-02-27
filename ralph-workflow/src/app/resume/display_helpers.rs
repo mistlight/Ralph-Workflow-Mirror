@@ -14,6 +14,18 @@ fn parse_checkpoint_timestamp_as_local(timestamp: &str) -> Option<chrono::DateTi
     }
 }
 
+fn format_time_ago(duration: chrono::TimeDelta) -> String {
+    if duration.num_days() > 0 {
+        format!("{} day(s) ago", duration.num_days())
+    } else if duration.num_hours() > 0 {
+        format!("{} hour(s) ago", duration.num_hours())
+    } else if duration.num_minutes() > 0 {
+        format!("{} minute(s) ago", duration.num_minutes())
+    } else {
+        "just now".to_string()
+    }
+}
+
 /// Reconstruct the original command from checkpoint data.
 ///
 /// This function attempts to reconstruct the exact command that was used
@@ -167,10 +179,9 @@ fn create_progress_bar(current: u32, total: u32) -> String {
         return "[----]".to_string();
     }
 
-    let width = 20; // Total width of progress bar
-    let filled_f64 = ((f64::from(current) / f64::from(total)) * width as f64).round();
-    let filled = filled_f64.max(0.0) as usize;
-    let filled = filled.min(width);
+    let width: u32 = 20;
+    let current_clamped = current.min(total);
+    let filled = (current_clamped * width + total / 2) / total;
 
     let mut bar = String::from("[");
     for i in 0..width {
@@ -182,8 +193,7 @@ fn create_progress_bar(current: u32, total: u32) -> String {
     }
     bar.push(']');
 
-    let percentage_f64 = ((f64::from(current) / f64::from(total)) * 100.0).round();
-    let percentage = percentage_f64.max(0.0) as u32;
+    let percentage = (current_clamped * 100 + total / 2) / total;
     format!("{bar} {percentage}%")
 }
 

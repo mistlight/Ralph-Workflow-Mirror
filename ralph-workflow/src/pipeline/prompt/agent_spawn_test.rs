@@ -105,11 +105,11 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
     let mut monitor_handle = Some(std::thread::spawn(move || {
         let result =
             crate::pipeline::idle_timeout::monitor_idle_timeout_with_interval_and_kill_config(
-                activity_timestamp_clone,
+                &activity_timestamp_clone,
                 None, // No file activity config
-                child_for_monitor,
-                monitor_should_stop_clone,
-                monitor_executor,
+                &child_for_monitor,
+                &monitor_should_stop_clone,
+                &monitor_executor,
                 crate::pipeline::idle_timeout::MonitorConfig {
                     timeout_secs: idle_timeout_secs,
                     check_interval: monitor_check_interval,
@@ -142,7 +142,7 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
         cmd,
         runtime,
         activity_timestamp,
-        Arc::clone(&stdout_cancel),
+        &stdout_cancel,
     ) {
         super::cleanup::cleanup_after_agent_failure(
             &child_shared,
@@ -158,7 +158,7 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
 
     let (exit_code, stderr_output, monitor_result_early) =
         match super::process_wait::wait_for_completion_and_collect_stderr(
-            Arc::clone(&child_shared),
+            &child_shared,
             &mut stderr_join_handle,
             &mut monitor_handle,
             runtime,

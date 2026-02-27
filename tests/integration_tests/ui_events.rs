@@ -26,7 +26,7 @@ fn test_development_iteration_emits_progress_ui() {
         let mut handler = MockEffectHandler::new(state);
 
         // Simulate development XML extraction
-        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+        let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify UI event was emitted
         assert!(
@@ -51,7 +51,7 @@ fn test_review_pass_emits_progress_ui() {
         let mut handler = MockEffectHandler::new(state);
 
         // Simulate review pass
-        let _result = handler.execute_mock(Effect::PrepareReviewContext { pass: 2 });
+        let _result = handler.execute_mock(&Effect::PrepareReviewContext { pass: 2 });
 
         // Verify UI event was emitted
         assert!(
@@ -86,7 +86,7 @@ fn test_validate_final_state_emits_phase_transition() {
         let mut handler = MockEffectHandler::new(state);
 
         // ValidateFinalState should emit phase transition to Finalizing
-        let _result = handler.execute_mock(Effect::ValidateFinalState);
+        let _result = handler.execute_mock(&Effect::ValidateFinalState);
 
         // Verify UI event was emitted
         assert!(
@@ -110,7 +110,7 @@ fn test_restore_prompt_permissions_emits_phase_transition() {
         let mut handler = MockEffectHandler::new(state);
 
         // RestorePromptPermissions should emit phase transition to Complete
-        let _result = handler.execute_mock(Effect::RestorePromptPermissions);
+        let _result = handler.execute_mock(&Effect::RestorePromptPermissions);
 
         // Verify UI event was emitted
         assert!(
@@ -197,7 +197,7 @@ fn test_agent_activity_ui_event() {
         let mut handler = MockEffectHandler::new(state);
 
         // Simulate agent invocation
-        let _result = handler.execute_mock(Effect::AgentInvocation {
+        let _result = handler.execute_mock(&Effect::AgentInvocation {
             role: AgentRole::Developer,
             agent: "claude".to_string(),
             model: Some("claude-3".to_string()),
@@ -221,7 +221,7 @@ fn test_apply_planning_outcome_emits_phase_transition_on_success() {
         let mut handler = MockEffectHandler::new(state);
 
         // Simulate planning completion
-        let _result = handler.execute_mock(Effect::ApplyPlanningOutcome {
+        let _result = handler.execute_mock(&Effect::ApplyPlanningOutcome {
             iteration: 1,
             valid: true,
         });
@@ -247,7 +247,7 @@ fn test_captured_ui_events_cleared_on_clear() {
         let mut handler = MockEffectHandler::new(state);
 
         // Emit some UI events
-        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+        let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify UI events were captured
         assert!(
@@ -273,7 +273,7 @@ fn test_pipeline_start_emits_planning_phase_transition() {
         let mut handler = MockEffectHandler::new(state);
 
         // CleanupContext is the first effect in Planning phase
-        let _result = handler.execute_mock(Effect::CleanupContext);
+        let _result = handler.execute_mock(&Effect::CleanupContext);
 
         // Should NOT emit phase transition for cleanup
         assert!(
@@ -283,7 +283,7 @@ fn test_pipeline_start_emits_planning_phase_transition() {
 
         // Clear and test InitializeAgentChain
         handler.clear_captured();
-        let _result = handler.execute_mock(Effect::InitializeAgentChain {
+        let _result = handler.execute_mock(&Effect::InitializeAgentChain {
             role: AgentRole::Developer,
         });
 
@@ -314,7 +314,7 @@ fn test_review_phase_start_emits_phase_transition() {
         let mut handler = MockEffectHandler::new(state);
 
         // InitializeAgentChain for Reviewer should emit Review phase transition
-        let _result = handler.execute_mock(Effect::InitializeAgentChain {
+        let _result = handler.execute_mock(&Effect::InitializeAgentChain {
             role: AgentRole::Reviewer,
         });
 
@@ -341,13 +341,13 @@ fn test_complete_phase_transition_sequence() {
         let mut all_ui_events = Vec::new();
 
         // 1. Planning phase (via InitializeAgentChain)
-        let result = handler.execute_mock(Effect::InitializeAgentChain {
+        let result = handler.execute_mock(&Effect::InitializeAgentChain {
             role: AgentRole::Developer,
         });
         all_ui_events.extend(result.ui_events);
 
         // 2. Development phase (via ApplyPlanningOutcome success)
-        let result = handler.execute_mock(Effect::ApplyPlanningOutcome {
+        let result = handler.execute_mock(&Effect::ApplyPlanningOutcome {
             iteration: 1,
             valid: true,
         });
@@ -357,7 +357,7 @@ fn test_complete_phase_transition_sequence() {
         handler.state.phase = PipelinePhase::Review;
 
         // 3. Review phase (via InitializeAgentChain for Reviewer)
-        let result = handler.execute_mock(Effect::InitializeAgentChain {
+        let result = handler.execute_mock(&Effect::InitializeAgentChain {
             role: AgentRole::Reviewer,
         });
         all_ui_events.extend(result.ui_events);
@@ -366,14 +366,14 @@ fn test_complete_phase_transition_sequence() {
         handler.state.phase = PipelinePhase::FinalValidation;
 
         // 4. Finalizing phase
-        let result = handler.execute_mock(Effect::ValidateFinalState);
+        let result = handler.execute_mock(&Effect::ValidateFinalState);
         all_ui_events.extend(result.ui_events);
 
         // Update state for finalizing
         handler.state.phase = PipelinePhase::Finalizing;
 
         // 5. Complete phase
-        let result = handler.execute_mock(Effect::RestorePromptPermissions);
+        let result = handler.execute_mock(&Effect::RestorePromptPermissions);
         all_ui_events.extend(result.ui_events);
 
         // Verify all expected phase transitions
@@ -419,7 +419,7 @@ fn test_validate_planning_xml_emits_xml_output() {
         let mut handler = MockEffectHandler::new(state);
 
         // Validate plan XML
-        let _result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 1 });
+        let _result = handler.execute_mock(&Effect::ValidatePlanningXml { iteration: 1 });
 
         // Verify XmlOutput event was emitted with DevelopmentPlan type
         assert!(
@@ -442,7 +442,7 @@ fn test_development_iteration_emits_xml_output() {
         let mut handler = MockEffectHandler::new(state);
 
         // Extract development XML
-        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+        let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify XmlOutput event was emitted with DevelopmentResult type
         assert!(
@@ -465,7 +465,7 @@ fn test_review_pass_emits_xml_output() {
         let mut handler = MockEffectHandler::new(state);
 
         // Validate review issues XML (single-task)
-        let _result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 1 });
+        let _result = handler.execute_mock(&Effect::ValidateReviewIssuesXml { pass: 1 });
 
         // Verify XmlOutput event was emitted with ReviewIssues type
         assert!(
@@ -488,7 +488,7 @@ fn test_fix_attempt_emits_xml_output() {
         let mut handler = MockEffectHandler::new(state);
 
         // Validate fix result XML (single-task)
-        let _result = handler.execute_mock(Effect::ValidateFixResultXml { pass: 1 });
+        let _result = handler.execute_mock(&Effect::ValidateFixResultXml { pass: 1 });
 
         // Verify XmlOutput event was emitted with FixResult type
         assert!(
@@ -511,7 +511,7 @@ fn test_commit_message_emits_xml_output() {
         let mut handler = MockEffectHandler::new(state);
 
         // Validate commit XML
-        let _result = handler.execute_mock(Effect::ValidateCommitXml);
+        let _result = handler.execute_mock(&Effect::ValidateCommitXml);
 
         // Verify XmlOutput event was emitted with CommitMessage type
         assert!(
@@ -534,7 +534,7 @@ fn test_xml_output_context_includes_iteration() {
         let mut handler = MockEffectHandler::new(state);
 
         // Validate plan XML for iteration 2
-        let result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 2 });
+        let result = handler.execute_mock(&Effect::ValidatePlanningXml { iteration: 2 });
 
         // Find the XmlOutput event and check context
         let xml_output = result
@@ -563,7 +563,7 @@ fn test_xml_output_context_includes_pass() {
         let mut handler = MockEffectHandler::new(state);
 
         // Validate review issues XML for pass 2 (emits XmlOutput)
-        let result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 2 });
+        let result = handler.execute_mock(&Effect::ValidateReviewIssuesXml { pass: 2 });
 
         // Find the XmlOutput event and check context
         let xml_output = result

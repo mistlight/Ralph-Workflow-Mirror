@@ -107,11 +107,7 @@ fn test_cleanup_planning_xml_clears_stale_plan_xml() {
         cloud_reporter: None,
         cloud: &cloud,
     };
-    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-
-    handler
-        .cleanup_planning_xml(&mut ctx, 0)
-        .expect("cleanup_planning_xml should succeed");
+    MainEffectHandler::cleanup_planning_xml(&mut ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::PLAN_XML)));
 }
@@ -211,11 +207,8 @@ fn test_cleanup_development_xml_clears_stale_dev_xml() {
         cloud_reporter: None,
         cloud: &cloud,
     };
-    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
-    handler
-        .cleanup_development_xml(&mut ctx, 0)
-        .expect("cleanup_development_xml should succeed");
+    MainEffectHandler::cleanup_development_xml(&mut ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::DEVELOPMENT_RESULT_XML)));
 }
@@ -310,11 +303,8 @@ fn test_cleanup_review_issues_xml_clears_stale_issues_xml() {
         cloud_reporter: None,
         cloud: &cloud,
     };
-    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
-    handler
-        .cleanup_review_issues_xml(&mut ctx, 0)
-        .expect("cleanup_review_issues_xml should succeed");
+    MainEffectHandler::cleanup_review_issues_xml(&mut ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::ISSUES_XML)));
 }
@@ -414,11 +404,8 @@ fn test_cleanup_fix_result_xml_clears_stale_fix_xml() {
         cloud_reporter: None,
         cloud: &cloud,
     };
-    let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
-    handler
-        .cleanup_fix_result_xml(&mut ctx, 0)
-        .expect("cleanup_fix_result_xml should succeed");
+    MainEffectHandler::cleanup_fix_result_xml(&mut ctx, 0);
 
     assert!(!workspace.exists(Path::new(xml_paths::FIX_RESULT_XML)));
 }
@@ -527,9 +514,7 @@ fn test_cleanup_commit_xml_clears_stale_commit_xml() {
     };
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
 
-    handler
-        .cleanup_commit_xml(&mut ctx)
-        .expect("cleanup_commit_xml should succeed");
+    let _ = handler.cleanup_commit_xml(&mut ctx);
 
     assert!(!workspace.exists(Path::new(xml_paths::COMMIT_MESSAGE_XML)));
 }

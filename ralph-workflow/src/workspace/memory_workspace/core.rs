@@ -149,11 +149,13 @@ impl Workspace for MemoryWorkspace {
                 format!("Directory not found: {}", relative.display()),
             ));
         }
-        self.remove_dir_all_impl(relative)
+        self.remove_dir_all_impl(relative);
+        Ok(())
     }
 
     fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
-        self.remove_dir_all_impl(relative)
+        self.remove_dir_all_impl(relative);
+        Ok(())
     }
 
     fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
@@ -181,6 +183,7 @@ impl Workspace for MemoryWorkspace {
                     })
                 })
                 .collect();
+            drop(files);
 
             // Collect directory entries
             let dir_entries: Vec<_> = dirs
@@ -194,7 +197,6 @@ impl Workspace for MemoryWorkspace {
                 })
                 .collect();
             drop(dirs);
-
             (file_entries, dir_entries)
         };
 
@@ -240,7 +242,7 @@ impl MemoryWorkspace {
     /// Remove all files and directories under the given path (including the path itself).
     ///
     /// Internal implementation used by both `remove_dir_all` and `remove_dir_all_if_exists`.
-    fn remove_dir_all_impl(&self, relative: &Path) -> io::Result<()> {
+    fn remove_dir_all_impl(&self, relative: &Path) {
         // Remove all files under this directory
         {
             let mut files = self.files.write()
@@ -267,6 +269,5 @@ impl MemoryWorkspace {
                 dirs.remove(&path);
             }
         }
-        Ok(())
     }
 }

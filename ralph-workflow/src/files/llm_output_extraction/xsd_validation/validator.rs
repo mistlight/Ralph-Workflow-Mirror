@@ -96,7 +96,7 @@ pub fn validate_xml_against_xsd(
                 // Text before root element or other events - continue to find root or reach EOF
                 // EOF will give a more informative "missing root element" error
             }
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
         buf.clear();
     }
@@ -330,7 +330,7 @@ pub fn validate_xml_against_xsd(
                 });
             }
             Ok(_) => {} // Skip comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
     }
 

@@ -50,3 +50,15 @@ fn run_ai_conflict_resolution_uses_unique_logfile_with_attempt_index() {
         .logfile
         .ends_with("rebase_conflict_resolution/conflict_resolution_codex_0_a1.log"));
 }
+
+#[test]
+fn handle_error_resolution_accepts_error_reference() {
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let executor = Arc::new(MockProcessExecutor::new());
+    let error = anyhow::anyhow!("test error");
+
+    let continued = handle_error_resolution(&logger, &*executor, &error);
+
+    assert!(!continued);
+}

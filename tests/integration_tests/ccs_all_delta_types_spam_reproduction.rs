@@ -24,9 +24,11 @@ use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
-use std::fmt::Write;
+
+const ASCII_LOWERCASE: &[u8; 26] = b"abcdefghijklmnopqrstuvwxyz";
 
 /// Helper to count non-empty lines starting with a prefix
 fn count_prefixed_lines(output: &str, prefix: &str) -> usize {
@@ -69,7 +71,7 @@ fn test_ccs_glm_ultra_extreme_text_deltas_1000_chunks_none_mode() {
         );
 
         for i in 0..1000 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"w{i} "}}}}}}"#
             ).unwrap();
         }
@@ -124,10 +126,10 @@ fn test_ccs_glm_rapid_successive_thinking_deltas_none_mode() {
         );
 
         // 200 very small deltas (single characters)
-        for i in 0..200 {
-            write!(stream, 
+        for i in 0usize..200 {
+            write!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"{}"}}}}}}"#,
-                (i % 26 + 97) as u8 as char // a-z cycling
+                char::from(ASCII_LOWERCASE[i % ASCII_LOWERCASE.len()])
             ).unwrap();
             stream.push('\n');
         }
@@ -178,7 +180,7 @@ fn test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode() {
 "#,
         );
         for i in 0..50 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"t0_{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -192,7 +194,7 @@ fn test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode() {
 "#,
         );
         for i in 0..75 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"txt1_{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -206,7 +208,7 @@ fn test_ccs_glm_interleaved_blocks_with_many_deltas_none_mode() {
 "#,
         );
         for i in 0..60 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"text_delta","text":"txt2_{i} "}}}}}}"#).unwrap();
         }
         stream.push_str(
@@ -261,8 +263,11 @@ fn test_ccs_codex_ultra_extreme_reasoning_deltas_1000_chunks_none_mode() {
         // Generate 1000 reasoning deltas
         let mut stream = String::new();
         for i in 0..1000 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -305,11 +310,13 @@ fn test_ccs_codex_rapid_agent_message_deltas_none_mode() {
 
         // Test rapid agent_message deltas with single characters
         let mut stream = String::new();
-        for i in 0..200 {
-            write!(stream, 
+        for i in 0usize..200 {
+            write!(
+                stream,
                 r#"{{"type":"item.started","item":{{"type":"agent_message","text":"{}"}}}}"#,
-                (i % 26 + 97) as u8 as char // a-z cycling
-            ).unwrap();
+                char::from(ASCII_LOWERCASE[i % ASCII_LOWERCASE.len()])
+            )
+            .unwrap();
             stream.push('\n');
         }
         stream.push_str(
@@ -350,8 +357,11 @@ fn test_ccs_codex_multi_item_interleaved_deltas_none_mode() {
 
         // Item 1: 80 reasoning deltas
         for i in 0..80 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item1_r{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item1_r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}
@@ -360,7 +370,7 @@ fn test_ccs_codex_multi_item_interleaved_deltas_none_mode() {
 
         // Item 2: 70 agent_message deltas
         for i in 0..70 {
-            writeln!(stream, 
+            writeln!(stream,
                 r#"{{"type":"item.started","item":{{"type":"agent_message","text":"item2_msg{i} "}}}}"#).unwrap();
         }
         stream.push_str(
@@ -370,8 +380,11 @@ fn test_ccs_codex_multi_item_interleaved_deltas_none_mode() {
 
         // Item 3: 90 reasoning deltas
         for i in 0..90 {
-            writeln!(stream, 
-                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item3_r{i} "}}}}"#).unwrap();
+            writeln!(
+                stream,
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"item3_r{i} "}}}}"#
+            )
+            .unwrap();
         }
         stream.push_str(
             r#"{"type":"item.completed","item":{"type":"reasoning"}}

@@ -8,7 +8,7 @@ fn mock_effect_handler_simulates_empty_diff() {
     let mut handler = MockEffectHandler::new(state).with_empty_diff();
 
     // CheckCommitDiff should mark empty diff
-    let result = handler.execute_mock(Effect::CheckCommitDiff);
+    let result = handler.execute_mock(&Effect::CheckCommitDiff);
 
     assert!(
         matches!(
@@ -28,7 +28,7 @@ fn mock_effect_handler_execute_mock_respects_pre_termination_snapshot_dirty() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state).with_dirty_pre_termination_snapshot(3);
 
-    let result = handler.execute_mock(Effect::CheckUncommittedChangesBeforeTermination);
+    let result = handler.execute_mock(&Effect::CheckUncommittedChangesBeforeTermination);
 
     assert!(matches!(
         result.event,
@@ -55,7 +55,7 @@ fn mock_effect_handler_normal_commit_generation() {
     let mut handler = MockEffectHandler::new(state); // No with_empty_diff()
 
     // ApplyCommitMessageOutcome should return CommitMessageGenerated normally
-    let result = handler.execute_mock(Effect::ApplyCommitMessageOutcome);
+    let result = handler.execute_mock(&Effect::ApplyCommitMessageOutcome);
 
     assert!(
         matches!(
@@ -72,7 +72,7 @@ fn mock_effect_handler_review_validation_emits_no_issues_outcome() {
     let state = PipelineState::initial(1, 1);
     let mut handler = MockEffectHandler::new(state);
 
-    let result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 0 });
+    let result = handler.execute_mock(&Effect::ValidateReviewIssuesXml { pass: 0 });
 
     assert!(matches!(
         result.event,
@@ -248,7 +248,7 @@ fn mock_attempt_recovery_uses_previous_phase_when_failed_phase_for_recovery_miss
     };
     let mut handler = MockEffectHandler::new(state);
 
-    let result = handler.execute_mock(Effect::AttemptRecovery {
+    let result = handler.execute_mock(&Effect::AttemptRecovery {
         level: 1,
         attempt_count: 1,
     });
@@ -274,7 +274,7 @@ fn mock_attempt_recovery_never_targets_awaiting_dev_fix() {
     };
     let mut handler = MockEffectHandler::new(state);
 
-    let result = handler.execute_mock(Effect::AttemptRecovery {
+    let result = handler.execute_mock(&Effect::AttemptRecovery {
         level: 1,
         attempt_count: 1,
     });
@@ -314,7 +314,7 @@ fn mock_effect_handler_emits_xml_output_for_plan() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 1 });
+    let _result = handler.execute_mock(&Effect::ValidatePlanningXml { iteration: 1 });
 
     // Verify XmlOutput event was emitted with DevelopmentPlan type
     assert!(
@@ -335,7 +335,7 @@ fn mock_effect_handler_emits_xml_output_for_development() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
+    let _result = handler.execute_mock(&Effect::ExtractDevelopmentXml { iteration: 1 });
 
     // Verify XmlOutput event was emitted with DevelopmentResult type
     assert!(
@@ -356,7 +356,7 @@ fn mock_effect_handler_emits_xml_output_for_review_snippets() {
     let state = PipelineState::initial(1, 1);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ExtractReviewIssueSnippets { pass: 1 });
+    let _result = handler.execute_mock(&Effect::ExtractReviewIssueSnippets { pass: 1 });
 
     // Verify XmlOutput event was emitted with ReviewIssues type
     assert!(
@@ -377,7 +377,7 @@ fn mock_effect_handler_emits_xml_output_for_fix() {
     let state = PipelineState::initial(1, 1);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ValidateFixResultXml { pass: 1 });
+    let _result = handler.execute_mock(&Effect::ValidateFixResultXml { pass: 1 });
 
     // Verify XmlOutput event was emitted with FixResult type
     assert!(
@@ -398,7 +398,7 @@ fn mock_effect_handler_emits_xml_output_for_commit() {
     let state = PipelineState::initial(1, 0);
     let mut handler = MockEffectHandler::new(state);
 
-    let _result = handler.execute_mock(Effect::ValidateCommitXml);
+    let _result = handler.execute_mock(&Effect::ValidateCommitXml);
 
     // Verify XmlOutput event was emitted with CommitMessage type
     assert!(

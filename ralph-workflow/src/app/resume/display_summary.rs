@@ -1,8 +1,7 @@
 // Display summary functions for checkpoint resume.
 // This module handles user-friendly summary output for checkpoint information.
 
-/// Display a user-friendly checkpoint summary with time elapsed.
-fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+fn log_checkpoint_header_and_elapsed(checkpoint: &PipelineCheckpoint, logger: &Logger) -> bool {
     use chrono::Local;
 
     // Display phase with stable indicator (ASCII only)
@@ -17,44 +16,43 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
             "Session was interrupted at: {}",
             checkpoint.timestamp
         ));
-        return;
+        return false;
     };
     let now = Local::now();
     let duration = now.signed_duration_since(checkpoint_time);
 
-    let time_str = if duration.num_days() > 0 {
-        format!("{} day(s) ago", duration.num_days())
-    } else if duration.num_hours() > 0 {
-        format!("{} hour(s) ago", duration.num_hours())
-    } else if duration.num_minutes() > 0 {
-        format!("{} minute(s) ago", duration.num_minutes())
-    } else {
-        "just now".to_string()
-    };
+    logger.info(&format!(
+        "Session was interrupted: {}",
+        format_time_ago(duration)
+    ));
+    true
+}
 
-    logger.info(&format!("Session was interrupted: {time_str}"));
-
-    // Show rebase conflict information if applicable
-    if matches!(
+fn log_rebase_conflict_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    if !matches!(
         checkpoint.rebase_state,
         crate::checkpoint::RebaseState::HasConflicts { .. }
     ) {
-        if let crate::checkpoint::RebaseState::HasConflicts { files } = &checkpoint.rebase_state {
-            logger.warn(&format!(
-                "Rebase conflicts detected in {} file(s)",
-                files.len()
-            ));
-            // Show up to 5 conflicted files
-            let display_files: Vec<_> = files.iter().take(5).cloned().collect();
-            for file in display_files {
-                logger.info(&format!("  - {file}"));
-            }
-            if files.len() > 5 {
-                logger.info(&format!("  ... and {} more", files.len() - 5));
-            }
-        }
+        return;
     }
 
+    if let crate::checkpoint::RebaseState::HasConflicts { files } = &checkpoint.rebase_state {
+        logger.warn(&format!(
+            "Rebase conflicts detected in {} file(s)",
+            files.len()
+        ));
+        // Show up to 5 conflicted files
+        let display_files: Vec<_> = files.iter().take(5).cloned().collect();
+        for file in display_files {
+            logger.info(&format!("  - {file}"));
+        }
+        if files.len() > 5 {
+            logger.info(&format!("  ... and {} more", files.len() - 5));
+        }
+    }
+}
+
+fn log_progress_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show progress with visual bar
     if checkpoint.total_iterations > 0 {
         let progress_bar = create_progress_bar(
@@ -76,7 +74,9 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
             progress_bar, checkpoint.actual_reviewer_runs, checkpoint.total_reviewer_passes
         ));
     }
+}
 
+fn log_agent_and_command_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show resume count if this is a resumed session
     if checkpoint.resume_count > 0 {
         logger.info(&format!(
@@ -109,84 +109,91 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
     if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
         logger.info(&format!("Reviewer provider: {provider}"));
     }
+}
 
-    // Show execution history info if available
-    if let Some(ref history) = checkpoint.execution_history {
-        if !history.steps.is_empty() {
-            logger.info(&format!(
-                "Execution history: {} step(s) recorded",
-                history.steps.len()
-            ));
+fn log_recent_activity_step(step: &crate::checkpoint::execution_history::ExecutionStep, logger: &Logger) {
+    // ASCII-only outcome markers (stable across non-UTF8 terminals)
+    let outcome_marker = outcome_marker_ascii(&step.outcome);
 
-            // Show recent activity (last 5 steps) with user-friendly details
-            let recent_steps: Vec<_> = history
-                .steps
-                .iter()
-                .rev()
-                .take(5)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
+    logger.info(&format!(
+        "  {:<4} {} ({})",
+        outcome_marker, step.step_type, step.phase
+    ));
 
-            logger.info("");
-            logger.info("Recent Activity:");
-
-            for step in &recent_steps {
-                // ASCII-only outcome markers (stable across non-UTF8 terminals)
-                let outcome_marker = outcome_marker_ascii(&step.outcome);
-
-                logger.info(&format!(
-                    "  {:<4} {} ({})",
-                    outcome_marker, step.step_type, step.phase
-                ));
-
-                // Add files modified count if available
-                if let Some(ref detail) = step.modified_files_detail {
-                    let added_count = detail.added.as_ref().map_or(0, |v| v.len());
-                    let modified_count = detail.modified.as_ref().map_or(0, |v| v.len());
-                    let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
-                    let total_files = added_count + modified_count + deleted_count;
-                    if total_files > 0 {
-                        let mut file_summary = String::from("    Files: ");
-                        let mut parts = Vec::new();
-                        if added_count > 0 {
-                            parts.push(format!("{added_count} added"));
-                        }
-                        if modified_count > 0 {
-                            parts.push(format!("{modified_count} modified"));
-                        }
-                        if deleted_count > 0 {
-                            parts.push(format!("{deleted_count} deleted"));
-                        }
-                        file_summary.push_str(&parts.join(", "));
-                        logger.info(&file_summary);
-                    }
-                }
-
-                // Add issues summary if available
-                if let Some(ref issues) = step.issues_summary {
-                    if issues.found > 0 || issues.fixed > 0 {
-                        logger.info(&format!(
-                            "    Issues: {} found, {} fixed",
-                            issues.found, issues.fixed
-                        ));
-                    }
-                }
-
-                // Add git commit if available (shortened)
-                if let Some(ref oid) = step.git_commit_oid {
-                    let short_oid = if oid.len() > SHORT_OID_LENGTH {
-                        &oid[..SHORT_OID_LENGTH]
-                    } else {
-                        oid
-                    };
-                    logger.info(&format!("    Commit: {short_oid}"));
-                }
+    // Add files modified count if available
+    if let Some(ref detail) = step.modified_files_detail {
+        let added_count = detail.added.as_ref().map_or(0, |v| v.len());
+        let modified_count = detail.modified.as_ref().map_or(0, |v| v.len());
+        let deleted_count = detail.deleted.as_ref().map_or(0, |v| v.len());
+        let total_files = added_count + modified_count + deleted_count;
+        if total_files > 0 {
+            let mut file_summary = String::from("    Files: ");
+            let mut parts = Vec::new();
+            if added_count > 0 {
+                parts.push(format!("{added_count} added"));
             }
+            if modified_count > 0 {
+                parts.push(format!("{modified_count} modified"));
+            }
+            if deleted_count > 0 {
+                parts.push(format!("{deleted_count} deleted"));
+            }
+            file_summary.push_str(&parts.join(", "));
+            logger.info(&file_summary);
         }
     }
 
+    // Add issues summary if available
+    if let Some(ref issues) = step.issues_summary {
+        if issues.found > 0 || issues.fixed > 0 {
+            logger.info(&format!(
+                "    Issues: {} found, {} fixed",
+                issues.found, issues.fixed
+            ));
+        }
+    }
+
+    // Add git commit if available (shortened)
+    if let Some(ref oid) = step.git_commit_oid {
+        let short_oid = if oid.len() > SHORT_OID_LENGTH {
+            &oid[..SHORT_OID_LENGTH]
+        } else {
+            oid
+        };
+        logger.info(&format!("    Commit: {short_oid}"));
+    }
+}
+
+fn log_recent_activity(history: &crate::checkpoint::execution_history::ExecutionHistory, logger: &Logger) {
+    if history.steps.is_empty() {
+        return;
+    }
+
+    logger.info(&format!(
+        "Execution history: {} step(s) recorded",
+        history.steps.len()
+    ));
+
+    // Show recent activity (last 5 steps) with user-friendly details
+    let recent_steps: Vec<_> = history
+        .steps
+        .iter()
+        .rev()
+        .take(5)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    logger.info("");
+    logger.info("Recent Activity:");
+
+    for step in &recent_steps {
+        log_recent_activity_step(step, logger);
+    }
+}
+
+fn log_resume_next_steps(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     // Show helpful next step based on current phase
     let next_step = suggest_next_step(checkpoint);
     logger.info("");
@@ -197,6 +204,23 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
     logger.info("To inspect the current state, you can run:");
     logger.info("  git status        - See current changes");
     logger.info("  git log --oneline -5 - See recent commits");
+}
+
+/// Display a user-friendly checkpoint summary with time elapsed.
+fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    if !log_checkpoint_header_and_elapsed(checkpoint, logger) {
+        return;
+    }
+
+    log_rebase_conflict_summary(checkpoint, logger);
+    log_progress_summary(checkpoint, logger);
+    log_agent_and_command_summary(checkpoint, logger);
+
+    if let Some(ref history) = checkpoint.execution_history {
+        log_recent_activity(history, logger);
+    }
+
+    log_resume_next_steps(checkpoint, logger);
 }
 
 /// Display a summary of the checkpoint being loaded.

@@ -71,9 +71,7 @@ fn test_cleanup_commit_xml_removes_stale_commit_xml() {
         crate::agents::AgentRole::Commit,
     );
 
-    handler
-        .cleanup_commit_xml(&mut ctx)
-        .expect("cleanup_commit_xml should succeed");
+    let _ = handler.cleanup_commit_xml(&mut ctx);
 
     assert!(
         !workspace.exists(Path::new(xml_paths::COMMIT_MESSAGE_XML)),

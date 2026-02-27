@@ -58,9 +58,7 @@ fn validate_commit_xml_emits_ui_xml_output_even_when_xml_file_missing() {
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
 
-    let result = handler
-        .validate_commit_xml(&mut ctx)
-        .expect("validate_commit_xml should not error for missing file");
+    let result = handler.validate_commit_xml(&mut ctx);
 
     assert!(
         matches!(

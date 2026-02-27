@@ -79,13 +79,13 @@ pub fn run_initial_rebase(
             }
         }
         Ok(RebaseResult::Failed(err)) => {
-            handle_rebase_failed(phase_ctx, err);
+            handle_rebase_failed(phase_ctx, &err);
             Ok(InitialRebaseOutcome::Skipped {
                 reason: "Rebase failed".to_string(),
             })
         }
         Err(e) => {
-            handle_rebase_error(phase_ctx, e);
+            handle_rebase_error(phase_ctx, &e);
             Ok(InitialRebaseOutcome::Skipped {
                 reason: "Rebase error".to_string(),
             })
@@ -107,10 +107,7 @@ fn record_rebase_start(phase_ctx: &mut PhaseContext<'_>) {
 }
 
 /// Save checkpoint at the start of pre-rebase phase.
-fn save_pre_rebase_checkpoint(
-    phase_ctx: &PhaseContext<'_>,
-    run_context: &RunContext,
-) {
+fn save_pre_rebase_checkpoint(phase_ctx: &PhaseContext<'_>, run_context: &RunContext) {
     if !phase_ctx.config.features.checkpoint_enabled {
         return;
     }
@@ -124,14 +121,10 @@ fn save_pre_rebase_checkpoint(
         };
         let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
-
 }
 
 /// Handle successful rebase completion.
-fn handle_rebase_success(
-    phase_ctx: &mut PhaseContext<'_>,
-    run_context: &RunContext,
-) {
+fn handle_rebase_success(phase_ctx: &mut PhaseContext<'_>, run_context: &RunContext) {
     phase_ctx.logger.success("Rebase completed successfully");
 
     let step = ExecutionStep::new(
@@ -148,11 +141,7 @@ fn handle_rebase_success(
 }
 
 /// Handle rebase that was not needed.
-fn handle_rebase_noop(
-    phase_ctx: &mut PhaseContext<'_>,
-    run_context: &RunContext,
-    reason: &str,
-) {
+fn handle_rebase_noop(phase_ctx: &mut PhaseContext<'_>, run_context: &RunContext, reason: &str) {
     phase_ctx
         .logger
         .info(&format!("No rebase needed: {reason}"));
@@ -206,7 +195,7 @@ fn handle_rebase_conflicts(
 
     match try_resolve_conflicts(
         &conflicted_files,
-        resolution_ctx,
+        &resolution_ctx,
         phase_ctx,
         "PreRebase",
         executor,
@@ -220,7 +209,7 @@ fn handle_rebase_conflicts(
             Ok(false)
         }
         Err(e) => {
-            handle_resolution_error(phase_ctx, executor, e);
+            handle_resolution_error(phase_ctx, executor, &e);
             Ok(false)
         }
     }
@@ -314,10 +303,7 @@ fn handle_conflicts_resolved(
 }
 
 /// Handle failed AI conflict resolution.
-fn handle_resolution_failed(
-    phase_ctx: &mut PhaseContext<'_>,
-    executor: &dyn ProcessExecutor,
-) {
+fn handle_resolution_failed(phase_ctx: &mut PhaseContext<'_>, executor: &dyn ProcessExecutor) {
     phase_ctx
         .logger
         .warn("AI conflict resolution failed, aborting rebase");
@@ -338,7 +324,7 @@ fn handle_resolution_failed(
 fn handle_resolution_error(
     phase_ctx: &mut PhaseContext<'_>,
     executor: &dyn ProcessExecutor,
-    e: anyhow::Error,
+    e: &anyhow::Error,
 ) {
     phase_ctx
         .logger
@@ -357,10 +343,7 @@ fn handle_resolution_error(
 }
 
 /// Handle rebase failure.
-fn handle_rebase_failed(
-    phase_ctx: &mut PhaseContext<'_>,
-    err: RebaseErrorKind,
-) {
+fn handle_rebase_failed(phase_ctx: &mut PhaseContext<'_>, err: &RebaseErrorKind) {
     phase_ctx.logger.error(&format!("Rebase failed: {err}"));
     let _ = abort_rebase(phase_ctx.executor);
 
@@ -376,7 +359,7 @@ fn handle_rebase_failed(
 }
 
 /// Handle rebase error.
-fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: std::io::Error) {
+fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: &std::io::Error) {
     phase_ctx
         .logger
         .warn(&format!("Rebase failed, continuing without rebase: {e}"));

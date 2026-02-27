@@ -196,30 +196,14 @@ pub fn run_fix_pass(
     let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
     if result.exit_code != 0 {
         let auth_failure = stderr_contains_auth_error(&result.stderr);
-        return Ok(FixPassResult {
-            auth_failure,
-            agent_failed: true,
-            output_valid: false,
-            changes_made: false,
-            status: None,
-            summary: None,
-            xml_content: None,
-        });
+        return Ok(FixPassResult::agent_failed(auth_failure));
     }
 
     let xml_content =
         try_extract_from_file_with_workspace(ctx.workspace, Path::new(xml_paths::FIX_RESULT_XML));
 
     let Some(xml_to_validate) = xml_content else {
-        return Ok(FixPassResult {
-            auth_failure: false,
-            agent_failed: false,
-            output_valid: false,
-            changes_made: false,
-            status: None,
-            summary: None,
-            xml_content: None,
-        });
+        return Ok(FixPassResult::output_invalid(None));
     };
 
     match validate_fix_result_xml(&xml_to_validate) {
@@ -239,28 +223,17 @@ pub fn run_fix_pass(
             ctx.execution_history
                 .add_step_bounded(step, ctx.config.execution_history_limit);
 
-            Ok(FixPassResult {
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: true,
+            Ok(FixPassResult::validated(
                 changes_made,
-                status: Some(result_elements.status.clone()),
-                summary: result_elements.summary,
-                xml_content: Some(xml_to_validate),
-            })
+                result_elements.status.clone(),
+                result_elements.summary,
+                xml_to_validate,
+            ))
         }
         Err(err) => {
             ctx.logger
                 .warn(&format!("Fix XML validation failed: {err}"));
-            Ok(FixPassResult {
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: false,
-                changes_made: false,
-                status: None,
-                summary: None,
-                xml_content: Some(xml_to_validate),
-            })
+            Ok(FixPassResult::output_invalid(Some(xml_to_validate)))
         }
     }
 }

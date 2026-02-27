@@ -167,11 +167,11 @@ pub(super) fn run_with_agent_spawn(
 
     let mut monitor_handle = Some(std::thread::spawn(move || {
         let result = monitor_idle_timeout_with_interval_and_kill_config(
-            activity_timestamp_clone,
-            file_activity_config,
-            child_for_monitor,
-            monitor_should_stop_clone,
-            monitor_executor,
+            &activity_timestamp_clone,
+            file_activity_config.as_ref(),
+            &child_for_monitor,
+            &monitor_should_stop_clone,
+            &monitor_executor,
             MonitorConfig {
                 timeout_secs: IDLE_TIMEOUT_SECS,
                 check_interval: Duration::from_secs(30), // 30-second check interval
@@ -205,7 +205,7 @@ pub(super) fn run_with_agent_spawn(
         cmd,
         runtime,
         activity_timestamp,
-        Arc::clone(&stdout_cancel),
+        &stdout_cancel,
     ) {
         super::cleanup::cleanup_after_agent_failure(
             &child_shared,
@@ -221,7 +221,7 @@ pub(super) fn run_with_agent_spawn(
 
     let (exit_code, stderr_output, monitor_result_early) =
         match super::process_wait::wait_for_completion_and_collect_stderr(
-            Arc::clone(&child_shared),
+            &child_shared,
             &mut stderr_join_handle,
             &mut monitor_handle,
             runtime,

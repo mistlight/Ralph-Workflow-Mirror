@@ -20,12 +20,10 @@
 //! They are emitted only when the pipeline is actually terminating via
 //! `Effect::EmitCompletionMarkerAndTerminate`.
 
+use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{PipelineEvent, PipelinePhase};
-use anyhow::Result;
-
-use super::MainEffectHandler;
 
 impl MainEffectHandler {
     /// Trigger dev-fix flow for pipeline failure remediation.
@@ -60,7 +58,7 @@ impl MainEffectHandler {
         failed_phase: PipelinePhase,
         failed_role: crate::agents::AgentRole,
         retry_cycle: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         /// Helper function to detect agent unavailability from error messages.
         /// Checks for quota/usage/rate limit indicators in error text.
         fn is_agent_unavailable_error(err_msg: &str) -> bool {
@@ -121,7 +119,7 @@ impl MainEffectHandler {
         let agent_result = match self.invoke_agent(
             ctx,
             crate::agents::AgentRole::Developer,
-            agent,
+            &agent,
             None,
             dev_fix_prompt,
         ) {
@@ -220,7 +218,7 @@ impl MainEffectHandler {
         // reserved for explicit external/catastrophic termination via
         // Effect::EmitCompletionMarkerAndTerminate.
 
-        Ok(result.with_additional_event(PipelineEvent::AwaitingDevFix(dev_fix_completed)))
+        result.with_additional_event(PipelineEvent::AwaitingDevFix(dev_fix_completed))
     }
 
     /// Emit completion marker and terminate pipeline.
@@ -242,7 +240,7 @@ impl MainEffectHandler {
         ctx: &PhaseContext<'_>,
         is_failure: bool,
         reason: Option<String>,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         // Write completion marker to .agent/tmp/completion_marker
         let content = if is_failure {
             format!(
@@ -256,21 +254,21 @@ impl MainEffectHandler {
         match Self::write_completion_marker(ctx, &content, is_failure) {
             Ok(()) => {
                 // Emit event to transition to Interrupted
-                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure,
                     },
-                )))
+                ))
             }
             Err(error) => {
                 // Do NOT transition to Interrupted if the marker was not written.
                 // External orchestration relies on the marker for termination semantics.
-                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerWriteFailed {
                         is_failure,
                         error,
                     },
-                )))
+                ))
             }
         }
     }

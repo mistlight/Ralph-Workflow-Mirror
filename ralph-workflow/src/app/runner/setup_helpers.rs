@@ -25,7 +25,7 @@ struct AgentSetupParams<'a> {
 /// Returns `Some(repo_root)` if setup succeeded and should continue.
 /// Returns `None` if the user declined PROMPT.md creation (to exit early).
 fn validate_and_setup_agents<H: effect::AppEffectHandler>(
-    params: AgentSetupParams<'_>,
+    params: &AgentSetupParams<'_>,
     handler: &mut H,
 ) -> anyhow::Result<Option<std::path::PathBuf>> {
     let AgentSetupParams {
@@ -90,7 +90,7 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
     };
 
     // Set up PROMPT.md if needed (may return None to exit early)
-    let should_continue = setup_git_and_prompt_file(config, colors, logger, handler)?;
+    let should_continue = setup_git_and_prompt_file(config, *colors, logger, handler)?;
     if should_continue.is_none() {
         return Ok(None);
     }

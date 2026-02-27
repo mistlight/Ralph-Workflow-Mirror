@@ -199,7 +199,7 @@ pub fn run_with_config_and_resolver<
 
     // Validate agents and set up git repo and PROMPT.md
     let Some(repo_root) = validate_and_setup_agents(
-        AgentSetupParams {
+        &AgentSetupParams {
             config: &config,
             registry: &registry,
             developer_agent: &developer_agent,
@@ -427,7 +427,7 @@ where
 
     // Validate agents and set up git repo with app_handler
     let Some(repo_root) = validate_and_setup_agents(
-        AgentSetupParams {
+        &AgentSetupParams {
             config: &config,
             registry: &registry,
             developer_agent: &developer_agent,
@@ -464,8 +464,8 @@ where
     })?;
 
     // Run pipeline with the injected effect_handler
-    match ctx {
-        Some(ctx) => run_pipeline_with_effect_handler(&ctx, effect_handler),
-        None => Ok(()),
-    }
+    ctx.map_or_else(
+        || Ok(()),
+        |ctx| run_pipeline_with_effect_handler(&ctx, effect_handler),
+    )
 }

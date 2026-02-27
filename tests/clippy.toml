@@ -1,0 +1,5 @@
+# Package-local clippy configuration for ralph-workflow-tests.
+# Keep pedantic/nursery enabled while tuning structural thresholds.
+
+too-many-lines-threshold = 500
+max-struct-bools = 32

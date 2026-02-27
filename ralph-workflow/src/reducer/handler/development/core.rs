@@ -33,14 +33,11 @@ impl MainEffectHandler {
     ///
     /// `EffectResult` with `DevelopmentContextPrepared` event.
     pub(in crate::reducer::handler) fn prepare_development_context(
-        &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let _ = crate::files::create_prompt_backup_with_workspace(ctx.workspace);
-        Ok(EffectResult::event(
-            PipelineEvent::development_context_prepared(iteration),
-        ))
+        EffectResult::event(PipelineEvent::development_context_prepared(iteration))
     }
 
     /// Invoke development agent.
@@ -86,7 +83,7 @@ impl MainEffectHandler {
             .cloned()
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
-        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Developer, &agent, None, prompt)?;
         if result.additional_events.iter().any(|e| {
             matches!(
                 e,
@@ -113,15 +110,12 @@ impl MainEffectHandler {
     ///
     /// `EffectResult` with `DevelopmentXmlCleaned` event.
     pub(in crate::reducer::handler) fn cleanup_development_xml(
-        &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
         let _ = ctx.workspace.remove_if_exists(result_xml);
-        Ok(EffectResult::event(PipelineEvent::development_xml_cleaned(
-            iteration,
-        )))
+        EffectResult::event(PipelineEvent::development_xml_cleaned(iteration))
     }
 
     /// Archive development XML.
@@ -139,19 +133,16 @@ impl MainEffectHandler {
     ///
     /// `EffectResult` with `DevelopmentXmlArchived` event.
     pub(in crate::reducer::handler) fn archive_development_xml(
-        &self,
         ctx: &PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
 
         archive_xml_file_with_workspace(
             ctx.workspace,
             Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
         );
-        Ok(EffectResult::event(
-            PipelineEvent::development_xml_archived(iteration),
-        ))
+        EffectResult::event(PipelineEvent::development_xml_archived(iteration))
     }
 
     /// Apply development outcome.

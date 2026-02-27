@@ -9,13 +9,14 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use ralph_workflow::prompts::content_reference::{DiffContentReference, PlanContentReference};
 use ralph_workflow::prompts::{
     prompt_generate_commit_message_with_diff_with_context, prompt_planning_xml_with_references,
     prompt_planning_xsd_retry_with_context_files, prompt_review_xml_with_references,
     PromptContentReference, TemplateContext,
 };
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::test_timeout::with_default_timeout;
 
@@ -50,10 +51,6 @@ fn test_review_prompts_use_workspace_root() {
         let template_context = TemplateContext::default();
 
         // Generate review prompt
-        use ralph_workflow::prompts::content_reference::{
-            DiffContentReference, PlanContentReference,
-        };
-        use std::path::Path;
         let plan_ref = PlanContentReference::from_plan(
             "Test plan".to_string(),
             Path::new(".agent/PLAN.md"),

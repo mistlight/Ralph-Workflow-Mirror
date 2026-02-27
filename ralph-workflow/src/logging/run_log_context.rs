@@ -228,13 +228,13 @@ impl RunLogContext {
     ///
     /// // Create a fixed run_id for testing
     /// let fixed_id = RunId::for_test("2026-02-06_14-03-27.123Z");
-    /// let ctx = RunLogContext::for_testing(fixed_id, &workspace)?;
+    /// let ctx = RunLogContext::for_testing(&fixed_id, &workspace)?;
     /// ```
     ///
     /// # Errors
     ///
     /// Returns error if the operation fails.
-    pub fn for_testing(base_run_id: RunId, workspace: &dyn Workspace) -> Result<Self> {
+    pub fn for_testing(base_run_id: &RunId, workspace: &dyn Workspace) -> Result<Self> {
         // Try base run_id first, then collision variants 1-99
         for counter in 0..=99 {
             let run_id = if counter == 0 {

@@ -115,10 +115,13 @@ fn rebase_with_dirty_working_tree_fails() {
                             || err.description().contains("changes")
                     );
                 }
-                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) | Ok(RebaseResult::Conflicts(_)) | Err(_) => {
+                Ok(
+                    RebaseResult::Success | RebaseResult::NoOp { .. } | RebaseResult::Conflicts(_),
+                )
+                | Err(_) => {
                     // All outcomes acceptable - git may autostash, conflict, or error
                 }
-                }
+            }
         });
     });
 }
@@ -168,10 +171,13 @@ fn rebase_with_staged_changes_fails() {
                             || err.description().contains("changes")
                     );
                 }
-                Ok(RebaseResult::Success | RebaseResult::NoOp { .. }) | Ok(RebaseResult::Conflicts(_)) | Err(_) => {
+                Ok(
+                    RebaseResult::Success | RebaseResult::NoOp { .. } | RebaseResult::Conflicts(_),
+                )
+                | Err(_) => {
                     // All outcomes acceptable - git may autostash, conflict, or error
                 }
-                }
+            }
         });
     });
 }
@@ -225,14 +231,12 @@ fn rebase_detects_merge_in_progress() {
             fs::write(merge_head, "abc123\n").unwrap();
 
             // Try to rebase - should detect the merge in progress or fail gracefully
-            let result = rebase_onto(&default_branch, executor.as_ref());
+            let _result = rebase_onto(&default_branch, executor.as_ref());
 
             // The system should detect this and handle appropriately
             // Git may actually proceed since we're rebasing onto the current branch
-            match result {
-                _ => {
-                    // All outcomes acceptable - can't reliably rebase during merge
-                }
+            {
+                // All outcomes acceptable - can't reliably rebase during merge
             }
         });
     });
@@ -312,21 +316,8 @@ fn rebase_detects_cherry_pick_in_progress() {
             // Try to rebase - should detect the cherry-pick in progress or handle gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // The system should handle this appropriately
-            match result {
-                Err(_) => {
-                    // Error is acceptable - can't rebase during cherry-pick
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake cherry-pick state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
-            }
+            // Any outcome is acceptable here; this test verifies graceful handling only.
+            let _ = result;
         });
     });
 }
@@ -390,21 +381,8 @@ fn rebase_detects_revert_in_progress() {
             // Try to rebase - should detect the revert in progress or handle gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // The system should handle this appropriately
-            match result {
-                Err(_) => {
-                    // Error is acceptable
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake revert state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
-            }
+            // Any outcome is acceptable here; this test verifies graceful handling only.
+            let _ = result;
         });
     });
 }
@@ -430,21 +408,8 @@ fn rebase_detects_bisect_in_progress() {
             // Try to rebase - should detect the bisect in progress or handle gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // The system should handle this appropriately
-            match result {
-                Err(_) => {
-                    // Error is acceptable
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Failed is also acceptable
-                }
-                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
-                    // Git may succeed if it ignores the fake bisect state
-                }
-                _ => {
-                    // Other results are also acceptable
-                }
-            }
+            // Any outcome is acceptable here; this test verifies graceful handling only.
+            let _ = result;
         });
     });
 }

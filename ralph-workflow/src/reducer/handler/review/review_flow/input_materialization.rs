@@ -263,7 +263,7 @@ impl MainEffectHandler {
         &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::{create_prompt_backup_with_workspace, write_diff_backup_with_workspace};
 
         match create_prompt_backup_with_workspace(ctx.workspace) {
@@ -300,12 +300,12 @@ impl MainEffectHandler {
                 .warn(&format!("Failed to write review diff baseline: {err}"));
         }
 
-        Ok(EffectResult::with_ui(
+        EffectResult::with_ui(
             PipelineEvent::review_context_prepared(pass),
             vec![UIEvent::ReviewProgress {
                 pass,
                 total: self.state.total_reviewer_passes,
             }],
-        ))
+        )
     }
 }

@@ -66,9 +66,7 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
         max_attempts: 2,
     };
 
-    let result = handler
-        .extract_commit_xml(&mut ctx)
-        .expect("extract_commit_xml should succeed");
+    let result = handler.extract_commit_xml(&mut ctx);
 
     assert!(matches!(
         result.event,

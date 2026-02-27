@@ -1,0 +1,5 @@
+# Package-local clippy configuration for ralph-workflow.
+# Keep lint policy strict while configuring thresholds for structural lints.
+
+too-many-lines-threshold = 500
+max-struct-bools = 32

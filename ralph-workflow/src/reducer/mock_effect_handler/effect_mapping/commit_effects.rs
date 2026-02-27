@@ -149,13 +149,15 @@ impl MockEffectHandler {
 
                 let (message, skip_reason, detail) = try_extract_xml_commit_with_trace(&xml);
 
-                let event = if let Some(reason) = skip_reason {
-                    PipelineEvent::commit_skipped(reason)
-                } else if let Some(message) = message {
-                    PipelineEvent::commit_xml_validated(message, attempt)
-                } else {
-                    PipelineEvent::commit_xml_validation_failed(detail, attempt)
-                };
+                let event = skip_reason.map_or_else(
+                    || {
+                        message.map_or_else(
+                            || PipelineEvent::commit_xml_validation_failed(detail, attempt),
+                            |message| PipelineEvent::commit_xml_validated(message, attempt),
+                        )
+                    },
+                    PipelineEvent::commit_skipped,
+                );
 
                 let ui = vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::CommitMessage,
@@ -167,24 +169,39 @@ impl MockEffectHandler {
             }
 
             Effect::ApplyCommitMessageOutcome => {
-                let event = match self.state.commit_validated_outcome.as_ref() {
-                    Some(outcome) => match (&outcome.message, &outcome.reason) {
-                        (Some(message), _) => PipelineEvent::commit_message_generated(
-                            message.clone(),
-                            outcome.attempt,
-                        ),
-                        (None, Some(reason)) => PipelineEvent::commit_message_validation_failed(
-                            reason.clone(),
-                            outcome.attempt,
-                        ),
-                        _ => PipelineEvent::commit_generation_failed(
-                            "Mock commit outcome missing message and reason".to_string(),
-                        ),
+                let event = self.state.commit_validated_outcome.as_ref().map_or_else(
+                    || {
+                        PipelineEvent::commit_generation_failed(
+                            "Mock commit outcome missing".to_string(),
+                        )
                     },
-                    None => PipelineEvent::commit_generation_failed(
-                        "Mock commit outcome missing".to_string(),
-                    ),
-                };
+                    |outcome| {
+                        outcome.message.as_ref().map_or_else(
+                            || {
+                                outcome.reason.as_ref().map_or_else(
+                                    || {
+                                        PipelineEvent::commit_generation_failed(
+                                            "Mock commit outcome missing message and reason"
+                                                .to_string(),
+                                        )
+                                    },
+                                    |reason| {
+                                        PipelineEvent::commit_message_validation_failed(
+                                            reason.clone(),
+                                            outcome.attempt,
+                                        )
+                                    },
+                                )
+                            },
+                            |message| {
+                                PipelineEvent::commit_message_generated(
+                                    message.clone(),
+                                    outcome.attempt,
+                                )
+                            },
+                        )
+                    },
+                );
                 Some((event, vec![]))
             }
 

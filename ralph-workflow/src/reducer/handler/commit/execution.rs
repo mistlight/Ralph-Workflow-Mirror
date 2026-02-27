@@ -39,7 +39,6 @@ impl MainEffectHandler {
     ///
     /// - `GitAddAllFailed` - Failed to stage changes
     pub(in crate::reducer::handler) fn create_commit(
-        &self,
         ctx: &PhaseContext<'_>,
         message: String,
     ) -> Result<EffectResult> {
@@ -72,11 +71,10 @@ impl MainEffectHandler {
     ///
     /// - `commit_skipped` - Commit skipped with reason
     pub(in crate::reducer::handler) const fn skip_commit(
-        &self,
         _ctx: &mut PhaseContext<'_>,
         reason: String,
-    ) -> Result<EffectResult> {
-        Ok(EffectResult::event(PipelineEvent::commit_skipped(reason)))
+    ) -> EffectResult {
+        EffectResult::event(PipelineEvent::commit_skipped(reason))
     }
 
     /// Check for uncommitted changes before pipeline termination.
@@ -93,7 +91,6 @@ impl MainEffectHandler {
     ///
     /// - `GitStatusFailed` - Unable to determine working directory status
     pub(in crate::reducer::handler) fn check_uncommitted_changes_before_termination(
-        &self,
         ctx: &PhaseContext<'_>,
     ) -> Result<EffectResult> {
         use crate::git_helpers::git_snapshot_in_repo;

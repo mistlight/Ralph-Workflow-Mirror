@@ -56,9 +56,9 @@ impl MockEffectHandler {
     /// performing real agent execution, XML validation, or file I/O.
     pub(super) fn handle_review_effect(
         &self,
-        effect: Effect,
+        effect: &Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
-        match effect {
+        match *effect {
             Effect::PrepareReviewContext { pass } => {
                 Some((
                     PipelineEvent::review_context_prepared(pass),
@@ -180,11 +180,8 @@ impl MockEffectHandler {
     ///
     /// Returns appropriate mock events for each fix effect without
     /// performing real agent execution, XML validation, or file I/O.
-    pub(super) fn handle_fix_effect(
-        &self,
-        effect: Effect,
-    ) -> Option<(PipelineEvent, Vec<UIEvent>)> {
-        match effect {
+    pub(super) fn handle_fix_effect(effect: &Effect) -> Option<(PipelineEvent, Vec<UIEvent>)> {
+        match *effect {
             Effect::PrepareFixPrompt {
                 pass,
                 prompt_mode: _,

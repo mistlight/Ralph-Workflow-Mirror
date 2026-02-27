@@ -27,7 +27,7 @@ fn test_permission_lifecycle_success_path() {
         );
 
         // Step 2: Execute lock, get event
-        let result1 = handler.execute_mock(effect1);
+        let result1 = handler.execute_mock(&effect1);
         let state2 = reduce(initial_state, result1.event);
         assert!(state2.prompt_permissions.locked);
         assert!(state2.prompt_permissions.restore_needed);
@@ -60,7 +60,7 @@ fn test_permission_lifecycle_success_path() {
         );
 
         // Step 5: Execute restore, get event, reduce
-        let result4 = handler.execute_mock(effect4);
+        let result4 = handler.execute_mock(&effect4);
         let final_state = reduce(finalizing_state, result4.event);
 
         // Step 6: Verify final state
@@ -81,7 +81,7 @@ fn test_permission_lifecycle_failure_path() {
         let effect1 = determine_next_effect(&initial_state);
         assert!(matches!(effect1, Effect::LockPromptPermissions));
 
-        let result1 = handler.execute_mock(effect1);
+        let result1 = handler.execute_mock(&effect1);
         let state2 = reduce(initial_state, result1.event);
         assert!(state2.prompt_permissions.locked);
 
@@ -102,7 +102,7 @@ fn test_permission_lifecycle_failure_path() {
         );
 
         // Step 3: Execute restore
-        let result2 = handler.execute_mock(effect2);
+        let result2 = handler.execute_mock(&effect2);
         let state3 = reduce(interrupted_state, result2.event);
 
         // Step 4: Verify phase stays Interrupted (not Complete)
@@ -117,7 +117,7 @@ fn test_permission_lifecycle_failure_path() {
         );
 
         // Step 6: Execute safety check, then checkpoint
-        let result3 = handler.execute_mock(effect3);
+        let result3 = handler.execute_mock(&effect3);
         let state4 = reduce(state3, result3.event);
         let effect4 = determine_next_effect(&state4);
         assert!(
@@ -155,7 +155,7 @@ fn test_permission_restoration_on_resume_from_interrupted() {
         );
 
         // Execute safety check
-        let result1 = handler.execute_mock(effect1);
+        let result1 = handler.execute_mock(&effect1);
         let state_after_check = reduce(resumed_state, result1.event);
 
         // Step 2: After safety check, should derive RestorePromptPermissions
@@ -166,7 +166,7 @@ fn test_permission_restoration_on_resume_from_interrupted() {
         );
 
         // Step 3: Execute restore
-        let result2 = handler.execute_mock(effect2);
+        let result2 = handler.execute_mock(&effect2);
         let final_state = reduce(state_after_check, result2.event);
 
         // Step 3: Verify restoration completed, phase stays Interrupted
@@ -185,7 +185,7 @@ fn test_permission_restoration_on_user_interrupt() {
         // Step 1: Lock at startup
         let effect1 = determine_next_effect(&initial_state);
         assert!(matches!(effect1, Effect::LockPromptPermissions));
-        let result1 = handler.execute_mock(effect1);
+        let result1 = handler.execute_mock(&effect1);
         let state2 = reduce(initial_state, result1.event);
 
         // Step 2: Simulate user Ctrl+C by transitioning to Interrupted
@@ -206,7 +206,7 @@ fn test_permission_restoration_on_user_interrupt() {
             "User interrupt should restore permissions, got {effect3:?}"
         );
 
-        let result3 = handler.execute_mock(effect3);
+        let result3 = handler.execute_mock(&effect3);
         let state4 = reduce(interrupted_state, result3.event);
 
         // Step 4: Should stay Interrupted, then save checkpoint
@@ -345,7 +345,7 @@ fn test_ctrl_c_restores_prompt_md_writable() {
         // Step 1: Lock at startup
         let effect1 = determine_next_effect(&initial_state);
         assert!(matches!(effect1, Effect::LockPromptPermissions));
-        let result1 = handler.execute_mock(effect1);
+        let result1 = handler.execute_mock(&effect1);
         let state2 = reduce(initial_state, result1.event);
 
         // Step 2: Simulate Ctrl+C interrupt
@@ -366,7 +366,7 @@ fn test_ctrl_c_restores_prompt_md_writable() {
         );
 
         // Step 4: Execute restore
-        let result3 = handler.execute_mock(effect3);
+        let result3 = handler.execute_mock(&effect3);
         let state4 = reduce(interrupted_state, result3.event);
 
         // Step 5: Verify restoration completed

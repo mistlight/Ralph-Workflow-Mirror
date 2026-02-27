@@ -69,7 +69,7 @@ impl VirtualTerminal {
                                     // For now, we only implement mode 2 (full line clear)
                                     // which is what the streaming code uses
                                 }
-                                'm' | _ => {
+                                _ => {
                                     // SGR (Select Graphic Rendition) - colors/styles, or unknown command
                                     // We ignore these as they don't affect text content
                                 }

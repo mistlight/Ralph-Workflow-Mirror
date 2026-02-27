@@ -283,4 +283,52 @@ mod tests {
         assert!(out.contains("offset: 100"));
         assert!(out.contains("limit: 50"));
     }
+
+    #[test]
+    fn test_classify_successful_parse_detects_partial_event() {
+        let line = r#"{"type":"text","timestamp":2,"sessionID":"ses_test","part":{"type":"text","text":"hello"}}"#;
+        let classification = OpenCodeParser::classify_successful_parse_for_monitor(line, line.trim());
+
+        assert_eq!(classification, MonitorEventClassification::Partial);
+    }
+
+    #[test]
+    fn test_classify_successful_parse_non_json_is_parsed() {
+        let line = "plain output";
+        let classification = OpenCodeParser::classify_successful_parse_for_monitor(line, line.trim());
+
+        assert_eq!(classification, MonitorEventClassification::Parsed);
+    }
+
+    #[test]
+    fn test_classify_empty_output_detects_control_event() {
+        let line = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_test","part":{"type":"step-start"}}"#;
+        let classification = OpenCodeParser::classify_empty_output_for_monitor(line, line.trim());
+
+        assert_eq!(classification, MonitorEventClassification::Control);
+    }
+
+    #[test]
+    fn test_classify_empty_output_detects_unknown_event() {
+        let line = r#"{"type":"new_future_event","timestamp":1,"sessionID":"ses_test"}"#;
+        let classification = OpenCodeParser::classify_empty_output_for_monitor(line, line.trim());
+
+        assert_eq!(classification, MonitorEventClassification::Unknown);
+    }
+
+    #[test]
+    fn test_classify_empty_output_detects_parse_error() {
+        let line = "{invalid json}";
+        let classification = OpenCodeParser::classify_empty_output_for_monitor(line, line.trim());
+
+        assert_eq!(classification, MonitorEventClassification::ParseError);
+    }
+
+    #[test]
+    fn test_classify_empty_output_non_json_is_ignored() {
+        let line = "not json";
+        let classification = OpenCodeParser::classify_empty_output_for_monitor(line, line.trim());
+
+        assert_eq!(classification, MonitorEventClassification::Ignored);
+    }
 }

@@ -76,7 +76,7 @@ impl MockEffectHandler {
     /// # Panics
     ///
     /// Panics if invariants are violated.
-    pub fn execute_mock(&mut self, effect: Effect) -> EffectResult {
+    pub fn execute_mock(&mut self, effect: &Effect) -> EffectResult {
         // Capture the effect for test assertions
         self.captured_effects.borrow_mut().push(effect.clone());
 
@@ -104,10 +104,10 @@ impl MockEffectHandler {
 
         // Try phase-specific effects
         let (event, ui_events) = self
-            .handle_planning_effect(effect.clone())
-            .or_else(|| self.handle_development_effect(effect.clone()))
-            .or_else(|| self.handle_review_effect(effect.clone()))
-            .or_else(|| self.handle_fix_effect(effect.clone()))
+            .handle_planning_effect(effect)
+            .or_else(|| self.handle_development_effect(effect))
+            .or_else(|| self.handle_review_effect(effect))
+            .or_else(|| Self::handle_fix_effect(effect))
             .or_else(|| self.handle_commit_effect(effect.clone()))
             .unwrap_or_else(|| {
                 panic!("MockEffectHandler::execute_mock received unhandled effect: {effect:?}")

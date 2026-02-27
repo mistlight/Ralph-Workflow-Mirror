@@ -17,8 +17,8 @@ impl MainEffectHandler {
         &self,
         ctx: &mut PhaseContext<'_>,
         role: AgentRole,
-        agent: String,
-        model: Option<String>,
+        agent: &str,
+        model: Option<&str>,
         prompt: String,
     ) -> Result<EffectResult> {
         let in_dev_fix = self.state.phase == PipelinePhase::AwaitingDevFix;
@@ -27,13 +27,12 @@ impl MainEffectHandler {
         // During AwaitingDevFix, remediation must always run under the configured
         // developer agent (not whatever agent happened to fail).
         let effective_agent = if in_dev_fix {
-            agent
+            agent.to_owned()
         } else {
             self.state
                 .agent_chain
                 .current_agent()
-                .unwrap_or(&agent)
-                .clone()
+                .map_or_else(|| agent.to_owned(), Clone::clone)
         };
 
         // Use continuation prompt if available (from rate-limited predecessor).
@@ -195,9 +194,7 @@ impl MainEffectHandler {
         // Build command string, honoring reducer-selected model (if any).
         // The reducer's agent chain drives model fallback (advance_to_next_model).
         // When present, the selected model must be threaded into the command.
-        let model_override = model_name
-            .map(std::string::String::as_str)
-            .or(model.as_deref());
+        let model_override = model_name.map(std::string::String::as_str).or(model);
 
         // Session ID reuse for XSD retry: preserve a "reuse session id" signal across
         // prompt preparation (which clears xsd_retry_pending to avoid effect loops).
@@ -227,7 +224,7 @@ impl MainEffectHandler {
         let started_event = PipelineEvent::agent_invocation_started(
             role,
             effective_agent.clone(),
-            model_name.cloned().or_else(|| model.clone()),
+            model_name.cloned().or_else(|| model.map(str::to_owned)),
         );
 
         let model_index = if in_dev_fix {

@@ -28,22 +28,21 @@
 
 impl MainEffectHandler {
     pub(in crate::reducer::handler) fn cleanup_review_issues_xml(
-        &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let issues_xml = Path::new(xml_paths::ISSUES_XML);
         let _ = ctx.workspace.remove_if_exists(issues_xml);
-        Ok(EffectResult::event(
+        EffectResult::event(
             PipelineEvent::review_issues_xml_cleaned(pass),
-        ))
+        )
     }
 
     pub(in crate::reducer::handler) fn extract_review_issues_xml(
         &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
@@ -53,9 +52,9 @@ impl MainEffectHandler {
         let content = ctx.workspace.read(issues_xml);
 
         match content {
-            Ok(_) => Ok(EffectResult::event(
+            Ok(_) => EffectResult::event(
                 PipelineEvent::review_issues_xml_extracted(pass),
-            )),
+            ),
             Err(err) => {
                 let detail = if err.kind() == std::io::ErrorKind::NotFound {
                     None
@@ -67,13 +66,13 @@ impl MainEffectHandler {
                     ))
                 };
 
-                Ok(EffectResult::event(
+                EffectResult::event(
                     PipelineEvent::review_issues_xml_missing(
                         pass,
                         self.state.continuation.invalid_output_attempts,
                         detail,
                     ),
-                ))
+                )
             }
         }
     }
@@ -82,7 +81,7 @@ impl MainEffectHandler {
         &self,
         ctx: &PhaseContext<'_>,
         pass: u32,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use crate::files::llm_output_extraction::validate_issues_xml;
         use std::path::Path;
@@ -101,13 +100,13 @@ impl MainEffectHandler {
                     ))
                 };
 
-                return Ok(EffectResult::event(
+                return EffectResult::event(
                     PipelineEvent::review_output_validation_failed(
                         pass,
                         self.state.continuation.invalid_output_attempts,
                         detail,
                     ),
-                ));
+                );
             }
         };
 
@@ -116,7 +115,7 @@ impl MainEffectHandler {
                 let issues_found = !elements.issues.is_empty();
                 let clean_no_issues =
                     elements.no_issues_found.is_some() && elements.issues.is_empty();
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::review_issues_xml_validated(
                         pass,
                         issues_found,
@@ -133,15 +132,15 @@ impl MainEffectHandler {
                             snippets: Vec::new(),
                         }),
                     }],
-                ))
+                )
             }
-            Err(err) => Ok(EffectResult::event(
+            Err(err) => EffectResult::event(
                 PipelineEvent::review_output_validation_failed(
                     pass,
                     self.state.continuation.invalid_output_attempts,
                     Some(err.format_for_ai_retry()),
                 ),
-            )),
+            ),
         }
     }
 }

@@ -142,8 +142,13 @@ impl StreamingSession {
                     ContentType::ToolInput => {
                         // Tool_use content needs normalization with tool name
                         let index_num = index_str.parse::<u64>().unwrap_or(0);
-                        let tool_name = tool_name_hints
-                            .and_then(|hints| hints.get(&(index_num as usize)).map(std::string::String::as_str))
+                        let tool_name = usize::try_from(index_num)
+                            .ok()
+                            .and_then(|idx| {
+                                tool_name_hints.and_then(|hints| {
+                                    hints.get(&idx).map(std::string::String::as_str)
+                                })
+                            })
                             .or_else(|| self.tool_names.get(&index_num).and_then(|n| n.as_deref()))
                             .unwrap_or("");
 
@@ -197,8 +202,13 @@ impl StreamingSession {
             if let Some(accumulated_input) = self.accumulated.get(&(*ct, index_str.clone())) {
                 // Get the tool name from hints first (from assistant event), then from tracking
                 let index_num = index_str.parse::<u64>().unwrap_or(0);
-                let tool_name = tool_name_hints
-                    .and_then(|hints| hints.get(&(index_num as usize)).map(std::string::String::as_str))
+                let tool_name = usize::try_from(index_num)
+                    .ok()
+                    .and_then(|idx| {
+                        tool_name_hints.and_then(|hints| {
+                            hints.get(&idx).map(std::string::String::as_str)
+                        })
+                    })
                     .or_else(|| self.tool_names.get(&index_num).and_then(|n| n.as_deref()))
                     .unwrap_or("");
 

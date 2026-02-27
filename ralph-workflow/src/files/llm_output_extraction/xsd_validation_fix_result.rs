@@ -91,7 +91,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                 // Text before root element or other events - continue to find root or reach EOF
                 // EOF will give a more informative "missing root element" error
             }
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
         buf.clear();
     }
@@ -144,7 +144,7 @@ pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, X
                 });
             }
             Ok(_) => {} // Skip comments, etc.
-            Err(e) => return Err(malformed_xml_error(e)),
+            Err(e) => return Err(malformed_xml_error(&e)),
         }
     }
 

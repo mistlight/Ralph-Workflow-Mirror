@@ -55,9 +55,7 @@ fn test_extract_planning_xml_emits_missing_event() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    let result = handler
-        .extract_planning_xml(&mut ctx, 0)
-        .expect("extract_planning_xml should succeed");
+    let result = handler.extract_planning_xml(&mut ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -82,7 +80,7 @@ fn test_extract_development_xml_emits_missing_event() {
     let executor_ref = executor_arc.clone();
 
     let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
+    let ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
         logger: &logger,
@@ -106,9 +104,7 @@ fn test_extract_development_xml_emits_missing_event() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    let result = handler
-        .extract_development_xml(&mut ctx, 0)
-        .expect("extract_development_xml should succeed");
+    let result = handler.extract_development_xml(&ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -157,9 +153,7 @@ fn test_extract_review_issues_xml_emits_missing_event() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
-        .extract_review_issues_xml(&mut ctx, 0)
-        .expect("extract_review_issues_xml should succeed");
+    let result = handler.extract_review_issues_xml(&mut ctx, 0);
 
     assert!(matches!(
         result.event,
@@ -208,9 +202,7 @@ fn test_extract_fix_result_xml_emits_missing_event() {
     };
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
-        .extract_fix_result_xml(&mut ctx, 0)
-        .expect("extract_fix_result_xml should succeed");
+    let result = handler.extract_fix_result_xml(&mut ctx, 0);
 
     assert!(matches!(
         result.event,

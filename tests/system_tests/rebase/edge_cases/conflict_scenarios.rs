@@ -77,25 +77,16 @@ fn rebase_with_line_ending_conflict_resolves() {
 
             // Line ending conflicts should be resolved by Git's auto-handling
             // or result in a conflict that can be resolved
-            match result {
-                Ok(RebaseResult::Success) => {
-                    // Best case: Git auto-resolved
-                }
-                Ok(RebaseResult::NoOp { reason }) => {
-                    // Acceptable: Git determined no rebase needed
-                    assert!(reason.contains("up-to-date") || reason.contains("already"));
-                }
-                Ok(RebaseResult::Conflicts(files)) => {
-                    // Expected: Git detected conflicts that can be resolved
-                    // Verify the conflicted file is in the list
-                    assert!(
-                        files.is_empty() || files.iter().any(|f| f.contains("file.txt")),
-                        "Expected file.txt to be in conflicts if any"
-                    );
-                }
-                _ => {
-                    // Other outcomes are acceptable depending on Git version
-                }
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                // Acceptable: Git determined no rebase needed
+                assert!(reason.contains("up-to-date") || reason.contains("already"));
+            } else if let Ok(RebaseResult::Conflicts(files)) = result {
+                // Expected: Git detected conflicts that can be resolved
+                // Verify the conflicted file is in the list
+                assert!(
+                    files.is_empty() || files.iter().any(|f| f.contains("file.txt")),
+                    "Expected file.txt to be in conflicts if any"
+                );
             }
         });
     });
@@ -137,16 +128,12 @@ fn rebase_with_binary_file_conflict() {
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Binary file conflicts are valid outcomes
-            match result {
-                Ok(RebaseResult::Success) => {}
-                Ok(RebaseResult::Conflicts(files)) => {
-                    // Binary files may result in conflicts
-                    assert!(
-                        files.iter().any(|f| f.contains("binary.bin")) || files.is_empty(),
-                        "Expected binary.bin in conflicts or no conflicts"
-                    );
-                }
-                _ => {}
+            if let Ok(RebaseResult::Conflicts(files)) = result {
+                // Binary files may result in conflicts
+                assert!(
+                    files.iter().any(|f| f.contains("binary.bin")) || files.is_empty(),
+                    "Expected binary.bin in conflicts or no conflicts"
+                );
             }
         });
     });
@@ -195,15 +182,11 @@ fn rebase_with_symlink_conflict() {
                     let result = rebase_onto(&default_branch, executor.as_ref());
 
                     // File/symlink conflicts should be detected
-                    match result {
-                        Ok(RebaseResult::Success) => {}
-                        Ok(RebaseResult::Conflicts(files)) => {
-                            assert!(
-                                files.iter().any(|f| f.contains("mylink")) || files.is_empty(),
-                                "Expected mylink in conflicts or no conflicts"
-                            );
-                        }
-                        _ => {}
+                    if let Ok(RebaseResult::Conflicts(files)) = result {
+                        assert!(
+                            files.iter().any(|f| f.contains("mylink")) || files.is_empty(),
+                            "Expected mylink in conflicts or no conflicts"
+                        );
                     }
                 }
             }
@@ -301,16 +284,9 @@ fn rebase_with_case_sensitivity_collision() {
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Result depends on filesystem case sensitivity
-            match result {
-                Ok(RebaseResult::Success) => {}
-                Ok(RebaseResult::NoOp { reason }) => {
-                    // May be reported as up-to-date on case-insensitive FS
-                    assert!(reason.contains("up-to-date") || reason.contains("already"));
-                }
-                Ok(RebaseResult::Conflicts(_)) => {
-                    // May get conflicts on case-sensitive FS
-                }
-                _ => {}
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                // May be reported as up-to-date on case-insensitive FS
+                assert!(reason.contains("up-to-date") || reason.contains("already"));
             }
         });
     });
@@ -323,9 +299,7 @@ fn rebase_with_case_sensitivity_collision() {
 #[test]
 fn detect_concurrent_rebase_locking() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::{
-            is_main_or_master_branch, rebase_onto, RebaseLock, RebaseResult,
-        };
+        use ralph_workflow::git_helpers::{is_main_or_master_branch, rebase_onto, RebaseLock};
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -344,17 +318,8 @@ fn detect_concurrent_rebase_locking() {
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // The lock file is in .agent/rebase.lock
-            // Git itself doesn't know about our lock, so rebase may proceed
-            // Our state machine checks for the lock before rebase
-            match result {
-                Ok(RebaseResult::Success) => {
-                    // Git may succeed since it doesn't check our lock
-                }
-                Ok(RebaseResult::Failed(_)) => {
-                    // Or may fail for other reasons
-                }
-                _ => {}
-            }
+            // Git itself doesn't know about our lock, so any outcome is acceptable here.
+            let _ = result;
 
             // Lock should be released when dropped
         });
@@ -422,19 +387,15 @@ fn rebase_with_large_file_handling() {
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Large files may cause issues or work fine depending on Git config
-            match result {
-                Ok(RebaseResult::Success) => {}
-                Ok(RebaseResult::Failed(err)) => {
-                    // Large files might fail due to size limits
-                    assert!(
-                        err.description().contains("large")
-                            || err.description().contains("size")
-                            || err.description().contains("memory")
-                            || !err.description().is_empty(),
-                        "Error should mention size or have a description"
-                    );
-                }
-                _ => {}
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Large files might fail due to size limits
+                assert!(
+                    err.description().contains("large")
+                        || err.description().contains("size")
+                        || err.description().contains("memory")
+                        || !err.description().is_empty(),
+                    "Error should mention size or have a description"
+                );
             }
 
             // Clean up large file
@@ -490,20 +451,10 @@ fn rebase_handles_rename_rename_conflict() {
 
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // Rename/rename conflicts should be detected or handled gracefully
-            match result {
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve this in some versions
-                }
-                Ok(RebaseResult::Conflicts(_files)) => {
-                    // Should detect the conflict
-                    // Files might be empty if both sides are modified
-                }
-                Ok(RebaseResult::Failed(err)) => {
-                    // May fail with clear error
-                    assert!(!err.description().is_empty());
-                }
-                _ => {}
+            // Rename/rename conflicts should be detected or handled gracefully.
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // May fail with clear error
+                assert!(!err.description().is_empty());
             }
         });
     });
@@ -561,20 +512,10 @@ fn rebase_handles_directory_file_conflict() {
 
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // Directory/file conflicts should be detected
-            match result {
-                Ok(RebaseResult::Success) => {
-                    // Git may resolve in some configurations
-                }
-                Ok(RebaseResult::Conflicts(_files)) => {
-                    // Should detect the conflict
-                    // The "data" path should be in conflicts
-                }
-                Ok(RebaseResult::Failed(err)) => {
-                    // May fail with clear error
-                    assert!(!err.description().is_empty());
-                }
-                _ => {}
+            // Directory/file conflicts should be detected.
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // May fail with clear error
+                assert!(!err.description().is_empty());
             }
         });
     });
@@ -627,17 +568,9 @@ fn rebase_handles_nested_repository() {
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Should succeed or fail gracefully (not crash)
-            match result {
-                Ok(RebaseResult::Success) => {}
-                Ok(RebaseResult::NoOp { .. }) => {}
-                Ok(RebaseResult::Conflicts(_)) => {}
-                Ok(RebaseResult::Failed(err)) => {
-                    // Error should be informative
-                    assert!(!err.description().is_empty());
-                }
-                Err(_) => {
-                    // IO error is acceptable
-                }
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Error should be informative
+                assert!(!err.description().is_empty());
             }
         });
     });

@@ -27,6 +27,7 @@
 
 use std::path::PathBuf;
 
+use ralph_workflow::app::effect::{AppEffect, AppEffectHandler};
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 
 use crate::common::{
@@ -336,7 +337,6 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
                 .unwrap();
 
             // Corrupt the primary backup (simulate corruption) using the handler's execute method
-            use ralph_workflow::app::effect::{AppEffect, AppEffectHandler};
             handler.execute(AppEffect::WriteFile {
                 path: PathBuf::from(".agent/PROMPT.md.backup"),
                 content: "CORRUPTED CONTENT".to_string(),

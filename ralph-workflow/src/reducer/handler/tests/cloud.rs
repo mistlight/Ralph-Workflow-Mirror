@@ -8,7 +8,6 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -112,18 +111,14 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
     };
 
     let mut fixture = Fixture::new(cloud);
-    let mut ctx = fixture.ctx();
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let _ = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should succeed with mock executor");
+    let ctx = fixture.ctx();
+    let _ = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     let calls = fixture.executor.execute_calls_for("git");
     assert_eq!(calls.len(), 1);
@@ -170,18 +165,14 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
     };
 
     let mut fixture = Fixture::new(cloud);
-    let mut ctx = fixture.ctx();
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let _ = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should succeed with mock executor");
+    let ctx = fixture.ctx();
+    let _ = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     let calls = fixture.executor.execute_calls_for("git");
     assert_eq!(calls.len(), 1);
@@ -214,18 +205,14 @@ fn test_push_to_remote_emits_ui_event_on_success() {
     };
 
     let mut fixture = Fixture::new(cloud);
-    let mut ctx = fixture.ctx();
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let result = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should run");
+    let ctx = fixture.ctx();
+    let result = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     assert!(
         result.ui_events.iter().any(|e| matches!(
@@ -266,18 +253,14 @@ fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
         "HTTP 401: Bearer SECRET_TOKEN https://user:pass@example.com?access_token=abc",
     ));
     let mut fixture = Fixture::new_with_executor(cloud, executor);
-    let mut ctx = fixture.ctx();
-    let handler = MainEffectHandler::new(PipelineState::initial(0, 0));
-
-    let result = handler
-        .handle_push_to_remote(
-            &mut ctx,
-            "origin".to_string(),
-            "main".to_string(),
-            false,
-            "abc123".to_string(),
-        )
-        .expect("push handler should run");
+    let ctx = fixture.ctx();
+    let result = MainEffectHandler::handle_push_to_remote(
+        &ctx,
+        "origin".to_string(),
+        "main".to_string(),
+        false,
+        "abc123".to_string(),
+    );
 
     let mut saw = false;
     for e in &result.ui_events {

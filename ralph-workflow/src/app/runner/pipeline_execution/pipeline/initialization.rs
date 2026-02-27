@@ -44,6 +44,169 @@ pub(super) struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
     pub workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 }
 
+struct PipelinePreparationState {
+    args: Args,
+    config: crate::config::Config,
+    registry: AgentRegistry,
+    developer_agent: String,
+    reviewer_agent: String,
+    repo_root: std::path::PathBuf,
+    logger: Logger,
+    colors: Colors,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
+}
+
+impl PipelinePreparationState {
+    fn build_pipeline_context(self, template_context: TemplateContext, run_log_context: crate::logging::RunLogContext) -> PipelineContext {
+        let developer_display = self.registry.display_name(&self.developer_agent);
+        let reviewer_display = self.registry.display_name(&self.reviewer_agent);
+
+        PipelineContext {
+            args: self.args,
+            config: self.config,
+            registry: self.registry,
+            developer_agent: self.developer_agent,
+            reviewer_agent: self.reviewer_agent,
+            developer_display,
+            reviewer_display,
+            repo_root: self.repo_root,
+            workspace: self.workspace,
+            logger: self.logger,
+            colors: self.colors,
+            template_context,
+            executor: self.executor,
+            run_log_context,
+        }
+    }
+}
+
+fn create_resume_or_fresh_run_log_context(
+    state: &PipelinePreparationState,
+) -> anyhow::Result<crate::logging::RunLogContext> {
+    use crate::checkpoint::{load_checkpoint_with_workspace, save_checkpoint_with_workspace};
+    use crate::logging::RunLogContext;
+
+    if !state.args.recovery.resume {
+        return RunLogContext::new(&*state.workspace).context("Failed to create run log context");
+    }
+
+    let checkpoint = load_checkpoint_with_workspace(&*state.workspace)
+        .context("Failed to load checkpoint for resume")?;
+
+    if let Some(mut checkpoint) = checkpoint {
+        if let Some(log_run_id) = checkpoint.log_run_id {
+            return RunLogContext::from_checkpoint(&log_run_id, &*state.workspace)
+                .context("Failed to restore run log context from checkpoint");
+        }
+
+        state
+            .logger
+            .warn("Checkpoint missing log_run_id field, generating new run log directory");
+        let run_log_context =
+            RunLogContext::new(&*state.workspace).context("Failed to create run log context")?;
+
+        checkpoint.log_run_id = Some(run_log_context.run_id().to_string());
+        save_checkpoint_with_workspace(&*state.workspace, &checkpoint).context(
+            "Failed to update checkpoint with log_run_id. Log continuity requires this update to succeed. \
+             Please check filesystem permissions and disk space, then retry.",
+        )?;
+
+        return Ok(run_log_context);
+    }
+
+    state.logger.warn(
+        "No checkpoint file found (--resume flag was set). A fresh run directory has been created. \
+         If you expected to resume from a previous run, please check that .agent/checkpoint.json exists.",
+    );
+    RunLogContext::new(&*state.workspace).context("Failed to create run log context")
+}
+
+fn configure_logger_for_run(
+    state: &mut PipelinePreparationState,
+    run_log_context: &crate::logging::RunLogContext,
+) {
+    let current_logger = std::mem::replace(&mut state.logger, Logger::new(state.colors));
+    state.logger = current_logger.with_workspace_log(
+        std::sync::Arc::clone(&state.workspace),
+        &run_log_context.pipeline_log().to_string_lossy(),
+    );
+}
+
+fn write_run_metadata_best_effort(
+    state: &PipelinePreparationState,
+    run_log_context: &crate::logging::RunLogContext,
+) {
+    let run_metadata = crate::logging::RunMetadata {
+        run_id: run_log_context.run_id().to_string(),
+        started_at_utc: chrono::Utc::now().to_rfc3339(),
+        command: format!(
+            "ralph {}",
+            std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+        ),
+        resume: state.args.recovery.resume,
+        repo_root: state.repo_root.display().to_string(),
+        ralph_version: env!("CARGO_PKG_VERSION").to_string(),
+        pid: Some(std::process::id()),
+        config_summary: None,
+    };
+
+    if let Err(e) = run_log_context.write_run_metadata(&*state.workspace, &run_metadata) {
+        state.logger.warn(&format!("Failed to write run.json: {e}"));
+    }
+}
+
+fn handle_early_exit_modes(
+    state: &PipelinePreparationState,
+    template_context: &TemplateContext,
+) -> anyhow::Result<bool> {
+    if state.args.recovery.dry_run {
+        let developer_display = state.registry.display_name(&state.developer_agent);
+        let reviewer_display = state.registry.display_name(&state.reviewer_agent);
+        handle_dry_run(
+            &state.logger,
+            state.colors,
+            &state.config,
+            &developer_display,
+            &reviewer_display,
+            &state.repo_root,
+            &*state.workspace,
+        )?;
+        return Ok(true);
+    }
+
+    if state.args.rebase_flags.rebase_only {
+        handle_rebase_only(
+            &state.args,
+            &state.config,
+            template_context,
+            &state.logger,
+            state.colors,
+            &state.executor,
+            &state.repo_root,
+        )?;
+        return Ok(true);
+    }
+
+    if state.args.commit_plumbing.generate_commit_msg {
+        handle_generate_commit_msg(&plumbing::CommitGenerationConfig {
+            config: &state.config,
+            template_context,
+            workspace: &*state.workspace,
+            workspace_arc: std::sync::Arc::clone(&state.workspace),
+            registry: &state.registry,
+            logger: &state.logger,
+            colors: state.colors,
+            developer_agent: &state.developer_agent,
+            reviewer_agent: &state.reviewer_agent,
+            executor: std::sync::Arc::clone(&state.executor),
+        })?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
 /// Prepares the pipeline context after agent validation.
 ///
 /// Returns `Some(ctx)` if pipeline should run, or `None` if we should exit early.
@@ -71,9 +234,6 @@ pub(super) struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
 pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     params: PipelinePreparationParams<'_, H>,
 ) -> anyhow::Result<Option<PipelineContext>> {
-    use crate::checkpoint::{load_checkpoint_with_workspace, save_checkpoint_with_workspace};
-    use crate::logging::RunLogContext;
-
     let PipelinePreparationParams {
         args,
         config,
@@ -81,162 +241,46 @@ pub(super) fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         developer_agent,
         reviewer_agent,
         repo_root,
-        mut logger,
+        logger,
         colors,
         executor,
         handler,
         workspace,
     } = params;
 
-    // Ensure required files and directories exist via effects
     effectful::ensure_files_effectful(handler, config.isolation_mode)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // Reset context for isolation mode via effects
     if config.isolation_mode {
         effectful::reset_context_for_isolation_effectful(handler)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
 
-    // Create run log context for per-run log directory
-    // If resuming, continue with the same run_id from checkpoint; otherwise create new
-    let run_log_context = if args.recovery.resume {
-        // Try to load checkpoint to get log_run_id for resume continuity
-        let checkpoint = load_checkpoint_with_workspace(&*workspace)
-            .context("Failed to load checkpoint for resume")?;
-
-        if let Some(mut checkpoint) = checkpoint {
-            // Resume: continue logging to the same run directory using log_run_id
-            if let Some(log_run_id) = checkpoint.log_run_id {
-                RunLogContext::from_checkpoint(&log_run_id, &*workspace)
-                    .context("Failed to restore run log context from checkpoint")?
-            } else {
-                // Older checkpoint without log_run_id field, generate new one
-                logger
-                    .warn("Checkpoint missing log_run_id field, generating new run log directory");
-                let run_log_context =
-                    RunLogContext::new(&*workspace).context("Failed to create run log context")?;
-
-                // Update checkpoint with new log_run_id to ensure subsequent resumes continue with the same directory
-                // This save MUST succeed for resume log continuity. If it fails, we error out rather than
-                // proceeding with logs that will be fragmented on the next resume.
-                checkpoint.log_run_id = Some(run_log_context.run_id().to_string());
-                save_checkpoint_with_workspace(&*workspace, &checkpoint).context(
-                    "Failed to update checkpoint with log_run_id. Log continuity requires this update to succeed. \
-                     Please check filesystem permissions and disk space, then retry.",
-                )?;
-
-                run_log_context
-            }
-        } else {
-            // No checkpoint found, but --resume was requested
-            // This is handled later by resume validation, but we need a run context now
-            logger.warn(
-                "No checkpoint file found (--resume flag was set). A fresh run directory has been created. \
-                 If you expected to resume from a previous run, please check that .agent/checkpoint.json exists.",
-            );
-            RunLogContext::new(&*workspace).context("Failed to create run log context")?
-        }
-    } else {
-        // Fresh run: generate new run_id
-        RunLogContext::new(&*workspace).context("Failed to create run log context")?
-    };
-
-    // Use per-run pipeline.log path via workspace (supports MemoryWorkspace in tests)
-    logger = logger.with_workspace_log(
-        std::sync::Arc::clone(&workspace),
-        &run_log_context.pipeline_log().to_string_lossy(),
-    );
-
-    // Write run.json metadata
-    let run_metadata = crate::logging::RunMetadata {
-        run_id: run_log_context.run_id().to_string(),
-        started_at_utc: chrono::Utc::now().to_rfc3339(),
-        command: format!(
-            "ralph {}",
-            std::env::args().skip(1).collect::<Vec<_>>().join(" ")
-        ),
-        resume: args.recovery.resume,
-        repo_root: repo_root.display().to_string(),
-        ralph_version: env!("CARGO_PKG_VERSION").to_string(),
-        pid: Some(std::process::id()),
-        config_summary: None, // TODO: add public getters to Config if we want to include this
-    };
-    if let Err(e) = run_log_context.write_run_metadata(&*workspace, &run_metadata) {
-        logger.warn(&format!("Failed to write run.json: {e}"));
-    }
-
-    // Handle --dry-run
-    if args.recovery.dry_run {
-        let developer_display = registry.display_name(&developer_agent);
-        let reviewer_display = registry.display_name(&reviewer_agent);
-        handle_dry_run(
-            &logger,
-            colors,
-            &config,
-            &developer_display,
-            &reviewer_display,
-            &repo_root,
-            &*workspace,
-        )?;
-        return Ok(None);
-    }
-
-    // Create template context for user template overrides
-    let template_context =
-        TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
-
-    // Handle --rebase-only
-    if args.rebase_flags.rebase_only {
-        handle_rebase_only(
-            &args,
-            &config,
-            &template_context,
-            &logger,
-            colors,
-            std::sync::Arc::clone(&executor),
-            &repo_root,
-        )?;
-        return Ok(None);
-    }
-
-    // Handle --generate-commit-msg
-    if args.commit_plumbing.generate_commit_msg {
-        handle_generate_commit_msg(&plumbing::CommitGenerationConfig {
-            config: &config,
-            template_context: &template_context,
-            workspace: &*workspace,
-            workspace_arc: std::sync::Arc::clone(&workspace),
-            registry: &registry,
-            logger: &logger,
-            colors,
-            developer_agent: &developer_agent,
-            reviewer_agent: &reviewer_agent,
-            executor: std::sync::Arc::clone(&executor),
-        })?;
-        return Ok(None);
-    }
-
-    // Get display names before moving registry
-    let developer_display = registry.display_name(&developer_agent);
-    let reviewer_display = registry.display_name(&reviewer_agent);
-
-    // Build pipeline context (workspace was injected via params)
-    let ctx = PipelineContext {
+    let mut state = PipelinePreparationState {
         args,
         config,
         registry,
         developer_agent,
         reviewer_agent,
-        developer_display,
-        reviewer_display,
         repo_root,
-        workspace,
         logger,
         colors,
-        template_context,
         executor,
-        run_log_context,
+        workspace,
     };
-    Ok(Some(ctx))
+
+    let run_log_context = create_resume_or_fresh_run_log_context(&state)?;
+    configure_logger_for_run(&mut state, &run_log_context);
+    write_run_metadata_best_effort(&state, &run_log_context);
+
+    let template_context =
+        TemplateContext::from_user_templates_dir(state.config.user_templates_dir().cloned());
+
+    if handle_early_exit_modes(&state, &template_context)? {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        state.build_pipeline_context(template_context, run_log_context),
+    ))
 }

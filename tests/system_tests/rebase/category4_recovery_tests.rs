@@ -296,17 +296,9 @@ fn rebase_checkpoint_corruption_recovery() {
             // Loading should attempt recovery from backup
             let result = load_rebase_checkpoint();
 
-            match result {
-                Ok(Some(loaded)) => {
-                    // Should have loaded from backup
-                    assert_eq!(loaded.upstream_branch, "main");
-                }
-                Ok(None) => {
-                    // No backup available - acceptable
-                }
-                Err(_) => {
-                    // Error is also acceptable if no backup exists
-                }
+            if let Ok(Some(loaded)) = result {
+                // Should have loaded from backup
+                assert_eq!(loaded.upstream_branch, "main");
             }
         });
     });

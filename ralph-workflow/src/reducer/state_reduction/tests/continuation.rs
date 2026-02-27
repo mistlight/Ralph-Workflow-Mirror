@@ -390,7 +390,7 @@ fn test_continuation_budget_with_missing_config_key() {
         2,  // max_same_agent_retries
     );
 
-    let state = PipelineState::initial_with_continuation(1, 0, continuation);
+    let state = PipelineState::initial_with_continuation(1, 0, &continuation);
 
     // Verify default is applied correctly
     assert_eq!(
@@ -451,7 +451,7 @@ fn test_orchestration_fires_budget_exhausted_at_cap() {
     use crate::reducer::state::DevelopmentStatus;
 
     let continuation = ContinuationState::with_limits(10, 3, 2);
-    let mut state = PipelineState::initial_with_continuation(1, 0, continuation);
+    let mut state = PipelineState::initial_with_continuation(1, 0, &continuation);
     state.phase = PipelinePhase::Development;
 
     // Simulate 3 continuation triggers (attempts 1, 2, 3)

@@ -504,10 +504,8 @@ fn test_orchestration_cloud_enabled_creates_pr_in_finalizing_when_configured() {
         state.cloud.git_remote.push_branch = "feature/run-123".to_string();
         state.cloud.git_remote.create_pr = true;
         state.cloud.git_remote.pr_base_branch = Some("main".to_string());
-        state.cloud.git_remote.pr_title_template =
-            Some("Ralph changes for {run_id}".to_string());
-        state.cloud.git_remote.pr_body_template =
-            Some("Summary: {prompt_summary}".to_string());
+        state.cloud.git_remote.pr_title_template = Some("Ralph changes for {run_id}".to_string());
+        state.cloud.git_remote.pr_body_template = Some("Summary: {prompt_summary}".to_string());
 
         state.phase = PipelinePhase::Finalizing;
         state.pr_created = false;

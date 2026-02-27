@@ -206,23 +206,21 @@ impl MainEffectHandler {
     /// This is the main entry point for diff checking. It runs `git diff` and
     /// delegates to `check_commit_diff_with_result`.
     pub(in crate::reducer::handler) fn check_commit_diff(
-        &self,
         ctx: &PhaseContext<'_>,
     ) -> Result<EffectResult> {
         let diff = crate::git_helpers::git_diff_in_repo(ctx.repo_root).map_err(anyhow::Error::from);
-        self.check_commit_diff_with_result(ctx, diff)
+        Self::check_commit_diff_with_result(ctx, diff)
     }
 
     /// Check commit diff with a pre-computed diff result.
     ///
     /// This variant allows testing with mocked diff results.
     pub(in crate::reducer::handler) fn check_commit_diff_with_result(
-        &self,
         ctx: &PhaseContext<'_>,
         diff: Result<String, anyhow::Error>,
     ) -> Result<EffectResult> {
         match diff {
-            Ok(diff) => self.check_commit_diff_with_content(ctx, &diff),
+            Ok(diff) => Self::check_commit_diff_with_content(ctx, &diff),
             Err(err) => {
                 // Don't fail - substitute DIFF variable with investigation instructions
                 ctx.logger.warn(&format!(
@@ -252,7 +250,7 @@ Example skip reasons:
                 );
 
                 // Use the fallback content as the diff - it will be substituted into {{DIFF}}
-                self.check_commit_diff_with_content(ctx, &fallback_diff)
+                Self::check_commit_diff_with_content(ctx, &fallback_diff)
             }
         }
     }
@@ -261,7 +259,6 @@ Example skip reasons:
     ///
     /// Writes diff to `.agent/tmp/commit_diff.txt` and emits `commit_diff_prepared`.
     pub(in crate::reducer::handler) fn check_commit_diff_with_content(
-        &self,
         ctx: &PhaseContext<'_>,
         diff: &str,
     ) -> Result<EffectResult> {

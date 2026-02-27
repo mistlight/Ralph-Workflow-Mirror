@@ -157,6 +157,7 @@ fn is_lock_stale() -> io::Result<bool> {
 
     let now = chrono::Utc::now();
     let elapsed = now.signed_duration_since(lock_time);
+    let timeout_seconds = i64::try_from(DEFAULT_LOCK_TIMEOUT_SECONDS).unwrap_or(i64::MAX);
 
-    Ok(elapsed.num_seconds() > DEFAULT_LOCK_TIMEOUT_SECONDS as i64)
+    Ok(elapsed.num_seconds() > timeout_seconds)
 }

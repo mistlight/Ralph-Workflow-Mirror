@@ -52,7 +52,7 @@ impl MainEffectHandler {
     pub(in crate::reducer::handler) fn validate_commit_xml(
         &self,
         ctx: &PhaseContext<'_>,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         let attempt = current_commit_attempt(&self.state.commit);
         let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
 
@@ -60,14 +60,14 @@ impl MainEffectHandler {
             let reason =
                 "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml";
             let event = PipelineEvent::commit_xml_validation_failed(reason.to_string(), attempt);
-            return Ok(EffectResult::with_ui(
+            return EffectResult::with_ui(
                 event,
                 vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::CommitMessage,
                     content: reason.to_string(),
                     context: None,
                 }],
-            ));
+            );
         };
 
         let (message, skip_reason, detail) = try_extract_xml_commit_with_trace(&xml_content);
@@ -79,14 +79,14 @@ impl MainEffectHandler {
             let _ = ctx
                 .workspace
                 .remove_if_exists(Path::new(COMMIT_XSD_ERROR_PATH));
-            return Ok(EffectResult::with_ui(
+            return EffectResult::with_ui(
                 PipelineEvent::commit_skipped(reason),
                 vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::CommitMessage,
                     content: xml_content,
                     context: None,
                 }],
-            ));
+            );
         }
 
         if message.is_none() {
@@ -104,14 +104,14 @@ impl MainEffectHandler {
             |msg| PipelineEvent::commit_xml_validated(msg, attempt),
         );
 
-        Ok(EffectResult::with_ui(
+        EffectResult::with_ui(
             event,
             vec![UIEvent::XmlOutput {
                 xml_type: XmlOutputType::CommitMessage,
                 content: xml_content,
                 context: None,
             }],
-        ))
+        )
     }
 
     /// Apply commit message outcome from validation.

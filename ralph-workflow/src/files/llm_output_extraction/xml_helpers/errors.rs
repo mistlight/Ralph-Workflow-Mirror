@@ -157,7 +157,7 @@ pub fn format_content_preview(content: &str) -> String {
 /// # Examples
 ///
 /// See the unit tests in this module for working examples.
-pub fn malformed_xml_error(error: quick_xml::Error) -> XsdValidationError {
+pub fn malformed_xml_error(error: &quick_xml::Error) -> XsdValidationError {
     let error_str = error.to_string();
 
     // Check if this is likely an illegal character issue (even though we pre-validate)
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn test_malformed_xml_error_suggests_cdata_for_code() {
         let error = quick_xml::Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag);
-        let result = malformed_xml_error(error);
+        let result = malformed_xml_error(&error);
         // Should return MalformedXml error type
         assert_eq!(result.error_type, XsdErrorType::MalformedXml);
     }

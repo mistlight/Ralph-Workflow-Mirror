@@ -11,13 +11,11 @@
 //! - Emit events describing outcomes
 //! - No retry logic (reducer decides)
 
+use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{CommitEvent, PipelineEvent};
 use crate::reducer::ui_event::UIEvent;
-use anyhow::Result;
-
-use super::MainEffectHandler;
 
 impl MainEffectHandler {
     /// Configure git authentication for remote operations.
@@ -27,10 +25,9 @@ impl MainEffectHandler {
     /// - Token: Set up git credential helper
     /// - Credential helper: Configure external helper
     pub(super) fn handle_configure_git_auth(
-        &self,
         ctx: &PhaseContext<'_>,
-        auth_method: String,
-    ) -> Result<EffectResult> {
+        auth_method: &str,
+    ) -> EffectResult {
         ctx.logger
             .info(&format!("Configuring git authentication: {auth_method}"));
 
@@ -83,22 +80,19 @@ impl MainEffectHandler {
             }
         }
 
-        Ok(EffectResult::event(PipelineEvent::Commit(
-            CommitEvent::GitAuthConfigured,
-        )))
+        EffectResult::event(PipelineEvent::Commit(CommitEvent::GitAuthConfigured))
     }
 
     /// Push commits to remote repository.
     ///
     /// Executes git push command and reports success/failure.
     pub(super) fn handle_push_to_remote(
-        &self,
         ctx: &PhaseContext<'_>,
         remote: String,
         branch: String,
         force: bool,
         commit_sha: String,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         ctx.logger.info(&format!(
             "Pushing commit {} to {}/{}{}",
             &commit_sha[..7.min(commit_sha.len())],
@@ -147,14 +141,14 @@ impl MainEffectHandler {
                 error: error.clone(),
             };
 
-            return Ok(EffectResult::with_ui(
+            return EffectResult::with_ui(
                 PipelineEvent::Commit(CommitEvent::PushFailed {
                     remote,
                     branch,
                     error,
                 }),
                 vec![ui],
-            ));
+            );
         };
 
         argv.push("push".to_string());
@@ -182,14 +176,14 @@ impl MainEffectHandler {
                     commit_sha: commit_sha.clone(),
                 };
 
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::Commit(CommitEvent::PushCompleted {
                         remote,
                         branch,
                         commit_sha,
                     }),
                     vec![ui],
-                ))
+                )
             }
             Ok(output) => {
                 let error = crate::cloud::redaction::redact_secrets(&output.stderr);
@@ -201,14 +195,14 @@ impl MainEffectHandler {
                     error: error.clone(),
                 };
 
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::Commit(CommitEvent::PushFailed {
                         remote,
                         branch,
                         error,
                     }),
                     vec![ui],
-                ))
+                )
             }
             Err(e) => {
                 let error = crate::cloud::redaction::redact_secrets(&e.to_string());
@@ -221,14 +215,14 @@ impl MainEffectHandler {
                     error: error.clone(),
                 };
 
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::Commit(CommitEvent::PushFailed {
                         remote,
                         branch,
                         error,
                     }),
                     vec![ui],
-                ))
+                )
             }
         }
     }
@@ -237,13 +231,12 @@ impl MainEffectHandler {
     ///
     /// Uses gh CLI for GitHub or glab CLI for GitLab.
     pub(super) fn handle_create_pull_request(
-        &self,
         ctx: &PhaseContext<'_>,
-        base_branch: String,
-        head_branch: String,
-        title: String,
-        body: String,
-    ) -> Result<EffectResult> {
+        base_branch: &str,
+        head_branch: &str,
+        title: &str,
+        body: &str,
+    ) -> EffectResult {
         ctx.logger
             .info(&format!("Creating PR: {head_branch} -> {base_branch}"));
 
@@ -254,13 +247,13 @@ impl MainEffectHandler {
                 "pr",
                 "create",
                 "--base",
-                &base_branch,
+                base_branch,
                 "--head",
-                &head_branch,
+                head_branch,
                 "--title",
-                &title,
+                title,
                 "--body",
-                &body,
+                body,
             ],
             &[],
             Some(ctx.repo_root),
@@ -283,10 +276,10 @@ impl MainEffectHandler {
                     number,
                 };
 
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::Commit(CommitEvent::PullRequestCreated { url, number }),
                     vec![ui],
-                ))
+                )
             }
             Ok(output) => {
                 let error = crate::cloud::redaction::redact_secrets(&output.stderr);
@@ -296,10 +289,10 @@ impl MainEffectHandler {
                     error: error.clone(),
                 };
 
-                Ok(EffectResult::with_ui(
+                EffectResult::with_ui(
                     PipelineEvent::Commit(CommitEvent::PullRequestFailed { error }),
                     vec![ui],
-                ))
+                )
             }
             Err(e) => {
                 // gh CLI not available, try glab (GitLab)
@@ -312,13 +305,13 @@ impl MainEffectHandler {
                         "mr",
                         "create",
                         "--target-branch",
-                        &base_branch,
+                        base_branch,
                         "--source-branch",
-                        &head_branch,
+                        head_branch,
                         "--title",
-                        &title,
+                        title,
                         "--description",
-                        &body,
+                        body,
                     ],
                     &[],
                     Some(ctx.repo_root),
@@ -340,10 +333,10 @@ impl MainEffectHandler {
                             number,
                         };
 
-                        Ok(EffectResult::with_ui(
+                        EffectResult::with_ui(
                             PipelineEvent::Commit(CommitEvent::PullRequestCreated { url, number }),
                             vec![ui],
-                        ))
+                        )
                     }
                     Ok(output) => {
                         let error = crate::cloud::redaction::redact_secrets(&output.stderr);
@@ -352,10 +345,10 @@ impl MainEffectHandler {
                             error: error.clone(),
                         };
 
-                        Ok(EffectResult::with_ui(
+                        EffectResult::with_ui(
                             PipelineEvent::Commit(CommitEvent::PullRequestFailed { error }),
                             vec![ui],
-                        ))
+                        )
                     }
                     Err(e2) => {
                         let e = crate::cloud::redaction::redact_secrets(&e.to_string());
@@ -370,10 +363,10 @@ impl MainEffectHandler {
                             error: error.clone(),
                         };
 
-                        Ok(EffectResult::with_ui(
+                        EffectResult::with_ui(
                             PipelineEvent::Commit(CommitEvent::PullRequestFailed { error }),
                             vec![ui],
-                        ))
+                        )
                     }
                 }
             }

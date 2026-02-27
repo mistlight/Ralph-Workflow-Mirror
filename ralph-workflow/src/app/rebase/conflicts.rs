@@ -11,7 +11,7 @@ use anyhow::Context;
 /// execution history for hardened resume functionality.
 pub fn try_resolve_conflicts(
     conflicted_files: &[String],
-    ctx: ConflictResolutionContext<'_>,
+    ctx: &ConflictResolutionContext<'_>,
     phase_ctx: &mut PhaseContext<'_>,
     phase: &str,
     executor: &dyn ProcessExecutor,
@@ -43,10 +43,10 @@ pub fn try_resolve_conflicts(
         phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
     }
 
-    match run_ai_conflict_resolution(&resolution_prompt, &ctx) {
+    match run_ai_conflict_resolution(&resolution_prompt, ctx) {
         Ok(ConflictResolutionResult::FileEditsOnly) => handle_file_edits_resolution(ctx.logger),
         Ok(ConflictResolutionResult::Failed) => Ok(handle_failed_resolution(ctx.logger, executor)),
-        Err(e) => Ok(handle_error_resolution(ctx.logger, executor, e)),
+        Err(e) => Ok(handle_error_resolution(ctx.logger, executor, &e)),
     }
 }
 
@@ -85,7 +85,7 @@ fn handle_failed_resolution(logger: &Logger, executor: &dyn ProcessExecutor) -> 
 fn handle_error_resolution(
     logger: &Logger,
     executor: &dyn ProcessExecutor,
-    e: anyhow::Error,
+    e: &anyhow::Error,
 ) -> bool {
     logger.warn(&format!("AI conflict resolution failed: {e}"));
     logger.info("Attempting to continue rebase anyway...");
@@ -233,7 +233,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
+    executor: &std::sync::Arc<dyn ProcessExecutor>,
     repo_root: &std::path::Path,
 ) -> anyhow::Result<bool> {
     use crate::agents::AgentRegistry;
@@ -251,7 +251,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
     let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
 
-    let executor_arc = std::sync::Arc::clone(&executor);
+    let executor_arc = std::sync::Arc::clone(executor);
 
     // Create run log context for per-run logging
     let run_log_context = RunLogContext::new(&workspace)
@@ -270,7 +270,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         run_context: crate::checkpoint::RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: std::collections::HashMap::new(),
-        executor: &*executor,
+        executor: &**executor,
         executor_arc: std::sync::Arc::clone(&executor_arc),
         repo_root,
         workspace: &workspace,
@@ -293,10 +293,10 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 
     try_resolve_conflicts(
         conflicted_files,
-        ctx,
+        &ctx,
         &mut phase_ctx,
         "RebaseOnly",
-        &*executor,
+        &**executor,
     )
 }
 

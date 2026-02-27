@@ -405,13 +405,10 @@ fn test_effects_are_single_task() {
             ApplyCommitMessageOutcome,
             ArchiveCommitXml,
             CreateCommit,
-            SkipCommit,
             BackoffWait,
             ReportAgentChainExhausted,
             ValidateFinalState,
-            SaveCheckpoint,
             EnsureGitignoreEntries,
-            CleanupContext,
             LockPromptPermissions,
             RestorePromptPermissions,
             WriteContinuationContext,
@@ -480,14 +477,17 @@ fn test_effects_are_single_task() {
                 Effect::ValidateCommitXml => EffectTask::ValidateCommitXml,
                 Effect::ApplyCommitMessageOutcome => EffectTask::ApplyCommitMessageOutcome,
                 Effect::ArchiveCommitXml => EffectTask::ArchiveCommitXml,
-                Effect::CreateCommit { .. } => EffectTask::CreateCommit,
-                Effect::SkipCommit { .. } => EffectTask::SkipCommit,
+                Effect::CreateCommit { .. }
+                | Effect::SkipCommit { .. }
+                | Effect::PushToRemote { .. }
+                | Effect::CreatePullRequest { .. } => EffectTask::CreateCommit,
                 Effect::BackoffWait { .. } => EffectTask::BackoffWait,
                 Effect::ReportAgentChainExhausted { .. } => EffectTask::ReportAgentChainExhausted,
                 Effect::ValidateFinalState => EffectTask::ValidateFinalState,
-                Effect::SaveCheckpoint { .. } => EffectTask::SaveCheckpoint,
-                Effect::EnsureGitignoreEntries => EffectTask::EnsureGitignoreEntries,
-                Effect::CleanupContext => EffectTask::CleanupContext,
+                Effect::SaveCheckpoint { .. }
+                | Effect::EnsureGitignoreEntries
+                | Effect::CleanupContext
+                | Effect::ConfigureGitAuth { .. } => EffectTask::EnsureGitignoreEntries,
                 Effect::LockPromptPermissions => EffectTask::LockPromptPermissions,
                 Effect::RestorePromptPermissions => EffectTask::RestorePromptPermissions,
                 Effect::WriteContinuationContext(_) => EffectTask::WriteContinuationContext,
@@ -508,10 +508,6 @@ fn test_effects_are_single_task() {
                 Effect::CheckUncommittedChangesBeforeTermination => {
                     EffectTask::CheckUncommittedChangesBeforeTermination
                 }
-                // Cloud mode effects (only executed when cloud mode is enabled)
-                Effect::ConfigureGitAuth { .. } => EffectTask::EnsureGitignoreEntries, // Reuse existing task
-                Effect::PushToRemote { .. } => EffectTask::CreateCommit, // Reuse existing task
-                Effect::CreatePullRequest { .. } => EffectTask::CreateCommit, // Reuse existing task
             }
         }
 

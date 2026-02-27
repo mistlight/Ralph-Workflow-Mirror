@@ -6,16 +6,14 @@ use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{CheckpointTrigger, PipelineEvent, PipelinePhase};
 use crate::reducer::state::PipelineState;
-use anyhow::Result;
-
 impl MainEffectHandler {
     pub(super) fn save_checkpoint(
         &self,
         ctx: &PhaseContext<'_>,
         trigger: CheckpointTrigger,
-    ) -> Result<EffectResult> {
+    ) -> EffectResult {
         if ctx.config.features.checkpoint_enabled {
-            let _ = save_checkpoint_from_state(&self.state, ctx);
+            save_checkpoint_from_state(&self.state, ctx);
         }
 
         let mut result = EffectResult::event(PipelineEvent::checkpoint_saved(trigger));
@@ -45,11 +43,11 @@ impl MainEffectHandler {
             }
         }
 
-        Ok(result)
+        result
     }
 }
 
-fn save_checkpoint_from_state(state: &PipelineState, ctx: &PhaseContext<'_>) -> anyhow::Result<()> {
+fn save_checkpoint_from_state(state: &PipelineState, ctx: &PhaseContext<'_>) {
     // When the user pressed Ctrl+C, we must write a checkpoint for resume
     // support, but we skip large optional fields (execution_history,
     // prompt_history, last_substitution_log, env_snapshot) to avoid slow JSON
@@ -114,8 +112,6 @@ fn save_checkpoint_from_state(state: &PipelineState, ctx: &PhaseContext<'_>) -> 
 
         let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
     }
-
-    Ok(())
 }
 
 const fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> CheckpointPhase {

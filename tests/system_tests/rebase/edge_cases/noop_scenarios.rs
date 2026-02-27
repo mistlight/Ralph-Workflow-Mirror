@@ -49,19 +49,13 @@ fn rebase_on_main_branch_returns_noop() {
                 // The rebase should return NoOp since we're on main/master
                 let result = rebase_onto(&default_branch, executor.as_ref());
 
-                match result {
-                    Ok(RebaseResult::NoOp { reason }) => {
-                        assert!(
-                            reason.contains("Already on")
-                                || reason.contains("main")
-                                || reason.contains("master")
-                                || reason.contains("up-to-date")
-                        );
-                    }
-                    Ok(RebaseResult::Success) => {
-                        // Git may succeed since we're rebasing onto ourselves
-                    }
-                    _ => {}
+                if let Ok(RebaseResult::NoOp { reason }) = result {
+                    assert!(
+                        reason.contains("Already on")
+                            || reason.contains("main")
+                            || reason.contains("master")
+                            || reason.contains("up-to-date")
+                    );
                 }
             }
         });
@@ -94,19 +88,13 @@ fn rebase_already_uptodate_returns_noop() {
             // So rebasing should be a NoOp or Success (no commits to rebase)
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::NoOp { reason }) => {
-                    assert!(
-                        reason.contains("up-to-date")
-                            || reason.contains("NoOp")
-                            || reason.contains("already")
-                            || reason.contains("Current branch")
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may succeed immediately since there's nothing to do
-                }
-                _ => {}
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                assert!(
+                    reason.contains("up-to-date")
+                        || reason.contains("NoOp")
+                        || reason.contains("already")
+                        || reason.contains("Current branch")
+                );
             }
         });
     });
@@ -220,19 +208,13 @@ fn rebase_with_no_changes_returns_noop() {
             // So rebasing should be a NoOp
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::NoOp { reason }) => {
-                    assert!(
-                        reason.contains("up-to-date")
-                            || reason.contains("already")
-                            || reason.contains("nothing")
-                            || reason.contains("Current branch")
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may succeed immediately
-                }
-                _ => {}
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                assert!(
+                    reason.contains("up-to-date")
+                        || reason.contains("already")
+                        || reason.contains("nothing")
+                        || reason.contains("Current branch")
+                );
             }
         });
     });
@@ -261,19 +243,13 @@ fn rebase_skipped_when_branch_is_main() {
                 // The rebase logic should detect we're on main/master and skip the rebase entirely
                 let result = rebase_onto(&default_branch, executor.as_ref());
 
-                match result {
-                    Ok(RebaseResult::NoOp { reason }) => {
-                        // Should skip with clear reason
-                        assert!(
-                            reason.contains("Already on")
-                                || reason.contains(&default_branch)
-                                || reason.contains("up-to-date")
-                        );
-                    }
-                    Ok(RebaseResult::Success) => {
-                        // May also succeed (self-rebase)
-                    }
-                    _ => {}
+                if let Ok(RebaseResult::NoOp { reason }) = result {
+                    // Should skip with clear reason
+                    assert!(
+                        reason.contains("Already on")
+                            || reason.contains(&default_branch)
+                            || reason.contains("up-to-date")
+                    );
                 }
             } else {
                 // If the default branch has a different name (not main/master),
@@ -368,19 +344,10 @@ fn rebase_handles_detached_head() {
             // Try to rebase - should either work or fail gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            // Should handle gracefully - either succeed or fail with clear error
-            match result {
-                Ok(RebaseResult::NoOp { .. } | RebaseResult::Success) => {
-                    // Acceptable outcomes
-                }
-                Ok(RebaseResult::Failed(err)) => {
-                    // Should have clear error message
-                    assert!(!err.description().is_empty());
-                }
-                Err(_) => {
-                    // IO error is also acceptable
-                }
-                _ => {}
+            // Should handle gracefully - either succeed or fail with clear error.
+            if let Ok(RebaseResult::Failed(err)) = result {
+                // Should have clear error message
+                assert!(!err.description().is_empty());
             }
         });
     });
@@ -487,38 +454,29 @@ fn rebase_with_unrelated_branches_returns_noop() {
             // Let's test rebasing from the current branch to an unrelated branch
             let result = rebase_onto("other", executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::NoOp { reason }) => {
-                    // Should skip with clear reason about unrelated branches
-                    // Note: Git may return various messages for unrelated branches
-                    assert!(
-                        reason.contains("unrelated")
-                            || reason.contains("common ancestor")
-                            || reason.contains("No common")
-                            || reason.contains("up-to-date") // Git may succeed immediately
-                            || reason.contains("Already") // Git may detect branch state
-                            || reason.contains("different"), // Different history
-                        "Unexpected reason: {reason}"
-                    );
-                }
-                Ok(RebaseResult::Failed(err)) => {
-                    // May also fail with clear error about unrelated histories
-                    assert!(
-                        err.description().contains("unrelated")
-                            || err.description().contains("common ancestor")
-                            || err.description().contains("histories")
-                            || err.description().contains("different")
-                            || err.description().contains("Invalid"), // Branch may not exist
-                        "Unexpected error: {}",
-                        err.description()
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may succeed in some cases
-                }
-                _ => {
-                    // Other outcomes are acceptable depending on git version
-                }
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                // Should skip with clear reason about unrelated branches
+                // Note: Git may return various messages for unrelated branches
+                assert!(
+                    reason.contains("unrelated")
+                        || reason.contains("common ancestor")
+                        || reason.contains("No common")
+                        || reason.contains("up-to-date") // Git may succeed immediately
+                        || reason.contains("Already") // Git may detect branch state
+                        || reason.contains("different"), // Different history
+                    "Unexpected reason: {reason}"
+                );
+            } else if let Ok(RebaseResult::Failed(err)) = result {
+                // May also fail with clear error about unrelated histories
+                assert!(
+                    err.description().contains("unrelated")
+                        || err.description().contains("common ancestor")
+                        || err.description().contains("histories")
+                        || err.description().contains("different")
+                        || err.description().contains("Invalid"), // Branch may not exist
+                    "Unexpected error: {}",
+                    err.description()
+                );
             }
         });
     });
@@ -554,23 +512,17 @@ fn rebase_on_detached_head_returns_noop_with_clear_reason() {
             // Try to rebase - should return NoOp with clear reason
             let result = rebase_onto(&default_branch, executor.as_ref());
 
-            match result {
-                Ok(RebaseResult::NoOp { reason }) => {
-                    // The reason should mention detached HEAD
-                    assert!(
-                        reason.contains("detached") || reason.contains("HEAD"),
-                        "Expected NoOp reason to mention 'detached' or 'HEAD', got: {reason}"
-                    );
-                }
-                Ok(RebaseResult::Success) => {
-                    // Git may succeed in some configurations
-                }
-                Ok(other) => {
-                    panic!("Expected NoOp or Success, got: {other:?}");
-                }
-                Err(e) => {
-                    panic!("Unexpected error: {e}");
-                }
+            if let Ok(RebaseResult::NoOp { reason }) = result {
+                // The reason should mention detached HEAD
+                assert!(
+                    reason.contains("detached") || reason.contains("HEAD"),
+                    "Expected NoOp reason to mention 'detached' or 'HEAD', got: {reason}"
+                );
+            } else {
+                assert!(
+                    matches!(result, Ok(RebaseResult::Success)),
+                    "Expected NoOp or Success, got: {result:?}"
+                );
             }
         });
     });

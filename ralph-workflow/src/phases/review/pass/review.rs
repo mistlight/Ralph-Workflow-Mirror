@@ -188,14 +188,7 @@ pub fn run_review_pass(
     let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
     if result.exit_code != 0 {
         let auth_failure = stderr_contains_auth_error(&result.stderr);
-        return Ok(ReviewPassResult {
-            early_exit: false,
-            auth_failure,
-            agent_failed: true,
-            output_valid: false,
-            issues_found: false,
-            xml_content: None,
-        });
+        return Ok(ReviewPassResult::agent_failed(auth_failure));
     }
 
     let parse_result = extract_and_validate_review_output_xml(ctx, &log_prefix, issues_path)?;
@@ -224,14 +217,7 @@ pub fn run_review_pass(
             ctx.execution_history
                 .add_step_bounded(step, ctx.config.execution_history_limit);
 
-            Ok(ReviewPassResult {
-                early_exit: false,
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: true,
-                issues_found: true,
-                xml_content: Some(xml_content),
-            })
+            Ok(ReviewPassResult::issues_found(xml_content))
         }
         ParseResult::NoIssuesExplicit { xml_content } => {
             ctx.logger
@@ -252,27 +238,13 @@ pub fn run_review_pass(
             ctx.execution_history
                 .add_step_bounded(step, ctx.config.execution_history_limit);
 
-            Ok(ReviewPassResult {
-                early_exit: true,
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: true,
-                issues_found: false,
-                xml_content: Some(xml_content),
-            })
+            Ok(ReviewPassResult::no_issues(xml_content))
         }
         ParseResult::ParseFailed(reason) => {
             ctx.logger
                 .warn(&format!("Review output validation failed: {reason}"));
 
-            Ok(ReviewPassResult {
-                early_exit: false,
-                auth_failure: false,
-                agent_failed: false,
-                output_valid: false,
-                issues_found: false,
-                xml_content: None,
-            })
+            Ok(ReviewPassResult::output_invalid())
         }
     }
 }
