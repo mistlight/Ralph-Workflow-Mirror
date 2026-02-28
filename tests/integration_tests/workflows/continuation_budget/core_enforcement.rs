@@ -6,7 +6,9 @@
 //! - Budget exhaustion transitions correctly
 //! - Metrics track continuation attempts accurately
 
+use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent, ReviewEvent};
+use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{
     ContinuationState, DevelopmentStatus, FixStatus, PipelineState,
 };
@@ -55,11 +57,13 @@ fn test_dev_continuation_budget_enforced() {
             "Defensive check should prevent increment past attempt 2"
         );
 
-        // continuations_exhausted() returns false (2 < 3), but the system won't schedule another
-        // continuation because the defensive check cleared continue_pending flag.
-        // In normal flow, OutcomeApplied detects exhaustion via (attempt + 1 >= max) check.
+        // Continuation scheduling is observable through effects.
         assert!(!state.continuation.continuations_exhausted());
-        assert!(!state.continuation.continue_pending);
+        let effect = determine_next_effect(&state);
+        assert!(
+            !matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "After defensive boundary check, continuation should not be scheduled, got {effect:?}"
+        );
     });
 }
 
@@ -112,7 +116,11 @@ fn test_continuation_state_resets_across_iterations() {
         // New iteration should reset continuation state
         state = reduce(state, PipelineEvent::development_iteration_started(1));
         assert_eq!(state.continuation.continuation_attempt, 0);
-        assert!(!state.continuation.continue_pending);
+        let effect = determine_next_effect(&state);
+        assert!(
+            !matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "Continuation prompt should not be pending after iteration reset, got {effect:?}"
+        );
     });
 }
 
@@ -156,7 +164,14 @@ fn test_continuation_budget_exhaustion_completes_iteration_and_resets_continuati
         // Continuation state should be reset for the next iteration.
         assert_eq!(state.continuation.continuation_attempt, 0);
         assert!(!state.continuation.is_continuation());
-        assert!(state.continuation.context_cleanup_pending);
+
+        // Cleanup is observable once prompt permissions are locked in this phase.
+        state = reduce(state, PipelineEvent::prompt_permissions_locked(None));
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::CleanupContinuationContext),
+            "Budget exhaustion should schedule continuation cleanup, got {effect:?}"
+        );
     });
 }
 
@@ -165,8 +180,10 @@ fn test_fix_continuation_budget_exhaustion_proceeds_to_commit() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 1); // max_fix_continue_count = 1
         let mut state = PipelineState::initial_with_continuation(0, 3, &continuation);
-        state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
-        state.reviewer_pass = 1;
+
+        // Drive into review pass 1 through reducer events.
+        state = reduce(state, PipelineEvent::review_phase_started());
+        state = reduce(state, PipelineEvent::review_pass_started(1));
 
         // Trigger 1 fix continuation (reach budget)
         state = reduce(
@@ -305,17 +322,16 @@ fn test_dev_continuation_metrics_match_state() {
     });
 }
 
-/// Test that `fix_continuation_attempt` metric stays in sync with `ContinuationState`.
+/// Test that `fix_continuation_attempt` metric tracks fix continuation events.
 #[test]
 fn test_fix_continuation_metrics_match_state() {
     with_default_timeout(|| {
         let continuation = ContinuationState::with_limits(99, 3, 2);
         let mut state = PipelineState::initial_with_continuation(0, 1, &continuation);
-        state.phase = ralph_workflow::reducer::event::PipelinePhase::Review;
-        state.reviewer_pass = 0;
+        state = reduce(state, PipelineEvent::review_phase_started());
+        state = reduce(state, PipelineEvent::review_pass_started(0));
 
         // Initial: no fix continuations yet
-        assert_eq!(state.continuation.fix_continuation_attempt, 0);
         assert_eq!(state.metrics.fix_continuation_attempt, 0);
 
         // After first fix continuation
@@ -384,13 +400,19 @@ fn test_continuation_exhaustion_matches_metrics() {
             }),
         );
 
-        // AFTER FIX: Counter stays at 2, exhaustion is detected by OutcomeApplied's (attempt + 1 >= max) check
-        // continuations_exhausted() returns false because counter didn't reach max_continue_count
+        // AFTER FIX: Counter stays at 2, exhaustion is detected by OutcomeApplied's (attempt + 1 >= max) check.
+        // continuations_exhausted() returns false because counter didn't reach max_continue_count.
         assert_eq!(state.continuation.continuation_attempt, 2);
         assert!(!state.continuation.continuations_exhausted());
-        // But the defensive check cleared continue_pending to prevent further scheduling
-        assert!(!state.continuation.continue_pending);
-        // Metrics should reflect the final attempt count
+
+        // Behavioral assertion: no continuation effect should be scheduled anymore.
+        let effect = determine_next_effect(&state);
+        assert!(
+            !matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "Continuation should not be scheduled after defensive boundary stop, got {effect:?}"
+        );
+
+        // Metrics should reflect the final attempt count.
         assert_eq!(
             state.metrics.dev_continuation_attempt, 2,
             "Metrics should reflect the 2 continuation attempts that were accepted"

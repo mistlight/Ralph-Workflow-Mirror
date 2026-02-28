@@ -477,10 +477,10 @@ fn test_exhausted_chain_triggers_checkpoint() {
             ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
-        // Exhaust all 3 retry cycles through auth failures (event-driven setup).
-        // Each failure on the single agent wraps around and increments retry_cycle.
-        // Between cycles, RetryCycleStarted clears the backoff pending state.
-        for cycle in 0..3 {
+        // Exhaust all retry cycles through auth failures (event-driven setup).
+        // For each non-terminal cycle, consume BackoffWait and emit RetryCycleStarted
+        // using the cycle value carried by the effect (not reducer internals).
+        loop {
             state = reduce(
                 state,
                 PipelineEvent::agent_invocation_failed(
@@ -491,21 +491,25 @@ fn test_exhausted_chain_triggers_checkpoint() {
                     false,
                 ),
             );
-            // Clear backoff for intermediate cycles so the next failure can proceed
-            if cycle < 2 {
-                let cycle_num = state.agent_chain.retry_cycle;
-                state = reduce(
-                    state,
-                    PipelineEvent::agent_retry_cycle_started(AgentRole::Developer, cycle_num),
-                );
+
+            let effect = determine_next_effect(&state);
+            match effect {
+                Effect::BackoffWait {
+                    role: AgentRole::Developer,
+                    cycle,
+                    ..
+                } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::agent_retry_cycle_started(AgentRole::Developer, cycle),
+                    );
+                }
+                Effect::ReportAgentChainExhausted { .. } => break,
+                other => panic!(
+                    "Expected BackoffWait or ReportAgentChainExhausted while exhausting chain, got {other:?}"
+                ),
             }
         }
-
-        // Verify precondition: chain is now exhausted
-        assert!(
-            state.agent_chain.is_exhausted(),
-            "Agent chain should be exhausted after 3 failure cycles"
-        );
 
         let effect = determine_next_effect(&state);
         assert!(

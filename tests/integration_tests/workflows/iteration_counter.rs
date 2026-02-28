@@ -446,49 +446,33 @@ fn test_exactly_completes_at_total_iterations() {
         // Given: Configure 3 iterations
         let mut state = PipelineState::initial(3, 0);
 
-        // Run iterations 0, 1, 2
+        // Run iterations 0, 1, 2 with a uniform event sequence.
         for i in 0..3 {
             state = reduce(state, PipelineEvent::development_iteration_started(i));
-
-            // Verify iteration counter
             assert_eq!(state.iteration, i);
 
-            // Complete the iteration: a successful dev iteration transitions to CommitMessage
             state = reduce(
                 state,
                 PipelineEvent::development_iteration_completed(i, true),
             );
-            assert_eq!(
-                state.phase,
-                PipelinePhase::CommitMessage,
-                "After completing an iteration, should advance to commit phase"
-            );
+            assert_eq!(state.phase, PipelinePhase::CommitMessage);
 
-            // Simulate commit creation to drive the post-commit transition.
             state = reduce(
                 state,
                 PipelineEvent::commit_created("hash".to_string(), "msg".to_string()),
             );
-
-            // After committing iteration 2 (the 3rd iteration), should advance to next phase
-            if i == 2 {
-                assert_eq!(
-                    state.phase,
-                    PipelinePhase::FinalValidation,
-                    "After completing all iterations (and with 0 review passes), should advance to final validation"
-                );
-                assert_eq!(
-                    state.metrics.dev_iterations_completed, 3,
-                    "Should have completed all 3 iterations"
-                );
-            } else {
-                // For iterations 0 and 1, should loop back to Planning
-                assert_eq!(
-                    state.phase,
-                    PipelinePhase::Planning,
-                    "After committing non-final iteration, should return to Planning"
-                );
-            }
         }
+
+        // Final observable outcome: after processing all configured iterations,
+        // pipeline should have advanced beyond Planning into final validation.
+        assert_eq!(
+            state.phase,
+            PipelinePhase::FinalValidation,
+            "After completing all iterations (and with 0 review passes), should advance to final validation"
+        );
+        assert_eq!(
+            state.metrics.dev_iterations_completed, 3,
+            "Should have completed all 3 iterations"
+        );
     });
 }

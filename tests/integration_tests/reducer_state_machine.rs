@@ -323,10 +323,28 @@ fn test_agent_chain_exhausted_triggers_retry_cycle() {
             PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
         );
 
-        // Should start retry cycle
-        assert_eq!(new_state.agent_chain.current_agent_index, 0);
-        assert_eq!(new_state.agent_chain.current_model_index, 0);
-        assert_eq!(new_state.agent_chain.retry_cycle, 1);
+        // Should reset selection to the first configured agent/model and enter retry backoff.
+        assert_eq!(
+            new_state.agent_chain.current_agent().map(String::as_str),
+            Some("agent1")
+        );
+        assert_eq!(
+            new_state.agent_chain.current_model().map(String::as_str),
+            Some("model1")
+        );
+
+        // Behavioral check: after chain exhaustion, orchestration should schedule retry backoff.
+        let effect = determine_next_effect(&with_locked_prompt_permissions(new_state));
+        assert!(
+            matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::BackoffWait {
+                    role: AgentRole::Developer,
+                    ..
+                }
+            ),
+            "Expected backoff wait effect after chain exhaustion, got {effect:?}"
+        );
     });
 }
 
@@ -337,7 +355,7 @@ fn test_sigsegv_causes_agent_fallback() {
             continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain()
         };
-        let initial_agent_index = state.agent_chain.current_agent_index;
+        let initial_agent = state.agent_chain.current_agent().cloned();
 
         // Simulate SIGSEGV (exit code 139, internal error):
         // retry same agent first, then fall back after budget exhaustion.
@@ -354,8 +372,8 @@ fn test_sigsegv_causes_agent_fallback() {
 
         // First internal error should retry same agent (not fall back yet)
         assert_eq!(
-            after_first.agent_chain.current_agent_index,
-            initial_agent_index
+            after_first.agent_chain.current_agent(),
+            initial_agent.as_ref()
         );
         // Verify behavioral outcome: orchestration should produce a same-agent retry effect
         let effect = determine_next_effect(&with_locked_prompt_permissions(after_first.clone()));
@@ -376,7 +394,10 @@ fn test_sigsegv_causes_agent_fallback() {
         );
 
         // After exhausting same-agent retry budget, should fall back to next agent
-        assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
+        assert_ne!(
+            after_second.agent_chain.current_agent(),
+            initial_agent.as_ref()
+        );
     });
 }
 
@@ -395,7 +416,7 @@ fn test_pipeline_continues_after_agent_failure() {
             ),
             ..create_initial_state()
         };
-        let initial_agent = state.agent_chain.current_agent_index;
+        let initial_agent = state.agent_chain.current_agent().cloned();
 
         // Agent fails with retriable error
         let new_state = reduce(
@@ -411,7 +432,10 @@ fn test_pipeline_continues_after_agent_failure() {
 
         // Pipeline should continue with same agent, different model
         assert_eq!(new_state.phase, PipelinePhase::Development);
-        assert_eq!(new_state.agent_chain.current_agent_index, initial_agent);
+        assert_eq!(
+            new_state.agent_chain.current_agent(),
+            initial_agent.as_ref()
+        );
     });
 }
 
@@ -450,7 +474,7 @@ fn test_network_error_triggers_model_fallback() {
 fn test_filesystem_error_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain();
-        let initial_agent_index = state.agent_chain.current_agent_index;
+        let initial_agent = state.agent_chain.current_agent().cloned();
 
         // Simulate filesystem error (non-retriable) - should retry same agent first (except auth/429)
         let after_first_failure = reduce(
@@ -465,7 +489,8 @@ fn test_filesystem_error_triggers_agent_fallback() {
         );
 
         assert_eq!(
-            after_first_failure.agent_chain.current_agent_index, initial_agent_index,
+            after_first_failure.agent_chain.current_agent(),
+            initial_agent.as_ref(),
             "Non-auth, non-rate-limit failures should retry same agent first"
         );
         // Verify behavioral outcome: orchestration should produce a same-agent retry effect
@@ -488,7 +513,10 @@ fn test_filesystem_error_triggers_agent_fallback() {
         );
 
         // After exhausting retry budget, should switch to next agent
-        assert!(after_second_failure.agent_chain.current_agent_index > initial_agent_index);
+        assert_ne!(
+            after_second_failure.agent_chain.current_agent(),
+            initial_agent.as_ref()
+        );
     });
 }
 
@@ -540,7 +568,7 @@ fn test_rate_limit_error_triggers_agent_fallback() {
 fn test_authentication_error_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain();
-        let initial_agent_index = state.agent_chain.current_agent_index;
+        let initial_agent = state.agent_chain.current_agent().cloned();
 
         // Simulate auth error (non-retriable) - should trigger agent fallback
         let new_state = reduce(
@@ -555,7 +583,10 @@ fn test_authentication_error_triggers_agent_fallback() {
         );
 
         // Should switch to next agent
-        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+        assert_ne!(
+            new_state.agent_chain.current_agent(),
+            initial_agent.as_ref()
+        );
     });
 }
 
@@ -574,7 +605,7 @@ fn test_agent_fallback_after_internal_error_retry_exhaustion() {
             continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain()
         };
-        let initial_agent_index = state.agent_chain.current_agent_index;
+        let initial_agent = state.agent_chain.current_agent().cloned();
 
         // Simulate internal error: retry same agent first, then fall back after budget exhaustion.
         let after_first = reduce(
@@ -590,7 +621,8 @@ fn test_agent_fallback_after_internal_error_retry_exhaustion() {
 
         // Observable behavior: First internal error should retry same agent (not fall back yet)
         assert_eq!(
-            after_first.agent_chain.current_agent_index, initial_agent_index,
+            after_first.agent_chain.current_agent(),
+            initial_agent.as_ref(),
             "Should retry same agent on first internal error"
         );
         // Verify behavioral outcome: orchestration should produce a same-agent retry effect
@@ -612,8 +644,9 @@ fn test_agent_fallback_after_internal_error_retry_exhaustion() {
         );
 
         // Observable behavior: After exhausting retry budget, pipeline falls back to next agent
-        assert!(
-            after_second.agent_chain.current_agent_index > initial_agent_index,
+        assert_ne!(
+            after_second.agent_chain.current_agent(),
+            initial_agent.as_ref(),
             "Should fall back to next agent after retry budget exhausted"
         );
     });

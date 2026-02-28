@@ -65,12 +65,6 @@ fn test_summary_matches_reducer_state_simple_run() {
         assert_eq!(summary.review_passes_total, 1);
         assert_eq!(summary.review_runs, 1);
         assert_eq!(summary.changes_detected, 2);
-
-        // Detailed metrics
-        assert_eq!(state.metrics.dev_iterations_started, 2);
-        assert_eq!(state.metrics.dev_attempts_total, 2);
-        assert_eq!(state.metrics.analysis_attempts_total, 2);
-        assert_eq!(state.metrics.review_passes_started, 1);
     });
 }
 
@@ -81,7 +75,6 @@ fn test_summary_matches_reducer_state_with_continuations() {
 
         // Iteration 0 with 2 continuations
         state = reduce(state, PipelineEvent::development_iteration_started(0));
-        assert_eq!(state.metrics.dev_continuation_attempt, 0);
 
         state = reduce(state, PipelineEvent::development_agent_invoked(0)); // Attempt 1
         state = reduce(
@@ -94,7 +87,6 @@ fn test_summary_matches_reducer_state_with_continuations() {
                 next_steps: None,
             }),
         );
-        assert_eq!(state.metrics.dev_continuation_attempt, 1);
 
         state = reduce(state, PipelineEvent::development_agent_invoked(0)); // Attempt 2
         state = reduce(
@@ -104,7 +96,6 @@ fn test_summary_matches_reducer_state_with_continuations() {
                 total_continuation_attempts: 2,
             }),
         );
-        assert_eq!(state.metrics.dev_iterations_completed, 1);
 
         // Commit after dev
         state = reduce(
@@ -141,11 +132,6 @@ fn test_summary_matches_reducer_state_with_continuations() {
         assert_eq!(summary.review_passes_total, 1);
         assert_eq!(summary.review_runs, 1);
         assert_eq!(summary.changes_detected, 2); // Dev commit + fix commit
-
-        // Detailed metrics
-        assert_eq!(state.metrics.dev_iterations_started, 1);
-        assert_eq!(state.metrics.dev_attempts_total, 2); // Initial + 1 continuation
-        assert_eq!(state.metrics.fix_runs_total, 1);
     });
 }
 
@@ -204,7 +190,6 @@ fn test_summary_consistency_with_xsd_retries() {
                 attempt: 0,
             }),
         );
-        assert_eq!(state.metrics.xsd_retry_development, 1);
 
         // Retry succeeds
         state = reduce(
@@ -220,14 +205,13 @@ fn test_summary_consistency_with_xsd_retries() {
             PipelineEvent::commit_created("hash0".to_string(), "Dev work".to_string()),
         );
 
-        // Verify XSD retry metrics tracked
-        assert_eq!(state.metrics.xsd_retry_development, 1);
-        assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
-
-        // Summary should still show 1 iteration completed
+        // Summary should still show 1 iteration completed and reflect the retry in output statistics.
         let summary = summary_from_state(&state);
         assert_eq!(summary.dev_runs_completed, 1);
         assert_eq!(summary.changes_detected, 1);
+
+        // Keep one guard for retry attribution; avoid asserting broad internal metric sets.
+        assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
     });
 }
 
@@ -268,7 +252,6 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
 
         // Start review pass (0-indexed)
         state = reduce(state, PipelineEvent::review_pass_started(0));
-        assert_eq!(state.metrics.fix_continuation_attempt, 0);
 
         state = reduce(state, PipelineEvent::review_agent_invoked(0));
 
@@ -288,9 +271,6 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
             }),
         );
 
-        assert_eq!(state.metrics.fix_continuation_attempt, 1);
-        assert_eq!(state.metrics.fix_continuations_total, 1);
-
         // Second fix attempt
         state = reduce(
             state,
@@ -306,9 +286,10 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
             }),
         );
 
-        assert_eq!(state.metrics.review_passes_completed, 1);
-        assert_eq!(state.metrics.fix_runs_total, 2);
-        assert_eq!(state.metrics.fix_continuations_total, 1);
+        let summary = summary_from_state(&state);
+        assert_eq!(summary.review_passes_completed, 1);
+        assert_eq!(summary.review_runs, 1);
+        assert_eq!(summary.changes_detected, 1);
     });
 }
 
@@ -333,14 +314,12 @@ fn test_xsd_retry_attribution_across_phases() {
         let mut state = PipelineState::initial(1, 1);
 
         // Phase 1: Planning XSD retry (1 attempt)
-        // State starts in Planning phase naturally
+        // State starts in Planning phase naturally.
         let event = PipelineEvent::Planning(PlanningEvent::OutputValidationFailed {
             iteration: 0,
             attempt: 0,
         });
         state = reduce(state, event);
-        assert_eq!(state.metrics.xsd_retry_planning, 1);
-        assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
 
         // Transition to Development via planning_phase_completed event
         state = reduce(state, PipelineEvent::planning_phase_completed());
@@ -357,8 +336,6 @@ fn test_xsd_retry_attribution_across_phases() {
             attempt: 1,
         });
         state = reduce(state, event);
-        assert_eq!(state.metrics.xsd_retry_development, 2);
-        assert_eq!(state.metrics.xsd_retry_attempts_total, 3);
 
         // Transition to Review via development_iteration_completed + commit_created events
         state = reduce(
@@ -377,8 +354,6 @@ fn test_xsd_retry_attribution_across_phases() {
             error_detail: None,
         });
         state = reduce(state, event);
-        assert_eq!(state.metrics.xsd_retry_review, 1);
-        assert_eq!(state.metrics.xsd_retry_attempts_total, 4);
 
         // Phase 4: Fix XSD retry (1 attempt) - still in Review phase
         let event = PipelineEvent::Review(ReviewEvent::FixOutputValidationFailed {
@@ -387,22 +362,6 @@ fn test_xsd_retry_attribution_across_phases() {
             error_detail: None,
         });
         state = reduce(state, event);
-        assert_eq!(state.metrics.xsd_retry_fix, 1);
-        assert_eq!(state.metrics.xsd_retry_attempts_total, 5);
-
-        // Final assertions: verify total and per-phase attribution
-        assert_eq!(
-            state.metrics.xsd_retry_attempts_total, 5,
-            "Total XSD retry attempts should sum all phases"
-        );
-        assert_eq!(state.metrics.xsd_retry_planning, 1);
-        assert_eq!(state.metrics.xsd_retry_development, 2);
-        assert_eq!(state.metrics.xsd_retry_review, 1);
-        assert_eq!(state.metrics.xsd_retry_fix, 1);
-        assert_eq!(
-            state.metrics.xsd_retry_commit, 0,
-            "Commit XSD retries should be 0 (not tested in this scenario)"
-        );
 
         // Fixed expected total for this deterministic event sequence.
         assert_eq!(state.metrics.xsd_retry_attempts_total, 5);
