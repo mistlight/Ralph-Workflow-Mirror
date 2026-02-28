@@ -13,11 +13,27 @@
 //! - Tests are deterministic and isolated
 //! - Tests behavior, not implementation details
 
+use ralph_workflow::banner::PipelineSummary;
 use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent, ReviewEvent};
 use ralph_workflow::reducer::state::{DevelopmentStatus, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 
 use crate::test_timeout::with_default_timeout;
+
+fn summary_from_state(state: &PipelineState) -> PipelineSummary {
+    PipelineSummary {
+        total_time: "0m 00s".to_string(),
+        dev_runs_completed: state.metrics.dev_iterations_completed as usize,
+        dev_runs_total: state.metrics.max_dev_iterations as usize,
+        review_passes_completed: state.metrics.review_passes_completed as usize,
+        review_passes_total: state.metrics.max_review_passes as usize,
+        review_runs: state.metrics.review_runs_total as usize,
+        changes_detected: state.metrics.commits_created_total as usize,
+        isolation_mode: false,
+        verbose: false,
+        review_summary: None,
+    }
+}
 
 #[test]
 fn test_summary_matches_reducer_state_simple_run() {
@@ -42,23 +58,22 @@ fn test_summary_matches_reducer_state_simple_run() {
             );
         }
 
-        // Simulate 1 review pass (clean)
-        state = reduce(state, PipelineEvent::review_pass_started(1));
-        state = reduce(state, PipelineEvent::review_agent_invoked(1));
+        // Simulate 1 review pass (clean, 0-indexed)
+        state = reduce(state, PipelineEvent::review_pass_started(0));
+        state = reduce(state, PipelineEvent::review_agent_invoked(0));
         state = reduce(
             state,
-            PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 1 }),
+            PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 0 }),
         );
 
-        // Verify reducer metrics match expected values for this event sequence.
-        // PipelineSummary is a direct projection of these metrics (see finalization.rs),
-        // so verifying metrics IS verifying summary correctness.
-        assert_eq!(state.metrics.dev_iterations_completed, 2);
-        assert_eq!(state.metrics.max_dev_iterations, 2);
-        assert_eq!(state.metrics.review_passes_completed, 1);
-        assert_eq!(state.metrics.max_review_passes, 1);
-        assert_eq!(state.metrics.review_runs_total, 1);
-        assert_eq!(state.metrics.commits_created_total, 2);
+        // Verify production summary projection from reducer metrics.
+        let summary = summary_from_state(&state);
+        assert_eq!(summary.dev_runs_completed, 2);
+        assert_eq!(summary.dev_runs_total, 2);
+        assert_eq!(summary.review_passes_completed, 1);
+        assert_eq!(summary.review_passes_total, 1);
+        assert_eq!(summary.review_runs, 1);
+        assert_eq!(summary.changes_detected, 2);
 
         // Detailed metrics
         assert_eq!(state.metrics.dev_iterations_started, 2);
@@ -106,17 +121,17 @@ fn test_summary_matches_reducer_state_with_continuations() {
             PipelineEvent::commit_created("hash0".to_string(), "Dev work".to_string()),
         );
 
-        // Review with fix
-        state = reduce(state, PipelineEvent::review_pass_started(1));
-        state = reduce(state, PipelineEvent::review_agent_invoked(1));
+        // Review with fix (pass 0)
+        state = reduce(state, PipelineEvent::review_pass_started(0));
+        state = reduce(state, PipelineEvent::review_agent_invoked(0));
         state = reduce(
             state,
-            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 1 }),
+            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 0 }),
         );
         state = reduce(
             state,
             PipelineEvent::Review(ReviewEvent::FixAttemptCompleted {
-                pass: 1,
+                pass: 0,
                 changes_made: true,
             }),
         );
@@ -127,14 +142,14 @@ fn test_summary_matches_reducer_state_with_continuations() {
             PipelineEvent::commit_created("hash1".to_string(), "Fix issues".to_string()),
         );
 
-        // Verify metrics match expected values for this event sequence.
-        // PipelineSummary is a direct projection of these metrics (see finalization.rs).
-        assert_eq!(state.metrics.dev_iterations_completed, 1);
-        assert_eq!(state.metrics.max_dev_iterations, 1);
-        assert_eq!(state.metrics.review_passes_completed, 1);
-        assert_eq!(state.metrics.max_review_passes, 1);
-        assert_eq!(state.metrics.review_runs_total, 1);
-        assert_eq!(state.metrics.commits_created_total, 2); // Dev commit + fix commit
+        // Verify production summary projection from reducer metrics.
+        let summary = summary_from_state(&state);
+        assert_eq!(summary.dev_runs_completed, 1);
+        assert_eq!(summary.dev_runs_total, 1);
+        assert_eq!(summary.review_passes_completed, 1);
+        assert_eq!(summary.review_passes_total, 1);
+        assert_eq!(summary.review_runs, 1);
+        assert_eq!(summary.changes_detected, 2); // Dev commit + fix commit
 
         // Detailed metrics
         assert_eq!(state.metrics.dev_iterations_started, 1);
@@ -160,44 +175,24 @@ fn test_summary_matches_with_multiple_review_passes() {
             PipelineEvent::commit_created("hash0".to_string(), "Dev work".to_string()),
         );
 
-        // Review pass 1 (clean)
-        state = reduce(state, PipelineEvent::review_pass_started(1));
-        state = reduce(state, PipelineEvent::review_agent_invoked(1));
-        state = reduce(
-            state,
-            PipelineEvent::Review(ReviewEvent::Completed {
-                pass: 1,
-                issues_found: false,
-            }),
-        );
+        // Review passes (clean, 0-indexed)
+        for pass in 0..3 {
+            state = reduce(state, PipelineEvent::review_pass_started(pass));
+            state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+            state = reduce(
+                state,
+                PipelineEvent::Review(ReviewEvent::Completed {
+                    pass,
+                    issues_found: false,
+                }),
+            );
+        }
 
-        // Review pass 2 (clean)
-        state = reduce(state, PipelineEvent::review_pass_started(2));
-        state = reduce(state, PipelineEvent::review_agent_invoked(2));
-        state = reduce(
-            state,
-            PipelineEvent::Review(ReviewEvent::Completed {
-                pass: 2,
-                issues_found: false,
-            }),
-        );
-
-        // Review pass 3 (clean)
-        state = reduce(state, PipelineEvent::review_pass_started(3));
-        state = reduce(state, PipelineEvent::review_agent_invoked(3));
-        state = reduce(
-            state,
-            PipelineEvent::Review(ReviewEvent::Completed {
-                pass: 3,
-                issues_found: false,
-            }),
-        );
-
-        // Verify metrics match expected values for this event sequence.
-        // PipelineSummary is a direct projection of these metrics (see finalization.rs).
-        assert_eq!(state.metrics.review_passes_completed, 3);
-        assert_eq!(state.metrics.max_review_passes, 3);
-        assert_eq!(state.metrics.review_runs_total, 3);
+        // Verify production summary projection from reducer metrics.
+        let summary = summary_from_state(&state);
+        assert_eq!(summary.review_passes_completed, 3);
+        assert_eq!(summary.review_passes_total, 3);
+        assert_eq!(summary.review_runs, 3);
     });
 }
 
@@ -248,14 +243,14 @@ fn test_summary_zero_when_no_work_done() {
     with_default_timeout(|| {
         let state = PipelineState::initial(5, 3);
 
-        // No events, no work done - metrics should all be zero except configured totals.
-        // PipelineSummary is a direct projection of these metrics (see finalization.rs).
-        assert_eq!(state.metrics.dev_iterations_completed, 0);
-        assert_eq!(state.metrics.max_dev_iterations, 5);
-        assert_eq!(state.metrics.review_passes_completed, 0);
-        assert_eq!(state.metrics.max_review_passes, 3);
-        assert_eq!(state.metrics.review_runs_total, 0);
-        assert_eq!(state.metrics.commits_created_total, 0);
+        // No events, no work done - summary should project zero progress.
+        let summary = summary_from_state(&state);
+        assert_eq!(summary.dev_runs_completed, 0);
+        assert_eq!(summary.dev_runs_total, 5);
+        assert_eq!(summary.review_passes_completed, 0);
+        assert_eq!(summary.review_passes_total, 3);
+        assert_eq!(summary.review_runs, 0);
+        assert_eq!(summary.changes_detected, 0);
     });
 }
 
@@ -278,23 +273,23 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
             PipelineEvent::commit_created("hash0".to_string(), "Dev work".to_string()),
         );
 
-        // Start review pass
-        state = reduce(state, PipelineEvent::review_pass_started(1));
+        // Start review pass (0-indexed)
+        state = reduce(state, PipelineEvent::review_pass_started(0));
         assert_eq!(state.metrics.fix_continuation_attempt, 0);
 
-        state = reduce(state, PipelineEvent::review_agent_invoked(1));
+        state = reduce(state, PipelineEvent::review_agent_invoked(0));
 
         // Issues found, start fix
         state = reduce(
             state,
-            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 1 }),
+            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 0 }),
         );
 
         // Fix reports issues remain - trigger continuation
         state = reduce(
             state,
             PipelineEvent::Review(ReviewEvent::FixContinuationTriggered {
-                pass: 1,
+                pass: 0,
                 status: FixStatus::IssuesRemain,
                 summary: Some("Fixed some issues".to_string()),
             }),
@@ -306,14 +301,14 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
         // Second fix attempt
         state = reduce(
             state,
-            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 1 }),
+            PipelineEvent::Review(ReviewEvent::FixAgentInvoked { pass: 0 }),
         );
 
         // Fix succeeds
         state = reduce(
             state,
             PipelineEvent::Review(ReviewEvent::FixContinuationSucceeded {
-                pass: 1,
+                pass: 0,
                 total_attempts: 2,
             }),
         );

@@ -9,6 +9,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../../INTEGRATION_TESTS.md](../../../INTEGRATION_TESTS.md)**.
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 // ============================================================================
@@ -23,62 +24,55 @@ use crate::test_timeout::with_default_timeout;
 #[test]
 fn test_xsd_retry_count_in_reducer_state() {
     use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::effect::Effect;
     use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
     use ralph_workflow::reducer::state::PipelineState;
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
-        // Lock permissions so LockPromptPermissions doesn't preempt development effects
-        state.prompt_permissions.locked = true;
-        state.prompt_permissions.restore_needed = true;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
             AgentRole::Developer,
         );
 
-        // Observable behavior: initial state should start development normally
-        let initial_effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
-        assert!(
-            !matches!(
-                initial_effect,
-                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
-            ),
-            "Initial state should begin development normally: {initial_effect:?}"
+        // Initial development state should emit the first development step.
+        let initial_effect = determine_next_effect(&state);
+        assert_eq!(
+            initial_effect,
+            Effect::PrepareDevelopmentContext { iteration: 0 },
+            "Initial development effect should be PrepareDevelopmentContext"
         );
 
-        // Simulate XSD validation failure - reducer should track this
+        // One XSD validation failure should enter explicit XSD retry mode.
         let state = reduce(
             state,
             PipelineEvent::development_output_validation_failed(0, 0),
         );
-
-        // Observable behavior: after a single validation failure, the pipeline
-        // should not exhaust the chain (it should retry in some form).
-        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
-        assert!(
-            !matches!(
-                effect,
-                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
-            ),
-            "After one XSD failure, pipeline should retry (not exhaust chain): {effect:?}"
+        let effect = determine_next_effect(&state);
+        assert_eq!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Analysis,
+            },
+            "After first XSD failure, orchestration should switch to analysis role"
         );
 
-        // Second failure should still allow retry
+        // Second failure (still within budget) should keep deriving XSD retry effect.
         let state = reduce(
             state,
             PipelineEvent::development_output_validation_failed(0, 1),
         );
-
-        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
-        assert!(
-            !matches!(
-                effect,
-                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
-            ),
-            "After two XSD failures (under budget), should not exhaust chain: {effect:?}"
+        let effect = determine_next_effect(&state);
+        assert_eq!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Analysis,
+            },
+            "Under XSD retry budget, orchestration should continue deriving analysis retry effect"
         );
     });
 }
@@ -90,12 +84,14 @@ fn test_xsd_retry_count_in_reducer_state() {
 #[test]
 fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
     use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::effect::Effect;
     use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
     use ralph_workflow::reducer::state::{ContinuationState, PipelineState};
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
@@ -111,52 +107,49 @@ fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
             "Should start with primary agent"
         );
 
-        // Exhaust retries up to configured limit (3)
+        // Under retry budget, orchestration should keep deriving XSD retry effects.
         let mut current_state = state;
         for attempt in 0..2 {
             current_state = reduce(
                 current_state,
                 PipelineEvent::development_output_validation_failed(0, attempt),
             );
+            let effect = determine_next_effect(&current_state);
+            assert_eq!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Analysis,
+                },
+                "Before exhaustion, XSD failures should derive analysis retry effect"
+            );
         }
 
-        // Observable behavior: before exhaustion, pipeline still targets the primary agent
+        // Before exhaustion we must still be on the primary agent.
         assert_eq!(
             current_state.agent_chain.current_agent(),
             Some(&"primary-agent".to_string()),
             "Before exhaustion, pipeline should still target primary agent"
         );
-        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&current_state);
-        assert!(
-            !matches!(
-                effect,
-                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
-            ),
-            "Before exhaustion, pipeline should still retry (not exhaust chain): {effect:?}"
-        );
 
-        // One more failure should trigger agent advancement and reset counter
+        // One more failure should trigger agent advancement and clear retry pending.
         let final_state = reduce(
             current_state,
             PipelineEvent::development_output_validation_failed(0, 2),
         );
 
-        // Agent chain should have advanced
+        // Agent chain should have advanced.
         assert_eq!(
             final_state.agent_chain.current_agent(),
             Some(&"fallback-agent".to_string()),
             "Agent chain should advance to fallback after exhausting retries"
         );
 
-        // Observable behavior: after agent advancement, pipeline continues development
-        // with the fallback agent (not stuck retrying or exhausted)
-        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&final_state);
-        assert!(
-            !matches!(
-                effect,
-                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
-            ),
-            "After agent advancement, pipeline should continue with fallback agent: {effect:?}"
+        // After advancement, orchestration should resume normal development effect flow.
+        let effect = determine_next_effect(&final_state);
+        assert_eq!(
+            effect,
+            Effect::PrepareDevelopmentContext { iteration: 0 },
+            "After advancing agents, orchestration should resume normal development flow"
         );
     });
 }
@@ -169,12 +162,14 @@ fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
 #[test]
 fn test_xsd_retry_exhaustion_triggers_state_transition() {
     use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::effect::Effect;
     use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
     use ralph_workflow::reducer::state::{ContinuationState, PipelineState};
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(3, 1);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(3, 1));
         state.phase = PipelinePhase::Development;
         state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
@@ -200,15 +195,18 @@ fn test_xsd_retry_exhaustion_triggers_state_transition() {
             "Agent chain must advance after retry exhaustion (reducer-driven policy)"
         );
 
-        // Observable behavior: after agent switch, pipeline continues development
-        // with the new agent (retry counter implicitly reset, pipeline not stuck)
-        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&current);
+        // Retry flags should be cleared after exhaustion-driven agent switch.
         assert!(
-            !matches!(
-                effect,
-                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
-            ),
-            "After agent switch, pipeline should continue with new agent: {effect:?}"
+            !current.continuation.xsd_retry_pending,
+            "xsd_retry_pending should be cleared after retry exhaustion"
+        );
+
+        // Observable behavior: after agent switch, orchestration resumes normal flow.
+        let effect = determine_next_effect(&current);
+        assert_eq!(
+            effect,
+            Effect::PrepareDevelopmentContext { iteration: 0 },
+            "After agent switch, orchestration should resume normal development flow"
         );
     });
 }

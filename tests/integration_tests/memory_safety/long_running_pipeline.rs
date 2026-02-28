@@ -16,10 +16,11 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+use ralph_workflow::monitoring::memory_metrics::MemorySnapshot;
 use ralph_workflow::reducer::state::PipelineState;
 
 const MAX_CHECKPOINT_SIZE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_HEAP_SIZE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_EXECUTION_HISTORY_PROXY_BYTES: usize = 2 * 1024 * 1024;
 
 /// Helper function to create a test execution step.
 fn create_test_step(iteration: u32) -> ExecutionStep {
@@ -145,31 +146,29 @@ fn test_memory_growth_rate_is_zero_after_limit_reached() {
 }
 
 #[test]
-fn test_heap_size_estimate_remains_bounded() {
+fn test_execution_history_memory_proxy_remains_bounded() {
     with_default_timeout(|| {
         let mut state = PipelineState::initial(10_000, 5);
         let limit = 1000;
 
-        // Fill history to limit and beyond
+        // Fill history to limit and beyond.
         for i in 0..5000 {
             state.add_execution_step(create_test_step(i), limit);
         }
 
-        // Use serialized size as an observable upper bound on heap usage.
-        // This avoids reimplementing internal struct field traversal.
-        let serialized = serde_json::to_string(&state).expect("Should serialize state");
-        let serialized_size = serialized.len();
+        // Use production memory proxy from monitoring::memory_metrics.
+        let snapshot = MemorySnapshot::from_pipeline_state(&state);
+        let history_heap_proxy = snapshot.execution_history_heap_bytes;
 
-        // With 1000 entries, serialized size (which bounds heap) should be under 2MB
+        // With bounded execution history, the deterministic proxy must stay bounded too.
         assert!(
-            serialized_size < MAX_HEAP_SIZE_BYTES,
-            "Serialized size {serialized_size} exceeds maximum {MAX_HEAP_SIZE_BYTES}, \
-             indicating heap size is likely unbounded"
+            history_heap_proxy < MAX_EXECUTION_HISTORY_PROXY_BYTES,
+            "Execution history heap proxy {history_heap_proxy} exceeds maximum {MAX_EXECUTION_HISTORY_PROXY_BYTES}"
         );
 
         println!(
-            "Serialized size as heap proxy: {} KB",
-            serialized_size / 1024
+            "Execution history heap proxy: {} KB",
+            history_heap_proxy / 1024
         );
     });
 }

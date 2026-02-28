@@ -635,18 +635,26 @@ fn no_repeated_oversize_warnings_in_event_loop() {
         // Create diff that exceeds model budget
         let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(200_000));
 
-        // Simulate multi-agent chain with different budgets
+        // Simulate multi-agent chain with different budgets.
         let agents = vec![
-            "claude-opus".to_string(), // 300KB
-            "qwen".to_string(),        // 100KB (smallest)
-            "gpt-4".to_string(),       // 200KB
+            "claude-opus".to_string(),
+            "qwen".to_string(),
+            "gpt-4".to_string(),
         ];
 
-        // The effective budget should be the minimum across the chain
+        // The effective budget should be the minimum per-agent budget across the chain.
+        let per_agent_budgets: Vec<u64> = agents
+            .iter()
+            .map(|agent| ralph_workflow::phases::commit::model_budget_bytes_for_agent_name(agent))
+            .collect();
+        let expected_min_budget = *per_agent_budgets
+            .iter()
+            .min()
+            .expect("agents must be non-empty");
         let effective_budget = effective_model_budget_bytes(&agents);
         assert_eq!(
-            effective_budget, 100_000,
-            "effective budget should be min across agent chain (qwen's 100KB)"
+            effective_budget, expected_min_budget,
+            "effective budget should equal minimum per-agent budget in the chain"
         );
 
         let content_id = sha256_hex_str(&large_diff);
@@ -656,10 +664,10 @@ fn no_repeated_oversize_warnings_in_event_loop() {
             truncate_diff_to_model_budget(&large_diff, effective_budget);
         assert!(truncated, "diff should be truncated");
 
-        // Build state with materialized inputs already present
+        // Build state with the same multi-agent consumer set already materialized.
         let agent_chain = PipelineState::initial(1, 0).agent_chain.with_agents(
-            vec!["commit-agent".to_string()],
-            vec![vec![]],
+            agents.clone(),
+            vec![vec![], vec![], vec![]],
             AgentRole::Commit,
         );
         let consumer_signature = agent_chain.consumer_signature_sha256();

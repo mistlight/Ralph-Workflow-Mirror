@@ -261,69 +261,27 @@ fn test_metrics_config_fields_preserved() {
 #[test]
 fn test_metrics_survive_checkpoint_resume() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent};
-        use ralph_workflow::reducer::state::DevelopmentStatus;
-        use ralph_workflow::reducer::state_reduction::reduce;
+        use ralph_workflow::checkpoint::RunContext;
+        use ralph_workflow::reducer::state::PipelineState;
 
-        // Given: Build state with non-zero metrics through event-driven transitions
-        let mut state = with_locked_prompt_permissions(PipelineState::initial(5, 3));
+        // Given: checkpoint payload with explicit completed-run counters.
+        let mut checkpoint = create_test_checkpoint(CheckpointPhase::Review, 4, 5, 2);
+        checkpoint.actual_developer_runs = 3;
+        checkpoint.actual_reviewer_runs = 2;
 
-        // Drive metrics through events: 2 iterations started, some agent invocations
-        state = reduce(state, PipelineEvent::development_iteration_started(0));
-        state = reduce(state, PipelineEvent::development_agent_invoked(0));
-        state = reduce(
-            state,
-            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 }),
-        );
-        state = reduce(
-            state,
-            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "partial".to_string(),
-                files_changed: None,
-                next_steps: None,
-            }),
-        );
-        state = reduce(state, PipelineEvent::development_agent_invoked(0));
-        state = reduce(
-            state,
-            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 }),
-        );
+        // And a run context that preserves those values on restore.
+        let run_context = RunContext::from_checkpoint(&checkpoint);
+        assert_eq!(run_context.actual_developer_runs, 3);
+        assert_eq!(run_context.actual_reviewer_runs, 2);
 
-        // Capture known metric values before serialization
-        let pre_dev_started = state.metrics.dev_iterations_started;
-        let pre_dev_attempts = state.metrics.dev_attempts_total;
-        let pre_analysis = state.metrics.analysis_attempts_total;
-        let pre_continuation = state.metrics.dev_continuation_attempt;
-        let pre_max_dev = state.metrics.max_dev_iterations;
-        let pre_max_review = state.metrics.max_review_passes;
+        // When: resume through the checkpoint conversion path.
+        let restored = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
-        // Verify preconditions: metrics are non-zero from event processing
-        assert!(
-            pre_dev_started > 0,
-            "Should have started at least one iteration"
-        );
-        assert!(pre_dev_attempts > 0, "Should have at least one dev attempt");
-        assert!(
-            pre_analysis > 0,
-            "Should have at least one analysis attempt"
-        );
-
-        // When: Serialize to JSON (simulating checkpoint write)
-        let json = serde_json::to_string(&state).expect("Failed to serialize state");
-
-        // When: Deserialize from JSON (simulating checkpoint resume)
-        let restored: PipelineState =
-            serde_json::from_str(&json).expect("Failed to deserialize state");
-
-        // Then: All metrics should match pre-serialization values (no drift, no reset to 0)
-        assert_eq!(restored.metrics.dev_iterations_started, pre_dev_started);
-        assert_eq!(restored.metrics.dev_attempts_total, pre_dev_attempts);
-        assert_eq!(restored.metrics.analysis_attempts_total, pre_analysis);
-        assert_eq!(restored.metrics.dev_continuation_attempt, pre_continuation);
-        assert_eq!(restored.metrics.max_dev_iterations, pre_max_dev);
-        assert_eq!(restored.metrics.max_review_passes, pre_max_review);
+        // Then: reducer metrics come from checkpoint completed-run counters.
+        assert_eq!(restored.metrics.dev_iterations_completed, 3);
+        assert_eq!(restored.metrics.review_passes_completed, 2);
+        assert_eq!(restored.metrics.max_dev_iterations, 5);
+        assert_eq!(restored.metrics.max_review_passes, 2);
     });
 }
 
