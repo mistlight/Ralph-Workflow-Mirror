@@ -68,13 +68,20 @@ fn test_real_world_log_no_spam_any_delta_type_none_mode() {
         let tool_use_count = output.matches("[ccs/codex] Using ").count();
         let total_prefix_count = output.matches("[ccs/codex]").count();
 
-        // Check for consecutive duplicate lines (a clear sign of spam)
-        let mut consecutive_duplicates = Vec::new();
-        for i in 1..lines.len() {
-            if !lines[i].is_empty() && lines[i] == lines[i - 1] {
-                consecutive_duplicates.push(i);
-            }
-        }
+        // Behavioral invariant: parser must not produce consecutive duplicate non-empty lines
+        let has_consecutive_duplicates = lines.windows(2).any(|w| !w[0].is_empty() && w[0] == w[1]);
+        assert!(
+            !has_consecutive_duplicates,
+            "Parser should not produce consecutive duplicate lines, indicating spam.\n\n\
+             Output excerpt (first 100 lines):\n{}",
+            lines
+                .iter()
+                .take(100)
+                .enumerate()
+                .map(|(i, l)| format!("{:4}: {}", i + 1, l))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
 
         // Assert: With thousands of deltas (9515 thinking + 818 text + 2263 tool input),
         // we should NOT see thousands of output lines. A well-behaved accumulator
@@ -87,30 +94,11 @@ fn test_real_world_log_no_spam_any_delta_type_none_mode() {
             "Expected <= 10 'Thinking:' lines in None mode for real log (9515 thinking deltas), \
              found {}. This indicates per-delta spam!\n\n\
              Total output lines: {}\n\
-             Total [ccs/codex] prefixes: {}\n\
-             Consecutive duplicates at line numbers: {:?}\n\n\
+             Total [ccs/codex] prefixes: {}\n\n\
              Output excerpt (first 100 lines):\n{}",
             thinking_count,
             total_lines,
             total_prefix_count,
-            &consecutive_duplicates[..consecutive_duplicates.len().min(20)],
-            lines
-                .iter()
-                .take(100)
-                .enumerate()
-                .map(|(i, l)| format!("{:4}: {}", i + 1, l))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-
-        // Additional check: consecutive duplicate lines should be very rare
-        assert!(
-            consecutive_duplicates.len() <= 5,
-            "Found {} consecutive duplicate lines (expected <= 5), indicating spam. \
-             Duplicate line numbers: {:?}\n\n\
-             Output excerpt:\n{}",
-            consecutive_duplicates.len(),
-            &consecutive_duplicates[..consecutive_duplicates.len().min(20)],
             lines
                 .iter()
                 .take(100)
