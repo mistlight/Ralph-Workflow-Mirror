@@ -124,15 +124,13 @@ fn ralph_checkpoint_preserves_model_overrides() {
 
 #[test]
 fn ralph_checkpoint_records_prompt_md_checksum() {
-    use sha2::{Digest, Sha256};
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
     with_default_timeout(|| {
         // Create PROMPT.md with known content
         let prompt_content = "# Test Prompt\n\nDo something.";
 
         // Calculate PROMPT.md checksum
-        let mut hasher = Sha256::new();
-        hasher.update(prompt_content.as_bytes());
-        let prompt_checksum = format!("{:x}", hasher.finalize());
+        let prompt_checksum = sha256_hex_str(prompt_content);
 
         // Create a v3 checkpoint with prompt_md_checksum at Complete phase
         let checkpoint_json = make_checkpoint_json_with_checksum(MOCK_REPO_PATH, &prompt_checksum);
@@ -165,15 +163,13 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 
 #[test]
 fn ralph_resume_warns_on_prompt_md_change() {
-    use sha2::{Digest, Sha256};
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
     with_default_timeout(|| {
         // Write initial PROMPT.md
         let original_content = "# Original Task\nDo something.";
 
         // Calculate checksum of original PROMPT.md
-        let mut hasher = Sha256::new();
-        hasher.update(original_content.as_bytes());
-        let original_checksum = format!("{:x}", hasher.finalize());
+        let original_checksum = sha256_hex_str(original_content);
 
         // Create a checkpoint at Complete phase with the original checksum
         let checkpoint_json =

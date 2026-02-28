@@ -530,13 +530,18 @@ fn prompt_content_builder_is_deterministic_across_repeated_builds() {
 /// each retry attempt, even though the diff content hadn't changed.
 #[test]
 fn commit_diff_materialization_stable_across_xsd_retries() {
+    use ralph_workflow::agents::AgentRole;
     use ralph_workflow::phases::commit::{
         effective_model_budget_bytes, truncate_diff_to_model_budget,
     };
+    use ralph_workflow::reducer::effect::Effect;
+    use ralph_workflow::reducer::event::PipelinePhase;
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
     use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
     use ralph_workflow::reducer::state::{
-        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
-        PromptInputRepresentation, PromptMaterializationReason,
+        CommitState, MaterializedCommitInputs, MaterializedPromptInput, PipelineState,
+        PromptInputKind, PromptInputRepresentation, PromptInputsState, PromptMaterializationReason,
+        PromptPermissionsState,
     };
 
     with_default_timeout(|| {
@@ -549,46 +554,58 @@ fn commit_diff_materialization_stable_across_xsd_retries() {
         let (model_safe_diff, truncated) = truncate_diff_to_model_budget(&large_diff, model_budget);
         assert!(truncated, "diff should be truncated for this test");
 
-        // Simulate the materialized state after first materialization
-        let consumer_signature = sha256_hex_str("qwen"); // Simplified signature
-        let materialized_input = MaterializedPromptInput {
-            kind: PromptInputKind::Diff,
-            content_id_sha256: content_id.clone(),
-            consumer_signature_sha256: consumer_signature.clone(),
-            original_bytes: large_diff.len() as u64,
-            final_bytes: model_safe_diff.len() as u64,
-            model_budget_bytes: Some(model_budget),
-            inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
-            representation: PromptInputRepresentation::Inline,
-            reason: PromptMaterializationReason::ModelBudgetExceeded,
-        };
+        // Build a PipelineState with materialized inputs already present
+        let agent_chain = PipelineState::initial(1, 0).agent_chain.with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        );
+        let consumer_signature = agent_chain.consumer_signature_sha256();
 
-        // Simulate second materialization request (XSD retry)
-        // The key invariant: if content_id and consumer_signature match,
-        // we should NOT need to re-materialize
-        let should_rematerialize = {
-            let stored = Some(MaterializedCommitInputs {
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::Generating {
                 attempt: 1,
-                diff: materialized_input,
-            });
-
-            // Check if rematerialization is needed (same logic as phase_effects.rs)
-            let current_attempt = 1u32;
-            let inputs_match = stored.as_ref().is_some_and(|c| {
-                c.attempt == current_attempt
-                    && c.diff.consumer_signature_sha256 == consumer_signature
-                    && c.diff.content_id_sha256 == content_id
-            });
-
-            !inputs_match
+                max_attempts: 3,
+            },
+            commit_diff_prepared: true,
+            commit_diff_empty: false,
+            commit_diff_content_id_sha256: Some(content_id.clone()),
+            commit_prompt_prepared: false,
+            agent_chain,
+            prompt_inputs: PromptInputsState {
+                commit: Some(MaterializedCommitInputs {
+                    attempt: 1,
+                    diff: MaterializedPromptInput {
+                        kind: PromptInputKind::Diff,
+                        content_id_sha256: content_id,
+                        consumer_signature_sha256: consumer_signature,
+                        original_bytes: large_diff.len() as u64,
+                        final_bytes: model_safe_diff.len() as u64,
+                        model_budget_bytes: Some(model_budget),
+                        inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
+                        representation: PromptInputRepresentation::Inline,
+                        reason: PromptMaterializationReason::ModelBudgetExceeded,
+                    },
+                }),
+                ..Default::default()
+            },
+            prompt_permissions: PromptPermissionsState {
+                locked: true,
+                restore_needed: true,
+                ..Default::default()
+            },
+            ..PipelineState::initial(1, 0)
         };
 
+        // The production orchestrator should skip materialization and go to PrepareCommitPrompt
+        let effect = determine_next_effect(&state);
         assert!(
-            !should_rematerialize,
-            "Materialized inputs should be reused across XSD retries when content_id and consumer_signature match"
+            matches!(effect, Effect::PrepareCommitPrompt { .. }),
+            "Materialized inputs should be reused across XSD retries: got {effect:?}"
         );
 
-        // Verify the materialized diff content is stable
+        // Verify the materialized diff content is stable (truncation is deterministic)
         let second_truncation = truncate_diff_to_model_budget(&large_diff, model_budget);
         assert_eq!(
             model_safe_diff, second_truncation.0,
@@ -607,13 +624,18 @@ fn commit_diff_materialization_stable_across_xsd_retries() {
 /// "Diff size (625 KB) exceeds agent limit (292 KB)" repeated multiple times.
 #[test]
 fn no_repeated_oversize_warnings_in_event_loop() {
+    use ralph_workflow::agents::AgentRole;
     use ralph_workflow::phases::commit::{
         effective_model_budget_bytes, truncate_diff_to_model_budget,
     };
+    use ralph_workflow::reducer::effect::Effect;
+    use ralph_workflow::reducer::event::PipelinePhase;
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
     use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
     use ralph_workflow::reducer::state::{
-        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
-        PromptInputRepresentation, PromptMaterializationReason,
+        CommitState, MaterializedCommitInputs, MaterializedPromptInput, PipelineState,
+        PromptInputKind, PromptInputRepresentation, PromptInputsState, PromptMaterializationReason,
+        PromptPermissionsState,
     };
 
     with_default_timeout(|| {
@@ -635,48 +657,62 @@ fn no_repeated_oversize_warnings_in_event_loop() {
         );
 
         let content_id = sha256_hex_str(&large_diff);
-        let consumer_signature = sha256_hex_str(&agents.join(","));
 
         // First materialization: should truncate and record
         let (model_safe_diff, truncated) =
             truncate_diff_to_model_budget(&large_diff, effective_budget);
         assert!(truncated, "diff should be truncated");
 
-        let materialized = MaterializedCommitInputs {
-            attempt: 1,
-            diff: MaterializedPromptInput {
-                kind: PromptInputKind::Diff,
-                content_id_sha256: content_id.clone(),
-                consumer_signature_sha256: consumer_signature.clone(),
-                original_bytes: large_diff.len() as u64,
-                final_bytes: model_safe_diff.len() as u64,
-                model_budget_bytes: Some(effective_budget),
-                inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
-                representation: PromptInputRepresentation::Inline,
-                reason: PromptMaterializationReason::ModelBudgetExceeded,
+        // Build state with materialized inputs already present
+        let agent_chain = PipelineState::initial(1, 0).agent_chain.with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        );
+        let consumer_signature = agent_chain.consumer_signature_sha256();
+
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::Generating {
+                attempt: 1,
+                max_attempts: 3,
             },
+            commit_diff_prepared: true,
+            commit_diff_empty: false,
+            commit_diff_content_id_sha256: Some(content_id.clone()),
+            commit_prompt_prepared: false,
+            agent_chain,
+            prompt_inputs: PromptInputsState {
+                commit: Some(MaterializedCommitInputs {
+                    attempt: 1,
+                    diff: MaterializedPromptInput {
+                        kind: PromptInputKind::Diff,
+                        content_id_sha256: content_id,
+                        consumer_signature_sha256: consumer_signature,
+                        original_bytes: large_diff.len() as u64,
+                        final_bytes: model_safe_diff.len() as u64,
+                        model_budget_bytes: Some(effective_budget),
+                        inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
+                        representation: PromptInputRepresentation::Inline,
+                        reason: PromptMaterializationReason::ModelBudgetExceeded,
+                    },
+                }),
+                ..Default::default()
+            },
+            prompt_permissions: PromptPermissionsState {
+                locked: true,
+                restore_needed: true,
+                ..Default::default()
+            },
+            ..PipelineState::initial(1, 0)
         };
 
-        // Simulate multiple "attempts" in the event loop (XSD retries)
-        // Each should check if materialization is needed, and skip if already done
-        for attempt_num in 1..=3 {
-            let needs_materialization = {
-                // Same check as phase_effects.rs: MaterializeCommitInputs
-                let current_attempt = 1u32; // XSD retry doesn't change attempt number
-                let stored = Some(&materialized);
-
-                !stored.is_some_and(|c| {
-                    c.attempt == current_attempt
-                        && c.diff.consumer_signature_sha256 == consumer_signature
-                        && c.diff.content_id_sha256 == content_id
-                })
-            };
-
-            assert!(
-                !needs_materialization,
-                "XSD retry #{attempt_num} should NOT trigger re-materialization"
-            );
-        }
+        // The orchestrator should skip materialization (PrepareCommitPrompt, not MaterializeCommitInputs)
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::PrepareCommitPrompt { .. }),
+            "XSD retry should NOT trigger re-materialization: got {effect:?}"
+        );
 
         // Verify budget is stable regardless of which agent is "current"
         // The effective budget is always the min, not per-agent

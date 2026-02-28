@@ -399,8 +399,20 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_legacy_rejection/legacy_phase_rejection.rs"),
     },
     SourceFile {
-        path: "reducer_legacy_rejection/reducer_purity_invariants.rs",
-        contents: include_str!("reducer_legacy_rejection/reducer_purity_invariants.rs"),
+        path: "reducer_legacy_rejection/reducer_purity_invariants/mod.rs",
+        contents: include_str!("reducer_legacy_rejection/reducer_purity_invariants/mod.rs"),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/reducer_purity_invariants/control_flow.rs",
+        contents: include_str!(
+            "reducer_legacy_rejection/reducer_purity_invariants/control_flow.rs"
+        ),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/reducer_purity_invariants/effects_and_phases.rs",
+        contents: include_str!(
+            "reducer_legacy_rejection/reducer_purity_invariants/effects_and_phases.rs"
+        ),
     },
     SourceFile {
         path: "reducer_legacy_rejection/xsd_retry_invariants.rs",
@@ -475,8 +487,24 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("workflows/commit_tests.rs"),
     },
     SourceFile {
-        path: "workflows/config.rs",
-        contents: include_str!("workflows/config.rs"),
+        path: "workflows/config/mod.rs",
+        contents: include_str!("workflows/config/mod.rs"),
+    },
+    SourceFile {
+        path: "workflows/config/init_and_defaults.rs",
+        contents: include_str!("workflows/config/init_and_defaults.rs"),
+    },
+    SourceFile {
+        path: "workflows/config/local_and_validation.rs",
+        contents: include_str!("workflows/config/local_and_validation.rs"),
+    },
+    SourceFile {
+        path: "workflows/config/modes_and_review.rs",
+        contents: include_str!("workflows/config/modes_and_review.rs"),
+    },
+    SourceFile {
+        path: "workflows/config/worktree_and_merge.rs",
+        contents: include_str!("workflows/config/worktree_and_merge.rs"),
     },
     SourceFile {
         path: "workflows/config_test.rs",
@@ -487,8 +515,20 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("workflows/continuation.rs"),
     },
     SourceFile {
-        path: "workflows/continuation_budget.rs",
-        contents: include_str!("workflows/continuation_budget.rs"),
+        path: "workflows/continuation_budget/mod.rs",
+        contents: include_str!("workflows/continuation_budget/mod.rs"),
+    },
+    SourceFile {
+        path: "workflows/continuation_budget/core_enforcement.rs",
+        contents: include_str!("workflows/continuation_budget/core_enforcement.rs"),
+    },
+    SourceFile {
+        path: "workflows/continuation_budget/defaults_and_boundaries.rs",
+        contents: include_str!("workflows/continuation_budget/defaults_and_boundaries.rs"),
+    },
+    SourceFile {
+        path: "workflows/continuation_budget/regression_and_guards.rs",
+        contents: include_str!("workflows/continuation_budget/regression_and_guards.rs"),
     },
     SourceFile {
         path: "workflows/development_xml.rs",

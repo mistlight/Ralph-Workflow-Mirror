@@ -44,15 +44,13 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 
 #[test]
 fn ralph_v3_comprehensive_resume_from_review_phase() {
-    use sha2::{Digest, Sha256};
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
     with_default_timeout(|| {
         // Use STANDARD_PROMPT for PROMPT.md
         let plan_content = "# Plan\n\n1. Step 1\n2. Step 2";
 
         // Calculate plan checksum
-        let mut plan_hasher = Sha256::new();
-        plan_hasher.update(plan_content.as_bytes());
-        let plan_checksum = format!("{:x}", plan_hasher.finalize());
+        let plan_checksum = sha256_hex_str(plan_content);
 
         // Create comprehensive v3 checkpoint with matching checksums
         let checkpoint_json = make_comprehensive_v3_checkpoint(

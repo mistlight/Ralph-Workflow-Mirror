@@ -129,16 +129,14 @@ fn ralph_v3_file_system_state_detects_changes() {
 
 #[test]
 fn ralph_v3_file_system_state_auto_recovery() {
-    use sha2::{Digest, Sha256};
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
     with_timeout_ctx(
         |_ctx| {
             // Small PLAN.md content
             let plan_content = "Small plan content";
 
             // Calculate checksum
-            let mut hasher = Sha256::new();
-            hasher.update(plan_content.as_bytes());
-            let checksum = format!("{:x}", hasher.finalize());
+            let checksum = sha256_hex_str(plan_content);
 
             // Create file system state JSON with content for recovery
             let file_system_state_json = format!(

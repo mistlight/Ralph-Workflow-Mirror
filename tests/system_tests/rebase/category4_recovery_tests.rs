@@ -142,7 +142,7 @@ fn rebase_checkpoint_survives_process_termination() {
                 .expect("checkpoint should survive process termination");
 
             assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
-            assert_eq!(loaded.conflicted_files.len(), 1);
+            assert_eq!(loaded.conflicted_files, vec!["src/lib.rs".to_string()]);
         });
     });
 }

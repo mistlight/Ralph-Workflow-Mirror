@@ -92,5 +92,6 @@ const Component = () => {
         // Log should show successful substitution
         assert!(rendered.log.is_complete());
         assert_eq!(rendered.log.substituted.len(), 1);
+        assert_eq!(rendered.log.substituted[0].name, "CODE");
     });
 }
