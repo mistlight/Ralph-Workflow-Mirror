@@ -16,9 +16,8 @@
 
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::determine_next_effect;
-use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
-use ralph_workflow::reducer::state::{AgentChainState, PipelineState, PromptMode};
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
@@ -40,29 +39,6 @@ fn create_state_with_agent_chain() -> PipelineState {
 
 fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
     ralph_workflow::reducer::state_reduction::reduce(state, event)
-}
-
-/// Check whether an effect is a same-agent retry (any phase).
-const fn is_same_agent_retry_effect(effect: &Effect) -> bool {
-    matches!(
-        effect,
-        Effect::PreparePlanningPrompt {
-            prompt_mode: PromptMode::SameAgentRetry,
-            ..
-        } | Effect::PrepareDevelopmentPrompt {
-            prompt_mode: PromptMode::SameAgentRetry,
-            ..
-        } | Effect::PrepareReviewPrompt {
-            prompt_mode: PromptMode::SameAgentRetry,
-            ..
-        } | Effect::PrepareFixPrompt {
-            prompt_mode: PromptMode::SameAgentRetry,
-            ..
-        } | Effect::PrepareCommitPrompt {
-            prompt_mode: PromptMode::SameAgentRetry,
-            ..
-        }
-    )
 }
 
 #[test]
@@ -361,7 +337,7 @@ fn test_sigsegv_causes_agent_fallback() {
         // Verify behavioral outcome: orchestration should produce a same-agent retry effect
         let effect = determine_next_effect(&with_locked_prompt_permissions(after_first.clone()));
         assert!(
-            is_same_agent_retry_effect(&effect),
+            effect.is_same_agent_retry(),
             "First internal error should produce same-agent retry effect, got: {effect:?}"
         );
 
@@ -465,7 +441,7 @@ fn test_filesystem_error_triggers_agent_fallback() {
         let effect =
             determine_next_effect(&with_locked_prompt_permissions(after_first_failure.clone()));
         assert!(
-            is_same_agent_retry_effect(&effect),
+            effect.is_same_agent_retry(),
             "Filesystem error should produce same-agent retry effect, got: {effect:?}"
         );
 
@@ -586,7 +562,7 @@ fn test_agent_fallback_after_internal_error_retry_exhaustion() {
         // Verify behavioral outcome: orchestration should produce a same-agent retry effect
         let effect = determine_next_effect(&with_locked_prompt_permissions(after_first.clone()));
         assert!(
-            is_same_agent_retry_effect(&effect),
+            effect.is_same_agent_retry(),
             "Internal error should produce same-agent retry effect, got: {effect:?}"
         );
 

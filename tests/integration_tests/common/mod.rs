@@ -669,3 +669,29 @@ pub fn create_test_config_struct_with_isolation(
 pub fn create_test_registry() -> ralph_workflow::agents::AgentRegistry {
     ralph_workflow::agents::AgentRegistry::with_builtins_only()
 }
+
+/// Count non-empty lines containing a given prefix.
+///
+/// Used by CCS delta spam tests to verify that parser output does not
+/// repeat prefixed lines (e.g., `[ccs/glm]`) for every delta event.
+#[must_use]
+pub fn count_prefixed_lines(output: &str, prefix: &str) -> usize {
+    output
+        .lines()
+        .filter(|line| !line.trim().is_empty() && line.contains(prefix))
+        .count()
+}
+
+/// Extract up to `max_lines` lines containing `prefix` and join them.
+///
+/// Used in CCS delta spam test failure messages to show a sample of
+/// the repeated output.
+#[must_use]
+pub fn extract_spam_excerpt(output: &str, prefix: &str, max_lines: usize) -> String {
+    output
+        .lines()
+        .filter(|line| line.contains(prefix))
+        .take(max_lines)
+        .collect::<Vec<_>>()
+        .join("\n")
+}

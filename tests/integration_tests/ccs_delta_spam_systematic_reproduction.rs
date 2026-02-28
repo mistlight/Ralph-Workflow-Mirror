@@ -19,6 +19,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::{count_prefixed_lines, extract_spam_excerpt};
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;
 use ralph_workflow::json_parser::claude::ClaudeParser;
@@ -31,24 +32,6 @@ use std::cell::RefCell;
 use std::fmt::Write;
 use std::io::BufReader;
 use std::rc::Rc;
-
-/// Count non-empty lines starting with a prefix
-fn count_prefixed_lines(output: &str, prefix: &str) -> usize {
-    output
-        .lines()
-        .filter(|line| !line.trim().is_empty() && line.contains(prefix))
-        .count()
-}
-
-/// Extract excerpt showing repeated lines for failure messages
-fn extract_spam_excerpt(output: &str, prefix: &str, max_lines: usize) -> String {
-    output
-        .lines()
-        .filter(|line| line.contains(prefix))
-        .take(max_lines)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 // ============================================================================
 // CCS/GLM (ClaudeParser) - Text Delta Tests

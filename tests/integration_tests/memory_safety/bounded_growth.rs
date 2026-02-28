@@ -48,6 +48,16 @@ fn test_execution_history_does_not_exceed_default_limit() {
             "Execution history should not exceed default limit of 1000, but got {}",
             state.execution_history.len()
         );
+
+        // Verify most recent entry is preserved (bounded buffer keeps newest)
+        let last = state
+            .execution_history
+            .back()
+            .expect("history should not be empty");
+        assert_eq!(
+            last.iteration, 1999,
+            "Most recent entry (iteration 1999) should be preserved"
+        );
     });
 }
 
@@ -170,6 +180,27 @@ fn test_execution_history_bounded_growth_prevents_oom() {
              This test will pass after Step 11 implements bounding.",
             max_allowed,
             state.execution_history.len()
+        );
+
+        // Verify most recent entry is preserved (bounded buffer keeps newest)
+        let last = state
+            .execution_history
+            .back()
+            .expect("history should not be empty");
+        assert_eq!(
+            last.iteration, 9999,
+            "Most recent entry (iteration 9999) should be preserved after bounding"
+        );
+
+        // Verify oldest entries were evicted
+        let first = state
+            .execution_history
+            .front()
+            .expect("history should not be empty");
+        assert!(
+            first.iteration >= 9000,
+            "Oldest entries should be evicted; first entry is iteration {}, expected >= 9000",
+            first.iteration
         );
     });
 }

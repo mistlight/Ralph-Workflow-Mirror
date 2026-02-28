@@ -280,136 +280,117 @@ fn test_interrupted_phase_emits_interrupt_checkpoint_save() {
     });
 }
 
-/// Test that each effect type is distinct and represents a single responsibility.
+/// Test that representative effect types carry exactly the data for one task.
 ///
-/// This is a documentation test that enumerates the effects and their responsibilities.
+/// Each effect variant should carry only the parameters needed for a single
+/// focused operation. This test verifies the architectural invariant through
+/// fixed fixtures rather than a dynamic inventory.
+///
+/// If a new effect variant is added, it should follow the single-task pattern
+/// demonstrated here. This test does NOT need updating for every new variant;
+/// it validates the *pattern* through representative examples.
 #[test]
 fn test_effect_types_are_single_task() {
-    with_default_timeout(|| {
-        // Document the single-task nature of each effect
-        // This list should be updated if new effects are added
-        let effect_responsibilities = vec![
-            ("AgentInvocation", "Invoke a single agent with a prompt"),
-            ("InitializeAgentChain", "Set up fallback chain for a role"),
-            (
-                "PreparePlanningPrompt",
-                "Render and persist planning prompt",
-            ),
-            (
-                "InvokePlanningAgent",
-                "Invoke planning agent for one iteration",
-            ),
-            ("ExtractPlanningXml", "Extract plan XML from canonical path"),
-            ("ValidatePlanningXml", "Validate plan XML"),
-            ("WritePlanningMarkdown", "Write PLAN.md from plan XML"),
-            (
-                "ArchivePlanningXml",
-                "Archive plan XML after writing PLAN.md",
-            ),
-            (
-                "ApplyPlanningOutcome",
-                "Apply planning outcome to reducer state",
-            ),
-            (
-                "PrepareDevelopmentContext",
-                "Prepare development context files for one iteration",
-            ),
-            (
-                "PrepareDevelopmentPrompt",
-                "Render and persist the development prompt for one iteration",
-            ),
-            (
-                "InvokeDevelopmentAgent",
-                "Invoke developer agent for one iteration",
-            ),
-            (
-                "ExtractDevelopmentXml",
-                "Extract development result XML from canonical path",
-            ),
-            ("ValidateDevelopmentXml", "Validate development result XML"),
-            (
-                "ApplyDevelopmentOutcome",
-                "Apply validated development outcome to advance state",
-            ),
-            (
-                "ArchiveDevelopmentXml",
-                "Archive .agent/tmp/development_result.xml",
-            ),
-            (
-                "PrepareReviewContext",
-                "Prepare review context files for one pass",
-            ),
-            (
-                "PrepareReviewPrompt",
-                "Render and persist the review prompt for one pass",
-            ),
-            ("InvokeReviewAgent", "Invoke reviewer agent for one pass"),
-            (
-                "ExtractReviewIssuesXml",
-                "Extract review issues XML from canonical path",
-            ),
-            ("ValidateReviewIssuesXml", "Validate review issues XML"),
-            ("WriteIssuesMarkdown", "Write .agent/ISSUES.md"),
-            (
-                "ExtractReviewIssueSnippets",
-                "Extract review issue snippets for UI output",
-            ),
-            (
-                "ArchiveReviewIssuesXml",
-                "Archive .agent/tmp/issues.xml after writing ISSUES.md",
-            ),
-            (
-                "ApplyReviewOutcome",
-                "Apply validated review outcome to advance review state",
-            ),
-            (
-                "PrepareFixPrompt",
-                "Render and persist the fix prompt for one pass",
-            ),
-            ("InvokeFixAgent", "Invoke fix agent for one pass"),
-            (
-                "ExtractFixResultXml",
-                "Extract fix result XML from canonical path",
-            ),
-            ("ValidateFixResultXml", "Validate fix result XML"),
-            (
-                "ApplyFixOutcome",
-                "Apply validated fix outcome to advance fix state",
-            ),
-            ("ArchiveFixResultXml", "Archive .agent/tmp/fix_result.xml"),
-            ("RunRebase", "Execute one rebase operation"),
-            ("ResolveRebaseConflicts", "Resolve conflicts once"),
-            ("PrepareCommitPrompt", "Prepare commit prompt"),
-            ("InvokeCommitAgent", "Invoke commit agent once"),
-            ("ExtractCommitXml", "Extract commit XML from canonical path"),
-            ("ValidateCommitXml", "Validate commit XML"),
-            (
-                "ApplyCommitMessageOutcome",
-                "Apply validated commit outcome",
-            ),
-            ("ArchiveCommitXml", "Archive .agent/tmp/commit_message.xml"),
-            ("CreateCommit", "Create one commit"),
-            ("SkipCommit", "Skip commit once"),
-            ("ValidateFinalState", "Validate final state once"),
-            ("SaveCheckpoint", "Save checkpoint once"),
-            ("CleanupContext", "Clean up context files once"),
-            ("RestorePromptPermissions", "Restore permissions once"),
-            (
-                "WriteContinuationContext",
-                "Write continuation context once",
-            ),
-            (
-                "CleanupContinuationContext",
-                "Cleanup continuation context once",
-            ),
-        ];
+    use ralph_workflow::reducer::state::PromptMode;
 
-        // Verify we have documented a reasonable number of effects
+    with_default_timeout(|| {
+        // AgentInvocation: carries only agent identity + prompt (single invocation)
+        let agent_effect = Effect::AgentInvocation {
+            role: AgentRole::Developer,
+            agent: "test".to_string(),
+            model: None,
+            prompt: "do work".to_string(),
+        };
         assert!(
-            effect_responsibilities.len() >= 15,
-            "Effect inventory should be maintained: {} effects documented",
-            effect_responsibilities.len()
+            matches!(agent_effect, Effect::AgentInvocation { .. }),
+            "AgentInvocation should be a distinct single-task effect"
         );
+
+        // SaveCheckpoint: carries only the trigger (single checkpoint save)
+        let checkpoint_effect = Effect::SaveCheckpoint {
+            trigger: CheckpointTrigger::PhaseTransition,
+        };
+        assert!(
+            matches!(
+                checkpoint_effect,
+                Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition
+                }
+            ),
+            "SaveCheckpoint carries only a trigger"
+        );
+
+        // PreparePlanningPrompt: carries only iteration + prompt_mode (single prompt render)
+        let plan_prompt = Effect::PreparePlanningPrompt {
+            iteration: 0,
+            prompt_mode: PromptMode::Normal,
+        };
+        match plan_prompt {
+            Effect::PreparePlanningPrompt {
+                iteration,
+                prompt_mode,
+            } => {
+                assert_eq!(iteration, 0);
+                assert!(matches!(prompt_mode, PromptMode::Normal));
+            }
+            _ => panic!("Expected PreparePlanningPrompt"),
+        }
+
+        // PrepareDevelopmentContext: carries only iteration (no prompt, no cleanup)
+        let dev_ctx = Effect::PrepareDevelopmentContext { iteration: 1 };
+        match dev_ctx {
+            Effect::PrepareDevelopmentContext { iteration } => {
+                assert_eq!(iteration, 1, "Only carries iteration");
+            }
+            _ => panic!("Expected PrepareDevelopmentContext"),
+        }
+
+        // PrepareReviewContext: carries only pass (no agent selection, no cleanup)
+        let review_ctx = Effect::PrepareReviewContext { pass: 0 };
+        match review_ctx {
+            Effect::PrepareReviewContext { pass } => {
+                assert_eq!(pass, 0, "Only carries pass number");
+            }
+            _ => panic!("Expected PrepareReviewContext"),
+        }
+
+        // CleanupContext and CleanupContinuationContext: no data at all (single cleanup action)
+        assert!(matches!(Effect::CleanupContext, Effect::CleanupContext));
+        assert!(matches!(
+            Effect::CleanupContinuationContext,
+            Effect::CleanupContinuationContext
+        ));
+
+        // ValidateFinalState: no data (single validation action)
+        assert!(matches!(
+            Effect::ValidateFinalState,
+            Effect::ValidateFinalState
+        ));
+
+        // CreateCommit: carries only the message (single commit creation)
+        let commit = Effect::CreateCommit {
+            message: "test".to_string(),
+        };
+        match commit {
+            Effect::CreateCommit { message } => {
+                assert_eq!(message, "test", "Only carries commit message");
+            }
+            _ => panic!("Expected CreateCommit"),
+        }
+
+        // InitializeAgentChain: carries only role (single chain setup)
+        let init_chain = Effect::InitializeAgentChain {
+            role: AgentRole::Developer,
+        };
+        match init_chain {
+            Effect::InitializeAgentChain { role } => {
+                assert!(
+                    matches!(role, AgentRole::Developer),
+                    "Only carries agent role"
+                );
+            }
+            _ => panic!("Expected InitializeAgentChain"),
+        }
     });
 }
 

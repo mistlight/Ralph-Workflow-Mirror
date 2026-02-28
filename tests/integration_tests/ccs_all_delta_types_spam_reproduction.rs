@@ -15,6 +15,7 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::{count_prefixed_lines, extract_spam_excerpt};
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;
 use ralph_workflow::json_parser::claude::ClaudeParser;
@@ -29,24 +30,6 @@ use std::io::BufReader;
 use std::rc::Rc;
 
 const ASCII_LOWERCASE: &[u8; 26] = b"abcdefghijklmnopqrstuvwxyz";
-
-/// Helper to count non-empty lines starting with a prefix
-fn count_prefixed_lines(output: &str, prefix: &str) -> usize {
-    output
-        .lines()
-        .filter(|line| !line.trim().is_empty() && line.contains(prefix))
-        .count()
-}
-
-/// Helper to extract excerpt showing repeated lines
-fn extract_spam_excerpt(output: &str, prefix: &str, max_lines: usize) -> String {
-    output
-        .lines()
-        .filter(|line| line.contains(prefix))
-        .take(max_lines)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 // ============================================================================
 // CCS/GLM (ClaudeParser) Edge Case Tests
