@@ -413,25 +413,30 @@ fn test_auth_fallback_switches_agent_without_prompt() {
 #[test]
 fn test_success_clears_continuation_prompt() {
     with_default_timeout(|| {
-        let mut chain = AgentChainState::initial().with_agents(
-            vec!["agent1".to_string(), "agent2".to_string()],
-            vec![vec![], vec![]],
-            AgentRole::Developer,
-        );
-        chain.rate_limit_continuation_prompt = Some(
-            ralph_workflow::reducer::state::RateLimitContinuationPrompt {
-                role: AgentRole::Developer,
-                prompt: "saved prompt".to_string(),
-            },
-        );
-        chain.current_agent_index = 1; // Now on agent2
-
         let state = PipelineState {
             phase: PipelinePhase::Development,
-            agent_chain: chain,
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            ),
             ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
 
+        // Rate-limit agent1 to move to agent2 with saved prompt (event-driven setup)
+        let state = reduce(
+            state,
+            PipelineEvent::agent_rate_limited(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("saved prompt".to_string()),
+            ),
+        );
+        // Verify preconditions established by the event
+        assert_eq!(state.agent_chain.current_agent().unwrap(), "agent2");
+        assert!(state.agent_chain.rate_limit_continuation_prompt.is_some());
+
+        // Act: success on agent2 should clear continuation prompt
         let new_state = reduce(
             state,
             PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent2".to_string()),
@@ -455,21 +460,47 @@ fn test_success_clears_continuation_prompt() {
 #[test]
 fn test_exhausted_chain_triggers_checkpoint() {
     with_default_timeout(|| {
-        let mut chain = AgentChainState::initial()
-            .with_agents(
-                vec!["agent1".to_string()],
-                vec![vec![]],
-                AgentRole::Developer,
-            )
-            .with_max_cycles(3);
-        // Exhaust the chain
-        chain.retry_cycle = 3;
-
-        let state = PipelineState {
+        let mut state = PipelineState {
             phase: PipelinePhase::Development,
-            agent_chain: chain,
+            agent_chain: AgentChainState::initial()
+                .with_agents(
+                    vec!["agent1".to_string()],
+                    vec![vec![]],
+                    AgentRole::Developer,
+                )
+                .with_max_cycles(3),
             ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
+
+        // Exhaust all 3 retry cycles through auth failures (event-driven setup).
+        // Each failure on the single agent wraps around and increments retry_cycle.
+        // Between cycles, RetryCycleStarted clears the backoff pending state.
+        for cycle in 0..3 {
+            state = reduce(
+                state,
+                PipelineEvent::agent_invocation_failed(
+                    AgentRole::Developer,
+                    "agent1".to_string(),
+                    1,
+                    AgentErrorKind::Authentication,
+                    false,
+                ),
+            );
+            // Clear backoff for intermediate cycles so the next failure can proceed
+            if cycle < 2 {
+                let cycle_num = state.agent_chain.retry_cycle;
+                state = reduce(
+                    state,
+                    PipelineEvent::agent_retry_cycle_started(AgentRole::Developer, cycle_num),
+                );
+            }
+        }
+
+        // Verify precondition: chain is now exhausted
+        assert!(
+            state.agent_chain.is_exhausted(),
+            "Agent chain should be exhausted after 3 failure cycles"
+        );
 
         let effect = determine_next_effect(&state);
         assert!(

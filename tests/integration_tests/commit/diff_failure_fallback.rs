@@ -121,6 +121,12 @@ fn test_fallback_instructions_contain_investigation_guidance() {
         run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
             .unwrap();
 
+        // Verify CheckCommitDiff effect was executed to prepare fallback diff
+        assert!(
+            effect_handler.was_effect_executed(|e| matches!(e, Effect::CheckCommitDiff)),
+            "CheckCommitDiff effect should execute to prepare fallback diff"
+        );
+
         // Observable behavior: diff is considered prepared (with fallback content)
         assert!(
             effect_handler.state.commit_diff_prepared,
@@ -272,6 +278,12 @@ fn test_fallback_works_with_multiple_files() {
 
         run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
             .unwrap();
+
+        // Verify CheckCommitDiff effect was executed for multiple-file scenario
+        assert!(
+            effect_handler.was_effect_executed(|e| matches!(e, Effect::CheckCommitDiff)),
+            "CheckCommitDiff should handle multiple files in fallback mode"
+        );
 
         // Pipeline should handle multiple files without issue
         assert_ne!(
