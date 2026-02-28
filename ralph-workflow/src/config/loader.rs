@@ -5,10 +5,11 @@
 //!
 //! # Configuration Priority
 //!
-//! 1. **Global config**: `~/.config/ralph-workflow.toml`
-//! 2. **Local config**: `.agent/ralph-workflow.toml` (overrides global)
-//! 3. **Override layer**: Environment variables (RALPH_*)
-//! 4. **CLI arguments**: Final override (handled at CLI layer)
+//! 1. **Explicit config path**: `--config PATH` (if provided)
+//! 2. **Global config**: `~/.config/ralph-workflow.toml` (when no explicit path)
+//! 3. **Local config**: `.agent/ralph-workflow.toml` (overrides global, only when no explicit path)
+//! 4. **Override layer**: Environment variables (RALPH_*)
+//! 5. **CLI arguments**: Final override (handled at CLI layer)
 //!
 //! # Legacy Configs
 //!
@@ -248,29 +249,33 @@ pub fn load_config_from_path_with_env(
         None
     };
 
-    // Step 2: Load and validate local config
-    let (local_unified, local_content) = if let Some(local_path) = env.local_config_path() {
-        if env.file_exists(&local_path) {
-            let content = env.read_file(&local_path)?;
-            // Validate the config file
-            match validate_config_file(&local_path, &content) {
-                Ok(config_warnings) => {
-                    warnings.extend(config_warnings);
+    // Step 2: Load and validate local config (only when no explicit --config path).
+    let (local_unified, local_content) = if config_path.is_none() {
+        if let Some(local_path) = env.local_config_path() {
+            if env.file_exists(&local_path) {
+                let content = env.read_file(&local_path)?;
+                // Validate the config file
+                match validate_config_file(&local_path, &content) {
+                    Ok(config_warnings) => {
+                        warnings.extend(config_warnings);
+                    }
+                    Err(errors) => {
+                        validation_errors.extend(errors);
+                    }
                 }
-                Err(errors) => {
-                    validation_errors.extend(errors);
+                match UnifiedConfig::load_from_content(&content) {
+                    Ok(cfg) => (Some(cfg), Some(content)),
+                    Err(e) => {
+                        validation_errors.push(ConfigValidationError::InvalidValue {
+                            file: local_path,
+                            key: "config".to_string(),
+                            message: format!("Failed to parse config: {e}"),
+                        });
+                        (None, None)
+                    }
                 }
-            }
-            match UnifiedConfig::load_from_content(&content) {
-                Ok(cfg) => (Some(cfg), Some(content)),
-                Err(e) => {
-                    validation_errors.push(ConfigValidationError::InvalidValue {
-                        file: local_path,
-                        key: "config".to_string(),
-                        message: format!("Failed to parse config: {e}"),
-                    });
-                    (None, None)
-                }
+            } else {
+                (None, None)
             }
         } else {
             (None, None)

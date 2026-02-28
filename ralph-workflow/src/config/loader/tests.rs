@@ -285,6 +285,82 @@ reviewer_reviews = 3
 
 #[test]
 #[serial]
+fn test_load_config_with_explicit_path_does_not_merge_local_override() {
+    let explicit_toml = r"
+[general]
+verbosity = 2
+developer_iters = 5
+reviewer_reviews = 2
+";
+
+    let local_toml = r"
+[general]
+developer_iters = 10
+reviewer_reviews = 3
+";
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/custom/config.toml", explicit_toml)
+        .with_file("/test/project/.agent/ralph-workflow.toml", local_toml);
+
+    let Ok((config, merged, _warnings)) =
+        load_config_from_path_with_env(Some(Path::new("/custom/config.toml")), &env)
+    else {
+        panic!("load_config_from_path_with_env should succeed");
+    };
+
+    assert_eq!(
+        config.developer_iters, 5,
+        "explicit --config should not be overridden by local config"
+    );
+    assert_eq!(
+        config.reviewer_reviews, 2,
+        "explicit --config should not be overridden by local config"
+    );
+
+    let unified = merged.expect("expected merged unified config from explicit path");
+    assert_eq!(
+        unified.general.developer_iters, 5,
+        "merged unified config should come from explicit --config only"
+    );
+    assert_eq!(
+        unified.general.reviewer_reviews, 2,
+        "merged unified config should come from explicit --config only"
+    );
+}
+
+#[test]
+#[serial]
+fn test_load_config_with_explicit_path_ignores_invalid_local_config() {
+    let explicit_toml = r"
+[general]
+verbosity = 2
+developer_iters = 6
+";
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_local_config_path("/test/project/.agent/ralph-workflow.toml")
+        .with_file("/custom/config.toml", explicit_toml)
+        .with_file(
+            "/test/project/.agent/ralph-workflow.toml",
+            "[general\ndeveloper_iters = 10",
+        );
+
+    let result = load_config_from_path_with_env(Some(Path::new("/custom/config.toml")), &env);
+    assert!(
+        result.is_ok(),
+        "explicit --config should ignore invalid local config; got: {result:?}"
+    );
+
+    let (config, _merged, _warnings) = result.expect("explicit config load should succeed");
+    assert_eq!(config.developer_iters, 6);
+}
+
+#[test]
+#[serial]
 fn test_load_config_local_only() {
     let local_toml = r"
 [general]

@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn test_local_only_agent_chain_uses_local_source_path() {
+    fn test_explicit_config_does_not_report_local_source() {
         let args = Args::try_parse_from(["ralph", "--config", "/test/config/ralph-workflow.toml"])
             .expect("args should parse");
         let logger = Logger::new(Colors::new());
@@ -435,11 +435,9 @@ mod tests {
                 .expect("initialization should succeed")
                 .expect("normal execution should return config init result");
 
-        assert_eq!(result.config_sources.len(), 1);
-        assert_eq!(
-            result.config_sources[0].path,
-            PathBuf::from("/test/config/ralph-workflow.toml"),
-            "with explicit --config, diagnostics source path should point to the explicit config path"
+        assert!(
+            result.config_sources.is_empty(),
+            "with explicit --config and no explicit file present, local config should not be consulted"
         );
         assert_eq!(result.agent_resolution_sources.local_config_path, None);
         assert_eq!(
