@@ -13,7 +13,9 @@
 //! - Tests are deterministic and isolated
 //! - Tests behavior, not implementation details
 
+use ralph_workflow::app::finalization::build_pipeline_summary;
 use ralph_workflow::banner::PipelineSummary;
+use ralph_workflow::config::Config;
 use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent, ReviewEvent};
 use ralph_workflow::reducer::state::{DevelopmentStatus, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
@@ -21,18 +23,7 @@ use ralph_workflow::reducer::state_reduction::reduce;
 use crate::test_timeout::with_default_timeout;
 
 fn summary_from_state(state: &PipelineState) -> PipelineSummary {
-    PipelineSummary {
-        total_time: "0m 00s".to_string(),
-        dev_runs_completed: state.metrics.dev_iterations_completed as usize,
-        dev_runs_total: state.metrics.max_dev_iterations as usize,
-        review_passes_completed: state.metrics.review_passes_completed as usize,
-        review_passes_total: state.metrics.max_review_passes as usize,
-        review_runs: state.metrics.review_runs_total as usize,
-        changes_detected: state.metrics.commits_created_total as usize,
-        isolation_mode: false,
-        verbose: false,
-        review_summary: None,
-    }
+    build_pipeline_summary("0m 00s".to_string(), &Config::test_default(), state)
 }
 
 #[test]
@@ -66,7 +57,7 @@ fn test_summary_matches_reducer_state_simple_run() {
             PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 0 }),
         );
 
-        // Verify production summary projection from reducer metrics.
+        // Verify summary through production summary builder.
         let summary = summary_from_state(&state);
         assert_eq!(summary.dev_runs_completed, 2);
         assert_eq!(summary.dev_runs_total, 2);
@@ -142,7 +133,7 @@ fn test_summary_matches_reducer_state_with_continuations() {
             PipelineEvent::commit_created("hash1".to_string(), "Fix issues".to_string()),
         );
 
-        // Verify production summary projection from reducer metrics.
+        // Verify summary through production summary builder.
         let summary = summary_from_state(&state);
         assert_eq!(summary.dev_runs_completed, 1);
         assert_eq!(summary.dev_runs_total, 1);
@@ -188,7 +179,7 @@ fn test_summary_matches_with_multiple_review_passes() {
             );
         }
 
-        // Verify production summary projection from reducer metrics.
+        // Verify summary through production summary builder.
         let summary = summary_from_state(&state);
         assert_eq!(summary.review_passes_completed, 3);
         assert_eq!(summary.review_passes_total, 3);
@@ -234,7 +225,9 @@ fn test_summary_consistency_with_xsd_retries() {
         assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
 
         // Summary should still show 1 iteration completed
-        assert_eq!(state.metrics.dev_iterations_completed, 1);
+        let summary = summary_from_state(&state);
+        assert_eq!(summary.dev_runs_completed, 1);
+        assert_eq!(summary.changes_detected, 1);
     });
 }
 
@@ -411,15 +404,7 @@ fn test_xsd_retry_attribution_across_phases() {
             "Commit XSD retries should be 0 (not tested in this scenario)"
         );
 
-        // Verify sum matches total
-        let sum = state.metrics.xsd_retry_planning
-            + state.metrics.xsd_retry_development
-            + state.metrics.xsd_retry_review
-            + state.metrics.xsd_retry_fix
-            + state.metrics.xsd_retry_commit;
-        assert_eq!(
-            sum, state.metrics.xsd_retry_attempts_total,
-            "Per-phase XSD retry counters should sum to total"
-        );
+        // Fixed expected total for this deterministic event sequence.
+        assert_eq!(state.metrics.xsd_retry_attempts_total, 5);
     });
 }

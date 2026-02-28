@@ -37,6 +37,26 @@ pub struct FinalizeContext<'a> {
 ///
 /// * `ctx` - Finalization context with logger, config, timer, and workspace
 /// * `final_state` - Final pipeline state from reducer (source of truth for metrics)
+#[must_use]
+pub const fn build_pipeline_summary(
+    total_time: String,
+    config: &Config,
+    final_state: &PipelineState,
+) -> PipelineSummary {
+    PipelineSummary {
+        total_time,
+        dev_runs_completed: final_state.metrics.dev_iterations_completed as usize,
+        dev_runs_total: final_state.metrics.max_dev_iterations as usize,
+        review_passes_completed: final_state.metrics.review_passes_completed as usize,
+        review_passes_total: final_state.metrics.max_review_passes as usize,
+        review_runs: final_state.metrics.review_runs_total as usize,
+        changes_detected: final_state.metrics.commits_created_total as usize,
+        isolation_mode: config.isolation_mode,
+        verbose: config.verbosity.is_verbose(),
+        review_summary: None,
+    }
+}
+
 pub fn finalize_pipeline(
     agent_phase_guard: &mut AgentPhaseGuard<'_>,
     ctx: FinalizeContext<'_>,
@@ -62,18 +82,7 @@ pub fn finalize_pipeline(
     // and per-cycle during review. The final commit phase has been removed.
 
     // Final summary derived exclusively from reducer state
-    let summary = PipelineSummary {
-        total_time: ctx.timer.elapsed_formatted(),
-        dev_runs_completed: final_state.metrics.dev_iterations_completed as usize,
-        dev_runs_total: final_state.metrics.max_dev_iterations as usize,
-        review_passes_completed: final_state.metrics.review_passes_completed as usize,
-        review_passes_total: final_state.metrics.max_review_passes as usize,
-        review_runs: final_state.metrics.review_runs_total as usize,
-        changes_detected: final_state.metrics.commits_created_total as usize,
-        isolation_mode: ctx.config.isolation_mode,
-        verbose: ctx.config.verbosity.is_verbose(),
-        review_summary: None,
-    };
+    let summary = build_pipeline_summary(ctx.timer.elapsed_formatted(), ctx.config, final_state);
     print_final_summary(ctx.colors, &summary, ctx.logger);
 
     if ctx.config.features.checkpoint_enabled {

@@ -459,24 +459,33 @@ fn test_analysis_uses_agent_chain_fallback() {
             "Should start with first agent"
         );
 
-        // Simulate invalid output attempts exceeding threshold
-        state.continuation.invalid_output_attempts = 4; // Exceeds max
+        // Drive repeated validation failures through reducer events.
+        // With max_xsd_retry_count=10 by default, the 10th failure exhausts retries
+        // and switches to the next agent.
+        for attempt in 0..10 {
+            state = reduce(
+                state,
+                PipelineEvent::Development(DevelopmentEvent::OutputValidationFailed {
+                    iteration: 0,
+                    attempt,
+                }),
+            );
+        }
 
-        // When: Continuation triggered due to invalid output
-        let event = PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
-            iteration: 0,
-            status: ralph_workflow::reducer::state::DevelopmentStatus::Failed,
-            summary: "Invalid XML produced".to_string(),
-            files_changed: None,
-            next_steps: Some("Retry with next agent".to_string()),
-        });
-        let new_state = reduce(state, event);
+        // Then: agent chain should have advanced to next agent via reducer transitions.
+        assert_eq!(
+            state.agent_chain.current_agent().unwrap(),
+            "agent2",
+            "After exhausting XSD retries, fallback should advance to next agent"
+        );
+        assert_eq!(state.continuation.xsd_retry_count, 0);
+        assert!(!state.continuation.xsd_retry_pending);
 
-        // Then: Agent chain should advance to next agent
-        // (The actual advancement logic is in the handler, but we verify state supports it)
+        // Observable follow-up behavior: fallback happened without direct internal mutation.
+        let next_effect = determine_next_effect(&state);
         assert!(
-            new_state.agent_chain.agents.len() > 1,
-            "Agent chain should have multiple agents for fallback"
+            !matches!(next_effect, Effect::InvokeAnalysisAgent { .. }),
+            "After fallback transition, flow should not immediately invoke analysis agent, got {next_effect:?}"
         );
     });
 }
