@@ -87,18 +87,11 @@ fn test_legacy_artifact_files_completely_ignored() {
     use ralph_workflow::reducer::event::PipelinePhase;
     use ralph_workflow::reducer::orchestration::determine_next_effect;
     use ralph_workflow::reducer::state::PipelineState;
-    use ralph_workflow::workspace::MemoryWorkspace;
 
     with_default_timeout(|| {
-        // Create workspace with legacy artifact files that should be ignored
-        let _workspace = MemoryWorkspace::new_test()
-            .with_file("ISSUES.md", "# Legacy Issues\n- Issue 1\n- Issue 2")
-            .with_file("PLAN.md", "# Legacy Plan\n\nDo legacy things")
-            .with_file(
-                ".agent/tmp/commit.xml",
-                "<commit><message>Legacy</message></commit>",
-            )
-            .with_dir(".agent/logs/planning_1"); // Legacy directory mode
+        // determine_next_effect is a pure function of PipelineState - it takes no
+        // workspace argument and cannot read the filesystem. Creating a MemoryWorkspace
+        // here would be dead scaffolding since nothing consumes it.
 
         // Create state in Development phase
         let mut state = with_locked_prompt_permissions(PipelineState::initial(2, 1));
@@ -109,17 +102,12 @@ fn test_legacy_artifact_files_completely_ignored() {
             AgentRole::Developer,
         );
 
-        // Effect determination must be pure - workspace contents must not affect it
+        // Effect determination must be pure - only state drives the decision
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::PrepareDevelopmentContext { .. }),
             "Effect must be determined from state alone, not workspace files"
         );
-
-        // Verify the workspace has our legacy files (confirming test setup)
-        // Note: We don't actually check workspace because determine_next_effect
-        // is stateless - it only takes &PipelineState, not &Workspace
-        // This demonstrates the architectural invariant that effects are pure.
     });
 }
 

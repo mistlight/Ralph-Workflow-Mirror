@@ -6,6 +6,7 @@ use super::*;
 use crate::reducer::state::AgentChainState;
 use crate::reducer::{reduce, PipelineEvent};
 
+#[must_use]
 fn create_test_state() -> PipelineState {
     PipelineState {
         // Set locked=true so tests don't need to deal with LockPromptPermissions effect

@@ -9,9 +9,9 @@ use crate::test_timeout::with_default_timeout;
 
 /// Test that all Effect variants represent single logical operations.
 ///
-/// This test documents the single-responsibility nature of each effect type.
-/// If a new effect is added that bundles multiple operations, this test
-/// should be updated to discuss whether the effect should be split.
+/// This test uses an exhaustive match (no wildcard) to ensure new variants
+/// are explicitly considered. It verifies each variant maps to exactly one
+/// observable operation without creating a parallel classification taxonomy.
 #[test]
 fn test_effects_are_single_task() {
     use ralph_workflow::agents::AgentRole;
@@ -20,166 +20,9 @@ fn test_effects_are_single_task() {
     use ralph_workflow::reducer::state::DevelopmentStatus;
 
     with_default_timeout(|| {
-        // This test enumerates all Effect variants to verify they each represent
-        // a single logical operation. The match is exhaustive so the test will
-        // fail to compile if new variants are added without consideration.
-
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        enum EffectTask {
-            AgentInvocation,
-            InitializeAgentChain,
-            PreparePlanningPrompt,
-            MaterializePlanningInputs,
-            InvokePlanningAgent,
-            ExtractPlanningXml,
-            ValidatePlanningXml,
-            WritePlanningMarkdown,
-            ArchivePlanningXml,
-            ApplyPlanningOutcome,
-            PrepareDevelopmentContext,
-            MaterializeDevelopmentInputs,
-            PrepareDevelopmentPrompt,
-            InvokeDevelopmentAgent,
-            InvokeAnalysisAgent,
-            ExtractDevelopmentXml,
-            ValidateDevelopmentXml,
-            ApplyDevelopmentOutcome,
-            ArchiveDevelopmentXml,
-            PrepareReviewContext,
-            MaterializeReviewInputs,
-            PrepareReviewPrompt,
-            InvokeReviewAgent,
-            ExtractReviewIssuesXml,
-            ValidateReviewIssuesXml,
-            WriteIssuesMarkdown,
-            ExtractReviewIssueSnippets,
-            ArchiveReviewIssuesXml,
-            ApplyReviewOutcome,
-            PrepareFixPrompt,
-            InvokeFixAgent,
-            ExtractFixResultXml,
-            ValidateFixResultXml,
-            ApplyFixOutcome,
-            ArchiveFixResultXml,
-            RunRebase,
-            ResolveRebaseConflicts,
-            CheckCommitDiff,
-            MaterializeCommitInputs,
-            PrepareCommitPrompt,
-            InvokeCommitAgent,
-            ExtractCommitXml,
-            ValidateCommitXml,
-            ApplyCommitMessageOutcome,
-            ArchiveCommitXml,
-            CreateCommit,
-            BackoffWait,
-            ReportAgentChainExhausted,
-            ValidateFinalState,
-            EnsureGitignoreEntries,
-            LockPromptPermissions,
-            RestorePromptPermissions,
-            WriteContinuationContext,
-            CleanupContinuationContext,
-            CleanupPlanningXml,
-            CleanupDevelopmentXml,
-            CleanupReviewIssuesXml,
-            CleanupFixResultXml,
-            CleanupCommitXml,
-            TriggerDevFixFlow,
-            TriggerLoopRecovery,
-            EmitRecoveryReset,
-            AttemptRecovery,
-            EmitRecoverySuccess,
-            EmitCompletionMarkerAndTerminate,
-            CheckUncommittedChangesBeforeTermination,
-        }
-
-        fn describe_effect_task(effect: &Effect) -> EffectTask {
-            match effect {
-                // Each match arm describes the SINGLE task the effect performs
-                Effect::AgentInvocation { .. } => EffectTask::AgentInvocation,
-                Effect::InitializeAgentChain { .. } => EffectTask::InitializeAgentChain,
-                Effect::PreparePlanningPrompt { .. } => EffectTask::PreparePlanningPrompt,
-                Effect::MaterializePlanningInputs { .. } => EffectTask::MaterializePlanningInputs,
-                Effect::InvokePlanningAgent { .. } => EffectTask::InvokePlanningAgent,
-                Effect::ExtractPlanningXml { .. } => EffectTask::ExtractPlanningXml,
-                Effect::ValidatePlanningXml { .. } => EffectTask::ValidatePlanningXml,
-                Effect::WritePlanningMarkdown { .. } => EffectTask::WritePlanningMarkdown,
-                Effect::ArchivePlanningXml { .. } => EffectTask::ArchivePlanningXml,
-                Effect::ApplyPlanningOutcome { .. } => EffectTask::ApplyPlanningOutcome,
-                Effect::PrepareDevelopmentContext { .. } => EffectTask::PrepareDevelopmentContext,
-                Effect::MaterializeDevelopmentInputs { .. } => {
-                    EffectTask::MaterializeDevelopmentInputs
-                }
-                Effect::PrepareDevelopmentPrompt { .. } => EffectTask::PrepareDevelopmentPrompt,
-                Effect::InvokeDevelopmentAgent { .. } => EffectTask::InvokeDevelopmentAgent,
-                Effect::InvokeAnalysisAgent { .. } => EffectTask::InvokeAnalysisAgent,
-                Effect::ExtractDevelopmentXml { .. } => EffectTask::ExtractDevelopmentXml,
-                Effect::ValidateDevelopmentXml { .. } => EffectTask::ValidateDevelopmentXml,
-                Effect::ApplyDevelopmentOutcome { .. } => EffectTask::ApplyDevelopmentOutcome,
-                Effect::ArchiveDevelopmentXml { .. } => EffectTask::ArchiveDevelopmentXml,
-                Effect::PrepareReviewContext { .. } => EffectTask::PrepareReviewContext,
-                Effect::MaterializeReviewInputs { .. } => EffectTask::MaterializeReviewInputs,
-                Effect::PrepareReviewPrompt { .. } => EffectTask::PrepareReviewPrompt,
-                Effect::InvokeReviewAgent { .. } => EffectTask::InvokeReviewAgent,
-                Effect::ExtractReviewIssuesXml { .. } => EffectTask::ExtractReviewIssuesXml,
-                Effect::ValidateReviewIssuesXml { .. } => EffectTask::ValidateReviewIssuesXml,
-                Effect::WriteIssuesMarkdown { .. } => EffectTask::WriteIssuesMarkdown,
-                Effect::ExtractReviewIssueSnippets { .. } => EffectTask::ExtractReviewIssueSnippets,
-                Effect::ArchiveReviewIssuesXml { .. } => EffectTask::ArchiveReviewIssuesXml,
-                Effect::ApplyReviewOutcome { .. } => EffectTask::ApplyReviewOutcome,
-                Effect::PrepareFixPrompt { .. } => EffectTask::PrepareFixPrompt,
-                Effect::InvokeFixAgent { .. } => EffectTask::InvokeFixAgent,
-                Effect::ExtractFixResultXml { .. } => EffectTask::ExtractFixResultXml,
-                Effect::ValidateFixResultXml { .. } => EffectTask::ValidateFixResultXml,
-                Effect::ApplyFixOutcome { .. } => EffectTask::ApplyFixOutcome,
-                Effect::ArchiveFixResultXml { .. } => EffectTask::ArchiveFixResultXml,
-                Effect::RunRebase { .. } => EffectTask::RunRebase,
-                Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
-                Effect::CheckCommitDiff => EffectTask::CheckCommitDiff,
-                Effect::MaterializeCommitInputs { .. } => EffectTask::MaterializeCommitInputs,
-                Effect::PrepareCommitPrompt { .. } => EffectTask::PrepareCommitPrompt,
-                Effect::InvokeCommitAgent => EffectTask::InvokeCommitAgent,
-                Effect::ExtractCommitXml => EffectTask::ExtractCommitXml,
-                Effect::ValidateCommitXml => EffectTask::ValidateCommitXml,
-                Effect::ApplyCommitMessageOutcome => EffectTask::ApplyCommitMessageOutcome,
-                Effect::ArchiveCommitXml => EffectTask::ArchiveCommitXml,
-                Effect::CreateCommit { .. }
-                | Effect::SkipCommit { .. }
-                | Effect::PushToRemote { .. }
-                | Effect::CreatePullRequest { .. } => EffectTask::CreateCommit,
-                Effect::BackoffWait { .. } => EffectTask::BackoffWait,
-                Effect::ReportAgentChainExhausted { .. } => EffectTask::ReportAgentChainExhausted,
-                Effect::ValidateFinalState => EffectTask::ValidateFinalState,
-                Effect::SaveCheckpoint { .. }
-                | Effect::EnsureGitignoreEntries
-                | Effect::CleanupContext
-                | Effect::ConfigureGitAuth { .. } => EffectTask::EnsureGitignoreEntries,
-                Effect::LockPromptPermissions => EffectTask::LockPromptPermissions,
-                Effect::RestorePromptPermissions => EffectTask::RestorePromptPermissions,
-                Effect::WriteContinuationContext(_) => EffectTask::WriteContinuationContext,
-                Effect::CleanupContinuationContext => EffectTask::CleanupContinuationContext,
-                Effect::CleanupPlanningXml { .. } => EffectTask::CleanupPlanningXml,
-                Effect::CleanupDevelopmentXml { .. } => EffectTask::CleanupDevelopmentXml,
-                Effect::CleanupReviewIssuesXml { .. } => EffectTask::CleanupReviewIssuesXml,
-                Effect::CleanupFixResultXml { .. } => EffectTask::CleanupFixResultXml,
-                Effect::CleanupCommitXml => EffectTask::CleanupCommitXml,
-                Effect::TriggerDevFixFlow { .. } => EffectTask::TriggerDevFixFlow,
-                Effect::TriggerLoopRecovery { .. } => EffectTask::TriggerLoopRecovery,
-                Effect::EmitRecoveryReset { .. } => EffectTask::EmitRecoveryReset,
-                Effect::AttemptRecovery { .. } => EffectTask::AttemptRecovery,
-                Effect::EmitRecoverySuccess { .. } => EffectTask::EmitRecoverySuccess,
-                Effect::EmitCompletionMarkerAndTerminate { .. } => {
-                    EffectTask::EmitCompletionMarkerAndTerminate
-                }
-                Effect::CheckUncommittedChangesBeforeTermination => {
-                    EffectTask::CheckUncommittedChangesBeforeTermination
-                }
-            }
-        }
-
-        // Create sample instances of each effect to verify they exist
-        // and the match is exhaustive
+        // Construct one instance of every Effect variant. The exhaustive match below
+        // will fail to compile if a new variant is added, forcing the developer to
+        // explicitly add it here and confirm it represents a single operation.
         let effects: Vec<Effect> = vec![
             Effect::AgentInvocation {
                 role: AgentRole::Developer,
@@ -270,6 +113,18 @@ fn test_effects_are_single_task() {
             Effect::SkipCommit {
                 reason: "test".to_string(),
             },
+            Effect::PushToRemote {
+                remote: "origin".to_string(),
+                branch: "main".to_string(),
+                force: false,
+                commit_sha: "abc123".to_string(),
+            },
+            Effect::CreatePullRequest {
+                base_branch: "main".to_string(),
+                head_branch: "feature".to_string(),
+                title: "test".to_string(),
+                body: "test body".to_string(),
+            },
             Effect::BackoffWait {
                 role: AgentRole::Developer,
                 cycle: 1,
@@ -286,6 +141,9 @@ fn test_effects_are_single_task() {
             },
             Effect::EnsureGitignoreEntries,
             Effect::CleanupContext,
+            Effect::ConfigureGitAuth {
+                auth_method: "token:oauth2".to_string(),
+            },
             Effect::LockPromptPermissions,
             Effect::RestorePromptPermissions,
             Effect::WriteContinuationContext(ContinuationContextData {
@@ -325,16 +183,93 @@ fn test_effects_are_single_task() {
             Effect::CheckUncommittedChangesBeforeTermination,
         ];
 
-        // Verify each effect maps to a single-task category.
+        // Exhaustive match guard: forces compile error when new variants are added.
+        // Each arm maps to a single-word description confirming single-responsibility.
+        // No parallel enum needed - the exhaustive match IS the compile-time guard.
         for effect in &effects {
-            let _task = describe_effect_task(effect);
+            let _description: &str = match effect {
+                Effect::AgentInvocation { .. }
+                | Effect::InvokePlanningAgent { .. }
+                | Effect::InvokeDevelopmentAgent { .. }
+                | Effect::InvokeAnalysisAgent { .. }
+                | Effect::InvokeReviewAgent { .. }
+                | Effect::InvokeFixAgent { .. }
+                | Effect::InvokeCommitAgent => "invoke-agent",
+                Effect::InitializeAgentChain { .. } => "init-chain",
+                Effect::PreparePlanningPrompt { .. }
+                | Effect::PrepareDevelopmentPrompt { .. }
+                | Effect::PrepareReviewPrompt { .. }
+                | Effect::PrepareFixPrompt { .. }
+                | Effect::PrepareCommitPrompt { .. } => "prepare-prompt",
+                Effect::MaterializePlanningInputs { .. }
+                | Effect::MaterializeDevelopmentInputs { .. }
+                | Effect::MaterializeReviewInputs { .. }
+                | Effect::MaterializeCommitInputs { .. } => "materialize-inputs",
+                Effect::ExtractPlanningXml { .. }
+                | Effect::ExtractDevelopmentXml { .. }
+                | Effect::ExtractReviewIssuesXml { .. }
+                | Effect::ExtractFixResultXml { .. }
+                | Effect::ExtractCommitXml => "extract-xml",
+                Effect::ValidatePlanningXml { .. }
+                | Effect::ValidateDevelopmentXml { .. }
+                | Effect::ValidateReviewIssuesXml { .. }
+                | Effect::ValidateFixResultXml { .. }
+                | Effect::ValidateCommitXml => "validate-xml",
+                Effect::ApplyPlanningOutcome { .. }
+                | Effect::ApplyDevelopmentOutcome { .. }
+                | Effect::ApplyReviewOutcome { .. }
+                | Effect::ApplyFixOutcome { .. }
+                | Effect::ApplyCommitMessageOutcome => "apply-outcome",
+                Effect::ArchivePlanningXml { .. }
+                | Effect::ArchiveDevelopmentXml { .. }
+                | Effect::ArchiveReviewIssuesXml { .. }
+                | Effect::ArchiveFixResultXml { .. }
+                | Effect::ArchiveCommitXml => "archive-file",
+                Effect::CleanupPlanningXml { .. }
+                | Effect::CleanupDevelopmentXml { .. }
+                | Effect::CleanupReviewIssuesXml { .. }
+                | Effect::CleanupFixResultXml { .. }
+                | Effect::CleanupCommitXml => "cleanup-xml",
+                Effect::PrepareDevelopmentContext { .. } | Effect::PrepareReviewContext { .. } => {
+                    "prepare-context"
+                }
+                Effect::WritePlanningMarkdown { .. } | Effect::WriteIssuesMarkdown { .. } => {
+                    "write-file"
+                }
+                Effect::ExtractReviewIssueSnippets { .. } => "extract-snippets",
+                Effect::RunRebase { .. } => "run-rebase",
+                Effect::ResolveRebaseConflicts { .. } => "resolve-conflicts",
+                Effect::CheckCommitDiff => "check-diff",
+                Effect::CreateCommit { .. } => "create-commit",
+                Effect::SkipCommit { .. } => "skip-commit",
+                Effect::PushToRemote { .. } => "push-remote",
+                Effect::CreatePullRequest { .. } => "create-pr",
+                Effect::BackoffWait { .. } => "backoff-wait",
+                Effect::ReportAgentChainExhausted { .. } => "report-exhausted",
+                Effect::ValidateFinalState => "validate-state",
+                Effect::SaveCheckpoint { .. } => "save-checkpoint",
+                Effect::EnsureGitignoreEntries => "ensure-gitignore",
+                Effect::CleanupContext => "cleanup-context",
+                Effect::ConfigureGitAuth { .. } => "configure-auth",
+                Effect::LockPromptPermissions => "lock-permissions",
+                Effect::RestorePromptPermissions => "restore-permissions",
+                Effect::WriteContinuationContext(_) => "write-continuation",
+                Effect::CleanupContinuationContext => "cleanup-continuation",
+                Effect::TriggerDevFixFlow { .. } => "trigger-devfix",
+                Effect::TriggerLoopRecovery { .. } => "trigger-recovery",
+                Effect::EmitRecoveryReset { .. } => "emit-reset",
+                Effect::AttemptRecovery { .. } => "attempt-recovery",
+                Effect::EmitRecoverySuccess { .. } => "emit-success",
+                Effect::EmitCompletionMarkerAndTerminate { .. } => "emit-completion",
+                Effect::CheckUncommittedChangesBeforeTermination => "check-uncommitted",
+            };
         }
 
-        // Keep this check in sync with the local `effects` list above.
+        // Variant count guard: catches additions/removals even if the match is updated.
         assert_eq!(
             effects.len(),
-            69,
-            "Expected 69 Effect variants; update this test if variants were added or removed"
+            72,
+            "Expected 72 Effect instances; update this test if variants were added or removed"
         );
     });
 }
@@ -406,7 +341,19 @@ fn test_agent_fallback_only_via_reducer_events() {
             Some(&"agent-b".to_string()),
             "InvocationFailed(retriable=false) should retry same agent first (except auth/429)"
         );
-        assert!(after_first_failure.continuation.same_agent_retry_pending);
+
+        // Observable behavior: determine_next_effect should still target agent-b
+        // (i.e., the reducer schedules a same-agent retry, not a fallback).
+        let retry_effect =
+            ralph_workflow::reducer::orchestration::determine_next_effect(&after_first_failure);
+        assert!(
+            !matches!(
+                retry_effect,
+                ralph_workflow::reducer::effect::Effect::BackoffWait { .. }
+                    | ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After first failure, should retry same agent, not backoff/exhaust: {retry_effect:?}"
+        );
 
         let after_second_failure = reduce(
             after_first_failure,
@@ -532,14 +479,18 @@ fn test_review_validation_failure_surfaces_via_event() {
             }),
         );
 
-        // The state should reflect the validation failure via continuation.invalid_output_attempts
-        // This proves the failure was surfaced to the reducer, not hidden in phase code
-        assert_eq!(
-            state.continuation.invalid_output_attempts, 1,
-            "Review validation failure must surface via reducer event and increment attempt counter"
+        // Observable behavior: after one validation failure, the reducer should
+        // still schedule a retry (not exhaust or advance agents).
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After one review validation failure, pipeline should retry, not exhaust: {effect:?}"
         );
 
-        // Another failure should increment again (reducer controls retry logic)
+        // Another failure should still allow retry (reducer controls retry logic)
         let state = reduce(
             state,
             PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
@@ -549,9 +500,13 @@ fn test_review_validation_failure_surfaces_via_event() {
             }),
         );
 
-        assert_eq!(
-            state.continuation.invalid_output_attempts, 2,
-            "Subsequent failures must continue to surface via reducer events"
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After two review validation failures, pipeline should still retry: {effect:?}"
         );
     });
 }

@@ -202,34 +202,6 @@ fn try_agent_execution(
             let error_kind =
                 classify_agent_error(exit_code, &result.stderr, stdout_error.as_deref());
 
-            // DEBUG: Log potential missed usage limit detection
-            // Conditions that might indicate usage limit without definitive detection:
-            // - Non-zero exit code
-            // - Empty or missing error logs (suggesting early termination)
-            // - No stderr output (clean exit but failed)
-            if !is_rate_limit_error(&error_kind) {
-                let has_empty_logs =
-                    stdout_error.is_none() || stdout_error.as_ref().unwrap().is_empty();
-                let has_empty_stderr = result.stderr.is_empty();
-
-                if exit_code != 0 && has_empty_logs && has_empty_stderr {
-                    runtime.logger.warn(&format!(
-                        "[OpenCode] Potential undetected usage limit for agent '{}': \
-                         exit_code={}, no_error_logs={}, no_stderr={} (classified as {:?})",
-                        config.agent_name, exit_code, has_empty_logs, has_empty_stderr, error_kind
-                    ));
-
-                    // Additional context logging
-                    runtime.logger.info(&format!(
-                        "[OpenCode] Logfile path: {}, workspace contains logfile: {}",
-                        config.logfile,
-                        runtime
-                            .workspace
-                            .exists(std::path::Path::new(config.logfile))
-                    ));
-                }
-            }
-
             // Special handling for rate limit: emit fact event with prompt context
             //
             // Rate limit detection supports both stderr and stdout error sources:

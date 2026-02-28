@@ -138,6 +138,7 @@ fn seed_materialized_planning_inputs(handler: &mut MainEffectHandler) {
         });
 }
 
+#[must_use]
 fn same_agent_retry_state(retry_count: u32) -> PipelineState {
     PipelineState {
         continuation: ContinuationState {

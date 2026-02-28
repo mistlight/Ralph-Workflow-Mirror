@@ -9,6 +9,7 @@
 use super::*;
 use crate::config::{CloudStateConfig, GitAuthStateMethod, GitRemoteStateConfig};
 
+#[must_use]
 fn create_cloud_enabled_state() -> PipelineState {
     let cloud = CloudStateConfig {
         enabled: true,

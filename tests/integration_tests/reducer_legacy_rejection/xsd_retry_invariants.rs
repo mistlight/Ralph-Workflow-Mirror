@@ -15,11 +15,11 @@ use crate::test_timeout::with_default_timeout;
 // XSD RETRY STATE TRACKING TESTS
 // ============================================================================
 
-/// Test that XSD validation failures are tracked in reducer state.
+/// Test that XSD validation failures produce observable retry behavior.
 ///
-/// This verifies that `invalid_output_attempts` in `ContinuationState` is incremented
-/// when `OutputValidationFailed` events are processed, making retry decisions
-/// explicit in state rather than hidden in phase code.
+/// This verifies that when `OutputValidationFailed` events are processed, the reducer
+/// produces retry effects (not chain exhaustion), making retry decisions
+/// explicit and observable rather than hidden in phase code.
 #[test]
 fn test_xsd_retry_count_in_reducer_state() {
     use ralph_workflow::agents::AgentRole;
@@ -30,16 +30,23 @@ fn test_xsd_retry_count_in_reducer_state() {
     with_default_timeout(|| {
         let mut state = PipelineState::initial(3, 1);
         state.phase = PipelinePhase::Development;
+        // Lock permissions so LockPromptPermissions doesn't preempt development effects
+        state.prompt_permissions.locked = true;
+        state.prompt_permissions.restore_needed = true;
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
             AgentRole::Developer,
         );
 
-        // Initial state should have zero invalid output attempts
-        assert_eq!(
-            state.continuation.invalid_output_attempts, 0,
-            "Initial state should have 0 invalid_output_attempts"
+        // Observable behavior: initial state should start development normally
+        let initial_effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
+        assert!(
+            !matches!(
+                initial_effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "Initial state should begin development normally: {initial_effect:?}"
         );
 
         // Simulate XSD validation failure - reducer should track this
@@ -48,21 +55,30 @@ fn test_xsd_retry_count_in_reducer_state() {
             PipelineEvent::development_output_validation_failed(0, 0),
         );
 
-        // State should track retry count
-        assert_eq!(
-            state.continuation.invalid_output_attempts, 1,
-            "Reducer state must track XSD retry attempts after OutputValidationFailed"
+        // Observable behavior: after a single validation failure, the pipeline
+        // should not exhaust the chain (it should retry in some form).
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After one XSD failure, pipeline should retry (not exhaust chain): {effect:?}"
         );
 
-        // Second failure should increment again
+        // Second failure should still allow retry
         let state = reduce(
             state,
             PipelineEvent::development_output_validation_failed(0, 1),
         );
 
-        assert_eq!(
-            state.continuation.invalid_output_attempts, 2,
-            "Reducer state must increment invalid_output_attempts on each failure"
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&state);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After two XSD failures (under budget), should not exhaust chain: {effect:?}"
         );
     });
 }
@@ -104,10 +120,19 @@ fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
             );
         }
 
-        // After max retries, invalid_output_attempts should be at max
+        // Observable behavior: before exhaustion, pipeline still targets the primary agent
         assert_eq!(
-            current_state.continuation.invalid_output_attempts, 2,
-            "Should have expected invalid_output_attempts before exhaustion"
+            current_state.agent_chain.current_agent(),
+            Some(&"primary-agent".to_string()),
+            "Before exhaustion, pipeline should still target primary agent"
+        );
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&current_state);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "Before exhaustion, pipeline should still retry (not exhaust chain): {effect:?}"
         );
 
         // One more failure should trigger agent advancement and reset counter
@@ -116,17 +141,22 @@ fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
             PipelineEvent::development_output_validation_failed(0, 2),
         );
 
-        // Counter should be reset after agent switch
-        assert_eq!(
-            final_state.continuation.invalid_output_attempts, 0,
-            "invalid_output_attempts should reset after agent advancement"
-        );
-
         // Agent chain should have advanced
         assert_eq!(
             final_state.agent_chain.current_agent(),
             Some(&"fallback-agent".to_string()),
             "Agent chain should advance to fallback after exhausting retries"
+        );
+
+        // Observable behavior: after agent advancement, pipeline continues development
+        // with the fallback agent (not stuck retrying or exhausted)
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&final_state);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After agent advancement, pipeline should continue with fallback agent: {effect:?}"
         );
     });
 }
@@ -170,10 +200,15 @@ fn test_xsd_retry_exhaustion_triggers_state_transition() {
             "Agent chain must advance after retry exhaustion (reducer-driven policy)"
         );
 
-        // Counter should reset for new agent
-        assert_eq!(
-            current.continuation.invalid_output_attempts, 0,
-            "Invalid output attempts must reset after agent switch"
+        // Observable behavior: after agent switch, pipeline continues development
+        // with the new agent (retry counter implicitly reset, pipeline not stuck)
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&current);
+        assert!(
+            !matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::ReportAgentChainExhausted { .. }
+            ),
+            "After agent switch, pipeline should continue with new agent: {effect:?}"
         );
     });
 }

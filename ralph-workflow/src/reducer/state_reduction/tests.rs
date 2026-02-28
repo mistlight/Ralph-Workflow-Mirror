@@ -16,6 +16,7 @@ use crate::reducer::state::PipelineState;
 use crate::reducer::state::RebaseState;
 use crate::reducer::state::SameAgentRetryReason;
 
+#[must_use]
 fn create_test_state() -> PipelineState {
     let mut state = PipelineState::initial(5, 2);
     state.agent_chain = AgentChainState::initial().with_agents(

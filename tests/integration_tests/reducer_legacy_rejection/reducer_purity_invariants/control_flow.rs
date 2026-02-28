@@ -314,11 +314,17 @@ fn test_agent_chain_cleared_on_dev_to_review_transition() {
             "Should transition to Review phase"
         );
 
-        // Agent chain should be CLEARED for Reviewer initialization
+        // Observable behavior: the orchestrator should need to initialize
+        // a new Reviewer agent chain (the old Developer chain was cleared).
+        let effect = ralph_workflow::reducer::orchestration::determine_next_effect(&new_state);
         assert!(
-            new_state.agent_chain.agents.is_empty(),
-            "Agent chain must be cleared on dev->review transition, was: {:?}",
-            new_state.agent_chain.agents
+            matches!(
+                effect,
+                ralph_workflow::reducer::effect::Effect::InitializeAgentChain {
+                    role: AgentRole::Reviewer
+                }
+            ),
+            "After dev->review transition, next effect must be InitializeAgentChain(Reviewer), got {effect:?}"
         );
     });
 }
