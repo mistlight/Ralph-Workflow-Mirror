@@ -1,20 +1,9 @@
 // Common imports and helpers for development_prompt tests
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::{MockProcessExecutor, ProcessExecutor};
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
+use super::common::TestFixture;
 use crate::reducer::event::{DevelopmentEvent, PipelineEvent, PromptInputEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode, SameAgentRetryReason};
-use crate::workspace::MemoryWorkspace;
-use crate::workspace::Workspace;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use crate::workspace::{MemoryWorkspace, Workspace};
 
 mod context_inclusion;
 mod continuation_prompt;

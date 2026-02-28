@@ -23,7 +23,7 @@ use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
 use ralph_workflow::reducer::orchestration::determine_next_effect;
-use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState, PromptMode};
 
 use super::helpers::create_state_with_agent_chain_in_development;
 
@@ -50,9 +50,18 @@ fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
             new_state.agent_chain.current_agent().map(String::as_str),
             Some("agent1")
         );
-        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
-        // (XSD retry is only for invalid XML output, not execution failures)
-        assert!(new_state.continuation.same_agent_retry_pending);
+        // Verify behavioral outcome: orchestration should produce a same-agent retry effect
+        let effect = determine_next_effect(&with_locked_prompt_permissions(new_state.clone()));
+        assert!(
+            matches!(
+                effect,
+                Effect::PrepareDevelopmentPrompt {
+                    prompt_mode: PromptMode::SameAgentRetry,
+                    ..
+                }
+            ),
+            "First SIGSEGV should produce same-agent retry effect, got: {effect:?}"
+        );
         assert_eq!(new_state.phase, PipelinePhase::Development);
 
         // Second internal error exhausts budget => fall back to next agent
@@ -97,9 +106,18 @@ fn test_agent_panic_caught_by_fault_tolerant_executor() {
             new_state.agent_chain.current_agent().map(String::as_str),
             Some("agent1")
         );
-        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
-        // (XSD retry is only for invalid XML output, not execution failures)
-        assert!(new_state.continuation.same_agent_retry_pending);
+        // Verify behavioral outcome: orchestration should produce a same-agent retry effect
+        let effect = determine_next_effect(&with_locked_prompt_permissions(new_state.clone()));
+        assert!(
+            matches!(
+                effect,
+                Effect::PrepareDevelopmentPrompt {
+                    prompt_mode: PromptMode::SameAgentRetry,
+                    ..
+                }
+            ),
+            "First panic should produce same-agent retry effect, got: {effect:?}"
+        );
 
         // Second internal error exhausts budget => fall back to next agent
         let after_second = ralph_workflow::reducer::state_reduction::reduce(

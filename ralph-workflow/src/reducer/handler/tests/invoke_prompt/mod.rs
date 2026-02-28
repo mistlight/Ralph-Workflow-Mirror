@@ -19,25 +19,9 @@ mod continuation;
 mod error_handling;
 mod prompt_selection;
 
-use crate::agents::{AgentRegistry, AgentRole};
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::{MockProcessExecutor, ProcessExecutor};
-use crate::logger::{Colors, Logger};
-use crate::logging::RunLogContext;
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::{AgentEvent, PipelineEvent};
-use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
-use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::{AgentChainState, CommitState, PipelineState};
-use crate::workspace::MemoryWorkspace;
-use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Test helper: Workspace that fails reads for a specific path
 ///
@@ -45,14 +29,14 @@ use std::sync::Arc;
 /// permission errors or other non-NotFound I/O errors.
 #[derive(Debug, Clone)]
 pub(super) struct ReadFailingWorkspace {
-    inner: MemoryWorkspace,
+    inner: crate::workspace::MemoryWorkspace,
     forbidden_read_path: PathBuf,
     error_kind: io::ErrorKind,
 }
 
 impl ReadFailingWorkspace {
     pub(super) fn new(
-        inner: MemoryWorkspace,
+        inner: crate::workspace::MemoryWorkspace,
         forbidden_read_path: PathBuf,
         error_kind: io::ErrorKind,
     ) -> Self {

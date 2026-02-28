@@ -1,25 +1,15 @@
+use super::super::super::common::TestFixture;
 use super::super::AtomicWriteEnforcingWorkspace;
 use super::ReadFailingWorkspace;
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode, SameAgentRetryReason};
 use crate::workspace::MemoryWorkspace;
-use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 #[test]
 fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     // Per acceptance criteria #5: Template rendering errors must never terminate the pipeline.
     // When prompt file write fails, the handler logs a warning and continues successfully.
     let inner = MemoryWorkspace::new_test()
@@ -34,40 +24,8 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
     let workspace =
         AtomicWriteEnforcingWorkspace::new(inner, PathBuf::from(".agent/tmp/fix_prompt.txt"));
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -94,7 +52,6 @@ fn test_prepare_fix_prompt_workspace_write_failure_is_non_fatal() {
 
 #[test]
 fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "<issues/>\n")
@@ -105,40 +62,8 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
@@ -162,7 +87,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_prompt_backup_read_errors
 
 #[test]
 fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/ISSUES.md", "<issues/>\n")
@@ -173,40 +97,8 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
@@ -230,7 +122,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_plan_read_errors() {
 
 #[test]
 fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -241,40 +132,8 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
@@ -299,7 +158,6 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_read_errors() {
     use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
-    let cloud = crate::config::types::CloudConfig::disabled();
 
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
@@ -312,40 +170,8 @@ fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_rea
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler.state.continuation = ContinuationState {

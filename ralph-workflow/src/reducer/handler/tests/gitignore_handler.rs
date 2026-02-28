@@ -1,99 +1,15 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
+use super::common::TestFixture;
 use crate::reducer::event::LifecycleEvent;
 use crate::reducer::handler::MainEffectHandler;
 use crate::workspace::{MemoryWorkspace, Workspace};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-
-/// Helper struct to group test context parameters
-struct TestContextParams<'a> {
-    workspace: &'a dyn crate::workspace::Workspace,
-    workspace_arc: &'a Arc<dyn crate::workspace::Workspace>,
-    config: &'a Config,
-    registry: &'a AgentRegistry,
-    logger: &'a Logger,
-    colors: &'a Colors,
-    timer: &'a mut Timer,
-    template_context: &'a TemplateContext,
-    executor: &'a dyn crate::executor::ProcessExecutor,
-    executor_arc: Arc<dyn crate::executor::ProcessExecutor>,
-    repo_root: &'a std::path::Path,
-    run_log_context: &'a crate::logging::RunLogContext,
-}
-
-fn create_test_context<'a>(
-    params: TestContextParams<'a>,
-    cloud: &'a crate::config::types::CloudConfig,
-) -> crate::phases::PhaseContext<'a> {
-    crate::phases::PhaseContext {
-        config: params.config,
-        registry: params.registry,
-        logger: params.logger,
-        colors: params.colors,
-        timer: params.timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: params.template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: params.executor,
-        executor_arc: params.executor_arc,
-        repo_root: params.repo_root,
-        workspace: params.workspace,
-        workspace_arc: Arc::clone(params.workspace_arc),
-        run_log_context: params.run_log_context,
-        cloud_reporter: None,
-        cloud,
-    }
-}
 
 #[test]
 fn test_ensure_gitignore_creates_file_when_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-
-    let ctx = create_test_context(
-        TestContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            template_context: &template_context,
-            executor: executor.as_ref(),
-            executor_arc: executor.clone(),
-            repo_root: repo_root.as_path(),
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx();
 
     let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
-    // Verify event
     match result.event {
         crate::reducer::event::PipelineEvent::Lifecycle(
             LifecycleEvent::GitignoreEntriesEnsured {
@@ -111,9 +27,11 @@ fn test_ensure_gitignore_creates_file_when_missing() {
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
 
-    // Verify file was written
-    assert!(workspace.exists(std::path::Path::new(".gitignore")));
-    let content = workspace.read(std::path::Path::new(".gitignore")).unwrap();
+    assert!(fixture.workspace.exists(std::path::Path::new(".gitignore")));
+    let content = fixture
+        .workspace
+        .read(std::path::Path::new(".gitignore"))
+        .unwrap();
     assert!(content.contains("/PROMPT*"));
     assert!(content.contains(".agent/"));
     assert!(content.contains("# Ralph-workflow artifacts"));
@@ -121,41 +39,12 @@ fn test_ensure_gitignore_creates_file_when_missing() {
 
 #[test]
 fn test_ensure_gitignore_appends_when_file_exists() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
-    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-
-    let ctx = create_test_context(
-        TestContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            template_context: &template_context,
-            executor: executor.as_ref(),
-            executor_arc: executor.clone(),
-            repo_root: repo_root.as_path(),
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
-    // Verify event
     match result.event {
         crate::reducer::event::PipelineEvent::Lifecycle(
             LifecycleEvent::GitignoreEntriesEnsured {
@@ -171,8 +60,10 @@ fn test_ensure_gitignore_appends_when_file_exists() {
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
 
-    // Verify existing content preserved
-    let content = workspace.read(std::path::Path::new(".gitignore")).unwrap();
+    let content = fixture
+        .workspace
+        .read(std::path::Path::new(".gitignore"))
+        .unwrap();
     assert!(content.contains("node_modules/"));
     assert!(content.contains("*.log"));
     assert!(content.contains("/PROMPT*"));
@@ -181,42 +72,13 @@ fn test_ensure_gitignore_appends_when_file_exists() {
 
 #[test]
 fn test_ensure_gitignore_idempotent_when_entries_exist() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let existing = "# Ralph-workflow artifacts (auto-generated)\n/PROMPT*\n.agent/\n";
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", existing);
-    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-
-    let ctx = create_test_context(
-        TestContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            template_context: &template_context,
-            executor: executor.as_ref(),
-            executor_arc: executor.clone(),
-            repo_root: repo_root.as_path(),
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
-    // Verify event
     match result.event {
         crate::reducer::event::PipelineEvent::Lifecycle(
             LifecycleEvent::GitignoreEntriesEnsured {
@@ -232,48 +94,24 @@ fn test_ensure_gitignore_idempotent_when_entries_exist() {
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
 
-    // Verify content unchanged
-    let content = workspace.read(std::path::Path::new(".gitignore")).unwrap();
-    assert_eq!(content, existing);
+    let content = fixture
+        .workspace
+        .read(std::path::Path::new(".gitignore"))
+        .unwrap();
+    assert_eq!(
+        content,
+        "# Ralph-workflow artifacts (auto-generated)\n/PROMPT*\n.agent/\n"
+    );
 }
 
 #[test]
 fn test_ensure_gitignore_partial_entries() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "/PROMPT*\n");
-    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-
-    let ctx = create_test_context(
-        TestContextParams {
-            workspace: &workspace,
-            workspace_arc: &workspace_arc,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            template_context: &template_context,
-            executor: executor.as_ref(),
-            executor_arc: executor.clone(),
-            repo_root: repo_root.as_path(),
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
-    // Verify event
     match result.event {
         crate::reducer::event::PipelineEvent::Lifecycle(
             LifecycleEvent::GitignoreEntriesEnsured {
@@ -293,17 +131,18 @@ fn test_ensure_gitignore_partial_entries() {
 }
 
 /// Workspace wrapper that simulates write failures for testing error handling.
-struct FailingWriteWorkspace<'a> {
-    inner: &'a dyn Workspace,
+#[derive(Debug, Clone)]
+struct FailingWriteWorkspace {
+    inner: MemoryWorkspace,
 }
 
-impl<'a> FailingWriteWorkspace<'a> {
-    fn new(inner: &'a dyn Workspace) -> Self {
+impl FailingWriteWorkspace {
+    fn new(inner: MemoryWorkspace) -> Self {
         Self { inner }
     }
 }
 
-impl Workspace for FailingWriteWorkspace<'_> {
+impl Workspace for FailingWriteWorkspace {
     fn root(&self) -> &std::path::Path {
         self.inner.root()
     }
@@ -317,7 +156,6 @@ impl Workspace for FailingWriteWorkspace<'_> {
     }
 
     fn write(&self, _relative: &std::path::Path, _content: &str) -> std::io::Result<()> {
-        // Simulate write failure
         Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             "simulated permission denied",
@@ -325,7 +163,6 @@ impl Workspace for FailingWriteWorkspace<'_> {
     }
 
     fn write_bytes(&self, _relative: &std::path::Path, _content: &[u8]) -> std::io::Result<()> {
-        // Simulate write failure
         Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             "simulated permission denied",
@@ -394,43 +231,14 @@ impl Workspace for FailingWriteWorkspace<'_> {
 
 #[test]
 fn test_ensure_gitignore_handles_write_failure_gracefully() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    // Setup: workspace with existing file that will fail to write
     let workspace = MemoryWorkspace::new_test().with_file(".gitignore", "node_modules/\n*.log\n");
-    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
-    let failing_workspace = FailingWriteWorkspace::new(&workspace);
+    let failing_workspace = FailingWriteWorkspace::new(workspace.clone());
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-
-    let ctx = create_test_context(
-        TestContextParams {
-            workspace: &failing_workspace,
-            workspace_arc: &workspace_arc,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            template_context: &template_context,
-            executor: executor.as_ref(),
-            executor_arc: executor.clone(),
-            repo_root: repo_root.as_path(),
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx_with_workspace(&failing_workspace);
 
     let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
-    // Verify event - should have empty entries_added because write failed
     match result.event {
         crate::reducer::event::PipelineEvent::Lifecycle(
             LifecycleEvent::GitignoreEntriesEnsured {
@@ -439,21 +247,20 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
                 created,
             },
         ) => {
-            // Write failed, so no entries were added
             assert!(
                 added.is_empty(),
                 "entries_added should be empty when write fails"
             );
-            // Already present list should still be correct (checked before write)
             assert!(existing.is_empty());
-            // created should be false (file existed before)
             assert!(!created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
 
-    // Verify file was NOT modified (write failed)
-    let content = workspace.read(std::path::Path::new(".gitignore")).unwrap();
+    let content = fixture
+        .workspace
+        .read(std::path::Path::new(".gitignore"))
+        .unwrap();
     assert_eq!(content, "node_modules/\n*.log\n");
     assert!(!content.contains("/PROMPT*"));
     assert!(!content.contains(".agent/"));
@@ -461,43 +268,14 @@ fn test_ensure_gitignore_handles_write_failure_gracefully() {
 
 #[test]
 fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    // Setup: no existing .gitignore, write will fail
     let workspace = MemoryWorkspace::new_test();
-    let workspace_arc = std::sync::Arc::new(workspace.clone()) as Arc<dyn Workspace>;
-    let failing_workspace = FailingWriteWorkspace::new(&workspace);
+    let failing_workspace = FailingWriteWorkspace::new(workspace.clone());
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-
-    let ctx = create_test_context(
-        TestContextParams {
-            workspace: &failing_workspace,
-            workspace_arc: &workspace_arc,
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            template_context: &template_context,
-            executor: executor.as_ref(),
-            executor_arc: executor.clone(),
-            repo_root: repo_root.as_path(),
-            run_log_context: &run_log_context,
-        },
-        &cloud,
-    );
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx_with_workspace(&failing_workspace);
 
     let result = MainEffectHandler::ensure_gitignore_entries(&ctx);
 
-    // Verify event - should have empty entries_added because write failed
     match result.event {
         crate::reducer::event::PipelineEvent::Lifecycle(
             LifecycleEvent::GitignoreEntriesEnsured {
@@ -506,19 +284,15 @@ fn test_ensure_gitignore_handles_write_failure_on_missing_file() {
                 created,
             },
         ) => {
-            // Write failed, so no entries were added
             assert!(
                 added.is_empty(),
                 "entries_added should be empty when write fails"
             );
-            // Already present list should be empty (no file existed)
             assert!(existing.is_empty());
-            // created should be true (file didn't exist before, even though write failed)
             assert!(created);
         }
         _ => panic!("Expected GitignoreEntriesEnsured event"),
     }
 
-    // Verify file was NOT created (write failed)
-    assert!(!workspace.exists(std::path::Path::new(".gitignore")));
+    assert!(!fixture.workspace.exists(std::path::Path::new(".gitignore")));
 }

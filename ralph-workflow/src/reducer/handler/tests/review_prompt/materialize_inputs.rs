@@ -1,21 +1,12 @@
+use super::super::common::TestFixture;
 use super::AtomicWriteEnforcingWorkspace;
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 struct ReadFailingWorkspace {
@@ -235,48 +226,13 @@ impl Workspace for ReadFailingWorkspace {
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config {
-        isolation_mode: false,
-        ..Default::default()
-    };
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    fixture.config.isolation_mode = false;
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
@@ -295,7 +251,8 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     );
 
     // Verify the PLAN file was created with sentinel content (no isolation mode context)
-    let plan_content = workspace
+    let plan_content = fixture
+        .workspace
         .read(std::path::Path::new(".agent/PLAN.md"))
         .expect("PLAN.md should exist after materialization");
     assert_eq!(
@@ -306,49 +263,14 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
 
 #[test]
 fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     // Intentionally do not create `.agent/` up-front. Some workspace implementations
     // do not auto-create parent directories on write.
     let inner = MemoryWorkspace::new_test();
     let workspace = ParentDirRequiredWorkspace::new(inner);
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config {
-        isolation_mode: false,
-        ..Default::default()
-    };
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    fixture.config.isolation_mode = false;
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
@@ -363,7 +285,6 @@ fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -373,43 +294,9 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config {
-        isolation_mode: false,
-        ..Default::default()
-    };
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    fixture.config.isolation_mode = false;
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
@@ -433,7 +320,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -444,43 +330,9 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config {
-        isolation_mode: false,
-        ..Default::default()
-    };
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    fixture.config.isolation_mode = false;
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
@@ -504,7 +356,6 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_e
 
 #[test]
 fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -515,40 +366,8 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler
@@ -572,48 +391,13 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config {
-        isolation_mode: true,
-        ..Default::default()
-    };
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    fixture.config.isolation_mode = true;
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
@@ -632,7 +416,8 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
     );
 
     // Verify the PLAN file was created with sentinel content including isolation mode context
-    let plan_content = workspace
+    let plan_content = fixture
+        .workspace
         .read(std::path::Path::new(".agent/PLAN.md"))
         .expect("PLAN.md should exist after materialization");
     assert_eq!(
@@ -643,45 +428,12 @@ fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context
 
 #[test]
 fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
@@ -702,7 +454,6 @@ fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing()
 
 #[test]
 fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let large_diff = "d".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 1);
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -711,40 +462,8 @@ fn test_materialize_review_inputs_writes_oversize_diff_with_atomic_write() {
     let workspace =
         AtomicWriteEnforcingWorkspace::new(inner, std::path::PathBuf::from(".agent/tmp/diff.txt"));
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler

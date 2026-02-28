@@ -5,48 +5,22 @@
 //! - Non-NotFound I/O errors (`PermissionDenied`, etc.)
 //! - Agent invocation failures don't mark agent as invoked
 
-use super::*;
+use super::super::common::TestFixture;
+use super::ReadFailingWorkspace;
+use crate::executor::MockProcessExecutor;
+use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
+use crate::reducer::handler::MainEffectHandler;
+use crate::reducer::state::{AgentChainState, PipelineState};
+use crate::workspace::MemoryWorkspace;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[test]
 fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-    let _run_log_context = RunLogContext::new(&workspace).unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -61,49 +35,17 @@ fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
         PathBuf::from(".agent/tmp/planning_prompt.txt"),
-        io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -127,47 +69,16 @@ fn test_invoke_planning_agent_maps_non_not_found_prompt_read_errors_to_workspace
 
 #[test]
 fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace =
         MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new().with_agent_result(
+    let mut fixture = TestFixture::with_workspace(workspace);
+    fixture.executor = Arc::new(MockProcessExecutor::new().with_agent_result(
         "claude",
         Ok(crate::executor::AgentCommandResult::failure(1, "boom")),
     ));
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     handler.state.agent_chain = AgentChainState::initial().with_agents(

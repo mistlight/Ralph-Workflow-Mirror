@@ -1,30 +1,15 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
+use super::super::common::TestFixture;
 use crate::reducer::event::{
     AgentEvent, PipelineEvent, PipelinePhase, PromptInputEvent, ReviewEvent,
 };
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::{ContinuationState, PipelineState, PromptMode};
-use crate::workspace::MemoryWorkspace;
+use crate::reducer::state::{ContinuationState, PipelineState, PromptInputKind, PromptMode};
 use crate::workspace::Workspace;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 
 #[test]
 fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
-    use crate::reducer::event::PromptInputEvent;
-    use crate::reducer::state::PromptInputKind;
-
-    let cloud = crate::config::types::CloudConfig::disabled();
-
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -34,40 +19,10 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
         )
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -107,53 +62,18 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
 
 #[test]
 fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
-    use crate::reducer::event::PromptInputEvent;
-    use crate::reducer::state::PromptInputKind;
-
-    let cloud = crate::config::types::CloudConfig::disabled();
-
     let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_file(".agent/tmp/issues.xml", &large_last_output)
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -186,8 +106,7 @@ fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
 
 #[test]
 fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -196,46 +115,12 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
             "{{MISSING}}",
         );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let mut prompt_history = HashMap::new();
-    prompt_history.insert(
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.prompt_history.insert(
         "review_0_xsd_retry_1".to_string(),
         "Last output was {{MISSING}}".to_string(),
     );
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history,
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -254,47 +139,14 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
 
 #[test]
 fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -317,54 +169,19 @@ fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
 
 #[test]
 fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_file(".agent/tmp/issues.xml", "<ralph-issues>bad</ralph-issues>")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let mut prompt_history = HashMap::new();
-    prompt_history.insert(
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.prompt_history.insert(
         "review_0_xsd_retry_1".to_string(),
         "retry prompt {{UNRESOLVED}}".to_string(),
     );
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history,
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -382,7 +199,8 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         matches!(result.event, PipelineEvent::Review(_)),
         "expected retry prompt to be prepared even if prompt_history contains stale placeholders"
     );
-    let prompt = workspace
+    let prompt = fixture
+        .workspace
         .read(Path::new(".agent/tmp/review_prompt.txt"))
         .expect("review prompt file should be written");
     assert!(
@@ -393,46 +211,13 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
 
 #[test]
 fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -447,7 +232,8 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
         .expect("prepare_review_prompt should succeed without issues.xml");
 
     assert!(matches!(result.event, PipelineEvent::Review(_)));
-    let prompt = workspace
+    let prompt = fixture
+        .workspace
         .read(Path::new(".agent/tmp/review_prompt.txt"))
         .expect("review prompt file should be written");
     assert!(
@@ -458,53 +244,18 @@ fn test_prepare_review_prompt_xsd_retry_allows_missing_issues_xml() {
 
 #[test]
 fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "Issue\n")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let mut prompt_history = HashMap::new();
-    prompt_history.insert(
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.prompt_history.insert(
         "fix_0_xsd_retry_1".to_string(),
         "retry prompt {{UNRESOLVED}}".to_string(),
     );
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history,
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -518,57 +269,22 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_fix_prompt should succeed");
 
-    // XSD retry prompts succeed (they don't have unresolved placeholders in practice)
-    // The test was checking for TemplateVariablesInvalid but fix prompts actually succeed
     assert!(matches!(
         result.event,
-        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixPromptPrepared { .. })
+        PipelineEvent::Review(ReviewEvent::FixPromptPrepared { .. })
     ));
 }
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "Issue\n")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -591,48 +307,15 @@ fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
 
 #[test]
 fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "Issue\n")
         .with_file(".agent/tmp/fix_result.xml", "<ralph-fix-result/>")
         .with_dir(".agent/tmp");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -672,56 +355,25 @@ fn test_prepare_fix_prompt_xsd_retry_reports_missing_xsd_error() {
 
 #[test]
 fn test_prepare_fix_prompt_uses_prompt_history_replay() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test()
+    let workspace = crate::workspace::MemoryWorkspace::new_test()
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "Issue\n");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let mut prompt_history = HashMap::new();
-    prompt_history.insert("fix_0".to_string(), "REPLAYED PROMPT".to_string());
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history,
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
+    ctx.prompt_history
+        .insert("fix_0".to_string(), "REPLAYED PROMPT".to_string());
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
         .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");
 
-    let content = workspace
+    let content = fixture
+        .workspace
         .read(std::path::Path::new(".agent/tmp/fix_prompt.txt"))
         .expect("fix prompt should be written");
     assert!(content.contains("REPLAYED PROMPT"));
@@ -729,7 +381,6 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
 
 #[test]
 fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
-    let _cloud = crate::config::types::CloudConfig::disabled();
     let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
     assert!(
         template.contains(
@@ -741,7 +392,6 @@ fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
 
 #[test]
 fn test_fix_mode_xsd_retry_template_lists_fix_result_status_values() {
-    let _cloud = crate::config::types::CloudConfig::disabled();
     let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
     assert!(
         template.contains("all_issues_addressed")

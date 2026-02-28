@@ -12,7 +12,7 @@ use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::determine_next_effect;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::PipelinePhase;
-use ralph_workflow::reducer::state::PipelineState;
+use ralph_workflow::reducer::state::{PipelineState, PromptMode};
 
 use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
@@ -46,16 +46,29 @@ fn test_xsd_retry_preserves_session() {
     });
 }
 
-/// Test that same-agent retry flag is set correctly.
+/// Test that same-agent retry pending produces a same-agent retry effect.
+///
+/// When `same_agent_retry_pending` is set, orchestration should produce
+/// a prompt effect with `PromptMode::SameAgentRetry` for the current phase.
 #[test]
-fn test_same_agent_retry_flag() {
+fn test_same_agent_retry_produces_retry_effect() {
     with_default_timeout(|| {
-        let mut state = PipelineState::initial(1, 0);
+        let mut state = with_locked_prompt_permissions(PipelineState::initial(1, 0));
         state.phase = PipelinePhase::Planning;
         state.continuation.same_agent_retry_pending = true;
 
-        // Same-agent retry flag should be set
-        assert!(state.continuation.same_agent_retry_pending);
+        // Behavioral check: orchestration should produce a same-agent retry effect
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::PreparePlanningPrompt {
+                    prompt_mode: PromptMode::SameAgentRetry,
+                    ..
+                }
+            ),
+            "same_agent_retry_pending should produce SameAgentRetry effect, got: {effect:?}"
+        );
     });
 }
 

@@ -1,10 +1,4 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::{MockProcessExecutor, ProcessExecutor};
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
+use super::super::common::TestFixture;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_registry::TemplateRegistry;
 use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
@@ -14,55 +8,15 @@ use crate::reducer::state::{
     MaterializedPromptInput, PipelineState, PromptInputKind, PromptInputRepresentation,
     PromptInputsState, PromptMaterializationReason, PromptMode, SameAgentRetryReason,
 };
-use crate::workspace::MemoryWorkspace;
-use crate::workspace::Workspace;
-use std::collections::HashMap;
+use crate::workspace::{MemoryWorkspace, Workspace};
 use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::PathBuf;
-use std::sync::Arc;
 use tempfile::tempdir;
 
 #[test]
 fn test_prepare_commit_prompt_does_not_emit_generation_started() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.agent_chain = AgentChainState::initial().with_agents(
@@ -93,50 +47,16 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
 
 #[test]
 fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let tempdir = tempdir().expect("create temp dir");
     let template_path = tempdir.path().join("commit_message_xml.txt");
     fs::write(&template_path, "Diff:\n{{DIFF}}\nMissing: {{MISSING}}\n")
         .expect("write commit template");
 
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context =
+    let mut fixture = TestFixture::with_workspace(workspace);
+    fixture.template_context =
         TemplateContext::new(TemplateRegistry::new(Some(tempdir.path().to_path_buf())));
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.agent_chain = AgentChainState::initial().with_agents(
@@ -178,7 +98,6 @@ fn test_prepare_commit_prompt_emits_template_rendered_on_validation_failure() {
 
 #[test]
 fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     // The XSD retry prompt now validates that required input files exist.
     // This test provides those files to verify the retry prompt generation works.
     let workspace = MemoryWorkspace::new_test()
@@ -187,43 +106,8 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
             ".agent/tmp/commit_message.xml",
             "<ralph-commit><ralph-subject>test: subject</ralph-subject></ralph-commit>",
         );
-    // Note: commit_message.xsd is automatically written by prompt_commit_xsd_retry_with_context
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.agent_chain = AgentChainState::initial().with_agents(
@@ -243,7 +127,8 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
         .prepare_commit_prompt(&mut ctx, PromptMode::XsdRetry)
         .expect("prepare_commit_prompt should succeed");
 
-    let prompt = workspace
+    let prompt = fixture
+        .workspace
         .read(std::path::Path::new(".agent/tmp/commit_prompt.txt"))
         .expect("commit_prompt.txt should be written");
     assert!(
@@ -262,47 +147,11 @@ fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
 
 #[test]
 fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
         .with_file(".agent/tmp/commit_diff.model_safe.txt", "diff");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -341,47 +190,12 @@ fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch(
 
 #[test]
 fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_COMMIT_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
         .with_file(".agent/tmp/commit_prompt.txt", marker);
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -409,7 +223,8 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
         )
         .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
 
-    let prompt = workspace
+    let prompt = fixture
+        .workspace
         .read(std::path::Path::new(".agent/tmp/commit_prompt.txt"))
         .expect("commit_prompt.txt should be written");
 
@@ -425,47 +240,12 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
 
 #[test]
 fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let marker = "<<<PREVIOUS_COMMIT_PROMPT_MARKER>>>";
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
         .with_file(".agent/tmp/commit_prompt.txt", marker);
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState {
         continuation: ContinuationState {
@@ -502,7 +282,8 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
         )
         .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
 
-    let prompt = workspace
+    let prompt = fixture
+        .workspace
         .read(std::path::Path::new(".agent/tmp/commit_prompt.txt"))
         .expect("commit_prompt.txt should be written");
 
@@ -532,8 +313,6 @@ fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
 /// the already-truncated content instead of re-truncating.
 #[test]
 fn test_prepare_commit_prompt_uses_materialized_diff() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-
     // Original large diff (will be truncated)
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
     // Simulated truncated diff from materialization
@@ -543,42 +322,8 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
         .with_file(".agent/tmp/commit_diff.txt", &large_diff)
         .with_file(".agent/tmp/commit_diff.model_safe.txt", model_safe_diff)
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -624,7 +369,10 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
     );
 
     // The generated prompt file should contain the truncated diff content
-    let prompt_content = workspace.get_file(".agent/tmp/commit_prompt.txt").unwrap();
+    let prompt_content = fixture
+        .workspace
+        .get_file(".agent/tmp/commit_prompt.txt")
+        .unwrap();
     assert!(
         prompt_content.contains("truncated_content"),
         "prompt should contain materialized (truncated) diff content"
@@ -637,50 +385,14 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
 
 #[test]
 fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_diff_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-
     let workspace = MemoryWorkspace::new_test()
         .with_file(
             ".agent/tmp/commit_diff.txt",
             "diff --git a/a b/a\n+change\n",
         )
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -729,50 +441,14 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
 
 #[test]
 fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_reference_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-
     let workspace = MemoryWorkspace::new_test()
         .with_file(
             ".agent/tmp/commit_diff.txt",
             "diff --git a/a b/a\n+change\n",
         )
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {

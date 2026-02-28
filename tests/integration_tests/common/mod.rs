@@ -50,7 +50,95 @@
 use clap::error::ErrorKind;
 use clap::Parser;
 use ralph_workflow::reducer::state::{PipelineState, PromptPermissionsState};
+use std::path::PathBuf;
 use std::sync::Arc;
+
+/// Shared fixture for integration tests that need a `PhaseContext`.
+///
+/// Eliminates `PhaseContext` construction boilerplate across integration tests.
+/// Supports optional cloud reporter and custom workspace configurations.
+pub struct IntegrationFixture {
+    pub config: ralph_workflow::config::Config,
+    pub colors: ralph_workflow::logger::Colors,
+    pub logger: ralph_workflow::logger::Logger,
+    pub timer: ralph_workflow::pipeline::Timer,
+    pub template_context: ralph_workflow::prompts::template_context::TemplateContext,
+    pub registry: ralph_workflow::agents::AgentRegistry,
+    pub executor: Arc<ralph_workflow::executor::MockProcessExecutor>,
+    pub repo_root: PathBuf,
+    pub workspace: Arc<dyn ralph_workflow::workspace::Workspace>,
+    pub run_log_context: ralph_workflow::logging::RunLogContext,
+    pub cloud: ralph_workflow::config::CloudConfig,
+}
+
+impl IntegrationFixture {
+    /// Creates a new fixture with default `MemoryWorkspace`.
+    pub fn new() -> Self {
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace: Arc<dyn ralph_workflow::workspace::Workspace> =
+            Arc::new(ralph_workflow::workspace::MemoryWorkspace::new(repo_root));
+        Self::with_workspace(workspace)
+    }
+
+    /// Creates a fixture with a custom workspace.
+    pub fn with_workspace(workspace: Arc<dyn ralph_workflow::workspace::Workspace>) -> Self {
+        let config = ralph_workflow::config::Config::default();
+        let colors = ralph_workflow::logger::Colors::new();
+        let repo_root = workspace.root().to_path_buf();
+        let logger = ralph_workflow::logger::Logger::new(colors);
+        let registry = ralph_workflow::agents::AgentRegistry::new().unwrap();
+        let executor = Arc::new(ralph_workflow::executor::MockProcessExecutor::new());
+        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
+            .expect("Failed to create run log context");
+
+        Self {
+            config,
+            colors,
+            logger,
+            timer: ralph_workflow::pipeline::Timer::new(),
+            template_context: ralph_workflow::prompts::template_context::TemplateContext::default(),
+            registry,
+            executor,
+            repo_root,
+            workspace,
+            run_log_context,
+            cloud: ralph_workflow::config::CloudConfig::disabled(),
+        }
+    }
+
+    /// Creates a `PhaseContext` from this fixture.
+    ///
+    /// Pass `cloud_reporter` as `None` for tests that don't need cloud reporting,
+    /// or `Some(&reporter)` for cloud integration tests.
+    pub fn ctx<'a>(
+        &'a mut self,
+        cloud_reporter: Option<&'a dyn ralph_workflow::cloud::CloudReporter>,
+    ) -> ralph_workflow::phases::PhaseContext<'a> {
+        ralph_workflow::phases::PhaseContext {
+            config: &self.config,
+            registry: &self.registry,
+            logger: &self.logger,
+            colors: &self.colors,
+            timer: &mut self.timer,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &self.template_context,
+            run_context: ralph_workflow::checkpoint::RunContext::new(),
+            execution_history: ralph_workflow::checkpoint::ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*self.executor,
+            executor_arc: Arc::clone(&self.executor)
+                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+            repo_root: &self.repo_root,
+            workspace: self.workspace.as_ref(),
+            workspace_arc: Arc::clone(&self.workspace),
+            run_log_context: &self.run_log_context,
+            cloud_reporter,
+            cloud: &self.cloud,
+        }
+    }
+}
 
 /// Create a `MemoryWorkspace` from a `MockAppEffectHandler`.
 ///

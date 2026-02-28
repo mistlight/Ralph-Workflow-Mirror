@@ -1,90 +1,8 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
+use super::common::TestFixture;
 use crate::config::types::{CloudConfig, GitAuthMethod, GitRemoteConfig};
-use crate::config::Config;
 use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
 use crate::reducer::handler::MainEffectHandler;
-use crate::workspace::MemoryWorkspace;
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
-
-struct Fixture {
-    workspace: MemoryWorkspace,
-    workspace_arc: Arc<dyn crate::workspace::Workspace>,
-    executor: Arc<MockProcessExecutor>,
-    config: Config,
-    registry: AgentRegistry,
-    colors: Colors,
-    logger: Logger,
-    template_context: TemplateContext,
-    timer: Timer,
-    repo_root: PathBuf,
-    run_log_context: crate::logging::RunLogContext,
-    cloud: CloudConfig,
-}
-
-impl Fixture {
-    fn new(cloud: CloudConfig) -> Self {
-        Self::new_with_executor(cloud, Arc::new(MockProcessExecutor::new()))
-    }
-
-    fn new_with_executor(cloud: CloudConfig, executor: Arc<MockProcessExecutor>) -> Self {
-        let workspace = MemoryWorkspace::new_test();
-        let workspace_arc = Arc::new(workspace.clone()) as Arc<dyn crate::workspace::Workspace>;
-        let colors = Colors { enabled: false };
-        let logger = Logger::new(colors);
-        let config = Config::default();
-        let registry = AgentRegistry::new().unwrap();
-        let template_context = TemplateContext::default();
-        let timer = Timer::new();
-        let repo_root = PathBuf::from("/mock/repo");
-        let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-        Self {
-            workspace,
-            workspace_arc,
-            executor,
-            config,
-            registry,
-            colors,
-            logger,
-            template_context,
-            timer,
-            repo_root,
-            run_log_context,
-            cloud,
-        }
-    }
-
-    fn ctx(&mut self) -> crate::phases::PhaseContext<'_> {
-        crate::phases::PhaseContext {
-            config: &self.config,
-            registry: &self.registry,
-            logger: &self.logger,
-            colors: &self.colors,
-            timer: &mut self.timer,
-            developer_agent: "dev",
-            reviewer_agent: "rev",
-            review_guidelines: None,
-            template_context: &self.template_context,
-            run_context: RunContext::new(),
-            execution_history: ExecutionHistory::new(),
-            prompt_history: HashMap::new(),
-            executor: self.executor.as_ref(),
-            executor_arc: Arc::clone(&self.executor) as Arc<dyn crate::executor::ProcessExecutor>,
-            repo_root: self.repo_root.as_path(),
-            workspace: &self.workspace,
-            workspace_arc: Arc::clone(&self.workspace_arc),
-            run_log_context: &self.run_log_context,
-            cloud_reporter: None,
-            cloud: &self.cloud,
-        }
-    }
-}
 
 #[test]
 fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
@@ -110,7 +28,8 @@ fn test_push_to_remote_token_auth_uses_ephemeral_credential_helper() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud);
+    let mut fixture = TestFixture::new();
+    fixture.cloud = cloud;
     let ctx = fixture.ctx();
     let _ = MainEffectHandler::handle_push_to_remote(
         &ctx,
@@ -163,7 +82,8 @@ fn test_push_to_remote_credential_helper_sets_credential_helper_override() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud);
+    let mut fixture = TestFixture::new();
+    fixture.cloud = cloud;
     let ctx = fixture.ctx();
     let _ = MainEffectHandler::handle_push_to_remote(
         &ctx,
@@ -203,7 +123,8 @@ fn test_push_to_remote_emits_ui_event_on_success() {
         },
     };
 
-    let mut fixture = Fixture::new(cloud);
+    let mut fixture = TestFixture::new();
+    fixture.cloud = cloud;
     let ctx = fixture.ctx();
     let result = MainEffectHandler::handle_push_to_remote(
         &ctx,
@@ -251,7 +172,9 @@ fn test_push_to_remote_emits_ui_event_on_failure_with_redacted_error() {
         "git",
         "HTTP 401: Bearer SECRET_TOKEN https://user:pass@example.com?access_token=abc",
     ));
-    let mut fixture = Fixture::new_with_executor(cloud, executor);
+    let mut fixture = TestFixture::new();
+    fixture.cloud = cloud;
+    fixture.executor = executor;
     let ctx = fixture.ctx();
     let result = MainEffectHandler::handle_push_to_remote(
         &ctx,

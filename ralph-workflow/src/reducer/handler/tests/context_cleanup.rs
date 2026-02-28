@@ -1,18 +1,9 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
+use super::common::TestFixture;
 use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::workspace::{DirEntry, MemoryWorkspace, Workspace};
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 struct RemoveFailingWorkspace {
@@ -233,7 +224,6 @@ impl Workspace for ReadDirFailingWorkspace {
 
 #[test]
 fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/ISSUES.md", "# Issues\n")
@@ -245,39 +235,8 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let err = MainEffectHandler::cleanup_context(&ctx)
         .expect_err("cleanup_context should surface remove failures as typed error event");
@@ -299,7 +258,6 @@ fn test_cleanup_context_surfaces_remove_failures_as_error_event() {
 
 #[test]
 fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp")
@@ -310,39 +268,8 @@ fn test_cleanup_context_surfaces_read_dir_failures_as_error_event() {
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let err = MainEffectHandler::cleanup_context(&ctx)
         .expect_err("cleanup_context should surface read_dir failures as typed error event");

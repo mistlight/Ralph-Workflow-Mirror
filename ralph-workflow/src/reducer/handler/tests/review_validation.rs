@@ -1,22 +1,13 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::{MockProcessExecutor, ProcessExecutor};
+use super::common::TestFixture;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{PipelineState, ReviewValidatedOutcome};
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 struct ReadFailingWorkspace {
@@ -118,47 +109,11 @@ impl Workspace for ReadFailingWorkspace {
 
 #[test]
 fn test_validate_review_issues_xml_emits_event_with_xml_output() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let issues_xml =
         "<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::ISSUES_XML, issues_xml);
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler.validate_review_issues_xml(&ctx, 0);
@@ -174,7 +129,6 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
         }) if issues.is_empty() && no_issues_found.as_deref() == Some("ok")
     ));
 
-    // Validation now emits a UI event with the XML content for display
     assert!(result.ui_events.iter().any(|event| matches!(
         event,
         UIEvent::XmlOutput {
@@ -190,47 +144,11 @@ fn test_validate_review_issues_xml_emits_event_with_xml_output() {
 
 #[test]
 fn test_validate_fix_result_xml_emits_ui_output() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let fix_xml =
         "<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::FIX_RESULT_XML, fix_xml);
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler.validate_fix_result_xml(&ctx, 0);
@@ -258,45 +176,8 @@ fn test_validate_fix_result_xml_emits_ui_output() {
 
 #[test]
 fn test_write_issues_markdown_renders_from_validated_issues() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler.state.review_validated_outcome = Some(ReviewValidatedOutcome {
@@ -318,7 +199,8 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
         })
     ));
 
-    let content = workspace
+    let content = fixture
+        .workspace
         .read(Path::new(".agent/ISSUES.md"))
         .expect("ISSUES.md should be written");
     assert_eq!(content, "# Issues\n\nNo issues found.\n");
@@ -326,48 +208,12 @@ fn test_write_issues_markdown_renders_from_validated_issues() {
 
 #[test]
 fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let issues_xml = "<ralph-issues><ralph-issue>[high] src/lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
         .with_file(xml_paths::ISSUES_XML, issues_xml)
         .with_file("src/lib.rs", "fn main() {\n    let x = 1;\n}\n");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler.state.review_validated_outcome = Some(ReviewValidatedOutcome {
@@ -407,49 +253,13 @@ fn test_extract_review_issue_snippets_includes_snippets_for_locations() {
 
 #[test]
 fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let issues_xml =
         "<ralph-issues><ralph-issue>[high] C:\\repo\\src\\lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
     let workspace = MemoryWorkspace::new_test()
         .with_file("src/lib.rs", "fn main() {\n    let y = 2;\n}\n")
         .with_file(xml_paths::ISSUES_XML, issues_xml);
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler.state.review_validated_outcome = Some(ReviewValidatedOutcome {
@@ -487,51 +297,16 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
 
 #[test]
 fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_errors() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner =
         MemoryWorkspace::new_test().with_file("src/lib.rs", "fn main() {\n    let x = 1;\n}\n");
     let workspace = ReadFailingWorkspace::new(
-        inner,
+        inner.clone(),
         PathBuf::from(xml_paths::ISSUES_XML),
         io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(inner);
+    let ctx = fixture.ctx_with_workspace(&workspace);
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler.state.review_validated_outcome = Some(ReviewValidatedOutcome {
@@ -563,45 +338,8 @@ fn test_extract_review_issue_snippets_surfaces_non_not_found_issues_xml_read_err
 
 #[test]
 fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let err = handler

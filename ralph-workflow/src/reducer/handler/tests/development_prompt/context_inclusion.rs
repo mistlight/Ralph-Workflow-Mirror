@@ -1,46 +1,14 @@
 use super::*;
+use crate::reducer::event::PromptInputEvent;
+use crate::reducer::state::PromptInputRepresentation;
+use std::path::PathBuf;
 
 #[test]
 fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler.materialize_development_inputs(&ctx, 0).expect_err(
@@ -55,45 +23,10 @@ fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_materialize_development_inputs_returns_error_when_plan_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "Prompt\n");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler.materialize_development_inputs(&ctx, 0).expect_err(
@@ -108,54 +41,14 @@ fn test_materialize_development_inputs_returns_error_when_plan_missing() {
 
 #[test]
 fn test_materialize_development_inputs_stores_workspace_relative_file_references() {
-    use crate::reducer::event::PromptInputEvent;
-    use crate::reducer::state::PromptInputRepresentation;
-    use std::path::PathBuf;
-
-    let cloud = crate::config::types::CloudConfig::disabled();
-
     // Make PROMPT exceed inline budget so it becomes a file reference.
     let oversize_prompt = "x".repeat(150 * 1024);
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", &oversize_prompt)
         .with_file(".agent/PLAN.md", "Plan content");
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let result = handler

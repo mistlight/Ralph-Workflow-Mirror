@@ -15,9 +15,12 @@
 //! - Tests verify that reducer produces correct state for each event
 
 use ralph_workflow::agents::AgentRole;
+use ralph_workflow::reducer::determine_next_effect;
+use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
-use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState, PromptMode};
 
+use crate::common::with_locked_prompt_permissions;
 use crate::test_timeout::with_default_timeout;
 
 fn create_initial_state() -> PipelineState {
@@ -37,6 +40,29 @@ fn create_state_with_agent_chain() -> PipelineState {
 
 fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
     ralph_workflow::reducer::state_reduction::reduce(state, event)
+}
+
+/// Check whether an effect is a same-agent retry (any phase).
+const fn is_same_agent_retry_effect(effect: &Effect) -> bool {
+    matches!(
+        effect,
+        Effect::PreparePlanningPrompt {
+            prompt_mode: PromptMode::SameAgentRetry,
+            ..
+        } | Effect::PrepareDevelopmentPrompt {
+            prompt_mode: PromptMode::SameAgentRetry,
+            ..
+        } | Effect::PrepareReviewPrompt {
+            prompt_mode: PromptMode::SameAgentRetry,
+            ..
+        } | Effect::PrepareFixPrompt {
+            prompt_mode: PromptMode::SameAgentRetry,
+            ..
+        } | Effect::PrepareCommitPrompt {
+            prompt_mode: PromptMode::SameAgentRetry,
+            ..
+        }
+    )
 }
 
 #[test]
@@ -332,9 +358,12 @@ fn test_sigsegv_causes_agent_fallback() {
             after_first.agent_chain.current_agent_index,
             initial_agent_index
         );
-        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
-        // (XSD retry is only for invalid XML output, not execution failures)
-        assert!(after_first.continuation.same_agent_retry_pending);
+        // Verify behavioral outcome: orchestration should produce a same-agent retry effect
+        let effect = determine_next_effect(&with_locked_prompt_permissions(after_first.clone()));
+        assert!(
+            is_same_agent_retry_effect(&effect),
+            "First internal error should produce same-agent retry effect, got: {effect:?}"
+        );
 
         let after_second = reduce(
             after_first,
@@ -432,7 +461,13 @@ fn test_filesystem_error_triggers_agent_fallback() {
             after_first_failure.agent_chain.current_agent_index, initial_agent_index,
             "Non-auth, non-rate-limit failures should retry same agent first"
         );
-        assert!(after_first_failure.continuation.same_agent_retry_pending);
+        // Verify behavioral outcome: orchestration should produce a same-agent retry effect
+        let effect =
+            determine_next_effect(&with_locked_prompt_permissions(after_first_failure.clone()));
+        assert!(
+            is_same_agent_retry_effect(&effect),
+            "Filesystem error should produce same-agent retry effect, got: {effect:?}"
+        );
 
         let after_second_failure = reduce(
             after_first_failure,
@@ -548,9 +583,12 @@ fn test_agent_fallback_after_internal_error_retry_exhaustion() {
             after_first.agent_chain.current_agent_index, initial_agent_index,
             "Should retry same agent on first internal error"
         );
-        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
-        // (XSD retry is only for invalid XML output, not execution failures)
-        assert!(after_first.continuation.same_agent_retry_pending);
+        // Verify behavioral outcome: orchestration should produce a same-agent retry effect
+        let effect = determine_next_effect(&with_locked_prompt_permissions(after_first.clone()));
+        assert!(
+            is_same_agent_retry_effect(&effect),
+            "Internal error should produce same-agent retry effect, got: {effect:?}"
+        );
 
         let after_second = reduce(
             after_first,

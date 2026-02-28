@@ -1,59 +1,15 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::MockProcessExecutor;
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
+use super::common::TestFixture;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{PipelineState, PlanningValidatedOutcome};
-use crate::workspace::MemoryWorkspace;
-use crate::workspace::Workspace;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use crate::workspace::{MemoryWorkspace, Workspace};
+use std::path::Path;
 
 #[test]
 fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "dev",
-        reviewer_agent: "rev",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.planning_validated_outcome = Some(PlanningValidatedOutcome {
@@ -73,7 +29,8 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
         })
     ));
 
-    let plan = workspace
+    let plan = fixture
+        .workspace
         .read(Path::new(".agent/PLAN.md"))
         .expect("PLAN.md should be written");
     assert!(plan.contains("# Plan"));
@@ -82,43 +39,9 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
 
 #[test]
 fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-
-    let executor = Arc::new(MockProcessExecutor::new());
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor.as_ref(),
-        executor_arc: executor.clone(),
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     let err = handler.write_planning_markdown(&ctx, 0).expect_err(

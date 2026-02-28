@@ -6,48 +6,23 @@
 //! - Fix agent prompt handling and errors
 //! - Commit agent prompt handling, errors, and uninitialized chain detection
 
-use super::*;
+use super::super::common::TestFixture;
+use super::ReadFailingWorkspace;
+use crate::agents::AgentRole;
+use crate::executor::MockProcessExecutor;
+use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
+use crate::reducer::handler::MainEffectHandler;
+use crate::reducer::state::{AgentChainState, CommitState, PipelineState};
+use crate::workspace::MemoryWorkspace;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[test]
 fn test_invoke_development_agent_returns_error_when_prompt_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-    let _run_log_context = RunLogContext::new(&workspace).unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -62,44 +37,10 @@ fn test_invoke_development_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_review_agent_returns_error_when_prompt_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-    let _run_log_context = RunLogContext::new(&workspace).unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -114,49 +55,17 @@ fn test_invoke_review_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
         PathBuf::from(".agent/tmp/review_prompt.txt"),
-        io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -180,44 +89,10 @@ fn test_invoke_review_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 
 #[test]
 fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-    let _run_log_context = RunLogContext::new(&workspace).unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -232,49 +107,17 @@ fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
         PathBuf::from(".agent/tmp/fix_prompt.txt"),
-        io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let err = handler
@@ -298,44 +141,10 @@ fn test_invoke_fix_agent_maps_non_not_found_prompt_read_errors_to_workspace_read
 
 #[test]
 fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    let workspace = MemoryWorkspace::new_test();
-    let _run_log_context = RunLogContext::new(&workspace).unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     handler.state.commit = CommitState::Generating {
@@ -360,49 +169,17 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
 
 #[test]
 fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_read_failed() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let inner = MemoryWorkspace::new_test();
     let workspace = ReadFailingWorkspace::new(
         inner,
         PathBuf::from(".agent/tmp/commit_prompt.txt"),
-        io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::PermissionDenied,
     );
 
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::new();
+    let mut ctx = fixture.ctx_with_workspace(&workspace);
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     handler.state.commit = CommitState::Generating {
@@ -436,47 +213,13 @@ fn test_invoke_commit_agent_maps_non_not_found_prompt_read_errors_to_workspace_r
 
 #[test]
 fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() {
-    let cloud = crate::config::types::CloudConfig::disabled();
-    // When the agent chain is empty/uninitialized, invoke_commit_agent must not panic.
-    // It must surface a typed ErrorEvent so the reducer can decide interruption policy.
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_prompt.txt", "commit prompt content");
-    let _run_log_context = RunLogContext::new(&workspace).unwrap();
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-
-    let repo_root = PathBuf::from("/mock/repo");
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let mut ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    fixture.executor = Arc::new(MockProcessExecutor::new());
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+    ctx.reviewer_agent = "codex";
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     handler.state.commit = CommitState::Generating {

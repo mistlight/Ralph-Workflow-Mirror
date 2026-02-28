@@ -18,6 +18,7 @@ use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::ui_event::UIEvent;
 use serial_test::serial;
 
+use crate::common::IntegrationFixture;
 use crate::test_timeout::with_default_timeout;
 
 #[test]
@@ -183,20 +184,10 @@ fn test_cloud_env_var_variations_respected() {
 #[test]
 fn test_cloud_mode_disabled_does_not_report_progress_even_if_reporter_is_injected() {
     with_default_timeout(|| {
-        use ralph_workflow::agents::AgentRegistry;
         use ralph_workflow::app::event_loop::{
             run_event_loop_with_handler, EventLoopConfig, StatefulHandler,
         };
-        use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
         use ralph_workflow::cloud::MockCloudReporter;
-        use ralph_workflow::config::Config;
-        use ralph_workflow::executor::MockProcessExecutor;
-        use ralph_workflow::logger::{Colors, Logger};
-        use ralph_workflow::pipeline::Timer;
-        use ralph_workflow::prompts::template_context::TemplateContext;
-        use ralph_workflow::workspace::MemoryWorkspace;
-        use std::path::PathBuf;
-        use std::sync::Arc;
 
         #[derive(Debug)]
         struct OneShotHandler {
@@ -225,46 +216,11 @@ fn test_cloud_mode_disabled_does_not_report_progress_even_if_reporter_is_injecte
             }
         }
 
-        let config = Config::default();
-        let colors = Colors::new();
-        let logger = Logger::new(colors);
-        let mut timer = Timer::new();
-        let template_context = TemplateContext::default();
-        let registry = AgentRegistry::new().unwrap();
-        let executor = Arc::new(MockProcessExecutor::new());
-
-        let repo_root = PathBuf::from("/test/repo");
-        let workspace = MemoryWorkspace::new(repo_root.clone());
-        let run_log_context = ralph_workflow::logging::RunLogContext::new(&workspace)
-            .expect("Failed to create run log context");
-
-        let cloud_config = CloudConfig::disabled();
+        let mut fixture = IntegrationFixture::new();
+        // IntegrationFixture already uses CloudConfig::disabled() by default
         let reporter = MockCloudReporter::new();
 
-        let mut ctx = ralph_workflow::phases::PhaseContext {
-            config: &config,
-            registry: &registry,
-            logger: &logger,
-            colors: &colors,
-            timer: &mut timer,
-            developer_agent: "test-developer",
-            reviewer_agent: "test-reviewer",
-            review_guidelines: None,
-            template_context: &template_context,
-            run_context: RunContext::new(),
-            execution_history: ExecutionHistory::new(),
-            prompt_history: std::collections::HashMap::new(),
-            executor: &*executor,
-            executor_arc: Arc::clone(&executor)
-                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-            repo_root: &repo_root,
-            workspace: &workspace,
-            workspace_arc: Arc::new(workspace.clone())
-                as Arc<dyn ralph_workflow::workspace::Workspace>,
-            run_log_context: &run_log_context,
-            cloud_reporter: Some(&reporter),
-            cloud: &cloud_config,
-        };
+        let mut ctx = fixture.ctx(Some(&reporter));
 
         let initial_state = PipelineState::initial(1, 0);
         let mut handler = OneShotHandler {

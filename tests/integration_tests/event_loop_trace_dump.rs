@@ -8,128 +8,22 @@
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 
+use crate::common::IntegrationFixture;
 use crate::test_timeout::with_default_timeout;
 
 use anyhow::Result;
-use ralph_workflow::agents::AgentRegistry;
 use ralph_workflow::app::event_loop::{
     run_event_loop_with_handler, EventLoopConfig, StatefulHandler,
 };
-use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
-use ralph_workflow::config::Config;
-use ralph_workflow::executor::MockProcessExecutor;
-use ralph_workflow::logger::{Colors, Logger};
-use ralph_workflow::pipeline::Timer;
-use ralph_workflow::prompts::template_context::TemplateContext;
+use ralph_workflow::logger::Logger;
 use ralph_workflow::reducer::effect::{Effect, EffectHandler, EffectResult};
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::{PipelineEvent, PipelineState};
-use ralph_workflow::workspace::MemoryWorkspace;
-use std::path::{Path, PathBuf};
+use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 const LOG_PATH: &str = ".agent/tmp/event_loop_trace_test.log";
-
-struct Fixture {
-    config: Config,
-    colors: Colors,
-    logger: Logger,
-    timer: Timer,
-
-    template_context: TemplateContext,
-    registry: AgentRegistry,
-    executor: Arc<MockProcessExecutor>,
-    repo_root: PathBuf,
-    workspace: Arc<MemoryWorkspace>,
-    run_log_context: ralph_workflow::logging::RunLogContext,
-    cloud: ralph_workflow::config::CloudConfig,
-}
-
-impl Fixture {
-    fn new() -> Self {
-        let config = Config::default();
-        let colors = Colors::new();
-        let repo_root = PathBuf::from("/test/repo");
-        let workspace = Arc::new(MemoryWorkspace::new(repo_root.clone()));
-        let logger = Logger::new(colors);
-        let registry = AgentRegistry::new().unwrap();
-        let executor = Arc::new(MockProcessExecutor::new());
-        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
-            .expect("Failed to create run log context");
-
-        Self {
-            config,
-            colors,
-            logger,
-            timer: Timer::new(),
-
-            template_context: TemplateContext::default(),
-            registry,
-            executor,
-            repo_root,
-            workspace,
-            run_log_context,
-            cloud: ralph_workflow::config::CloudConfig::disabled(),
-        }
-    }
-
-    fn new_with_workspace_log() -> Self {
-        let config = Config::default();
-        let colors = Colors::new();
-        let repo_root = PathBuf::from("/test/repo");
-        let workspace = Arc::new(MemoryWorkspace::new(repo_root.clone()));
-        let logger = Logger::new(colors).with_workspace_log(
-            Arc::clone(&workspace) as Arc<dyn ralph_workflow::workspace::Workspace>,
-            LOG_PATH,
-        );
-        let registry = AgentRegistry::new().unwrap();
-        let executor = Arc::new(MockProcessExecutor::new());
-        let run_log_context = ralph_workflow::logging::RunLogContext::new(workspace.as_ref())
-            .expect("Failed to create run log context");
-
-        Self {
-            config,
-            colors,
-            logger,
-            timer: Timer::new(),
-
-            template_context: TemplateContext::default(),
-            registry,
-            executor,
-            repo_root,
-            workspace,
-            run_log_context,
-            cloud: ralph_workflow::config::CloudConfig::disabled(),
-        }
-    }
-
-    fn ctx(&mut self) -> ralph_workflow::phases::PhaseContext<'_> {
-        ralph_workflow::phases::PhaseContext {
-            config: &self.config,
-            registry: &self.registry,
-            logger: &self.logger,
-            colors: &self.colors,
-            timer: &mut self.timer,
-            developer_agent: "test-developer",
-            reviewer_agent: "test-reviewer",
-            review_guidelines: None,
-            template_context: &self.template_context,
-            run_context: RunContext::new(),
-            execution_history: ExecutionHistory::new(),
-            prompt_history: std::collections::HashMap::new(),
-            executor: &*self.executor,
-            executor_arc: Arc::clone(&self.executor)
-                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-            repo_root: Path::new(&self.repo_root),
-            workspace: self.workspace.as_ref(),
-            workspace_arc: Arc::clone(&self.workspace)
-                as Arc<dyn ralph_workflow::workspace::Workspace>,
-            run_log_context: &self.run_log_context,
-            cloud_reporter: None,
-            cloud: &self.cloud,
-        }
-    }
-}
 
 #[derive(Debug)]
 struct LoopingHandler {
@@ -225,8 +119,10 @@ impl StatefulHandler for PhaseChangingHandler {
 #[test]
 fn test_event_loop_dumps_trace_on_max_iterations() {
     with_default_timeout(|| {
-        let mut fixture = Fixture::new();
-        let mut ctx = fixture.ctx();
+        let workspace = Arc::new(MemoryWorkspace::new(PathBuf::from("/test/repo")));
+        let mut fixture =
+            IntegrationFixture::with_workspace(Arc::clone(&workspace) as Arc<dyn Workspace>);
+        let mut ctx = fixture.ctx(None);
 
         // Force an infinite loop by making the handler return a no-progress event.
         let mut initial_state = PipelineState::initial(1, 0);
@@ -250,12 +146,11 @@ fn test_event_loop_dumps_trace_on_max_iterations() {
         let trace_path_buf = fixture.run_log_context.event_loop_trace();
         let trace_path = trace_path_buf.to_string_lossy();
         assert!(
-            fixture.workspace.was_written(trace_path.as_ref()),
+            workspace.was_written(trace_path.as_ref()),
             "expected event loop to dump trace to {trace_path}"
         );
 
-        let trace = fixture
-            .workspace
+        let trace = workspace
             .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         let line_count = trace.lines().filter(|l| !l.trim().is_empty()).count();
@@ -269,8 +164,10 @@ fn test_event_loop_dumps_trace_on_max_iterations() {
 #[test]
 fn test_event_loop_dumps_trace_on_panic() {
     with_default_timeout(|| {
-        let mut fixture = Fixture::new();
-        let mut ctx = fixture.ctx();
+        let workspace = Arc::new(MemoryWorkspace::new(PathBuf::from("/test/repo")));
+        let mut fixture =
+            IntegrationFixture::with_workspace(Arc::clone(&workspace) as Arc<dyn Workspace>);
+        let mut ctx = fixture.ctx(None);
 
         let mut initial_state = PipelineState::initial(1, 0);
         initial_state.phase = PipelinePhase::Planning;
@@ -293,12 +190,11 @@ fn test_event_loop_dumps_trace_on_panic() {
         let trace_path_buf = fixture.run_log_context.event_loop_trace();
         let trace_path = trace_path_buf.to_string_lossy();
         assert!(
-            fixture.workspace.was_written(trace_path.as_ref()),
+            workspace.was_written(trace_path.as_ref()),
             "expected event loop to dump trace to {trace_path} on panic"
         );
 
-        let trace = fixture
-            .workspace
+        let trace = workspace
             .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         let last_line = trace
@@ -313,8 +209,10 @@ fn test_event_loop_dumps_trace_on_panic() {
 #[test]
 fn test_trace_records_additional_events() {
     with_default_timeout(|| {
-        let mut fixture = Fixture::new();
-        let mut ctx = fixture.ctx();
+        let workspace = Arc::new(MemoryWorkspace::new(PathBuf::from("/test/repo")));
+        let mut fixture =
+            IntegrationFixture::with_workspace(Arc::clone(&workspace) as Arc<dyn Workspace>);
+        let mut ctx = fixture.ctx(None);
 
         let mut initial_state = PipelineState::initial(1, 0);
         initial_state.phase = PipelinePhase::Planning;
@@ -332,8 +230,7 @@ fn test_trace_records_additional_events() {
 
         let trace_path_buf = fixture.run_log_context.event_loop_trace();
         let trace_path = trace_path_buf.to_string_lossy();
-        let trace = fixture
-            .workspace
+        let trace = workspace
             .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         assert!(
@@ -352,8 +249,10 @@ fn test_trace_records_additional_events() {
 #[test]
 fn test_trace_entry_phase_reflects_state_after_event_applied() {
     with_default_timeout(|| {
-        let mut fixture = Fixture::new();
-        let mut ctx = fixture.ctx();
+        let workspace = Arc::new(MemoryWorkspace::new(PathBuf::from("/test/repo")));
+        let mut fixture =
+            IntegrationFixture::with_workspace(Arc::clone(&workspace) as Arc<dyn Workspace>);
+        let mut ctx = fixture.ctx(None);
 
         let mut initial_state = PipelineState::initial(1, 0);
         initial_state.phase = PipelinePhase::Planning;
@@ -370,8 +269,7 @@ fn test_trace_entry_phase_reflects_state_after_event_applied() {
 
         let trace_path_buf = fixture.run_log_context.event_loop_trace();
         let trace_path = trace_path_buf.to_string_lossy();
-        let trace = fixture
-            .workspace
+        let trace = workspace
             .get_file(trace_path.as_ref())
             .expect("trace file should be readable");
         let first_line = trace
@@ -390,8 +288,12 @@ fn test_trace_entry_phase_reflects_state_after_event_applied() {
 #[test]
 fn test_max_iterations_logs_trace_path_to_workspace_log() {
     with_default_timeout(|| {
-        let mut fixture = Fixture::new_with_workspace_log();
-        let mut ctx = fixture.ctx();
+        let workspace = Arc::new(MemoryWorkspace::new(PathBuf::from("/test/repo")));
+        let mut fixture =
+            IntegrationFixture::with_workspace(Arc::clone(&workspace) as Arc<dyn Workspace>);
+        fixture.logger = Logger::new(fixture.colors)
+            .with_workspace_log(Arc::clone(&workspace) as Arc<dyn Workspace>, LOG_PATH);
+        let mut ctx = fixture.ctx(None);
 
         let mut initial_state = PipelineState::initial(1, 0);
         initial_state.phase = PipelinePhase::Planning;
@@ -407,8 +309,7 @@ fn test_max_iterations_logs_trace_path_to_workspace_log() {
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
                 .expect("event loop should run");
 
-        let log = fixture
-            .workspace
+        let log = workspace
             .get_file(LOG_PATH)
             .expect("workspace log should be written");
 

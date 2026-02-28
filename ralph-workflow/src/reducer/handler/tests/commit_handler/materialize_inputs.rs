@@ -1,59 +1,14 @@
-use crate::agents::AgentRegistry;
-use crate::checkpoint::execution_history::ExecutionHistory;
-use crate::checkpoint::RunContext;
-use crate::config::Config;
-use crate::executor::{MockProcessExecutor, ProcessExecutor};
-use crate::logger::{Colors, Logger};
-use crate::pipeline::Timer;
-use crate::prompts::template_context::TemplateContext;
+use super::super::common::TestFixture;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{AgentChainState, CommitState, PipelineState};
 use crate::workspace::MemoryWorkspace;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 #[test]
 fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
-    let cloud = crate::config::types::CloudConfig::disabled();
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -88,47 +43,12 @@ fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
 fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     use crate::reducer::event::PromptInputEvent;
 
-    let cloud = crate::config::types::CloudConfig::disabled();
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(250_000));
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_diff.txt", &large_diff)
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -166,7 +86,9 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
         "expected model budget to be min across agent chain (qwen-like => 100KB)"
     );
     assert!(
-        workspace.was_written(".agent/tmp/commit_diff.model_safe.txt"),
+        fixture
+            .workspace
+            .was_written(".agent/tmp/commit_diff.model_safe.txt"),
         "materialized model-safe diff should be written once to a canonical path"
     );
     assert!(
@@ -180,48 +102,13 @@ fn test_materialize_commit_inputs_includes_size_info_in_ui_events() {
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::ui_event::UIEvent;
 
-    let cloud = crate::config::types::CloudConfig::disabled();
     // Create diff that exceeds model budget (100KB for qwen) but not inline budget
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_diff.txt", &large_diff)
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -273,48 +160,13 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
 
-    let cloud = crate::config::types::CloudConfig::disabled();
     // Create diff that exceeds model budget
     let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_diff.txt", &large_diff)
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -352,7 +204,6 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
     use crate::reducer::state::{PromptInputRepresentation, PromptMaterializationReason};
     use std::path::PathBuf;
 
-    let cloud = crate::config::types::CloudConfig::disabled();
     // Create diff that exceeds both model budget (claude: 300KB) and inline budget (~100KB).
     // Use many medium-sized lines so truncation still leaves a large payload.
     let mut large_diff = String::from("diff --git a/a b/a\n");
@@ -364,42 +215,8 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_diff.txt", &large_diff)
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {
@@ -454,48 +271,13 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
 
-    let cloud = crate::config::types::CloudConfig::disabled();
     // Create small diff within all budgets
     let small_diff = "diff --git a/a b/a\n+small change\n";
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_diff.txt", small_diff)
         .with_dir(".agent/tmp");
-
-    let colors = Colors { enabled: false };
-    let logger = Logger::new(colors);
-    let mut timer = Timer::new();
-
-    let config = Config::default();
-    let registry = AgentRegistry::new().unwrap();
-    let template_context = TemplateContext::default();
-    let executor = Arc::new(MockProcessExecutor::new());
-    let executor_arc: Arc<dyn ProcessExecutor> = executor;
-    let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
-
-    let run_log_context = crate::logging::RunLogContext::new(&workspace).unwrap();
-    let ctx = crate::phases::PhaseContext {
-        config: &config,
-        registry: &registry,
-        logger: &logger,
-        colors: &colors,
-        timer: &mut timer,
-        developer_agent: "claude",
-        reviewer_agent: "codex",
-        review_guidelines: None,
-        template_context: &template_context,
-        run_context: RunContext::new(),
-        execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
-        executor: executor_ref.as_ref(),
-        executor_arc,
-        repo_root: repo_root.as_path(),
-        workspace: &workspace,
-        workspace_arc: std::sync::Arc::new(workspace.clone()),
-        run_log_context: &run_log_context,
-        cloud_reporter: None,
-        cloud: &cloud,
-    };
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let ctx = fixture.ctx();
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
     handler.state.commit = CommitState::Generating {

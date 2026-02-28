@@ -2,6 +2,8 @@
 // Individual test modules will be added here as the handler implementation is
 // decomposed into single-task effects.
 
+mod common;
+
 mod analysis_handler;
 mod cloud;
 mod commit_handler;
