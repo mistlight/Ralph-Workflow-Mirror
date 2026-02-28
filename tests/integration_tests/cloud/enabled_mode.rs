@@ -47,7 +47,24 @@ fn test_mock_cloud_reporter_captures_progress() {
         );
 
         let calls = reporter.calls();
-        assert_eq!(calls.len(), 1, "Should have exactly one call");
+        assert_eq!(calls.len(), 1, "Should have exactly one call"); // OK: content checked below
+
+        match &calls[0] {
+            ralph_workflow::cloud::mock::MockCloudCall::Progress(captured) => {
+                assert_eq!(captured.phase, "Planning", "Should capture phase");
+                assert_eq!(
+                    captured.message, "Planning phase started",
+                    "Should capture message"
+                );
+                assert_eq!(captured.iteration, Some(1), "Should capture iteration");
+                assert_eq!(
+                    captured.total_iterations,
+                    Some(3),
+                    "Should capture total iterations"
+                );
+            }
+            other => panic!("Expected Progress call, got {other:?}"),
+        }
     });
 }
 
@@ -90,12 +107,15 @@ fn test_mock_cloud_reporter_captures_completion() {
         reporter.report_completion(&result).unwrap();
 
         let calls = reporter.calls();
-        assert_eq!(calls.len(), 1, "Should have exactly one call");
+        assert_eq!(calls.len(), 1, "Should have exactly one call"); // OK: content checked below
 
         match &calls[0] {
             ralph_workflow::cloud::mock::MockCloudCall::Completion(result) => {
                 assert!(result.success, "Completion should be successful");
                 assert_eq!(result.commit_sha.as_deref(), Some("abc123"));
+                assert_eq!(result.iterations_used, 1, "Should capture iterations used");
+                assert_eq!(result.duration_secs, 100, "Should capture duration");
+                assert!(!result.issues_found, "Should capture issues_found flag");
             }
             _ => panic!("Expected Completion call"),
         }

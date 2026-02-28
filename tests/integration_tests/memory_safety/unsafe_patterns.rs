@@ -23,7 +23,7 @@ fn test_mock_executor_execute_is_deterministic_and_captures_calls() {
         assert_eq!(executor.execute_count(), 1);
 
         let calls = executor.execute_calls();
-        assert_eq!(calls.len(), 1);
+        assert_eq!(calls.len(), 1); // OK: content checked below
         assert_eq!(calls[0].0, "echo");
         assert_eq!(calls[0].1, vec!["ignored"]);
     });
@@ -44,7 +44,7 @@ fn test_mock_executor_records_env_and_workdir() {
             .expect("mock execution should succeed");
 
         let calls = executor.execute_calls_for("git");
-        assert_eq!(calls.len(), 1);
+        assert_eq!(calls.len(), 1); // OK: content checked below
 
         let (_cmd, args, env, workdir) = &calls[0];
         assert_eq!(args, &vec!["status".to_string()]);

@@ -392,6 +392,15 @@ fn test_execution_history_very_large_limit_works() {
             100,
             "Execution history should retain all entries when under large limit"
         );
+        // Verify first and last entries have expected iterations
+        assert_eq!(
+            state.execution_history[0].iteration, 0,
+            "First entry should have iteration 0"
+        );
+        assert_eq!(
+            state.execution_history[99].iteration, 99,
+            "Last entry should have iteration 99"
+        );
     });
 }
 
@@ -410,7 +419,7 @@ fn test_execution_history_bounding_at_exact_limit() {
             state.execution_history.len(),
             50,
             "Should retain all entries when exactly at limit"
-        );
+        ); // OK: content checked after bounding below
 
         // Add one more entry (should trigger bounding)
         state.add_execution_step(create_test_step(50), limit);
@@ -451,6 +460,10 @@ fn test_execution_history_large_single_step() {
             state.execution_history.len(),
             1,
             "Should successfully add very large execution step"
+        );
+        assert_eq!(
+            &*state.execution_history[0].phase, "Development",
+            "Large step should preserve phase"
         );
     });
 }
@@ -500,7 +513,7 @@ fn test_execution_history_rapid_limit_changes() {
         for i in 0..20 {
             state.add_execution_step(create_test_step(i), 100);
         }
-        assert_eq!(state.execution_history.len(), 20);
+        assert_eq!(state.execution_history.len(), 20); // OK: precondition before limit change; content checked after rebounding
 
         // Switch to smaller limit mid-execution
         for i in 20..40 {
@@ -554,7 +567,7 @@ fn test_checkpoint_serialization_roundtrip_preserves_bounded_history() {
             state.add_execution_step(create_test_step(i), limit);
         }
 
-        assert_eq!(state.execution_history.len(), 50);
+        assert_eq!(state.execution_history.len(), 50); // OK: content checked via deserialized iteration values below
 
         // Serialize
         let json = serde_json::to_string(&state).expect("Should serialize");
@@ -635,9 +648,58 @@ fn test_execution_history_with_all_outcome_types() {
             "Should handle all outcome types"
         );
 
-        // Verify we can serialize/deserialize with all outcome types
+        // Verify each outcome type is present with expected data
+        assert!(
+            matches!(
+                &state.execution_history[0].outcome,
+                StepOutcome::Success { output, .. } if output.as_deref() == Some("success output")
+            ),
+            "First entry should be Success with expected output"
+        );
+        assert!(
+            matches!(
+                &state.execution_history[1].outcome,
+                StepOutcome::Failure { error, .. } if &**error == "error message"
+            ),
+            "Second entry should be Failure with expected error"
+        );
+        assert!(
+            matches!(
+                &state.execution_history[2].outcome,
+                StepOutcome::Partial { completed, .. } if &**completed == "completed part"
+            ),
+            "Third entry should be Partial with expected completed text"
+        );
+        assert!(
+            matches!(
+                &state.execution_history[3].outcome,
+                StepOutcome::Skipped { reason } if &**reason == "no review needed"
+            ),
+            "Fourth entry should be Skipped with expected reason"
+        );
+
+        // Verify serialization roundtrip preserves all outcome types
         let json = serde_json::to_string(&state).expect("Should serialize all outcome types");
-        let _deserialized: PipelineState =
+        let deserialized: PipelineState =
             serde_json::from_str(&json).expect("Should deserialize all outcome types");
+        assert_eq!(
+            deserialized.execution_history.len(),
+            4,
+            "Deserialized state should preserve all entries"
+        );
+        assert!(
+            matches!(
+                &deserialized.execution_history[0].outcome,
+                StepOutcome::Success { .. }
+            ),
+            "Deserialized first entry should remain Success"
+        );
+        assert!(
+            matches!(
+                &deserialized.execution_history[3].outcome,
+                StepOutcome::Skipped { .. }
+            ),
+            "Deserialized last entry should remain Skipped"
+        );
     });
 }

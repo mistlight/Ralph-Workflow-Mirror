@@ -122,7 +122,7 @@ fn test_memory_growth_rate_is_zero_after_limit_reached() {
             state.add_execution_step(create_test_step(i), limit);
         }
 
-        assert_eq!(state.execution_history.len(), 500);
+        assert_eq!(state.execution_history.len(), 500); // OK: precondition; content checked via front() iteration below
 
         // Add 1000 more iterations - length should remain constant
         for i in 500..1500 {

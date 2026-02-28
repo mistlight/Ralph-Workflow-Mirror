@@ -37,7 +37,7 @@ fn test_jsx_in_diff_no_false_positive() {
         assert!(rendered.content.contains("{{ zIndex: 0 }}"));
 
         // The substitution log should show DIFF was substituted
-        assert_eq!(rendered.log.substituted.len(), 1);
+        assert_eq!(rendered.log.substituted.len(), 1); // OK: content checked below
         assert_eq!(rendered.log.substituted[0].name, "DIFF");
 
         // The log should show completion (no missing variables)
@@ -91,7 +91,7 @@ const Component = () => {
 
         // Log should show successful substitution
         assert!(rendered.log.is_complete());
-        assert_eq!(rendered.log.substituted.len(), 1);
+        assert_eq!(rendered.log.substituted.len(), 1); // OK: content checked below
         assert_eq!(rendered.log.substituted[0].name, "CODE");
     });
 }

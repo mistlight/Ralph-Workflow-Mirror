@@ -106,7 +106,7 @@ fn test_execution_history_ring_buffer_behavior() {
             state.add_execution_step(create_test_step(i), limit);
         }
 
-        assert_eq!(state.execution_history.len(), 1000);
+        assert_eq!(state.execution_history.len(), 1000); // OK: precondition; content checked via front()/back() below
 
         // Add 200 more entries - should maintain limit by dropping oldest
         for i in 1000..1200 {
@@ -225,7 +225,7 @@ fn test_resume_from_checkpoint_preserves_bounded_history() {
         }
 
         // Should be bounded
-        assert_eq!(original_state.execution_history.len(), 1000);
+        assert_eq!(original_state.execution_history.len(), 1000); // OK: content checked via front()/back() iteration comparison below
 
         // Serialize and deserialize (checkpoint round-trip)
         let json = serde_json::to_string(&original_state).expect("Serialization should succeed");
@@ -268,7 +268,7 @@ fn test_bounded_history_maintains_recent_context() {
         }
 
         // Should be bounded to 1000
-        assert_eq!(state.execution_history.len(), 1000);
+        assert_eq!(state.execution_history.len(), 1000); // OK: content checked via iteration range assertion below
 
         // All entries should be from recent iterations (500-1499)
         for step in &state.execution_history {
@@ -311,7 +311,7 @@ fn test_execution_history_bounded_with_10000_iterations() {
             state.execution_history.len(),
             1000,
             "History should remain at limit even after 10,000 iterations"
-        );
+        ); // OK: content checked via front()/back() iteration values below
 
         // First entry should be from iteration 9000 (oldest 9000 dropped)
         let first_iteration = state.execution_history.front().unwrap().iteration;

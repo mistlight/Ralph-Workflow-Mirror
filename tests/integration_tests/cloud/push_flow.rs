@@ -409,7 +409,7 @@ fn test_push_to_remote_effect_pushes_head_to_named_remote_branch() {
             .expect("effect execution should succeed");
 
         let calls = executor.execute_calls_for("git");
-        assert_eq!(calls.len(), 1, "Should execute exactly one git command");
+        assert_eq!(calls.len(), 1, "Should execute exactly one git command"); // OK: content checked below
 
         let (_cmd, args, _env, _workdir) = &calls[0];
 
