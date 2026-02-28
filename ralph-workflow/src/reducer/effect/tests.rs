@@ -100,4 +100,12 @@ fn test_effect_result_multiple_ui_events() {
         });
 
     assert_eq!(result.ui_events.len(), 2);
+    assert!(matches!(
+        result.ui_events[0],
+        UIEvent::IterationProgress {
+            current: 2,
+            total: 5
+        }
+    ));
+    assert!(matches!(result.ui_events[1], UIEvent::AgentActivity { .. }));
 }

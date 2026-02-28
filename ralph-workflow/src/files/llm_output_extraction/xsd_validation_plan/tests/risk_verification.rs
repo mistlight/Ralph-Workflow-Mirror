@@ -437,4 +437,7 @@ fn test_multiple_verifications() {
     assert!(result.is_ok(), "Error: {:?}", result.err());
     let plan = result.unwrap();
     assert_eq!(plan.verification_strategy.len(), 3);
+    assert_eq!(plan.verification_strategy[0].method, "Unit tests");
+    assert_eq!(plan.verification_strategy[1].method, "Integration tests");
+    assert_eq!(plan.verification_strategy[2].method, "Manual review");
 }

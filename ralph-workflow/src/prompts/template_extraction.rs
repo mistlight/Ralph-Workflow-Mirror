@@ -246,6 +246,8 @@ mod tests {
         let content = "{{> header}}\n{{> footer}}";
         let partials = extract_partials(content);
         assert_eq!(partials.len(), 2);
+        assert_eq!(partials[0], "header");
+        assert_eq!(partials[1], "footer");
     }
 
     #[test]
