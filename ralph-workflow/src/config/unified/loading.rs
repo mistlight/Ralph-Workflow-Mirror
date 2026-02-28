@@ -717,10 +717,37 @@ impl UnifiedConfig {
 /// - For programmatic: non-empty local → use local, empty local → use global
 ///
 /// Scalar metadata fields (`max_retries`, etc.) follow the same presence logic.
+fn hardcoded_fallback_defaults() -> crate::agents::fallback::FallbackConfig {
+    crate::agents::fallback::FallbackConfig {
+        developer: vec![
+            "claude".to_string(),
+            "codex".to_string(),
+            "opencode".to_string(),
+        ],
+        reviewer: vec!["codex".to_string(), "claude".to_string()],
+        commit: vec![
+            "claude".to_string(),
+            "codex".to_string(),
+            "opencode".to_string(),
+        ],
+        ..Default::default()
+    }
+}
+
+fn built_in_fallback_defaults_with<E>(
+    registry_loader: impl FnOnce() -> Result<crate::agents::AgentRegistry, E>,
+) -> crate::agents::fallback::FallbackConfig
+where
+    E: std::fmt::Display,
+{
+    registry_loader().map_or_else(
+        |_error| hardcoded_fallback_defaults(),
+        |registry| registry.fallback_config().clone(),
+    )
+}
+
 fn built_in_fallback_defaults() -> crate::agents::fallback::FallbackConfig {
-    crate::agents::AgentRegistry::new()
-        .map(|registry| registry.fallback_config().clone())
-        .unwrap_or_default()
+    built_in_fallback_defaults_with(crate::agents::AgentRegistry::new)
 }
 
 fn merge_fallback_configs(
@@ -849,7 +876,10 @@ fn merge_fallback_configs(
 
 #[cfg(test)]
 mod tests {
-    use super::{built_in_fallback_defaults, merge_fallback_configs};
+    use super::{
+        built_in_fallback_defaults, built_in_fallback_defaults_with, hardcoded_fallback_defaults,
+        merge_fallback_configs,
+    };
     use crate::agents::fallback::FallbackConfig;
 
     #[test]
@@ -876,6 +906,26 @@ mod tests {
         assert_eq!(
             merged.analysis, builtins.analysis,
             "missing local analysis should inherit built-in defaults"
+        );
+    }
+
+    #[test]
+    fn test_built_in_fallback_defaults_registry_failure_uses_hardcoded_non_empty_defaults() {
+        let fallback = built_in_fallback_defaults_with(|| {
+            Err(anyhow::anyhow!("simulated built-in registry load failure"))
+        });
+        let expected = hardcoded_fallback_defaults();
+
+        assert_eq!(fallback.developer, expected.developer);
+        assert_eq!(fallback.reviewer, expected.reviewer);
+        assert_eq!(fallback.commit, expected.commit);
+        assert!(
+            !fallback.developer.is_empty(),
+            "hardcoded developer fallback must never be empty"
+        );
+        assert!(
+            !fallback.reviewer.is_empty(),
+            "hardcoded reviewer fallback must never be empty"
         );
     }
 }
