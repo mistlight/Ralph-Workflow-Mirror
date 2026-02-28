@@ -147,8 +147,6 @@ fn test_memory_growth_rate_is_zero_after_limit_reached() {
 #[test]
 fn test_heap_size_estimate_remains_bounded() {
     with_default_timeout(|| {
-        use ralph_workflow::checkpoint::execution_history::StepOutcome;
-
         let mut state = PipelineState::initial(10_000, 5);
         let limit = 1000;
 
@@ -157,53 +155,21 @@ fn test_heap_size_estimate_remains_bounded() {
             state.add_execution_step(create_test_step(i), limit);
         }
 
-        // Estimate heap size
-        // Note: Arc<str> and Box<str> use .len() not .capacity() as they don't have excess capacity
-        let heap_size: usize = state
-            .execution_history
-            .iter()
-            .map(|step| {
-                let base_size = step.phase.len()
-                    + step.step_type.len()
-                    + step.timestamp.capacity()
-                    + step.agent.as_ref().map_or(0, |s| s.len());
+        // Use serialized size as an observable upper bound on heap usage.
+        // This avoids reimplementing internal struct field traversal.
+        let serialized = serde_json::to_string(&state).expect("Should serialize state");
+        let serialized_size = serialized.len();
 
-                let outcome_size = match &step.outcome {
-                    StepOutcome::Success {
-                        output,
-                        files_modified,
-                        ..
-                    } => {
-                        output.as_ref().map_or(0, |s| s.len())
-                            + files_modified.as_ref().map_or(0, |files| {
-                                files.iter().map(std::string::String::capacity).sum()
-                            })
-                    }
-                    StepOutcome::Failure { error, signals, .. } => {
-                        error.len()
-                            + signals.as_ref().map_or(0, |sigs| {
-                                sigs.iter().map(std::string::String::capacity).sum()
-                            })
-                    }
-                    StepOutcome::Partial {
-                        completed,
-                        remaining,
-                        ..
-                    } => completed.len() + remaining.len(),
-                    StepOutcome::Skipped { reason } => reason.len(),
-                };
-
-                base_size + outcome_size
-            })
-            .sum();
-
-        // With 1000 entries, heap should be under 2MB
-        // (based on benchmark: ~500KB for 1000 entries)
+        // With 1000 entries, serialized size (which bounds heap) should be under 2MB
         assert!(
-            heap_size < MAX_HEAP_SIZE_BYTES,
-            "Heap size {heap_size} exceeds maximum {MAX_HEAP_SIZE_BYTES}"
+            serialized_size < MAX_HEAP_SIZE_BYTES,
+            "Serialized size {serialized_size} exceeds maximum {MAX_HEAP_SIZE_BYTES}, \
+             indicating heap size is likely unbounded"
         );
 
-        println!("Estimated heap size: {} KB", heap_size / 1024);
+        println!(
+            "Serialized size as heap proxy: {} KB",
+            serialized_size / 1024
+        );
     });
 }

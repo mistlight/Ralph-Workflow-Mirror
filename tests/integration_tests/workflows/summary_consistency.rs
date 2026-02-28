@@ -13,7 +13,6 @@
 //! - Tests are deterministic and isolated
 //! - Tests behavior, not implementation details
 
-use ralph_workflow::banner::PipelineSummary;
 use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent, ReviewEvent};
 use ralph_workflow::reducer::state::{DevelopmentStatus, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
@@ -51,36 +50,21 @@ fn test_summary_matches_reducer_state_simple_run() {
             PipelineEvent::Review(ReviewEvent::PassCompletedClean { pass: 1 }),
         );
 
-        // Construct summary as finalize_pipeline does
-        let summary = PipelineSummary {
-            total_time: "1m 23s".to_string(), // Mock
-            dev_runs_completed: state.metrics.dev_iterations_completed as usize,
-            dev_runs_total: state.metrics.max_dev_iterations as usize,
-            review_passes_completed: state.metrics.review_passes_completed as usize,
-            review_passes_total: state.metrics.max_review_passes as usize,
-            review_runs: state.metrics.review_runs_total as usize,
-            changes_detected: state.metrics.commits_created_total as usize,
-            isolation_mode: false,
-            verbose: false,
-            review_summary: None,
-        };
-
-        // Assert all summary fields match reducer state
-        assert_eq!(summary.dev_runs_completed, 2);
-        assert_eq!(summary.dev_runs_total, 2);
-        assert_eq!(summary.review_passes_completed, 1);
-        assert_eq!(summary.review_passes_total, 1);
-        assert_eq!(summary.review_runs, 1);
-        assert_eq!(summary.changes_detected, 2);
-
-        // Verify reducer metrics directly
-        assert_eq!(state.metrics.dev_iterations_started, 2);
+        // Verify reducer metrics match expected values for this event sequence.
+        // PipelineSummary is a direct projection of these metrics (see finalization.rs),
+        // so verifying metrics IS verifying summary correctness.
         assert_eq!(state.metrics.dev_iterations_completed, 2);
+        assert_eq!(state.metrics.max_dev_iterations, 2);
+        assert_eq!(state.metrics.review_passes_completed, 1);
+        assert_eq!(state.metrics.max_review_passes, 1);
+        assert_eq!(state.metrics.review_runs_total, 1);
+        assert_eq!(state.metrics.commits_created_total, 2);
+
+        // Detailed metrics
+        assert_eq!(state.metrics.dev_iterations_started, 2);
         assert_eq!(state.metrics.dev_attempts_total, 2);
         assert_eq!(state.metrics.analysis_attempts_total, 2);
         assert_eq!(state.metrics.review_passes_started, 1);
-        assert_eq!(state.metrics.review_passes_completed, 1);
-        assert_eq!(state.metrics.commits_created_total, 2);
     });
 }
 
@@ -143,34 +127,19 @@ fn test_summary_matches_reducer_state_with_continuations() {
             PipelineEvent::commit_created("hash1".to_string(), "Fix issues".to_string()),
         );
 
-        // Construct summary
-        let summary = PipelineSummary {
-            total_time: "2m 15s".to_string(),
-            dev_runs_completed: state.metrics.dev_iterations_completed as usize,
-            dev_runs_total: state.metrics.max_dev_iterations as usize,
-            review_passes_completed: state.metrics.review_passes_completed as usize,
-            review_passes_total: state.metrics.max_review_passes as usize,
-            review_runs: state.metrics.review_runs_total as usize,
-            changes_detected: state.metrics.commits_created_total as usize,
-            isolation_mode: false,
-            verbose: false,
-            review_summary: None,
-        };
+        // Verify metrics match expected values for this event sequence.
+        // PipelineSummary is a direct projection of these metrics (see finalization.rs).
+        assert_eq!(state.metrics.dev_iterations_completed, 1);
+        assert_eq!(state.metrics.max_dev_iterations, 1);
+        assert_eq!(state.metrics.review_passes_completed, 1);
+        assert_eq!(state.metrics.max_review_passes, 1);
+        assert_eq!(state.metrics.review_runs_total, 1);
+        assert_eq!(state.metrics.commits_created_total, 2); // Dev commit + fix commit
 
-        // Verify summary matches reducer
-        assert_eq!(summary.dev_runs_completed, 1);
-        assert_eq!(summary.dev_runs_total, 1);
-        assert_eq!(summary.review_passes_completed, 1);
-        assert_eq!(summary.review_passes_total, 1);
-        assert_eq!(summary.review_runs, 1);
-        assert_eq!(summary.changes_detected, 2); // Dev commit + fix commit
-
-        // Verify detailed metrics
+        // Detailed metrics
         assert_eq!(state.metrics.dev_iterations_started, 1);
-        assert_eq!(state.metrics.dev_iterations_completed, 1); // Completed via ContinuationSucceeded
         assert_eq!(state.metrics.dev_attempts_total, 2); // Initial + 1 continuation
         assert_eq!(state.metrics.fix_runs_total, 1);
-        assert_eq!(state.metrics.review_passes_completed, 1); // Fix completed the pass
     });
 }
 
@@ -224,30 +193,11 @@ fn test_summary_matches_with_multiple_review_passes() {
             }),
         );
 
-        // Construct summary
-        let summary = PipelineSummary {
-            total_time: "3m 45s".to_string(),
-            dev_runs_completed: state.metrics.dev_iterations_completed as usize,
-            dev_runs_total: state.metrics.max_dev_iterations as usize,
-            review_passes_completed: state.metrics.review_passes_completed as usize,
-            review_passes_total: state.metrics.max_review_passes as usize,
-            review_runs: state.metrics.review_runs_total as usize,
-            changes_detected: state.metrics.commits_created_total as usize,
-            isolation_mode: false,
-            verbose: false,
-            review_summary: None,
-        };
-
-        // Verify all 3 passes completed
-        assert_eq!(summary.review_passes_completed, 3);
-        assert_eq!(summary.review_passes_total, 3);
-        assert_eq!(summary.review_runs, 3);
-        // Note: review_passes_started only increments when reviewer_pass != pass in PassStarted
-        // After Completed/PassCompletedClean, reviewer_pass auto-advances to next_pass
-        // So subsequent PassStarted calls don't increment (pass == reviewer_pass)
-        // This is current behavior - only first PassStarted(1) increments from initial 0
-        // The "completed" counter is what matters for showing progress
+        // Verify metrics match expected values for this event sequence.
+        // PipelineSummary is a direct projection of these metrics (see finalization.rs).
         assert_eq!(state.metrics.review_passes_completed, 3);
+        assert_eq!(state.metrics.max_review_passes, 3);
+        assert_eq!(state.metrics.review_runs_total, 3);
     });
 }
 
@@ -298,26 +248,14 @@ fn test_summary_zero_when_no_work_done() {
     with_default_timeout(|| {
         let state = PipelineState::initial(5, 3);
 
-        // No events, no work done
-        let summary = PipelineSummary {
-            total_time: "0s".to_string(),
-            dev_runs_completed: state.metrics.dev_iterations_completed as usize,
-            dev_runs_total: state.metrics.max_dev_iterations as usize,
-            review_passes_completed: state.metrics.review_passes_completed as usize,
-            review_passes_total: state.metrics.max_review_passes as usize,
-            review_runs: state.metrics.review_runs_total as usize,
-            changes_detected: state.metrics.commits_created_total as usize,
-            isolation_mode: false,
-            verbose: false,
-            review_summary: None,
-        };
-
-        assert_eq!(summary.dev_runs_completed, 0);
-        assert_eq!(summary.dev_runs_total, 5);
-        assert_eq!(summary.review_passes_completed, 0);
-        assert_eq!(summary.review_passes_total, 3);
-        assert_eq!(summary.review_runs, 0);
-        assert_eq!(summary.changes_detected, 0);
+        // No events, no work done - metrics should all be zero except configured totals.
+        // PipelineSummary is a direct projection of these metrics (see finalization.rs).
+        assert_eq!(state.metrics.dev_iterations_completed, 0);
+        assert_eq!(state.metrics.max_dev_iterations, 5);
+        assert_eq!(state.metrics.review_passes_completed, 0);
+        assert_eq!(state.metrics.max_review_passes, 3);
+        assert_eq!(state.metrics.review_runs_total, 0);
+        assert_eq!(state.metrics.commits_created_total, 0);
     });
 }
 
@@ -395,29 +333,31 @@ fn test_fix_continuation_metrics_tracked_in_reducer() {
 ///
 /// CRITICAL: Per-phase attribution ensures we can see where XSD retries occurred
 /// for debugging and observability.
+///
+/// This test drives state through events to reach each phase naturally rather
+/// than directly setting `state.phase`.
 #[test]
 fn test_xsd_retry_attribution_across_phases() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::event::{PipelinePhase, PlanningEvent};
+        use ralph_workflow::reducer::event::PlanningEvent;
 
-        // Start with initial state
+        // Start with initial state (Planning phase by default)
         let mut state = PipelineState::initial(1, 1);
 
-        // Simulate planning XSD retry (1 attempt)
-        state.phase = PipelinePhase::Planning;
+        // Phase 1: Planning XSD retry (1 attempt)
+        // State starts in Planning phase naturally
         let event = PipelineEvent::Planning(PlanningEvent::OutputValidationFailed {
             iteration: 0,
             attempt: 0,
         });
         state = reduce(state, event);
-
-        // Verify planning XSD retry was tracked
         assert_eq!(state.metrics.xsd_retry_planning, 1);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 1);
 
-        // Simulate development XSD retry (2 attempts)
-        state.phase = PipelinePhase::Development;
-        state.iteration = 0;
+        // Transition to Development via planning_phase_completed event
+        state = reduce(state, PipelineEvent::planning_phase_completed());
+
+        // Phase 2: Development XSD retries (2 attempts)
         let event = PipelineEvent::Development(DevelopmentEvent::OutputValidationFailed {
             iteration: 0,
             attempt: 0,
@@ -429,34 +369,36 @@ fn test_xsd_retry_attribution_across_phases() {
             attempt: 1,
         });
         state = reduce(state, event);
-
-        // Verify development XSD retries were tracked
         assert_eq!(state.metrics.xsd_retry_development, 2);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 3);
 
-        // Simulate review XSD retry (1 attempt)
-        state.phase = PipelinePhase::Review;
-        state.reviewer_pass = 0;
+        // Transition to Review via development_iteration_completed + commit_created events
+        state = reduce(
+            state,
+            PipelineEvent::development_iteration_completed(0, true),
+        );
+        state = reduce(
+            state,
+            PipelineEvent::commit_created("hash".to_string(), "msg".to_string()),
+        );
+
+        // Phase 3: Review XSD retry (1 attempt)
         let event = PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
             pass: 0,
             attempt: 0,
             error_detail: None,
         });
         state = reduce(state, event);
-
-        // Verify review XSD retry was tracked
         assert_eq!(state.metrics.xsd_retry_review, 1);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 4);
 
-        // Simulate fix XSD retry (1 attempt)
+        // Phase 4: Fix XSD retry (1 attempt) - still in Review phase
         let event = PipelineEvent::Review(ReviewEvent::FixOutputValidationFailed {
             pass: 0,
             attempt: 0,
             error_detail: None,
         });
         state = reduce(state, event);
-
-        // Verify fix XSD retry was tracked
         assert_eq!(state.metrics.xsd_retry_fix, 1);
         assert_eq!(state.metrics.xsd_retry_attempts_total, 5);
 
@@ -465,22 +407,10 @@ fn test_xsd_retry_attribution_across_phases() {
             state.metrics.xsd_retry_attempts_total, 5,
             "Total XSD retry attempts should sum all phases"
         );
-        assert_eq!(
-            state.metrics.xsd_retry_planning, 1,
-            "Planning XSD retries should be 1"
-        );
-        assert_eq!(
-            state.metrics.xsd_retry_development, 2,
-            "Development XSD retries should be 2"
-        );
-        assert_eq!(
-            state.metrics.xsd_retry_review, 1,
-            "Review XSD retries should be 1"
-        );
-        assert_eq!(
-            state.metrics.xsd_retry_fix, 1,
-            "Fix XSD retries should be 1"
-        );
+        assert_eq!(state.metrics.xsd_retry_planning, 1);
+        assert_eq!(state.metrics.xsd_retry_development, 2);
+        assert_eq!(state.metrics.xsd_retry_review, 1);
+        assert_eq!(state.metrics.xsd_retry_fix, 1);
         assert_eq!(
             state.metrics.xsd_retry_commit, 0,
             "Commit XSD retries should be 0 (not tested in this scenario)"

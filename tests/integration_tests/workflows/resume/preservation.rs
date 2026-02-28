@@ -25,8 +25,25 @@ Test resume functionality.
 ";
 
 /// SHA256 checksum of `STANDARD_PROMPT` above.
+///
+/// Verified against the actual prompt content at test time by
+/// [`verify_preservation_prompt_checksum`] to prevent silent drift.
 const STANDARD_PROMPT_CHECKSUM: &str =
     "e10f15e8e6da0c359d9d266370dcefe7e11270c48b63144f1d443249b9eb5738";
+
+/// Guard test: verifies `STANDARD_PROMPT_CHECKSUM` matches the actual
+/// SHA256 of the local `STANDARD_PROMPT`. Fails loudly when the prompt
+/// text is updated without updating the checksum constant.
+#[test]
+fn verify_preservation_prompt_checksum() {
+    with_default_timeout(|| {
+        let computed = ralph_workflow::reducer::prompt_inputs::sha256_hex_str(STANDARD_PROMPT);
+        assert_eq!(
+            STANDARD_PROMPT_CHECKSUM, computed,
+            "preservation STANDARD_PROMPT_CHECKSUM is stale — update it to match STANDARD_PROMPT"
+        );
+    });
+}
 
 // ============================================================================
 // Configuration Preservation Tests

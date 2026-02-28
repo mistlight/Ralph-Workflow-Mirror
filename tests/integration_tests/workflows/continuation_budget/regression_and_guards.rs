@@ -30,20 +30,16 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
         // Simulate a scenario where EVERY attempt returns Partial
         // (mimicking the infinite loop from the bug report where status never reaches Complete)
 
-        // Attempt 0: Partial
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "Verification found only a subset implemented".to_string(),
-                files_changed: Some(
-                    ["src/file1.rs", "src/file2.rs"]
-                        .into_iter()
-                        .map(String::from)
-                        .collect(),
-                ),
-                next_steps: Some("Complete missing plan domains".to_string()),
-            },
+        // Attempt 0: Partial via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "Verification found only a subset implemented".to_string(),
+                Some(vec!["src/file1.rs".to_string(), "src/file2.rs".to_string()]),
+                Some("Complete missing plan domains".to_string()),
+            ),
         );
         state = reduce(
             state,
@@ -55,20 +51,16 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
         );
         assert!(!state.continuation.continuations_exhausted());
 
-        // Attempt 1: Partial again
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "Most implementation slices present but not complete".to_string(),
-                files_changed: Some(
-                    ["src/file3.rs", "src/file4.rs"]
-                        .into_iter()
-                        .map(String::from)
-                        .collect(),
-                ),
-                next_steps: Some("Add explicit parity map artifact".to_string()),
-            },
+        // Attempt 1: Partial again via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "Most implementation slices present but not complete".to_string(),
+                Some(vec!["src/file3.rs".to_string(), "src/file4.rs".to_string()]),
+                Some("Add explicit parity map artifact".to_string()),
+            ),
         );
         state = reduce(
             state,
@@ -80,15 +72,16 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
         );
         assert!(!state.continuation.continuations_exhausted());
 
-        // Attempt 2: Partial yet again
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "Still not fully satisfied".to_string(),
-                files_changed: Some(vec!["src/file5.rs".to_string()].into_boxed_slice()),
-                next_steps: Some("Provide explicit evidence".to_string()),
-            },
+        // Attempt 2: Partial yet again via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "Still not fully satisfied".to_string(),
+                Some(vec!["src/file5.rs".to_string()]),
+                Some("Provide explicit evidence".to_string()),
+            ),
         );
         state = reduce(
             state,
@@ -110,14 +103,15 @@ fn test_default_continuation_limit_prevents_infinite_loop() {
 
         // Verify that the next OutcomeApplied would NOT trigger another continuation
         // (because we've switched agents and reset the continuation state)
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "New agent attempt".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "New agent attempt".to_string(),
+                None,
+                None,
+            ),
         );
         state = reduce(
             state,
@@ -281,15 +275,16 @@ fn test_missing_max_dev_continuations_prevents_infinite_loop() {
 
         // Simulate the scenario from logs: every attempt returns Partial (never Complete)
         for attempt in 0..MAX_SAFE_ATTEMPTS {
-            // Simulate OutcomeApplied with Partial status
-            state.development_validated_outcome = Some(
-                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                    iteration: 0,
-                    status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work attempt {attempt}"),
-                    files_changed: None,
-                    next_steps: Some("Continue work".to_string()),
-                },
+            // Simulate OutcomeApplied with Partial status via XmlValidated event
+            state = reduce(
+                state,
+                PipelineEvent::development_xml_validated(
+                    0,
+                    DevelopmentStatus::Partial,
+                    format!("Partial work attempt {attempt}"),
+                    None,
+                    Some("Continue work".to_string()),
+                ),
             );
 
             state = reduce(
@@ -377,15 +372,16 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
         let mut cycle_count = 0;
 
         for cycle in 0..MAX_CYCLES {
-            // Simulate attempt 0 (initial): Partial status
-            state.development_validated_outcome = Some(
-                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                    iteration: 0,
-                    status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work cycle {cycle} attempt 0"),
-                    files_changed: None,
-                    next_steps: Some("Continue".to_string()),
-                },
+            // Simulate attempt 0 (initial): Partial status via XmlValidated event
+            state = reduce(
+                state,
+                PipelineEvent::development_xml_validated(
+                    0,
+                    DevelopmentStatus::Partial,
+                    format!("Partial work cycle {cycle} attempt 0"),
+                    None,
+                    Some("Continue".to_string()),
+                ),
             );
             state = reduce(
                 state,
@@ -398,15 +394,16 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
                 "After attempt 0, should be at attempt 1"
             );
 
-            // Simulate attempt 1: Partial status
-            state.development_validated_outcome = Some(
-                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                    iteration: 0,
-                    status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work cycle {cycle} attempt 1"),
-                    files_changed: None,
-                    next_steps: Some("Continue".to_string()),
-                },
+            // Simulate attempt 1: Partial status via XmlValidated event
+            state = reduce(
+                state,
+                PipelineEvent::development_xml_validated(
+                    0,
+                    DevelopmentStatus::Partial,
+                    format!("Partial work cycle {cycle} attempt 1"),
+                    None,
+                    Some("Continue".to_string()),
+                ),
             );
             state = reduce(
                 state,
@@ -419,15 +416,16 @@ fn test_continuation_budget_exhaustion_completes_iteration() {
                 "After attempt 1, should be at attempt 2"
             );
 
-            // Simulate attempt 2: Partial status (will exhaust budget)
-            state.development_validated_outcome = Some(
-                ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                    iteration: 0,
-                    status: DevelopmentStatus::Partial,
-                    summary: format!("Partial work cycle {cycle} attempt 2"),
-                    files_changed: None,
-                    next_steps: Some("Continue".to_string()),
-                },
+            // Simulate attempt 2: Partial status (will exhaust budget) via XmlValidated event
+            state = reduce(
+                state,
+                PipelineEvent::development_xml_validated(
+                    0,
+                    DevelopmentStatus::Partial,
+                    format!("Partial work cycle {cycle} attempt 2"),
+                    None,
+                    Some("Continue".to_string()),
+                ),
             );
             state = reduce(
                 state,

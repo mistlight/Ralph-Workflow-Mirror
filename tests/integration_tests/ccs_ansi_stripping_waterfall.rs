@@ -15,18 +15,12 @@ use ralph_workflow::config::Verbosity;
 use ralph_workflow::json_parser::claude::ClaudeParser;
 use ralph_workflow::json_parser::printer::TestPrinter;
 use ralph_workflow::json_parser::terminal::TerminalMode;
+use ralph_workflow::logger::output::strip_ansi_codes;
 use ralph_workflow::logger::Colors;
 use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
 use std::io::BufReader;
 use std::rc::Rc;
-
-/// Strip ANSI escape sequences from string (simulates non-ANSI console)
-fn strip_ansi(s: &str) -> String {
-    // Remove ANSI sequences: \x1b[...m (colors) and \x1b[...[A-K] (cursor/clear)
-    let re = regex::Regex::new(r"\x1b\[[^m]*m|\x1b\[[^A-K]*[A-K]").unwrap();
-    re.replace_all(s, "").to_string()
-}
 
 #[test]
 fn test_ansi_stripping_no_spam() {
@@ -55,7 +49,7 @@ fn test_ansi_stripping_no_spam() {
         parser.parse_stream(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
-        let stripped = strip_ansi(&output);
+        let stripped = strip_ansi_codes(&output);
 
         // Count newlines in stripped output
         let newline_count = stripped.matches('\n').count();

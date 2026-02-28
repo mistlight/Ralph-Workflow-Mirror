@@ -282,8 +282,8 @@ fn test_dev_continuation_metrics_match_state() {
         );
 
         assert_eq!(
-            state.metrics.dev_continuation_attempt, state.continuation.continuation_attempt,
-            "Metrics should match continuation state after first continuation"
+            state.metrics.dev_continuation_attempt, 1,
+            "Metrics should record first continuation attempt"
         );
 
         // After second continuation
@@ -299,8 +299,8 @@ fn test_dev_continuation_metrics_match_state() {
         );
 
         assert_eq!(
-            state.metrics.dev_continuation_attempt, state.continuation.continuation_attempt,
-            "Metrics should match continuation state after second continuation"
+            state.metrics.dev_continuation_attempt, 2,
+            "Metrics should record second continuation attempt"
         );
     });
 }
@@ -329,8 +329,8 @@ fn test_fix_continuation_metrics_match_state() {
         );
 
         assert_eq!(
-            state.metrics.fix_continuation_attempt, state.continuation.fix_continuation_attempt,
-            "Metrics should match continuation state after first fix continuation"
+            state.metrics.fix_continuation_attempt, 1,
+            "Metrics should record first fix continuation attempt"
         );
 
         // After second fix continuation
@@ -344,8 +344,8 @@ fn test_fix_continuation_metrics_match_state() {
         );
 
         assert_eq!(
-            state.metrics.fix_continuation_attempt, state.continuation.fix_continuation_attempt,
-            "Metrics should match continuation state after second fix continuation"
+            state.metrics.fix_continuation_attempt, 2,
+            "Metrics should record second fix continuation attempt"
         );
     });
 }
@@ -390,10 +390,10 @@ fn test_continuation_exhaustion_matches_metrics() {
         assert!(!state.continuation.continuations_exhausted());
         // But the defensive check cleared continue_pending to prevent further scheduling
         assert!(!state.continuation.continue_pending);
-        // Metrics should match state
+        // Metrics should reflect the final attempt count
         assert_eq!(
-            state.metrics.dev_continuation_attempt,
-            state.continuation.continuation_attempt
+            state.metrics.dev_continuation_attempt, 2,
+            "Metrics should reflect the 2 continuation attempts that were accepted"
         );
     });
 }

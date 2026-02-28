@@ -114,10 +114,13 @@ fn test_opencode_parser_none_mode_flushes_at_step_finish() {
             "Expected accumulated text to be flushed at step_finish in None mode. Output:\n{output}"
         );
         // In None mode, verify we didn't emit per-delta prefix spam.
-        // This stream includes step start + one flushed text line + step finish.
+        // This stream includes step start + one flushed text line + step finish,
+        // so 1-3 prefixes are expected.
+        let oc_count = output.matches("[OpenCode]").count();
         assert!(
-            output.matches("[OpenCode]").count() <= 3,
-            "Expected no per-delta prefix spam in None mode. Output:\n{output}"
+            (1..=3).contains(&oc_count),
+            "Expected 1-3 [OpenCode] prefixes in None mode (step start + text + step finish), \
+             got {oc_count}. Output:\n{output}"
         );
     });
 }
@@ -472,10 +475,12 @@ fn test_opencode_parser_consecutive_text_handled() {
         parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
+        // Three identical consecutive "Hello" text events should be deduplicated.
+        // At most 2 occurrences are acceptable (one deduplicated + possible final).
         let hello_count = output.matches("Hello").count();
         assert!(
-            hello_count <= 4,
-            "Consecutive text events should not cause excessive duplication. Got {hello_count} occurrences"
+            (1..=2).contains(&hello_count),
+            "Consecutive text events should be deduplicated. Expected 1-2 occurrences, got {hello_count}"
         );
     });
 }

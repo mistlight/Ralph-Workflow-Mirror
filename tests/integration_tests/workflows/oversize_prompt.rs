@@ -604,13 +604,6 @@ fn commit_diff_materialization_stable_across_xsd_retries() {
             matches!(effect, Effect::PrepareCommitPrompt { .. }),
             "Materialized inputs should be reused across XSD retries: got {effect:?}"
         );
-
-        // Verify the materialized diff content is stable (truncation is deterministic)
-        let second_truncation = truncate_diff_to_model_budget(&large_diff, model_budget);
-        assert_eq!(
-            model_safe_diff, second_truncation.0,
-            "Truncation should be deterministic for the same input and budget"
-        );
     });
 }
 

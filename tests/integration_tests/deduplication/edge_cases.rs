@@ -114,11 +114,16 @@ fn test_example_log_renders_without_thinking_corruption() {
             "Expected streamed assistant text missing from visible output. Visible output: {visible}"
         );
 
-        // Regression: ensure system status output doesn't leave remnants from the streamed line.
-        assert!(
-            !visible.contains("statusead"),
-            "System output corrupted the streamed line. Output: {visible}"
-        );
+        // Regression: ensure system status output doesn't corrupt the streamed line.
+        // Check for known corruption artifacts where system status text merges with streamed content.
+        // The specific pattern "statusead" was observed when "[status]" overwrote "Need read" → "statusead".
+        let corruption_patterns = ["statusead", "statused", "statusomplete"];
+        for pattern in &corruption_patterns {
+            assert!(
+                !visible.contains(pattern),
+                "System output corrupted the streamed line (found '{pattern}'). Output: {visible}"
+            );
+        }
 
         // Regression: ensure thinking prefix never appears on the same line as critical text.
         for line in visible.lines() {

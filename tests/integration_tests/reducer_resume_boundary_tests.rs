@@ -224,14 +224,15 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
         state.development_agent_invoked_iteration = Some(1);
         state.analysis_agent_invoked_iteration = Some(1);
         state.development_xml_extracted_iteration = Some(1);
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 1,
-                status: ralph_workflow::reducer::state::DevelopmentStatus::Completed,
-                summary: "Test development complete".to_string(),
-                files_changed: Some(vec![].into_boxed_slice()),
-                next_steps: None,
-            },
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                1,
+                ralph_workflow::reducer::state::DevelopmentStatus::Completed,
+                "Test development complete".to_string(),
+                Some(vec![]),
+                None,
+            ),
         );
         state.development_xml_archived_iteration = Some(1);
 

@@ -453,7 +453,11 @@ fn test_analysis_uses_agent_chain_fallback() {
             vec![vec![], vec![]],
             AgentRole::Developer,
         );
-        assert_eq!(state.agent_chain.current_agent_index, 0);
+        assert_eq!(
+            state.agent_chain.current_agent().unwrap(),
+            "agent1",
+            "Should start with first agent"
+        );
 
         // Simulate invalid output attempts exceeding threshold
         state.continuation.invalid_output_attempts = 4; // Exceeds max

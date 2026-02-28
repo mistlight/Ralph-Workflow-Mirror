@@ -37,7 +37,7 @@ use crate::reducer::state::{DevelopmentStatus, PromptMode};
 ///
 /// Groups parameters for [`Effect::WriteContinuationContext`] to avoid
 /// exceeding the function argument limit.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct ContinuationContextData {
     pub iteration: u32,
     pub attempt: u32,
@@ -50,7 +50,7 @@ pub struct ContinuationContextData {
 }
 
 /// Types of recovery reset operations.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum RecoveryResetType {
     /// Reset to the start of a phase (clear phase-specific progress flags).
     PhaseStart,
@@ -64,7 +64,7 @@ pub enum RecoveryResetType {
 ///
 /// The reducer determines which effect to execute next based on state.
 /// Effect handlers execute effects and emit events.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum Effect {
     AgentInvocation {
         role: AgentRole,

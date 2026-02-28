@@ -280,117 +280,99 @@ fn test_interrupted_phase_emits_interrupt_checkpoint_save() {
     });
 }
 
-/// Test that representative effect types carry exactly the data for one task.
+/// Architectural guard: each phase emits exactly one focused effect, not a bundle.
 ///
-/// Each effect variant should carry only the parameters needed for a single
-/// focused operation. This test verifies the architectural invariant through
-/// fixed fixtures rather than a dynamic inventory.
+/// This test verifies the single-task invariant behaviorally: for each phase,
+/// `determine_next_effect` returns one effect that matches the expected variant
+/// for that phase. If any phase started bundling cleanup or agent selection
+/// into the same effect, the variant would change or gain unexpected fields.
 ///
-/// If a new effect variant is added, it should follow the single-task pattern
-/// demonstrated here. This test does NOT need updating for every new variant;
-/// it validates the *pattern* through representative examples.
+/// This is a schema guard test -- it verifies the public API contract of
+/// `determine_next_effect` across representative phases.
 #[test]
-fn test_effect_types_are_single_task() {
-    use ralph_workflow::reducer::state::PromptMode;
-
+fn test_each_phase_emits_single_focused_effect() {
     with_default_timeout(|| {
-        // AgentInvocation: carries only agent identity + prompt (single invocation)
-        let agent_effect = Effect::AgentInvocation {
-            role: AgentRole::Developer,
-            agent: "test".to_string(),
-            model: None,
-            prompt: "do work".to_string(),
-        };
-        assert!(
-            matches!(agent_effect, Effect::AgentInvocation { .. }),
-            "AgentInvocation should be a distinct single-task effect"
+        let dev_chain = AgentChainState::initial().with_agents(
+            vec!["agent".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+        let reviewer_chain = AgentChainState::initial().with_agents(
+            vec!["reviewer".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        );
+        let commit_chain = AgentChainState::initial().with_agents(
+            vec!["committer".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
         );
 
-        // SaveCheckpoint: carries only the trigger (single checkpoint save)
-        let checkpoint_effect = Effect::SaveCheckpoint {
-            trigger: CheckpointTrigger::PhaseTransition,
+        // Planning emits MaterializePlanningInputs (not bundled with cleanup or agent init)
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            context_cleaned: true,
+            gitignore_entries_ensured: true,
+            agent_chain: dev_chain.clone(),
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
+        let effect = determine_next_effect(&state);
         assert!(
-            matches!(
-                checkpoint_effect,
-                Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::PhaseTransition
-                }
-            ),
-            "SaveCheckpoint carries only a trigger"
+            matches!(effect, Effect::MaterializePlanningInputs { .. }),
+            "Planning should emit single MaterializePlanningInputs, got {effect:?}"
         );
 
-        // PreparePlanningPrompt: carries only iteration + prompt_mode (single prompt render)
-        let plan_prompt = Effect::PreparePlanningPrompt {
-            iteration: 0,
-            prompt_mode: PromptMode::Normal,
+        // Development emits PrepareDevelopmentContext (not bundled with cleanup)
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: dev_chain,
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
-        match plan_prompt {
-            Effect::PreparePlanningPrompt {
-                iteration,
-                prompt_mode,
-            } => {
-                assert_eq!(iteration, 0);
-                assert!(matches!(prompt_mode, PromptMode::Normal));
-            }
-            _ => panic!("Expected PreparePlanningPrompt"),
-        }
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::PrepareDevelopmentContext { iteration: 0 }),
+            "Development should emit single PrepareDevelopmentContext, got {effect:?}"
+        );
 
-        // PrepareDevelopmentContext: carries only iteration (no prompt, no cleanup)
-        let dev_ctx = Effect::PrepareDevelopmentContext { iteration: 1 };
-        match dev_ctx {
-            Effect::PrepareDevelopmentContext { iteration } => {
-                assert_eq!(iteration, 1, "Only carries iteration");
-            }
-            _ => panic!("Expected PrepareDevelopmentContext"),
-        }
-
-        // PrepareReviewContext: carries only pass (no agent selection, no cleanup)
-        let review_ctx = Effect::PrepareReviewContext { pass: 0 };
-        match review_ctx {
-            Effect::PrepareReviewContext { pass } => {
-                assert_eq!(pass, 0, "Only carries pass number");
-            }
-            _ => panic!("Expected PrepareReviewContext"),
-        }
-
-        // CleanupContext and CleanupContinuationContext: no data at all (single cleanup action)
-        assert!(matches!(Effect::CleanupContext, Effect::CleanupContext));
-        assert!(matches!(
-            Effect::CleanupContinuationContext,
-            Effect::CleanupContinuationContext
-        ));
-
-        // ValidateFinalState: no data (single validation action)
-        assert!(matches!(
-            Effect::ValidateFinalState,
-            Effect::ValidateFinalState
-        ));
-
-        // CreateCommit: carries only the message (single commit creation)
-        let commit = Effect::CreateCommit {
-            message: "test".to_string(),
+        // Review emits PrepareReviewContext (not bundled with agent selection)
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            agent_chain: reviewer_chain,
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
-        match commit {
-            Effect::CreateCommit { message } => {
-                assert_eq!(message, "test", "Only carries commit message");
-            }
-            _ => panic!("Expected CreateCommit"),
-        }
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
+            "Review should emit single PrepareReviewContext, got {effect:?}"
+        );
 
-        // InitializeAgentChain: carries only role (single chain setup)
-        let init_chain = Effect::InitializeAgentChain {
-            role: AgentRole::Developer,
+        // CommitMessage with chain emits CheckCommitDiff (not bundled with prompt prep)
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::NotStarted,
+            agent_chain: commit_chain,
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
-        match init_chain {
-            Effect::InitializeAgentChain { role } => {
-                assert!(
-                    matches!(role, AgentRole::Developer),
-                    "Only carries agent role"
-                );
-            }
-            _ => panic!("Expected InitializeAgentChain"),
-        }
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::CheckCommitDiff),
+            "CommitMessage should emit single CheckCommitDiff first, got {effect:?}"
+        );
+
+        // FinalValidation emits CheckUncommittedChangesBeforeTermination (single safety check)
+        let state = PipelineState {
+            phase: PipelinePhase::FinalValidation,
+            pre_termination_commit_checked: false,
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
+        };
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::CheckUncommittedChangesBeforeTermination),
+            "FinalValidation should emit single safety check, got {effect:?}"
+        );
+
+        // CleanupContext and CleanupContinuationContext are distinct no-data effects
+        // (verified by the planning sequence test: test_context_cleaned_before_planning)
     });
 }
 
@@ -686,61 +668,46 @@ fn test_development_outcome_does_not_bundle_context_writing() {
     });
 }
 
-/// Test that each phase effect is independent and doesn't bundle with cleanup.
+/// Behavioral test: cleanup and phase effects are produced as separate steps.
 ///
-/// Phase effects (`PrepareDevelopmentContext`, `PrepareReviewContext`, etc.) should only
-/// execute their primary task. Cleanup operations should be separate effects.
+/// When context is not yet cleaned, `determine_next_effect` emits cleanup first.
+/// Only after cleanup does it emit the phase-specific effect. This proves
+/// cleanup is never bundled into phase effects.
 #[test]
 fn test_phase_effects_do_not_bundle_cleanup() {
     with_default_timeout(|| {
-        // Verify that phase effects don't include cleanup fields
-        // PrepareDevelopmentContext - only iteration field
-        let dev_effect = Effect::PrepareDevelopmentContext { iteration: 2 };
-        match dev_effect {
-            Effect::PrepareDevelopmentContext { iteration } => {
-                assert_eq!(iteration, 2, "PrepareDevelopmentContext only has iteration");
-            }
-            _ => panic!("Wrong effect type"),
-        }
+        let dev_chain = AgentChainState::initial().with_agents(
+            vec!["agent".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
 
-        // PrepareReviewContext - only pass field
-        let review_effect = Effect::PrepareReviewContext { pass: 1 };
-        match review_effect {
-            Effect::PrepareReviewContext { pass } => {
-                assert_eq!(pass, 1, "PrepareReviewContext only has pass");
-            }
-            _ => panic!("Wrong effect type"),
-        }
-
-        // PrepareFixPrompt - only pass field
-        let fix_effect = Effect::PrepareFixPrompt {
-            pass: 0,
-            prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+        // Without cleanup done: should emit CleanupContext, NOT phase effect
+        let state_needs_cleanup = PipelineState {
+            phase: PipelinePhase::Planning,
+            context_cleaned: false,
+            gitignore_entries_ensured: true,
+            agent_chain: dev_chain.clone(),
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
         };
-        match fix_effect {
-            Effect::PrepareFixPrompt { pass, .. } => {
-                assert_eq!(pass, 0, "PrepareFixPrompt has pass");
-            }
-            _ => panic!("Wrong effect type"),
-        }
-
-        // PreparePlanningPrompt - only iteration field
-        let plan_effect = Effect::PreparePlanningPrompt {
-            iteration: 1,
-            prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
-        };
-        match plan_effect {
-            Effect::PreparePlanningPrompt { iteration, .. } => {
-                assert_eq!(iteration, 1, "PreparePlanningPrompt has iteration");
-            }
-            _ => panic!("Wrong effect type"),
-        }
-
-        // CleanupContext is a completely separate effect
-        let cleanup_effect = Effect::CleanupContext;
+        let effect = determine_next_effect(&state_needs_cleanup);
         assert!(
-            matches!(cleanup_effect, Effect::CleanupContext),
-            "CleanupContext is its own effect"
+            matches!(effect, Effect::CleanupContext),
+            "When context not cleaned, should emit separate CleanupContext, not bundled phase effect. Got {effect:?}"
+        );
+
+        // With cleanup done: should emit phase effect
+        let state_cleaned = PipelineState {
+            phase: PipelinePhase::Planning,
+            context_cleaned: true,
+            gitignore_entries_ensured: true,
+            agent_chain: dev_chain,
+            ..with_locked_prompt_permissions(PipelineState::initial(5, 2))
+        };
+        let effect = determine_next_effect(&state_cleaned);
+        assert!(
+            matches!(effect, Effect::MaterializePlanningInputs { .. }),
+            "After cleanup, should emit phase effect. Got {effect:?}"
         );
     });
 }
@@ -845,18 +812,14 @@ fn test_effect_determination_deterministic_all_phases() {
             let effect2 = determine_next_effect(&state);
             let effect3 = determine_next_effect(&state);
 
-            // All must be equal (using Debug format for comparison since Effect doesn't impl PartialEq)
+            // All must be equal (Effect derives PartialEq for structural comparison)
             assert_eq!(
-                format!("{effect1:?}"),
-                format!("{:?}", effect2),
-                "Effect determination must be deterministic for phase {:?}",
-                phase
+                effect1, effect2,
+                "Effect determination must be deterministic for phase {phase:?}"
             );
             assert_eq!(
-                format!("{effect2:?}"),
-                format!("{:?}", effect3),
-                "Effect determination must be deterministic for phase {:?}",
-                phase
+                effect2, effect3,
+                "Effect determination must be deterministic for phase {phase:?}"
             );
         }
     });

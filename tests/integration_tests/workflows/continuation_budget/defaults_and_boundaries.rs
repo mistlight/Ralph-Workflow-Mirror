@@ -282,15 +282,16 @@ fn test_outcome_applied_exhausts_too_early() {
         let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
-        // Simulate attempt 0 completing with Partial outcome
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "partial work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        // Simulate attempt 0 completing with Partial outcome via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "partial work".to_string(),
+                None,
+                None,
+            ),
         );
 
         // Apply outcome at attempt 0 - should trigger continuation to attempt 1
@@ -300,15 +301,16 @@ fn test_outcome_applied_exhausts_too_early() {
         );
         assert_eq!(state.continuation.continuation_attempt, 1);
 
-        // Simulate attempt 1 completing with Partial outcome
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "more partial work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        // Simulate attempt 1 completing with Partial outcome via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "more partial work".to_string(),
+                None,
+                None,
+            ),
         );
 
         // Apply outcome at attempt 1 - should trigger continuation to attempt 2
@@ -318,15 +320,16 @@ fn test_outcome_applied_exhausts_too_early() {
         );
         assert_eq!(state.continuation.continuation_attempt, 2);
 
-        // Simulate attempt 2 completing with Partial outcome
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "still more partial work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        // Simulate attempt 2 completing with Partial outcome via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "still more partial work".to_string(),
+                None,
+                None,
+            ),
         );
 
         // Apply outcome at attempt 2 - SHOULD exhaust budget (not continue to attempt 3)
@@ -364,15 +367,16 @@ fn test_outcome_applied_exhausts_at_correct_boundary() {
         let mut state = PipelineState::initial_with_continuation(5, 0, &continuation);
         state = reduce(state, PipelineEvent::development_iteration_started(0));
 
-        // Attempt 0 (initial) completes with Partial
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "partial work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        // Attempt 0 (initial) completes with Partial via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "partial work".to_string(),
+                None,
+                None,
+            ),
         );
         state = reduce(
             state,
@@ -380,15 +384,16 @@ fn test_outcome_applied_exhausts_at_correct_boundary() {
         );
         assert_eq!(state.continuation.continuation_attempt, 1);
 
-        // Attempt 1 completes with Partial
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "more partial work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        // Attempt 1 completes with Partial via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "more partial work".to_string(),
+                None,
+                None,
+            ),
         );
         state = reduce(
             state,
@@ -396,15 +401,16 @@ fn test_outcome_applied_exhausts_at_correct_boundary() {
         );
         assert_eq!(state.continuation.continuation_attempt, 2);
 
-        // Attempt 2 completes with Partial
-        state.development_validated_outcome = Some(
-            ralph_workflow::reducer::state::DevelopmentValidatedOutcome {
-                iteration: 0,
-                status: DevelopmentStatus::Partial,
-                summary: "still more partial work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+        // Attempt 2 completes with Partial via XmlValidated event
+        state = reduce(
+            state,
+            PipelineEvent::development_xml_validated(
+                0,
+                DevelopmentStatus::Partial,
+                "still more partial work".to_string(),
+                None,
+                None,
+            ),
         );
 
         // CRITICAL ASSERTION: OutcomeApplied at attempt 2 should exhaust budget

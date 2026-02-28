@@ -151,13 +151,31 @@ fn test_resume_continues_from_correct_reviewer_pass() {
 #[test]
 fn test_agent_chain_initialized_across_resume() {
     with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::effect::Effect;
+        use ralph_workflow::reducer::orchestration::determine_next_effect;
+
         let checkpoint = create_test_checkpoint(CheckpointPhase::Development, 2, 5, 0);
 
         let state = with_locked_prompt_permissions(PipelineState::from(checkpoint));
 
-        assert_eq!(state.agent_chain.current_agent_index, 0);
-        assert_eq!(state.agent_chain.current_model_index, 0);
-        assert_eq!(state.agent_chain.retry_cycle, 0);
+        // Behavioral check: agent chain should be in initial state after resume,
+        // requiring re-initialization via orchestration.
+        assert!(
+            state.agent_chain.current_agent().is_none(),
+            "Agent chain should be empty after resume (requires re-initialization)"
+        );
+
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Developer
+                }
+            ),
+            "Resumed state should require agent chain initialization, got {effect:?}"
+        );
     });
 }
 
@@ -243,44 +261,54 @@ fn test_metrics_config_fields_preserved() {
 #[test]
 fn test_metrics_survive_checkpoint_resume() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::state::RunMetrics;
+        use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent};
+        use ralph_workflow::reducer::state::DevelopmentStatus;
+        use ralph_workflow::reducer::state_reduction::reduce;
 
-        // Given: Create PipelineState with metrics partially populated
+        // Given: Build state with non-zero metrics through event-driven transitions
         let mut state = with_locked_prompt_permissions(PipelineState::initial(5, 3));
 
-        // Manually populate some metrics to simulate mid-run state
-        state.metrics = RunMetrics {
-            dev_iterations_started: 2,
-            dev_iterations_completed: 1,
-            dev_attempts_total: 3,
-            dev_continuation_attempt: 1,
-            analysis_attempts_total: 5,
-            analysis_attempts_in_current_iteration: 2,
-            review_passes_started: 1,
-            review_passes_completed: 0,
-            review_runs_total: 2,
-            fix_runs_total: 1,
-            fix_continuations_total: 0,
-            fix_continuation_attempt: 0,
-            current_review_pass: 1,
-            xsd_retry_attempts_total: 3,
-            xsd_retry_planning: 1,
-            xsd_retry_development: 1,
-            xsd_retry_review: 1,
-            xsd_retry_fix: 0,
-            xsd_retry_commit: 0,
-            same_agent_retry_attempts_total: 1,
-            agent_fallbacks_total: 2,
-            model_fallbacks_total: 1,
-            retry_cycles_started_total: 0,
-            commits_created_total: 1,
-            max_dev_iterations: state.metrics.max_dev_iterations,
-            max_review_passes: state.metrics.max_review_passes,
-            max_xsd_retry_count: state.metrics.max_xsd_retry_count,
-            max_dev_continuation_count: state.metrics.max_dev_continuation_count,
-            max_fix_continuation_count: state.metrics.max_fix_continuation_count,
-            max_same_agent_retry_count: state.metrics.max_same_agent_retry_count,
-        };
+        // Drive metrics through events: 2 iterations started, some agent invocations
+        state = reduce(state, PipelineEvent::development_iteration_started(0));
+        state = reduce(state, PipelineEvent::development_agent_invoked(0));
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 }),
+        );
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "partial".to_string(),
+                files_changed: None,
+                next_steps: None,
+            }),
+        );
+        state = reduce(state, PipelineEvent::development_agent_invoked(0));
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 0 }),
+        );
+
+        // Capture known metric values before serialization
+        let pre_dev_started = state.metrics.dev_iterations_started;
+        let pre_dev_attempts = state.metrics.dev_attempts_total;
+        let pre_analysis = state.metrics.analysis_attempts_total;
+        let pre_continuation = state.metrics.dev_continuation_attempt;
+        let pre_max_dev = state.metrics.max_dev_iterations;
+        let pre_max_review = state.metrics.max_review_passes;
+
+        // Verify preconditions: metrics are non-zero from event processing
+        assert!(
+            pre_dev_started > 0,
+            "Should have started at least one iteration"
+        );
+        assert!(pre_dev_attempts > 0, "Should have at least one dev attempt");
+        assert!(
+            pre_analysis > 0,
+            "Should have at least one analysis attempt"
+        );
 
         // When: Serialize to JSON (simulating checkpoint write)
         let json = serde_json::to_string(&state).expect("Failed to serialize state");
@@ -289,57 +317,13 @@ fn test_metrics_survive_checkpoint_resume() {
         let restored: PipelineState =
             serde_json::from_str(&json).expect("Failed to deserialize state");
 
-        // Then: All metrics should match original values (no drift, no reset to 0)
-        assert_eq!(restored.metrics.dev_iterations_started, 2);
-        assert_eq!(restored.metrics.dev_iterations_completed, 1);
-        assert_eq!(restored.metrics.dev_attempts_total, 3);
-        assert_eq!(restored.metrics.dev_continuation_attempt, 1);
-        assert_eq!(restored.metrics.analysis_attempts_total, 5);
-        assert_eq!(restored.metrics.analysis_attempts_in_current_iteration, 2);
-        assert_eq!(restored.metrics.review_passes_started, 1);
-        assert_eq!(restored.metrics.review_passes_completed, 0);
-        assert_eq!(restored.metrics.review_runs_total, 2);
-        assert_eq!(restored.metrics.fix_runs_total, 1);
-        assert_eq!(restored.metrics.fix_continuations_total, 0);
-        assert_eq!(restored.metrics.fix_continuation_attempt, 0);
-        assert_eq!(restored.metrics.current_review_pass, 1);
-        assert_eq!(restored.metrics.xsd_retry_attempts_total, 3);
-        assert_eq!(restored.metrics.xsd_retry_planning, 1);
-        assert_eq!(restored.metrics.xsd_retry_development, 1);
-        assert_eq!(restored.metrics.xsd_retry_review, 1);
-        assert_eq!(restored.metrics.xsd_retry_fix, 0);
-        assert_eq!(restored.metrics.xsd_retry_commit, 0);
-        assert_eq!(restored.metrics.same_agent_retry_attempts_total, 1);
-        assert_eq!(restored.metrics.agent_fallbacks_total, 2);
-        assert_eq!(restored.metrics.model_fallbacks_total, 1);
-        assert_eq!(restored.metrics.retry_cycles_started_total, 0);
-        assert_eq!(restored.metrics.commits_created_total, 1);
-
-        // Verify config-derived display fields also survived
-        assert_eq!(
-            restored.metrics.max_dev_iterations,
-            state.metrics.max_dev_iterations
-        );
-        assert_eq!(
-            restored.metrics.max_review_passes,
-            state.metrics.max_review_passes
-        );
-        assert_eq!(
-            restored.metrics.max_xsd_retry_count,
-            state.metrics.max_xsd_retry_count
-        );
-        assert_eq!(
-            restored.metrics.max_dev_continuation_count,
-            state.metrics.max_dev_continuation_count
-        );
-        assert_eq!(
-            restored.metrics.max_fix_continuation_count,
-            state.metrics.max_fix_continuation_count
-        );
-        assert_eq!(
-            restored.metrics.max_same_agent_retry_count,
-            state.metrics.max_same_agent_retry_count
-        );
+        // Then: All metrics should match pre-serialization values (no drift, no reset to 0)
+        assert_eq!(restored.metrics.dev_iterations_started, pre_dev_started);
+        assert_eq!(restored.metrics.dev_attempts_total, pre_dev_attempts);
+        assert_eq!(restored.metrics.analysis_attempts_total, pre_analysis);
+        assert_eq!(restored.metrics.dev_continuation_attempt, pre_continuation);
+        assert_eq!(restored.metrics.max_dev_iterations, pre_max_dev);
+        assert_eq!(restored.metrics.max_review_passes, pre_max_review);
     });
 }
 

@@ -129,12 +129,12 @@ fn test_auth_failure_triggers_reducer_fallback() {
             ),
         );
 
-        // Reducer should have advanced to next agent
+        // Reducer should have advanced to next agent (behavioral check via public accessor)
         assert_eq!(
-            new_state.agent_chain.current_agent_index, 1,
+            new_state.agent_chain.current_agent().unwrap(),
+            "agent2",
             "Reducer must advance agent chain on auth failure"
         );
-        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent2");
     });
 }
 
@@ -167,12 +167,17 @@ fn test_agent_chain_clears_on_dev_to_review_transition() {
         // Should now be in Review phase
         assert_eq!(new_state.phase, PipelinePhase::Review);
 
-        // Agent chain should be empty or reset for Reviewer role
-        // This allows orchestration to emit InitializeAgentChain for Reviewer
+        // Agent chain should be reset for Reviewer role.
+        // Verify behavioral outcome: orchestration should emit InitializeAgentChain for Reviewer.
+        let effect = determine_next_effect(&new_state);
         assert!(
-            new_state.agent_chain.agents.is_empty(),
-            "Agent chain should be cleared on dev->review transition, got: {:?}",
-            new_state.agent_chain.agents
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Reviewer
+                }
+            ),
+            "After dev->review transition, orchestration must require chain re-initialization, got: {effect:?}"
         );
     });
 }

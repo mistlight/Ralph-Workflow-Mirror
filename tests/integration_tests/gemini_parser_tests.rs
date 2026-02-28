@@ -126,10 +126,13 @@ fn test_gemini_parser_none_mode_flushes_streamed_text_at_completion() {
             "Expected streamed content to be flushed in None mode. Output:\n{output}"
         );
         // In None mode we should not spam prefixes per delta.
-        // This stream includes a session-start line plus one flushed text line.
+        // This stream includes a session-start line plus one flushed text line,
+        // so exactly 2 prefixes are expected.
+        let gemini_count = output.matches("[Gemini]").count();
         assert!(
-            output.matches("[Gemini]").count() <= 2,
-            "Expected no per-delta prefix spam in None mode. Output:\n{output}"
+            (1..=2).contains(&gemini_count),
+            "Expected 1-2 [Gemini] prefixes in None mode (session-start + flushed text), \
+             got {gemini_count}. Output:\n{output}"
         );
     });
 }
@@ -344,12 +347,13 @@ fn test_gemini_parser_consecutive_duplicates_filtered() {
 
         // Verify output doesn't have excessive repetition
         let output = test_printer.borrow().get_output();
-        // Count occurrences of "Hello" - should not appear more times than necessary
+        // Count occurrences of "Hello" - three identical deltas plus one final "Hello World"
+        // message. With deduplication, the three identical deltas should be reduced.
+        // At most 2 occurrences are acceptable (one deduplicated delta + "Hello World").
         let hello_count = output.matches("Hello").count();
-        // Due to delta streaming, we expect a reasonable number but not quadruple
         assert!(
-            hello_count <= 3,
-            "Consecutive duplicates should be filtered. Got {hello_count} occurrences"
+            (1..=2).contains(&hello_count),
+            "Consecutive duplicates should be filtered. Expected 1-2 occurrences, got {hello_count}"
         );
     });
 }

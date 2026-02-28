@@ -22,7 +22,7 @@ mod v3;
 pub const MOCK_REPO_PATH: &str = "/mock/repo";
 
 /// Standard prompt content for tests - matches the required PROMPT.md format.
-/// NOTE: If you change this, update `STANDARD_PROMPT_CHECKSUM` below!
+/// NOTE: If you change this, run `verify_standard_prompt_checksum` to get the updated hash.
 pub const STANDARD_PROMPT: &str = r"## Goal
 
 Do something.
@@ -33,9 +33,25 @@ Do something.
 ";
 
 /// SHA256 checksum of `STANDARD_PROMPT` above.
-/// Compute with: echo -n '<content>' | sha256sum
+///
+/// This constant is verified against the actual prompt content at test time
+/// by [`verify_standard_prompt_checksum`] to prevent silent drift.
 pub const STANDARD_PROMPT_CHECKSUM: &str =
     "f3172db90fb9245992bd8ad018ed77821a8765c16d57ca889dc2aa8501953556";
+
+/// Guard test: verifies `STANDARD_PROMPT_CHECKSUM` matches the actual
+/// SHA256 of `STANDARD_PROMPT`. Fails loudly when the prompt text is
+/// updated without updating the checksum constant.
+#[test]
+fn verify_standard_prompt_checksum() {
+    crate::test_timeout::with_default_timeout(|| {
+        let computed = ralph_workflow::reducer::prompt_inputs::sha256_hex_str(STANDARD_PROMPT);
+        assert_eq!(
+            STANDARD_PROMPT_CHECKSUM, computed,
+            "STANDARD_PROMPT_CHECKSUM is stale — update it to match STANDARD_PROMPT"
+        );
+    });
+}
 
 /// Helper function to create a valid v3 checkpoint JSON with all required fields.
 /// Always sets `developer_iters` and `reviewer_reviews` to 0 to prevent agent execution.

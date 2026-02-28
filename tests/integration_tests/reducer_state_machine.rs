@@ -30,7 +30,10 @@ fn create_state_with_agent_chain() -> PipelineState {
     PipelineState {
         agent_chain: AgentChainState::initial().with_agents(
             vec!["agent1".to_string(), "agent2".to_string()],
-            vec![vec!["model1".to_string(), "model2".to_string()]],
+            vec![
+                vec!["model1".to_string(), "model2".to_string()],
+                vec!["model1".to_string(), "model2".to_string()],
+            ],
             AgentRole::Developer,
         ),
         ..PipelineState::initial(5, 2)
@@ -231,10 +234,18 @@ fn test_agent_chain_resets_on_new_iteration() {
                 true,
             ),
         );
-        assert_eq!(state.agent_chain.current_model_index, 1);
+        assert_eq!(
+            state.agent_chain.current_model().unwrap(),
+            "model2",
+            "Network error should fallback to model2"
+        );
         let new_state = reduce(state, PipelineEvent::development_iteration_started(2));
         assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
-        assert_eq!(new_state.agent_chain.current_model_index, 0);
+        assert_eq!(
+            new_state.agent_chain.current_model().unwrap(),
+            "model1",
+            "New iteration should reset to first model"
+        );
     });
 }
 
@@ -252,7 +263,12 @@ fn test_agent_chain_advances_on_model_fallback() {
                 true,
             ),
         );
-        assert!(new_state.agent_chain.current_model_index > 0);
+        // Should advance to model2 (next model for same agent)
+        assert_eq!(
+            new_state.agent_chain.current_model().unwrap(),
+            "model2",
+            "Network error should trigger model fallback"
+        );
     });
 }
 
@@ -260,7 +276,6 @@ fn test_agent_chain_advances_on_model_fallback() {
 fn test_agent_fallback_on_auth_error() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain();
-        let initial_agent_index = state.agent_chain.current_agent_index;
 
         // Simulate non-retriable error (auth) - should switch to next agent
         let new_state = reduce(
@@ -274,9 +289,17 @@ fn test_agent_fallback_on_auth_error() {
             ),
         );
 
-        // Should switch to next agent
-        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
-        assert_eq!(new_state.agent_chain.current_model_index, 0);
+        // Should switch to next agent (agent2) with first model
+        assert_eq!(
+            new_state.agent_chain.current_agent().unwrap(),
+            "agent2",
+            "Auth error should switch to next agent"
+        );
+        assert_eq!(
+            new_state.agent_chain.current_model().unwrap(),
+            "model1",
+            "New agent should start at first model"
+        );
     });
 }
 
@@ -410,8 +433,16 @@ fn test_network_error_triggers_model_fallback() {
         );
 
         // Should advance to next model, not agent
-        assert_eq!(new_state.agent_chain.current_agent_index, 0);
-        assert!(new_state.agent_chain.current_model_index > 0);
+        assert_eq!(
+            new_state.agent_chain.current_agent().unwrap(),
+            "agent1",
+            "Network error should stay on same agent"
+        );
+        assert_eq!(
+            new_state.agent_chain.current_model().unwrap(),
+            "model2",
+            "Network error should fallback to next model"
+        );
     });
 }
 
@@ -483,22 +514,25 @@ fn test_rate_limit_error_triggers_agent_fallback() {
         );
 
         // Should switch to next agent
-        assert!(
-            new_state.agent_chain.current_agent_index > 0,
-            "Rate limit should trigger agent fallback"
-        );
-        // Model index should reset (new agent starts at model 0)
-        assert_eq!(new_state.agent_chain.current_model_index, 0);
-        // Prompt context should be preserved
         assert_eq!(
-            new_state.agent_chain.rate_limit_continuation_prompt,
-            Some(
-                ralph_workflow::reducer::state::RateLimitContinuationPrompt {
-                    role: AgentRole::Developer,
-                    prompt: "continue work".to_string(),
-                }
-            )
+            new_state.agent_chain.current_agent().unwrap(),
+            "agent2",
+            "Rate limit should trigger agent fallback to agent2"
         );
+        // New agent starts at first model
+        assert_eq!(
+            new_state.agent_chain.current_model().unwrap(),
+            "model1",
+            "New agent should start at first model"
+        );
+        // Prompt context should be preserved for continuation
+        let prompt = new_state
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .as_ref()
+            .expect("Rate limit fallback should preserve prompt context");
+        assert_eq!(prompt.role, AgentRole::Developer);
+        assert_eq!(prompt.prompt, "continue work");
     });
 }
 
