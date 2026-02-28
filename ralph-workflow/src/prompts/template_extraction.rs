@@ -114,6 +114,19 @@ pub fn extract_partials(content: &str) -> Vec<String> {
     let mut i = 0;
 
     while i < bytes.len().saturating_sub(2) {
+        // Skip comment blocks
+        if i + 1 < bytes.len() && bytes[i] == b'{' && bytes[i + 1] == b'#' {
+            // Skip to end of comment
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'#' && bytes[i + 1] == b'}') {
+                i += 1;
+            }
+            if i + 1 < bytes.len() {
+                i += 2; // Skip #}
+            }
+            continue;
+        }
+
         // Check for {{> pattern
         if bytes[i] == b'{' && bytes[i + 1] == b'{' && i + 2 < bytes.len() {
             i += 2;

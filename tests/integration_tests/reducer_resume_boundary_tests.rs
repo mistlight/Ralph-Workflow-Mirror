@@ -191,7 +191,8 @@ fn test_resume_reviewer_pass_0_total_1_should_run() {
 #[test]
 fn test_resume_at_boundary_continues_through_remaining_phases() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::event::PipelineEvent;
+        use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent};
         use ralph_workflow::reducer::state_reduction::reduce;
 
         // Start from checkpoint at final iteration (iteration=1, total=1)
@@ -209,21 +210,27 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
             "Resume should start development work, not skip to checkpoint. Got: {first_effect:?}"
         );
 
-        // Initialize agent chain (simulates InitializeAgentChain effect completion)
-        state.agent_chain = ralph_workflow::reducer::state::AgentChainState::initial().with_agents(
-            vec!["claude".to_string()],
-            vec![vec![]],
-            ralph_workflow::agents::AgentRole::Developer,
+        // Drive setup via reducer events (mirrors handler-emitted events in real execution)
+        state = reduce(
+            state,
+            PipelineEvent::agent_chain_initialized(
+                AgentRole::Developer,
+                vec!["claude".to_string()],
+                3,
+                1000,
+                2.0,
+                60_000,
+            ),
         );
-
-        // Simulate completing development iteration
-        // Note: In real execution, effect handlers emit these events
-        state.development_context_prepared_iteration = Some(1);
-        state.development_prompt_prepared_iteration = Some(1);
-        state.development_xml_cleaned_iteration = Some(1);
-        state.development_agent_invoked_iteration = Some(1);
-        state.analysis_agent_invoked_iteration = Some(1);
-        state.development_xml_extracted_iteration = Some(1);
+        state = reduce(state, PipelineEvent::development_context_prepared(1));
+        state = reduce(state, PipelineEvent::development_prompt_prepared(1));
+        state = reduce(state, PipelineEvent::development_xml_cleaned(1));
+        state = reduce(state, PipelineEvent::development_agent_invoked(1));
+        state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 1 }),
+        );
+        state = reduce(state, PipelineEvent::development_xml_extracted(1));
         state = reduce(
             state,
             PipelineEvent::development_xml_validated(
@@ -234,7 +241,7 @@ fn test_resume_at_boundary_continues_through_remaining_phases() {
                 None,
             ),
         );
-        state.development_xml_archived_iteration = Some(1);
+        state = reduce(state, PipelineEvent::development_xml_archived(1));
 
         // After development completes, should apply outcome (not exit)
         let after_dev = determine_next_effect(&state);

@@ -107,4 +107,24 @@ mod tests {
         assert!(!result.is_valid);
         assert!(!result.errors.is_empty());
     }
+
+    #[test]
+    fn test_validate_template_ignores_partials_inside_comments() {
+        let content = "{# {{> commented_partial}} #}\nHello {{NAME|default=\"Guest\"}}";
+        let partials = HashSet::new();
+        let result = validate_template(content, &partials);
+
+        assert!(
+            result.is_valid,
+            "commented-out partials should not trigger validation errors"
+        );
+        assert!(
+            result.errors.is_empty(),
+            "no PartialNotFound errors should be emitted for comment content"
+        );
+        assert!(
+            result.partials.is_empty(),
+            "commented partials should not be extracted"
+        );
+    }
 }
