@@ -15,7 +15,11 @@ fn test_same_agent_retry_within_budget_does_increment() {
     state.continuation.same_agent_retry_count = 0;
 
     // First retry (count becomes 1, which is < max) should increment
-    let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::PartialOutput,
+    );
     let state = reduce(state, event);
 
     assert_eq!(state.metrics.same_agent_retry_attempts_total, 1);
@@ -374,3 +378,47 @@ fn test_old_checkpoint_loads_with_new_metrics_fields_defaulted() {
 // ============================================================================
 // XSD Retry Metrics Tests (Step 13)
 // ============================================================================
+
+// ============================================================================
+// TimeoutOutputKind Serde Round-trip Tests (AC-1)
+// ============================================================================
+
+#[test]
+fn test_timeout_output_kind_no_output_serde_roundtrip() {
+    let original = TimeoutOutputKind::NoOutput;
+    let json = serde_json::to_string(&original).expect("serialize NoOutput");
+    assert_eq!(json, r#""NoOutput""#);
+    let restored: TimeoutOutputKind = serde_json::from_str(&json).expect("deserialize NoOutput");
+    assert_eq!(restored, original);
+}
+
+#[test]
+fn test_timeout_output_kind_partial_output_serde_roundtrip() {
+    let original = TimeoutOutputKind::PartialOutput;
+    let json = serde_json::to_string(&original).expect("serialize PartialOutput");
+    assert_eq!(json, r#""PartialOutput""#);
+    let restored: TimeoutOutputKind =
+        serde_json::from_str(&json).expect("deserialize PartialOutput");
+    assert_eq!(restored, original);
+}
+
+#[test]
+fn test_timeout_output_kind_defaults_to_partial_output_when_missing() {
+    // When a TimedOut event is received without output_kind (old checkpoint),
+    // it should default to PartialOutput.
+    #[derive(serde::Deserialize)]
+    struct TimedOutWithoutOutputKind {
+        // These fields are in the JSON but not needed for the test assertion.
+        // Underscore prefix indicates intentionally unused.
+        #[serde(rename = "role")]
+        _role: crate::agents::AgentRole,
+        #[serde(rename = "agent")]
+        _agent: String,
+        #[serde(default = "crate::reducer::event::default_timeout_output_kind")]
+        output_kind: TimeoutOutputKind,
+    }
+    let json = r#"{"role":"Developer","agent":"claude"}"#;
+    let event: TimedOutWithoutOutputKind =
+        serde_json::from_str(json).expect("deserialize without output_kind");
+    assert_eq!(event.output_kind, TimeoutOutputKind::PartialOutput);
+}

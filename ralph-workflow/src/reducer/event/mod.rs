@@ -179,9 +179,9 @@ mod types;
 
 // Re-export all type definitions
 pub use types::{
-    AgentErrorKind, AwaitingDevFixEvent, CheckpointTrigger, CommitEvent, ConflictStrategy,
-    LifecycleEvent, MaterializedPromptInput, PlanningEvent, PromptInputEvent, PromptInputKind,
-    RebaseEvent, RebasePhase,
+    default_timeout_output_kind, AgentErrorKind, AwaitingDevFixEvent, CheckpointTrigger,
+    CommitEvent, ConflictStrategy, LifecycleEvent, MaterializedPromptInput, PlanningEvent,
+    PromptInputEvent, PromptInputKind, RebaseEvent, RebasePhase, TimeoutOutputKind,
 };
 
 // ============================================================================

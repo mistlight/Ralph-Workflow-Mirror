@@ -17,7 +17,8 @@ mod tests;
 use crate::agents::{AgentRole, JsonParserType};
 use crate::logger::Loggable;
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
-use crate::reducer::event::{AgentErrorKind, PipelineEvent};
+use crate::reducer::event::{AgentErrorKind, PipelineEvent, TimeoutOutputKind};
+use crate::workspace::Workspace;
 use anyhow::Result;
 
 // Re-export error classification functions for use by other modules
@@ -250,11 +251,14 @@ fn try_agent_execution(
 
             // Special handling for timeout: emit fact event (reducer decides retry/fallback)
             // Unlike rate limits, timeouts do not preserve prompt context.
+            // Determine output_kind by reading the logfile via workspace.
             if is_timeout_error(&error_kind) {
+                let output_kind = determine_timeout_output_kind(config.logfile, runtime.workspace);
                 return AgentExecutionResult {
                     event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
+                        output_kind,
                     ),
                     session_id: None,
                 };
@@ -281,11 +285,15 @@ fn try_agent_execution(
             // Mirror special-case handling from the non-zero exit path.
             // If `run_with_prompt` itself returns an error classified as Timeout,
             // emit TimedOut so the reducer can decide retry vs fallback deterministically.
+            // In the Err case, the execution failed before completion, so we default to NoOutput.
             if is_timeout_error(&error_kind) {
+                // When run_with_prompt itself errors, the agent never produced any output
+                // (the logfile may not even exist), so default to NoOutput.
                 return AgentExecutionResult {
                     event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
+                        TimeoutOutputKind::NoOutput,
                     ),
                     session_id: None,
                 };
@@ -308,4 +316,29 @@ fn try_agent_execution(
 
 fn build_error_preview(message: &str, max_chars: usize) -> String {
     message.chars().take(max_chars).collect()
+}
+
+/// Determine whether a timed-out agent produced any output by reading the logfile.
+///
+/// This is pure I/O observation - no policy is encoded here.
+/// The reducer decides what to do with this information.
+///
+/// # Returns
+///
+/// - `TimeoutOutputKind::PartialOutput` if the logfile exists and has content
+/// - `TimeoutOutputKind::NoOutput` if the logfile is missing or empty
+fn determine_timeout_output_kind(
+    logfile_path: &str,
+    workspace: &dyn Workspace,
+) -> TimeoutOutputKind {
+    let logfile_has_output = workspace
+        .read(std::path::Path::new(logfile_path))
+        .ok()
+        .is_some_and(|s| !s.is_empty());
+
+    if logfile_has_output {
+        TimeoutOutputKind::PartialOutput
+    } else {
+        TimeoutOutputKind::NoOutput
+    }
 }

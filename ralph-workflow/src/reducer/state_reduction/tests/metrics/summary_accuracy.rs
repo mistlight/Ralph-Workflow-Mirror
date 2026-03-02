@@ -259,7 +259,11 @@ fn test_same_agent_retry_exhaustion_does_not_increment_metrics() {
     state.continuation.same_agent_retry_count = 2; // One below max
 
     // This retry is exhausted: new_retry_count (3) >= max (3)
-    let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::PartialOutput,
+    );
     let state = reduce(state, event);
 
     // Should NOT increment because will_retry = false

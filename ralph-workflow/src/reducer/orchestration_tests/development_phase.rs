@@ -4,6 +4,7 @@
 // and agent chain exhaustion.
 
 use super::*;
+use crate::reducer::event::TimeoutOutputKind;
 
 #[test]
 fn test_development_runs_exactly_n_iterations() {
@@ -362,7 +363,11 @@ fn test_development_timeout_retry_does_not_use_xsd_retry_prompt_mode() {
 
     state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "agent-a".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
 
     let effect = determine_next_effect(&state);

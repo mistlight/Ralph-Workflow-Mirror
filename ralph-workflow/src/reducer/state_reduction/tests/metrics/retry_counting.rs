@@ -171,7 +171,11 @@ fn test_continuation_succeeded_increments_dev_completed() {
 #[test]
 fn test_same_agent_retry_increments_counter() {
     let state = PipelineState::initial(3, 0);
-    let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::PartialOutput,
+    );
     let state = reduce(state, event);
 
     assert_eq!(state.metrics.same_agent_retry_attempts_total, 1);
@@ -378,11 +382,72 @@ fn test_same_agent_retry_exhausted_does_not_increment() {
     state.continuation.same_agent_retry_count = 2; // One below max
 
     // First retry (count becomes 3, which is >= max) should NOT increment because will_retry = false
-    let event = PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string());
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::PartialOutput,
+    );
     let state = reduce(state, event);
 
     // Should be 0 because new_retry_count (3) >= max (3), so we fall back without incrementing
     assert_eq!(state.metrics.same_agent_retry_attempts_total, 0);
     // Verify agent chain switched
     assert!(state.agent_chain.current_agent_index > 0 || state.agent_chain.retry_cycle > 0);
+}
+
+// ========================================================================
+// Timeout output kind metric tests (AC-8)
+// ========================================================================
+
+#[test]
+fn test_no_output_timeout_increments_timeout_no_output_agent_switches_total() {
+    let state = PipelineState::initial(3, 0);
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::NoOutput,
+    );
+    let state = reduce(state, event);
+
+    assert_eq!(
+        state.metrics.timeout_no_output_agent_switches_total, 1,
+        "NoOutput timeout should increment timeout_no_output_agent_switches_total"
+    );
+}
+
+#[test]
+fn test_partial_output_timeout_does_not_increment_timeout_no_output_agent_switches_total() {
+    let state = PipelineState::initial(3, 0);
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::PartialOutput,
+    );
+    let state = reduce(state, event);
+
+    assert_eq!(
+        state.metrics.timeout_no_output_agent_switches_total, 0,
+        "PartialOutput timeout should NOT increment timeout_no_output_agent_switches_total"
+    );
+    // But same_agent_retry_attempts_total should be incremented
+    assert_eq!(
+        state.metrics.same_agent_retry_attempts_total, 1,
+        "PartialOutput timeout should increment same_agent_retry_attempts_total"
+    );
+}
+
+#[test]
+fn test_no_output_timeout_does_not_increment_same_agent_retry_attempts_total() {
+    let state = PipelineState::initial(3, 0);
+    let event = PipelineEvent::agent_timed_out(
+        AgentRole::Developer,
+        "claude".to_string(),
+        TimeoutOutputKind::NoOutput,
+    );
+    let state = reduce(state, event);
+
+    assert_eq!(
+        state.metrics.same_agent_retry_attempts_total, 0,
+        "NoOutput timeout should NOT increment same_agent_retry_attempts_total"
+    );
 }

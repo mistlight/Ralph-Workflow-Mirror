@@ -4,7 +4,7 @@ use super::{
     AgentErrorKind, AgentEvent, AgentRole, CheckpointTrigger, CommitEvent, DevelopmentEvent,
     DevelopmentStatus, LifecycleEvent, MaterializedPromptInput, PathBuf, PipelineEvent,
     PipelinePhase, PlanningEvent, PromptInputEvent, PromptInputKind, RebaseEvent, RebasePhase,
-    ReviewEvent,
+    ReviewEvent, TimeoutOutputKind,
 };
 
 // Include constructor implementations split by category

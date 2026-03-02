@@ -1,6 +1,6 @@
 // NOTE: split from reducer/state_reduction.rs.
 
-use crate::reducer::event::{AgentErrorKind, AgentEvent, PipelinePhase};
+use crate::reducer::event::{AgentErrorKind, AgentEvent, PipelinePhase, TimeoutOutputKind};
 use crate::reducer::state::{ContinuationState, PipelineState, SameAgentRetryReason};
 
 pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState {
@@ -74,10 +74,38 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 ..state
             }
         }
-        // Timeout: retry same agent first; fall back only after retry budget exhaustion.
-        AgentEvent::TimedOut { .. } => {
-            reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout)
+        // Timeout with no output: immediate agent switch (no same-agent retry)
+        // The agent produced no output at all — likely overloaded or unavailable.
+        // Switching agents immediately is safer than retrying the same agent.
+        AgentEvent::TimedOut {
+            output_kind: TimeoutOutputKind::NoOutput,
+            ..
+        } => {
+            let state = reset_phase_xml_cleanup_for_retry(state);
+            PipelineState {
+                agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+                continuation: ContinuationState {
+                    xsd_retry_count: 0,
+                    xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
+                    same_agent_retry_count: 0,
+                    same_agent_retry_pending: false,
+                    same_agent_retry_reason: None,
+                    ..state.continuation
+                },
+                metrics: state
+                    .metrics
+                    .increment_timeout_no_output_agent_switches_total(),
+                ..state
+            }
         }
+        // Timeout with partial output: existing retry semantics (unchanged)
+        // The agent produced partial output before timing out — likely a connectivity issue.
+        // Retry the same agent first; fall back only after retry budget exhaustion.
+        AgentEvent::TimedOut {
+            output_kind: TimeoutOutputKind::PartialOutput,
+            ..
+        } => reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout),
         // Other retriable errors (Network, ModelUnavailable): try next model
         AgentEvent::InvocationFailed {
             retriable: true, ..

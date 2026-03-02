@@ -1,4 +1,5 @@
 // NOTE: split from reducer/event.rs to keep the main file under line limits.
+use super::types::{default_timeout_output_kind, AgentErrorKind, TimeoutOutputKind};
 use crate::agents::AgentRole;
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +47,7 @@ pub enum AgentEvent {
         /// The exit code from the agent process.
         exit_code: i32,
         /// The kind of error that occurred.
-        error_kind: super::AgentErrorKind,
+        error_kind: AgentErrorKind,
         /// Whether this error is retriable with the same agent.
         retriable: bool,
     },
@@ -124,14 +125,17 @@ pub enum AgentEvent {
 
     /// Agent hit an idle timeout.
     ///
-    /// Effects/executors emit this as a *fact* event. The reducer decides
-    /// whether/when to switch agents. Unlike rate limits, timeouts do not
-    /// preserve prompt context.
+    /// Emitted as a fact; the reducer decides retry vs fallback based on `output_kind`.
+    /// `NoOutput` triggers immediate agent switch; `PartialOutput` uses the same-agent
+    /// retry budget (same semantics as before this feature).
     TimedOut {
         /// The role being fulfilled.
         role: AgentRole,
         /// The agent that timed out.
         agent: String,
+        /// Whether the agent produced any output before timing out.
+        #[serde(default = "default_timeout_output_kind")]
+        output_kind: TimeoutOutputKind,
     },
 
     /// Session established with agent.

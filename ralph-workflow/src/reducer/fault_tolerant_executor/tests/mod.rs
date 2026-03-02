@@ -128,6 +128,111 @@ impl Workspace for TimedOutWriteWorkspace {
     }
 }
 
+/// Test helper: Workspace that fails to read a specific path.
+///
+/// Used to simulate missing logfiles for timeout output detection tests.
+#[derive(Debug, Clone)]
+pub(super) struct ReadFailWorkspace {
+    inner: MemoryWorkspace,
+    fail_path: PathBuf,
+}
+
+impl ReadFailWorkspace {
+    pub(super) fn new(inner: MemoryWorkspace, fail_path: PathBuf) -> Self {
+        Self { inner, fail_path }
+    }
+}
+
+impl Workspace for ReadFailWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        if relative == self.fail_path.as_path() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "simulated missing file",
+            ));
+        }
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        if relative == self.fail_path.as_path() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "simulated missing file",
+            ));
+        }
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}
+
 /// Test helper: Workspace that returns custom content for a specific read path.
 ///
 /// Used to simulate agent logfiles containing structured error events without

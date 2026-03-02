@@ -354,6 +354,213 @@ fn test_classify_io_error_network() {
 }
 
 // ========================================================================
+// Timeout output detection tests (AC-2)
+// ========================================================================
+
+#[test]
+fn test_timeout_with_empty_logfile_emits_no_output() {
+    // AC-2a: Empty logfile after timeout execution = NoOutput
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // Use ReadHijackWorkspace to simulate an empty logfile read
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        String::new(), // Empty logfile content
+    ));
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    // Force a timeout exit code (143 = SIGTERM)
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::NoOutput,
+                "Empty logfile should emit NoOutput"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+#[test]
+fn test_timeout_with_nonempty_logfile_emits_partial_output() {
+    // AC-2b: Non-empty logfile after timeout execution = PartialOutput
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // Use ReadHijackWorkspace to simulate a non-empty logfile read
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        "Some partial output\n".to_string(), // Non-empty logfile content
+    ));
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    // Force a timeout exit code (143 = SIGTERM)
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::PartialOutput,
+                "Non-empty logfile should emit PartialOutput"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+#[test]
+fn test_timeout_with_missing_logfile_defaults_to_no_output() {
+    // AC-2c: Missing logfile = treat as NoOutput (safer default)
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // Use ReadFailWorkspace to simulate a missing logfile read
+    let workspace = ReadFailWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+    );
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    // Force a timeout exit code (143 = SIGTERM)
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::new(workspace.clone()) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: &workspace,
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::NoOutput,
+                "Missing logfile should default to NoOutput"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+// ========================================================================
 // Step 2: Quota exceeded pattern alignment tests
 // ========================================================================
 

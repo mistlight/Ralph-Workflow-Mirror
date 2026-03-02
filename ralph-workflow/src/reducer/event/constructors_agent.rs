@@ -111,9 +111,13 @@ impl PipelineEvent {
     }
 
     /// Create an `AgentTimedOut` event.
-    #[must_use] 
-    pub const fn agent_timed_out(role: AgentRole, agent: String) -> Self {
-        Self::Agent(AgentEvent::TimedOut { role, agent })
+    #[must_use]
+    pub const fn agent_timed_out(
+        role: AgentRole,
+        agent: String,
+        output_kind: TimeoutOutputKind,
+    ) -> Self {
+        Self::Agent(AgentEvent::TimedOut { role, agent, output_kind })
     }
 
     /// Create an `AgentSessionEstablished` event.

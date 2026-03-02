@@ -4,6 +4,7 @@
 // the next retry attempt re-cleans the phase-specific XML output file.
 
 use super::*;
+use crate::reducer::event::TimeoutOutputKind;
 
 #[test]
 fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
@@ -25,7 +26,11 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
 
     state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "claude".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
     assert!(
         matches!(
@@ -66,7 +71,11 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
 
     state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "claude".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "claude".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
     assert!(
         matches!(
@@ -107,7 +116,11 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
 
     state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Reviewer, "codex".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Reviewer,
+            "codex".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
     assert!(
         matches!(
@@ -148,7 +161,11 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
 
     state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Reviewer, "codex".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Reviewer,
+            "codex".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
     assert!(
         matches!(
@@ -191,7 +208,11 @@ fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
 
     state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Commit, "commit-agent".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Commit,
+            "commit-agent".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
     assert!(
         matches!(

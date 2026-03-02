@@ -19,7 +19,9 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
-use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
+use ralph_workflow::reducer::event::{
+    AgentErrorKind, PipelineEvent, PipelinePhase, TimeoutOutputKind,
+};
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 
 use super::helpers::create_state_with_agent_chain_in_development;
@@ -297,7 +299,11 @@ fn test_timeout_retries_same_agent_then_agent_fallback_not_model_fallback() {
         // Simulate idle timeout - should retry same agent first
         let after_first_timeout = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
 
         assert_eq!(
@@ -322,7 +328,11 @@ fn test_timeout_retries_same_agent_then_agent_fallback_not_model_fallback() {
         // Second timeout exhausts budget => fall back to next agent
         let after_second_timeout = ralph_workflow::reducer::state_reduction::reduce(
             after_first_timeout,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
 
         assert!(
@@ -372,7 +382,11 @@ fn test_timeout_fallback_clears_session_id() {
         // Simulate timed out
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
 
         // Session ID should be cleared
@@ -405,7 +419,11 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
         // First timeout retries same agent
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
 
         assert_eq!(
@@ -417,7 +435,11 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
         // Second timeout exhausts budget => fall back to second agent
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
 
         assert_eq!(
@@ -463,11 +485,19 @@ fn test_multiple_timeouts_cycle_through_agents() {
         // Agent 1: two timeouts => switch to agent 2
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),
@@ -477,11 +507,19 @@ fn test_multiple_timeouts_cycle_through_agents() {
         // Agent 2: two timeouts => switch to agent 3
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent2".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent2".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent2".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent2".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),
@@ -491,11 +529,19 @@ fn test_multiple_timeouts_cycle_through_agents() {
         // Agent 3: two timeouts => wrap to agent1 and increment retry cycle
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent3".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent3".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent3".to_string()),
+            PipelineEvent::agent_timed_out(
+                AgentRole::Developer,
+                "agent3".to_string(),
+                TimeoutOutputKind::PartialOutput,
+            ),
         );
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),

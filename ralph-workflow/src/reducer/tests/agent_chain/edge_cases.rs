@@ -4,7 +4,7 @@
 //! and integration-style event loop simulations.
 
 use crate::agents::AgentRole;
-use crate::reducer::event::AgentErrorKind;
+use crate::reducer::event::{AgentErrorKind, TimeoutOutputKind};
 use crate::reducer::tests::*;
 
 #[test]
@@ -134,7 +134,11 @@ fn test_timed_out_retries_same_agent_before_fallback() {
 
     let after_first_timeout = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "agent-a".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
 
     // Timeout retries MUST NOT reuse XSD retry mechanism.
@@ -162,7 +166,11 @@ fn test_timed_out_retries_same_agent_before_fallback() {
 
     let after_second_timeout = reduce(
         after_first_timeout,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "agent-a".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
 
     assert_eq!(
@@ -247,7 +255,11 @@ fn test_timed_out_clears_session_id_even_when_retrying_same_agent() {
     // Apply timeout fallback
     let new_state = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "agent-a".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
 
     assert!(
@@ -297,7 +309,11 @@ fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted()
     // First timeout: should retry same agent, not fall back yet
     let after_first_timeout = reduce(
         state,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-b".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "agent-b".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
 
     assert!(
@@ -319,7 +335,11 @@ fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted()
     // Since we're on the last agent, this should wrap to first agent and increment retry_cycle
     let after_second_timeout = reduce(
         after_first_timeout,
-        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-b".to_string()),
+        PipelineEvent::agent_timed_out(
+            AgentRole::Developer,
+            "agent-b".to_string(),
+            TimeoutOutputKind::PartialOutput,
+        ),
     );
 
     // Should wrap back to first agent and increment retry cycle

@@ -51,4 +51,6 @@ mod awaiting_dev_fix;
 pub use awaiting_dev_fix::AwaitingDevFixEvent;
 
 mod supporting_types;
-pub use supporting_types::{AgentErrorKind, CheckpointTrigger};
+pub use supporting_types::{
+    default_timeout_output_kind, AgentErrorKind, CheckpointTrigger, TimeoutOutputKind,
+};

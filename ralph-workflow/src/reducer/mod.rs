@@ -168,5 +168,5 @@ pub use event::CheckpointTrigger;
 // Re-export category enums for external use
 pub use event::{
     AgentEvent, CommitEvent, DevelopmentEvent, LifecycleEvent, PlanningEvent, RebaseEvent,
-    ReviewEvent,
+    ReviewEvent, TimeoutOutputKind,
 };
