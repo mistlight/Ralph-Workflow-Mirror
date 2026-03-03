@@ -44,7 +44,7 @@ pub(super) fn reduce_continuation_event(
                 continuation: new_continuation,
                 development_context_prepared_iteration: None,
                 development_prompt_prepared_iteration: None,
-                development_xml_cleaned_iteration: None,
+                development_required_files_cleaned_iteration: None,
                 development_agent_invoked_iteration: None,
                 // IMPORTANT: analysis must run after EVERY development-agent invocation.
                 // Reset this marker so the orchestrator will invoke analysis for the new
@@ -71,7 +71,7 @@ pub(super) fn reduce_continuation_event(
                 commit_diff_prepared: false,
                 commit_diff_empty: false,
                 commit_agent_invoked: false,
-                commit_xml_cleaned: false,
+                commit_required_files_cleaned: false,
                 commit_xml_extracted: false,
                 commit_validated_outcome: None,
                 commit_xml_archived: false,
@@ -82,7 +82,7 @@ pub(super) fn reduce_continuation_event(
                 },
                 development_context_prepared_iteration: None,
                 development_prompt_prepared_iteration: None,
-                development_xml_cleaned_iteration: None,
+                development_required_files_cleaned_iteration: None,
                 development_agent_invoked_iteration: None,
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
@@ -123,7 +123,8 @@ pub(super) fn reduce_continuation_event(
                         .development_context_prepared_iteration,
                     development_prompt_prepared_iteration: state
                         .development_prompt_prepared_iteration,
-                    development_xml_cleaned_iteration: state.development_xml_cleaned_iteration,
+                    development_required_files_cleaned_iteration: state
+                        .development_required_files_cleaned_iteration,
                     development_agent_invoked_iteration: state.development_agent_invoked_iteration,
                     analysis_agent_invoked_iteration: None,
                     development_xml_extracted_iteration: None,
@@ -154,7 +155,8 @@ pub(super) fn reduce_continuation_event(
                         .development_context_prepared_iteration,
                     development_prompt_prepared_iteration: state
                         .development_prompt_prepared_iteration,
-                    development_xml_cleaned_iteration: state.development_xml_cleaned_iteration,
+                    development_required_files_cleaned_iteration: state
+                        .development_required_files_cleaned_iteration,
                     development_agent_invoked_iteration: state.development_agent_invoked_iteration,
                     analysis_agent_invoked_iteration: None,
                     development_xml_extracted_iteration: None,
@@ -217,7 +219,7 @@ pub(super) fn reduce_continuation_event(
                     },
                     development_context_prepared_iteration: None,
                     development_prompt_prepared_iteration: None,
-                    development_xml_cleaned_iteration: None,
+                    development_required_files_cleaned_iteration: None,
                     development_agent_invoked_iteration: None,
                     development_xml_extracted_iteration: None,
                     development_validated_outcome: None,

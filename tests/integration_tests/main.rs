@@ -84,6 +84,7 @@ mod reducer_rebase_state_machine;
 mod reducer_resume_boundary_tests;
 mod reducer_resume_tests;
 mod reducer_state_machine;
+mod required_files_cleanup;
 mod review_output_validation;
 mod review_xml_validation;
 mod template_rendering_errors;

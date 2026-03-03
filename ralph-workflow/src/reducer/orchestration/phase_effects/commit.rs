@@ -32,6 +32,14 @@ use crate::reducer::effect::Effect;
 use crate::reducer::event::CheckpointTrigger;
 use crate::reducer::state::{CommitState, PipelineState, PromptMode};
 
+/// Files that the commit agent writes.
+///
+/// These files are cleaned up before each commit agent invocation to ensure
+/// fresh output. The commit agent writes to `.agent/tmp/commit_message.xml`.
+///
+/// Note: XSD retry handling skips cleanup on attempt > 1 (see above).
+pub const REQUIRED_FILES: &[&str] = &[".agent/tmp/commit_message.xml"];
+
 pub(super) fn determine_commit_effect(state: &PipelineState) -> Effect {
     // Commit phase requires explicit agent chain initialization like other phases
     if state.agent_chain.agents.is_empty() || state.agent_chain.current_role != AgentRole::Commit {
@@ -58,8 +66,10 @@ pub(super) fn determine_commit_effect(state: &PipelineState) -> Effect {
                 // IMPORTANT: For commit XSD retries, the agent must be able to read the
                 // previous invalid output at `.agent/tmp/commit_message.xml` before overwriting
                 // it (see commit_xsd_retry prompt). Therefore, skip cleanup on retry attempts.
-                if current_attempt == 1 && !state.commit_xml_cleaned {
-                    return Effect::CleanupCommitXml;
+                if current_attempt == 1 && !state.commit_required_files_cleaned {
+                    return Effect::CleanupRequiredFiles {
+                        files: REQUIRED_FILES.iter().map(ToString::to_string).collect(),
+                    };
                 }
                 if !state.commit_agent_invoked {
                     return Effect::InvokeCommitAgent;

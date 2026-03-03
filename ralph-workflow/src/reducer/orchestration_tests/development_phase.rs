@@ -70,7 +70,10 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::PreparePlanningPrompt { iteration, .. } => {
                 state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
             }
-            Effect::CleanupPlanningXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("plan.xml")) =>
+            {
+                let iteration = state.iteration;
                 state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
             }
             Effect::InvokePlanningAgent { iteration } => {
@@ -139,7 +142,10 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                 state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
             }
-            Effect::CleanupDevelopmentXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("development_result.xml")) =>
+            {
+                let iteration = state.iteration;
                 state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
             }
             Effect::InvokeDevelopmentAgent { iteration } => {
@@ -213,8 +219,10 @@ fn test_development_runs_exactly_n_iterations() {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
             }
-            Effect::CleanupCommitXml => {
-                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("commit_message.xml")) =>
+            {
+                state = reduce(state, PipelineEvent::commit_required_files_cleaned(1));
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -429,7 +437,7 @@ fn test_development_initializes_analysis_chain_before_invoking_analysis() {
         agent_chain: chain,
         development_context_prepared_iteration: Some(1),
         development_prompt_prepared_iteration: Some(1),
-        development_xml_cleaned_iteration: Some(1),
+        development_required_files_cleaned_iteration: Some(1),
         development_agent_invoked_iteration: Some(1),
         analysis_agent_invoked_iteration: None,
         ..create_test_state()

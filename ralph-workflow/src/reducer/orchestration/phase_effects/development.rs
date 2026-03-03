@@ -31,6 +31,12 @@ use crate::reducer::effect::{ContinuationContextData, Effect};
 use crate::reducer::event::CheckpointTrigger;
 use crate::reducer::state::{DevelopmentStatus, PipelineState, PromptMode};
 
+/// Files that the development/analysis agents write.
+///
+/// These files are cleaned up before each development iteration to ensure
+/// fresh output. The analysis agent writes to `.agent/tmp/development_result.xml`.
+pub const REQUIRED_FILES: &[&str] = &[".agent/tmp/development_result.xml"];
+
 pub(super) fn determine_development_effect(state: &PipelineState) -> Effect {
     if state.continuation.context_write_pending {
         let status = state
@@ -113,9 +119,9 @@ pub(super) fn determine_development_effect(state: &PipelineState) -> Effect {
             };
         }
 
-        if state.development_xml_cleaned_iteration != Some(state.iteration) {
-            return Effect::CleanupDevelopmentXml {
-                iteration: state.iteration,
+        if state.development_required_files_cleaned_iteration != Some(state.iteration) {
+            return Effect::CleanupRequiredFiles {
+                files: REQUIRED_FILES.iter().map(ToString::to_string).collect(),
             };
         }
 

@@ -10,6 +10,9 @@
 //! - **`BackoffWait`** - Wait before retrying after agent failure
 //! - **`ReportAgentChainExhausted`** - Report when all agents in chain have failed
 //!
+//! ### Cleanup
+//! - **`CleanupRequiredFiles`** - Unified cleanup of XML files before agent invocation
+//!
 //! ### Checkpointing
 //! - **`SaveCheckpoint`** - Save pipeline state for resume capability
 //!
@@ -33,11 +36,15 @@
 //!
 //! - **`SaveCheckpoint`** automatically emits phase completion events when appropriate
 //! - **`InitializeAgentChain`** emits phase transition UI events
+//! - **`CleanupRequiredFiles`** emits phase-appropriate cleanup events
 //! - **`TriggerDevFixFlow`** panics (requires real workspace access)
 //! - **`ReportAgentChainExhausted`** panics (should not occur in normal test flow)
 
 use crate::reducer::effect::Effect;
-use crate::reducer::event::{AwaitingDevFixEvent, CheckpointTrigger, PipelineEvent, PipelinePhase};
+use crate::reducer::event::{
+    AwaitingDevFixEvent, CheckpointTrigger, CommitEvent, DevelopmentEvent, PipelineEvent,
+    PipelinePhase, PlanningEvent, ReviewEvent,
+};
 use crate::reducer::ui_event::UIEvent;
 
 use super::super::MockEffectHandler;
@@ -52,6 +59,49 @@ impl MockEffectHandler {
         effect: Effect,
     ) -> Option<(PipelineEvent, Vec<UIEvent>, Vec<PipelineEvent>)> {
         match effect {
+            Effect::CleanupRequiredFiles { files: _ } => {
+                // Emit phase-appropriate cleanup event based on current phase
+                let event = match self.state.phase {
+                    PipelinePhase::Planning => {
+                        PipelineEvent::Planning(PlanningEvent::PlanXmlCleaned {
+                            iteration: self.state.iteration,
+                        })
+                    }
+                    PipelinePhase::Development => {
+                        PipelineEvent::Development(DevelopmentEvent::XmlCleaned {
+                            iteration: self.state.iteration,
+                        })
+                    }
+                    PipelinePhase::Review => {
+                        // Distinguish between issues XML and fix result XML based on
+                        // whether we're in fix mode (review_issues_found = true)
+                        if self.state.review_issues_found {
+                            PipelineEvent::Review(ReviewEvent::FixResultXmlCleaned {
+                                pass: self.state.reviewer_pass,
+                            })
+                        } else {
+                            PipelineEvent::Review(ReviewEvent::IssuesXmlCleaned {
+                                pass: self.state.reviewer_pass,
+                            })
+                        }
+                    }
+                    PipelinePhase::CommitMessage => {
+                        let attempt = match &self.state.commit {
+                            crate::reducer::state::CommitState::Generating { attempt, .. } => {
+                                *attempt
+                            }
+                            _ => 1,
+                        };
+                        PipelineEvent::Commit(CommitEvent::CommitXmlCleaned { attempt })
+                    }
+                    _ => {
+                        // Fallback for unexpected phases - use context_cleaned as a safe default
+                        PipelineEvent::context_cleaned()
+                    }
+                };
+                Some((event, vec![], vec![]))
+            }
+
             Effect::AgentInvocation {
                 role,
                 agent,

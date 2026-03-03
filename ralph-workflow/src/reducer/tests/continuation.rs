@@ -158,11 +158,11 @@ fn test_fix_prompt_prepared_clears_fix_continue_pending_to_prevent_infinite_loop
         "fix_continue_pending should be false after FixPromptPrepared to prevent infinite loop"
     );
 
-    // The next effect should progress to CleanupFixResultXml, not back to PrepareFixPrompt
+    // The next effect should progress to CleanupRequiredFiles (for fix_result.xml), not back to PrepareFixPrompt
     let next_effect = determine_next_effect(&new_state);
     assert!(
-        matches!(next_effect, Effect::CleanupFixResultXml { .. }),
-        "Expected CleanupFixResultXml after FixPromptPrepared, got {next_effect:?}"
+        matches!(next_effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("fix_result.xml"))),
+        "Expected CleanupRequiredFiles for fix_result.xml after FixPromptPrepared, got {next_effect:?}"
     );
 }
 
@@ -295,7 +295,10 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
             Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                 reduce(state, PipelineEvent::development_prompt_prepared(iteration))
             }
-            Effect::CleanupDevelopmentXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("development_result.xml")) =>
+            {
+                let iteration = state.iteration;
                 reduce(state, PipelineEvent::development_xml_cleaned(iteration))
             }
             Effect::InvokeDevelopmentAgent { iteration } => {
@@ -392,7 +395,10 @@ fn test_fix_continuation_does_not_cause_infinite_loop_in_event_loop_simulation()
             Effect::PrepareFixPrompt { pass, .. } => {
                 reduce(state, PipelineEvent::fix_prompt_prepared(pass))
             }
-            Effect::CleanupFixResultXml { pass } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("fix_result.xml")) =>
+            {
+                let pass = state.reviewer_pass;
                 reduce(state, PipelineEvent::fix_result_xml_cleaned(pass))
             }
             Effect::InvokeFixAgent { pass } => {

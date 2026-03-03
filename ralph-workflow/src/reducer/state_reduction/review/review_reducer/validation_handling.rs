@@ -50,7 +50,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
             // 3. Cleanup runs before invocation
             review_prompt_prepared_pass: None,
             review_agent_invoked_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             metrics: if will_retry {
                 state.metrics.increment_xsd_retry_review()
             } else {
@@ -78,11 +78,11 @@ pub(in crate::reducer::state_reduction::review) fn reduce_output_validation_fail
             // Reset orchestration flags to ensure:
             // 1. XSD retry prompt is prepared (review_prompt_prepared_pass = None)
             // 2. Agent is re-invoked with the retry prompt (review_agent_invoked_pass = None)
-            // 3. Cleanup runs before re-invocation (review_issues_xml_cleaned_pass = None)
+            // 3. Cleanup runs before re-invocation (review_required_files_cleaned_pass = None)
             // 4. Extraction runs after agent produces new output (already None from missing)
             review_prompt_prepared_pass: None,
             review_agent_invoked_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             metrics: if will_retry {
                 state.metrics.increment_xsd_retry_review()
             } else {

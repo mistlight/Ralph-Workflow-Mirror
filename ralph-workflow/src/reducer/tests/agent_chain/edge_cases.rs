@@ -388,7 +388,7 @@ fn test_backoff_wait_does_not_cause_infinite_loop_in_event_loop_simulation() {
         continuation: ContinuationState::default(),
         development_context_prepared_iteration: Some(1),
         development_prompt_prepared_iteration: Some(1),
-        development_xml_cleaned_iteration: Some(1),
+        development_required_files_cleaned_iteration: Some(1),
         ..create_test_state()
     };
     // Set backoff pending to trigger the backoff wait path

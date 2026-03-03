@@ -1,11 +1,90 @@
 use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, WorkspaceIoErrorKind};
+use crate::reducer::event::{
+    CommitEvent, DevelopmentEvent, ErrorEvent, PipelineEvent, PipelinePhase, PlanningEvent,
+    ReviewEvent, WorkspaceIoErrorKind,
+};
 use anyhow::Result;
 use std::path::Path;
 
 impl MainEffectHandler {
+    /// Unified cleanup handler for required files.
+    ///
+    /// Deletes the specified files from the workspace and emits the appropriate
+    /// event based on the current phase. This consolidates the five per-phase
+    /// cleanup effects into a single unified handler.
+    ///
+    /// # Phase-to-Event Mapping
+    ///
+    /// - Planning: emits `PlanningEvent::PlanXmlCleaned`
+    /// - Development: emits `DevelopmentEvent::XmlCleaned`
+    /// - Review (issues): emits `ReviewEvent::IssuesXmlCleaned`
+    /// - Review (fix): emits `ReviewEvent::FixResultXmlCleaned`
+    /// - Commit: emits `CommitEvent::XmlCleaned`
+    pub(super) fn cleanup_required_files(
+        &self,
+        ctx: &PhaseContext<'_>,
+        files: &[String],
+    ) -> EffectResult {
+        // Delete all specified files
+        for file_path in files {
+            let path = Path::new(file_path);
+            if ctx.workspace.exists(path) {
+                let _ = ctx.workspace.remove_if_exists(path);
+            }
+        }
+
+        // Emit the appropriate event based on current phase
+        match self.state.phase {
+            PipelinePhase::Planning => {
+                let iteration = self.state.iteration;
+                EffectResult::event(PipelineEvent::Planning(PlanningEvent::PlanXmlCleaned {
+                    iteration,
+                }))
+            }
+            PipelinePhase::Development => {
+                let iteration = self.state.iteration;
+                EffectResult::event(PipelineEvent::Development(DevelopmentEvent::XmlCleaned {
+                    iteration,
+                }))
+            }
+            PipelinePhase::Review => {
+                // Distinguish between issues XML and fix result XML based on
+                // whether we're in fix mode (review_issues_found = true)
+                let pass = self.state.reviewer_pass;
+                if self.state.review_issues_found {
+                    EffectResult::event(PipelineEvent::Review(ReviewEvent::FixResultXmlCleaned {
+                        pass,
+                    }))
+                } else {
+                    EffectResult::event(PipelineEvent::Review(ReviewEvent::IssuesXmlCleaned {
+                        pass,
+                    }))
+                }
+            }
+            PipelinePhase::CommitMessage => {
+                // Get current attempt from commit state
+                let attempt = match &self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
+                    _ => 1,
+                };
+                EffectResult::event(PipelineEvent::Commit(CommitEvent::CommitXmlCleaned {
+                    attempt,
+                }))
+            }
+            _ => {
+                // Fallback: should not happen in normal operation
+                ctx.logger.warn(&format!(
+                    "CleanupRequiredFiles emitted in unexpected phase: {:?}",
+                    self.state.phase
+                ));
+                // Return a generic event to avoid crashing
+                EffectResult::event(PipelineEvent::context_cleaned())
+            }
+        }
+    }
+
     pub(super) fn validate_final_state(&self, _ctx: &mut PhaseContext<'_>) -> EffectResult {
         // Transition to Finalizing phase to restore PROMPT.md permissions
         // via the effect system before marking the pipeline complete

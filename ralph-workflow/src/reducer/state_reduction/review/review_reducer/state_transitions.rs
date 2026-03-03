@@ -40,9 +40,9 @@ pub(in crate::reducer::state_reduction::review) fn reduce_phase_started(
         // development continuation context into review/fix/rebase logic.
         // Preserve configured limits to keep budgets stable across phases.
         continuation: state.continuation.reset(),
-        review_issues_xml_cleaned_pass: None,
+        review_required_files_cleaned_pass: None,
         review_issue_snippets_extracted_pass: None,
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         ..state
     }
 }
@@ -78,7 +78,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_started(
         review_issues_found: false,
         review_context_prepared_pass: None,
         review_prompt_prepared_pass: None,
-        review_issues_xml_cleaned_pass: None,
+        review_required_files_cleaned_pass: None,
         review_agent_invoked_pass: None,
         review_issues_xml_extracted_pass: None,
         review_validated_outcome: None,
@@ -178,7 +178,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_issues_xml_cleaned(
     pass: u32,
 ) -> PipelineState {
     PipelineState {
-        review_issues_xml_cleaned_pass: Some(pass),
+        review_required_files_cleaned_pass: Some(pass),
         ..state
     }
 }

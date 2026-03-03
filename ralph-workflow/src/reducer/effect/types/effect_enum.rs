@@ -95,9 +95,21 @@ pub enum Effect {
         iteration: u32,
     },
 
-    /// Clean up stale planning XML before invoking the planning agent (single-task).
-    CleanupPlanningXml {
-        iteration: u32,
+    /// Clean up specified files before agent invocation (unified cleanup).
+    ///
+    /// This effect deletes the specified files from the workspace. It's used to
+    /// clean up stale XML files before invoking agents to ensure fresh output.
+    ///
+    /// The orchestration modules define `required_files` constants listing the XML
+    /// files each agent writes. This effect is emitted with those file paths before
+    /// the first agent invocation on each new iteration/pass.
+    ///
+    /// XSD retry exemption: For commit and development analysis phases, cleanup
+    /// is skipped on attempt > 1 so the agent can read the previous invalid XML
+    /// (see XSD retry prompts for details).
+    CleanupRequiredFiles {
+        /// Files to delete (paths relative to workspace root).
+        files: Box<[String]>,
     },
 
     /// Invoke the planning agent for an iteration (single-task).
@@ -171,11 +183,6 @@ pub enum Effect {
     PrepareDevelopmentPrompt {
         iteration: u32,
         prompt_mode: PromptMode,
-    },
-
-    /// Clean up stale development XML before invoking the developer agent (single-task).
-    CleanupDevelopmentXml {
-        iteration: u32,
     },
 
     /// Invoke the developer agent for an iteration (single-task).
@@ -255,11 +262,6 @@ pub enum Effect {
         prompt_mode: PromptMode,
     },
 
-    /// Clean up stale review issues XML before invoking the reviewer agent (single-task).
-    CleanupReviewIssuesXml {
-        pass: u32,
-    },
-
     /// Invoke the reviewer agent for a review pass (single-task).
     ///
     /// This effect must only perform agent execution using the prepared review prompt
@@ -322,11 +324,6 @@ pub enum Effect {
     PrepareFixPrompt {
         pass: u32,
         prompt_mode: PromptMode,
-    },
-
-    /// Clean up stale fix result XML before invoking the fix agent (single-task).
-    CleanupFixResultXml {
-        pass: u32,
     },
 
     /// Invoke the fix agent for a review pass (single-task).
@@ -407,9 +404,6 @@ pub enum Effect {
     /// This effect must only perform agent execution using the prepared commit prompt
     /// and must not parse/validate outputs.
     InvokeCommitAgent,
-
-    /// Clean up stale commit XML before invoking the commit agent (single-task).
-    CleanupCommitXml,
 
     /// Extract the commit XML from the canonical workspace path (single-task).
     ///

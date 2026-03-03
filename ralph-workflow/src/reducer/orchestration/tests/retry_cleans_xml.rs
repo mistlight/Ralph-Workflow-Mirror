@@ -15,7 +15,7 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
         context_cleaned: true,
         iteration: pass,
         planning_prompt_prepared_iteration: Some(pass),
-        planning_xml_cleaned_iteration: Some(pass),
+        planning_required_files_cleaned_iteration: Some(pass),
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -46,7 +46,7 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
     state = reduce(state, PipelineEvent::planning_prompt_prepared(pass));
     let effect = determine_next_effect(&state);
     assert!(
-        matches!(effect, Effect::CleanupPlanningXml { iteration } if iteration == pass),
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("plan.xml"))),
         "Retry should re-clean plan.xml before reinvoking agent, got {effect:?}"
     );
 }
@@ -60,7 +60,7 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
         total_iterations: 1,
         development_context_prepared_iteration: Some(iteration),
         development_prompt_prepared_iteration: Some(iteration),
-        development_xml_cleaned_iteration: Some(iteration),
+        development_required_files_cleaned_iteration: Some(iteration),
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -91,7 +91,7 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
     state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
     let effect = determine_next_effect(&state);
     assert!(
-        matches!(effect, Effect::CleanupDevelopmentXml { iteration: i } if i == iteration),
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("development_result.xml"))),
         "Retry should re-clean development_result.xml before reinvoking agent, got {effect:?}"
     );
 }
@@ -105,7 +105,7 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
         total_reviewer_passes: 1,
         review_context_prepared_pass: Some(pass),
         review_prompt_prepared_pass: Some(pass),
-        review_issues_xml_cleaned_pass: Some(pass),
+        review_required_files_cleaned_pass: Some(pass),
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["codex".to_string()],
             vec![vec![]],
@@ -136,7 +136,7 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
     state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
     let effect = determine_next_effect(&state);
     assert!(
-        matches!(effect, Effect::CleanupReviewIssuesXml { pass: p } if p == pass),
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("issues.xml"))),
         "Retry should re-clean issues.xml before reinvoking agent, got {effect:?}"
     );
 }
@@ -150,7 +150,7 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
         total_reviewer_passes: 1,
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(pass),
-        fix_result_xml_cleaned_pass: Some(pass),
+        fix_required_files_cleaned_pass: Some(pass),
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["codex".to_string()],
             vec![vec![]],
@@ -181,7 +181,7 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
     state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
     let effect = determine_next_effect(&state);
     assert!(
-        matches!(effect, Effect::CleanupFixResultXml { pass: p } if p == pass),
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("fix_result.xml"))),
         "Retry should re-clean fix_result.xml before reinvoking agent, got {effect:?}"
     );
 }
@@ -196,7 +196,7 @@ fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
         },
         commit_diff_prepared: true,
         commit_prompt_prepared: true,
-        commit_xml_cleaned: true,
+        commit_required_files_cleaned: true,
         commit_agent_invoked: false,
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["commit-agent".to_string()],
@@ -227,7 +227,7 @@ fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
     let effect = determine_next_effect(&state);
     assert!(
-        matches!(effect, Effect::CleanupCommitXml),
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("commit_message.xml"))),
         "Retry should re-clean commit_message.xml before reinvoking agent, got {effect:?}"
     );
 }

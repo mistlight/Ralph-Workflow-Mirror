@@ -210,7 +210,7 @@ fn recovery_clears_commit_flags() {
         state.commit_diff_empty = false;
         state.commit_diff_content_id_sha256 = Some("abc123".to_string());
         state.commit_agent_invoked = true;
-        state.commit_xml_cleaned = true;
+        state.commit_required_files_cleaned = true;
 
         for i in 1..=4 {
             let event = PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
@@ -234,7 +234,7 @@ fn recovery_clears_commit_flags() {
         assert!(!state.commit_diff_empty);
         assert_eq!(state.commit_diff_content_id_sha256, None);
         assert!(!state.commit_agent_invoked);
-        assert!(!state.commit_xml_cleaned);
+        assert!(!state.commit_required_files_cleaned);
         assert_eq!(state.iteration, 3);
     });
 }

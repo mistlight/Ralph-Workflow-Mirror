@@ -39,7 +39,7 @@ pub(super) fn reduce_fix_attempt_started(state: PipelineState) -> PipelineState 
             ..state.continuation
         },
         fix_prompt_prepared_pass: None,
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         fix_agent_invoked_pass: None,
         fix_result_xml_extracted_pass: None,
         fix_validated_outcome: None,
@@ -75,7 +75,7 @@ pub(super) fn reduce_fix_prompt_prepared(state: PipelineState, pass: u32) -> Pip
 /// Marks fix result XML as cleaned for this pass (pre-invocation cleanup).
 pub(super) fn reduce_fix_result_xml_cleaned(state: PipelineState, pass: u32) -> PipelineState {
     PipelineState {
-        fix_result_xml_cleaned_pass: Some(pass),
+        fix_required_files_cleaned_pass: Some(pass),
         ..state
     }
 }
@@ -196,7 +196,7 @@ pub(super) fn reduce_fix_attempt_completed(
         reviewer_pass: pass,
         review_issues_found: false,
         fix_prompt_prepared_pass: None,
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         fix_agent_invoked_pass: None,
         fix_result_xml_extracted_pass: None,
         fix_validated_outcome: None,
@@ -206,7 +206,7 @@ pub(super) fn reduce_fix_attempt_completed(
         commit_diff_prepared: false,
         commit_diff_empty: false,
         commit_agent_invoked: false,
-        commit_xml_cleaned: false,
+        commit_required_files_cleaned: false,
         commit_xml_extracted: false,
         commit_validated_outcome: None,
         commit_xml_archived: false,
@@ -235,7 +235,7 @@ pub(super) fn reduce_fix_continuation_triggered(
     PipelineState {
         reviewer_pass: pass,
         fix_prompt_prepared_pass: None,
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         fix_agent_invoked_pass: None,
         fix_result_xml_extracted_pass: None,
         fix_validated_outcome: None,
@@ -272,12 +272,12 @@ pub(super) fn reduce_fix_continuation_succeeded(
         commit_diff_empty: false,
         commit_diff_content_id_sha256: None,
         commit_agent_invoked: false,
-        commit_xml_cleaned: false,
+        commit_required_files_cleaned: false,
         commit_xml_extracted: false,
         commit_validated_outcome: None,
         commit_xml_archived: false,
         continuation: state.continuation.reset(),
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         metrics: state.metrics.increment_review_passes_completed(),
         ..state
     }
@@ -306,12 +306,12 @@ pub(super) fn reduce_fix_continuation_budget_exhausted(
         commit_diff_empty: false,
         commit_diff_content_id_sha256: None,
         commit_agent_invoked: false,
-        commit_xml_cleaned: false,
+        commit_required_files_cleaned: false,
         commit_xml_extracted: false,
         commit_validated_outcome: None,
         commit_xml_archived: false,
         continuation: state.continuation.reset(),
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         ..state
     }
 }
@@ -356,7 +356,7 @@ pub(super) fn reduce_fix_output_validation_failed(
             // 3. Cleanup runs before invocation
             fix_prompt_prepared_pass: None,
             fix_agent_invoked_pass: None,
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             metrics: if will_retry {
                 state.metrics.increment_xsd_retry_fix()
             } else {
@@ -384,10 +384,10 @@ pub(super) fn reduce_fix_output_validation_failed(
             // Reset orchestration flags to ensure:
             // 1. XSD retry prompt is prepared (fix_prompt_prepared_pass = None)
             // 2. Agent is re-invoked with the retry prompt (fix_agent_invoked_pass = None)
-            // 3. Cleanup runs before re-invocation (fix_result_xml_cleaned_pass = None)
+            // 3. Cleanup runs before re-invocation (fix_required_files_cleaned_pass = None)
             fix_prompt_prepared_pass: None,
             fix_agent_invoked_pass: None,
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             metrics: if will_retry {
                 state.metrics.increment_xsd_retry_fix()
             } else {

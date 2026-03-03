@@ -10,7 +10,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
         PlanningEvent::PhaseStarted => PipelineState {
             phase: crate::reducer::event::PipelinePhase::Planning,
             planning_prompt_prepared_iteration: None,
-            planning_xml_cleaned_iteration: None,
+            planning_required_files_cleaned_iteration: None,
             planning_agent_invoked_iteration: None,
             planning_xml_extracted_iteration: None,
             planning_validated_outcome: None,
@@ -25,7 +25,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
         PlanningEvent::PhaseCompleted => PipelineState {
             phase: crate::reducer::event::PipelinePhase::Development,
             planning_prompt_prepared_iteration: None,
-            planning_xml_cleaned_iteration: None,
+            planning_required_files_cleaned_iteration: None,
             planning_agent_invoked_iteration: None,
             planning_xml_extracted_iteration: None,
             planning_validated_outcome: None,
@@ -49,7 +49,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
             ..state
         },
         PlanningEvent::PlanXmlCleaned { iteration } => PipelineState {
-            planning_xml_cleaned_iteration: Some(iteration),
+            planning_required_files_cleaned_iteration: Some(iteration),
             ..state
         },
         PlanningEvent::AgentInvoked { iteration } => PipelineState {
@@ -99,7 +99,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::Development,
                     planning_prompt_prepared_iteration: None,
-                    planning_xml_cleaned_iteration: None,
+                    planning_required_files_cleaned_iteration: None,
                     planning_agent_invoked_iteration: None,
                     planning_xml_extracted_iteration: None,
                     planning_validated_outcome: None,
@@ -119,7 +119,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                 PipelineState {
                     phase: crate::reducer::event::PipelinePhase::Planning,
                     planning_prompt_prepared_iteration: None,
-                    planning_xml_cleaned_iteration: None,
+                    planning_required_files_cleaned_iteration: None,
                     planning_agent_invoked_iteration: None,
                     planning_xml_extracted_iteration: None,
                     planning_validated_outcome: None,
@@ -145,7 +145,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                     iteration,
                     agent_chain: new_agent_chain,
                     planning_prompt_prepared_iteration: None,
-                    planning_xml_cleaned_iteration: None,
+                    planning_required_files_cleaned_iteration: None,
                     planning_agent_invoked_iteration: None,
                     planning_xml_extracted_iteration: None,
                     planning_validated_outcome: None,
@@ -174,7 +174,7 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                     phase: crate::reducer::event::PipelinePhase::Planning,
                     iteration,
                     planning_prompt_prepared_iteration: None,
-                    planning_xml_cleaned_iteration: None,
+                    planning_required_files_cleaned_iteration: None,
                     planning_agent_invoked_iteration: None,
                     planning_xml_extracted_iteration: None,
                     planning_validated_outcome: None,

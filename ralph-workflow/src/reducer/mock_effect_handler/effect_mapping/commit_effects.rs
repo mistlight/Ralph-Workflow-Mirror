@@ -9,7 +9,7 @@
 //! 2. **`MaterializeCommitInputs`** - Prepare diff input for commit agent
 //! 3. **`PrepareCommitPrompt`** - Generate commit prompt
 //! 4. **`InvokeCommitAgent`** - Execute commit agent
-//! 5. **`CleanupCommitXml`** - Clean any existing XML
+//! 5. **`CleanupRequiredFiles`** - Clean any existing XML (handled in `lifecycle_effects`)
 //! 6. **`ExtractCommitXml`** - Extract XML from agent output
 //! 7. **`ValidateCommitXml`** - Validate and parse commit message
 //! 8. **`ApplyCommitMessageOutcome`** - Apply commit message to state
@@ -113,14 +113,6 @@ impl MockEffectHandler {
                     _ => 1,
                 };
                 Some((PipelineEvent::commit_agent_invoked(attempt), vec![]))
-            }
-
-            Effect::CleanupCommitXml => {
-                let attempt = match self.state.commit {
-                    CommitState::Generating { attempt, .. } => attempt,
-                    _ => 1,
-                };
-                Some((PipelineEvent::commit_xml_cleaned(attempt), vec![]))
             }
 
             Effect::ExtractCommitXml => {

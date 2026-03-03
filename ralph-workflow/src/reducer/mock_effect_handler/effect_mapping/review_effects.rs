@@ -9,7 +9,7 @@
 //! 1. **`PrepareReviewContext`** - Set up context for review pass
 //! 2. **`MaterializeReviewInputs`** - Prepare plan and diff inputs
 //! 3. **`PrepareReviewPrompt`** - Generate review prompt
-//! 4. **`CleanupReviewIssuesXml`** - Clean any existing XML
+//! 4. **`CleanupRequiredFiles`** - Clean any existing XML (handled in `lifecycle_effects`)
 //! 5. **`InvokeReviewAgent`** - Execute review agent
 //! 6. **`ExtractReviewIssuesXml`** - Extract XML from agent output
 //! 7. **`ValidateReviewIssuesXml`** - Validate and parse issues
@@ -20,7 +20,7 @@
 //!
 //! ### Fix Pass (if issues found)
 //! 1. **`PrepareFixPrompt`** - Generate fix prompt with issues
-//! 2. **`CleanupFixResultXml`** - Clean any existing XML
+//! 2. **`CleanupRequiredFiles`** - Clean any existing XML (handled in `lifecycle_effects`)
 //! 3. **`InvokeFixAgent`** - Execute fix agent
 //! 4. **`ExtractFixResultXml`** - Extract XML from agent output
 //! 5. **`ValidateFixResultXml`** - Validate and parse fix status
@@ -103,10 +103,6 @@ impl MockEffectHandler {
                 prompt_mode: _,
             } => Some((PipelineEvent::review_prompt_prepared(pass), vec![])),
 
-            Effect::CleanupReviewIssuesXml { pass } => {
-                Some((PipelineEvent::review_issues_xml_cleaned(pass), vec![]))
-            }
-
             Effect::InvokeReviewAgent { pass } => {
                 // In mock mode we only emit the review-specific progress event.
                 Some((PipelineEvent::review_agent_invoked(pass), vec![]))
@@ -186,10 +182,6 @@ impl MockEffectHandler {
                 pass,
                 prompt_mode: _,
             } => Some((PipelineEvent::fix_prompt_prepared(pass), vec![])),
-
-            Effect::CleanupFixResultXml { pass } => {
-                Some((PipelineEvent::fix_result_xml_cleaned(pass), vec![]))
-            }
 
             Effect::InvokeFixAgent { pass } => {
                 Some((PipelineEvent::fix_agent_invoked(pass), vec![]))

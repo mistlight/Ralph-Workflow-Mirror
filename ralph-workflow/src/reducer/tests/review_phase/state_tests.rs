@@ -505,14 +505,15 @@ fn test_event_loop_state_consistency_for_review_agent() {
     // Simulate prompt prepared
     state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
-    // Next: CleanupReviewIssuesXml
+    // Next: CleanupRequiredFiles (for issues.xml)
     let effect = determine_next_effect(&state);
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::CleanupReviewIssuesXml { pass: 0 }
+            crate::reducer::effect::Effect::CleanupRequiredFiles { ref files }
+                if files.iter().any(|f| f.contains("issues.xml"))
         ),
-        "Expected CleanupReviewIssuesXml, got {effect:?}"
+        "Expected CleanupRequiredFiles for issues.xml, got {effect:?}"
     );
 
     // Simulate cleanup
@@ -727,9 +728,10 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::CleanupReviewIssuesXml { pass: 0 }
+            crate::reducer::effect::Effect::CleanupRequiredFiles { ref files }
+                if files.iter().any(|f| f.contains("issues.xml"))
         ),
-        "Should request CleanupReviewIssuesXml, got {effect:?}"
+        "Should request CleanupRequiredFiles for issues.xml, got {effect:?}"
     );
     state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let effect = determine_next_effect(&state);

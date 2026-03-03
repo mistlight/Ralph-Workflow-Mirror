@@ -129,7 +129,7 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
         commit_diff_empty: false,
         commit_diff_content_id_sha256: Some("id".to_string()),
         commit_prompt_prepared: true,
-        commit_xml_cleaned: true,
+        commit_required_files_cleaned: true,
         commit_agent_invoked: true,
         commit_xml_extracted: false,
         commit_validated_outcome: Some(CommitValidatedOutcome {

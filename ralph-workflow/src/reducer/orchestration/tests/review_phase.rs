@@ -112,7 +112,7 @@ fn test_resume_scenario_at_final_review_pass_runs_work() {
         // Explicitly set all progress flags to None to simulate resume state
         review_context_prepared_pass: None,
         review_prompt_prepared_pass: None,
-        review_issues_xml_cleaned_pass: None,
+        review_required_files_cleaned_pass: None,
         review_agent_invoked_pass: None,
         review_issues_xml_extracted_pass: None,
         review_validated_outcome: None,
@@ -120,7 +120,7 @@ fn test_resume_scenario_at_final_review_pass_runs_work() {
         review_issue_snippets_extracted_pass: None,
         review_issues_xml_archived_pass: None,
         fix_prompt_prepared_pass: None,
-        fix_result_xml_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         fix_agent_invoked_pass: None,
         fix_result_xml_extracted_pass: None,
         fix_validated_outcome: None,
@@ -379,7 +379,7 @@ fn test_resume_at_final_review_pass_should_run_review_not_skip() {
         // All progress flags None - simulating resume state
         review_context_prepared_pass: None,
         review_prompt_prepared_pass: None,
-        review_issues_xml_cleaned_pass: None,
+        review_required_files_cleaned_pass: None,
         review_agent_invoked_pass: None,
         review_issues_xml_extracted_pass: None,
         review_validated_outcome: None,
@@ -487,7 +487,7 @@ fn test_review_pass_completed_applies_outcome_not_reruns() {
         // Other progress flags set to indicate completion
         review_context_prepared_pass: Some(2),
         review_prompt_prepared_pass: Some(2),
-        review_issues_xml_cleaned_pass: Some(2),
+        review_required_files_cleaned_pass: Some(2),
         review_agent_invoked_pass: Some(2),
         review_issues_xml_extracted_pass: Some(2),
         review_validated_outcome: Some(ReviewValidatedOutcome {

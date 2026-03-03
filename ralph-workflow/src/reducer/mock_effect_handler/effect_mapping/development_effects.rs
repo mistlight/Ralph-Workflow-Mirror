@@ -8,7 +8,7 @@
 //! 1. **`PrepareDevelopmentContext`** - Set up context for development iteration
 //! 2. **`MaterializeDevelopmentInputs`** - Prepare prompt and plan inputs
 //! 3. **`PrepareDevelopmentPrompt`** - Generate development prompt
-//! 4. **`CleanupDevelopmentXml`** - Clean any existing XML
+//! 4. **`CleanupRequiredFiles`** - Clean any existing XML (handled in `lifecycle_effects`)
 //! 5. **`InvokeDevelopmentAgent`** - Execute development agent
 //! 6. **`InvokeAnalysisAgent`** - (Optional) Execute analysis agent for complex tasks
 //! 7. **`ExtractDevelopmentXml`** - Extract XML from agent output
@@ -89,10 +89,6 @@ impl MockEffectHandler {
                 PipelineEvent::development_prompt_prepared(iteration),
                 vec![],
             )),
-
-            Effect::CleanupDevelopmentXml { iteration } => {
-                Some((PipelineEvent::development_xml_cleaned(iteration), vec![]))
-            }
 
             Effect::InvokeDevelopmentAgent { iteration } => {
                 Some((PipelineEvent::development_agent_invoked(iteration), vec![]))

@@ -294,17 +294,6 @@ impl MainEffectHandler {
         Ok(result)
     }
 
-    pub(super) fn cleanup_fix_result_xml(
-        ctx: &PhaseContext<'_>,
-        pass: u32,
-    ) -> EffectResult {
-        let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
-        let _ = ctx.workspace.remove_if_exists(fix_xml);
-        EffectResult::event(PipelineEvent::fix_result_xml_cleaned(
-            pass,
-        ))
-    }
-
     pub(super) fn extract_fix_result_xml(
         &self,
         ctx: &PhaseContext<'_>,

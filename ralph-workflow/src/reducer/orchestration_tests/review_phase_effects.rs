@@ -77,8 +77,8 @@ fn test_review_phase_emits_prepare_review_context_after_chain_initialized() {
 }
 
 #[test]
-fn test_review_phase_emits_cleanup_review_issues_xml_after_prompt_prepared() {
-    // Single-task effect chain: PrepareReviewContext -> PrepareReviewPrompt -> CleanupReviewIssuesXml
+fn test_review_phase_emits_cleanup_required_files_after_prompt_prepared() {
+    // Single-task effect chain: PrepareReviewContext -> PrepareReviewPrompt -> CleanupRequiredFiles (issues.xml)
     let mut state = super::initial_with_locked_permissions(1, 1);
     state.phase = PipelinePhase::Review;
 
@@ -106,7 +106,9 @@ fn test_review_phase_emits_cleanup_review_issues_xml_after_prompt_prepared() {
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::CleanupReviewIssuesXml { pass: 0 }));
+    assert!(
+        matches!(effect, Effect::CleanupRequiredFiles { files } if files.iter().any(|f| f.contains("issues.xml")))
+    );
 }
 
 #[test]

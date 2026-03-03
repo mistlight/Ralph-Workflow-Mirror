@@ -42,7 +42,9 @@ fn test_fix_chain_emits_cleanup_fix_result_xml_after_fix_prompt_prepared() {
     };
 
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::CleanupFixResultXml { pass: 0 }));
+    assert!(
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("fix_result.xml")))
+    );
 }
 
 #[test]
@@ -53,7 +55,7 @@ fn test_fix_chain_emits_extract_fix_result_xml_after_fix_agent_invoked() {
         total_reviewer_passes: 1,
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(0),
-        fix_result_xml_cleaned_pass: Some(0),
+        fix_required_files_cleaned_pass: Some(0),
         fix_agent_invoked_pass: Some(0),
         agent_chain: PipelineState::initial(1, 1).agent_chain.with_agents(
             vec!["mock".to_string()],
@@ -75,7 +77,7 @@ fn test_fix_chain_emits_validate_fix_result_xml_after_extracted() {
         total_reviewer_passes: 1,
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(0),
-        fix_result_xml_cleaned_pass: Some(0),
+        fix_required_files_cleaned_pass: Some(0),
         fix_agent_invoked_pass: Some(0),
         fix_result_xml_extracted_pass: Some(0),
         agent_chain: PipelineState::initial(1, 1).agent_chain.with_agents(
@@ -99,7 +101,7 @@ fn test_fix_chain_applies_all_issues_addressed_to_fix_attempt_completed() {
         total_reviewer_passes: 1,
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(0),
-        fix_result_xml_cleaned_pass: Some(0),
+        fix_required_files_cleaned_pass: Some(0),
         fix_agent_invoked_pass: Some(0),
         fix_result_xml_extracted_pass: Some(0),
         fix_validated_outcome: Some(crate::reducer::state::FixValidatedOutcome {
@@ -142,7 +144,7 @@ fn test_fix_chain_emits_archive_fix_result_xml_after_validated() {
         total_reviewer_passes: 1,
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(0),
-        fix_result_xml_cleaned_pass: Some(0),
+        fix_required_files_cleaned_pass: Some(0),
         fix_agent_invoked_pass: Some(0),
         fix_result_xml_extracted_pass: Some(0),
         fix_validated_outcome: Some(crate::reducer::state::FixValidatedOutcome {
@@ -170,7 +172,7 @@ fn test_fix_chain_emits_apply_fix_outcome_after_fix_result_xml_archived() {
         total_reviewer_passes: 1,
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(0),
-        fix_result_xml_cleaned_pass: Some(0),
+        fix_required_files_cleaned_pass: Some(0),
         fix_agent_invoked_pass: Some(0),
         fix_result_xml_extracted_pass: Some(0),
         fix_validated_outcome: Some(crate::reducer::state::FixValidatedOutcome {
