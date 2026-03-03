@@ -136,6 +136,54 @@ impl MainEffectHandler {
         ))
     }
 
+    /// Write timeout context to a temp file for session-less agent retry.
+    ///
+    /// When a timeout occurs with meaningful partial output but the agent doesn't
+    /// support session IDs, this handler extracts the context from the logfile
+    /// and writes it to a temp file that the retry prompt can reference.
+    pub(super) fn write_timeout_context(
+        ctx: &PhaseContext<'_>,
+        role: crate::agents::AgentRole,
+        logfile_path: &str,
+        context_path: &str,
+    ) -> Result<EffectResult> {
+        ctx.logger.info(&format!(
+            "Preserving timeout context for session-less agent retry: {context_path}"
+        ));
+
+        // Read the logfile content
+        let logfile = Path::new(logfile_path);
+        let content =
+            ctx.workspace
+                .read(logfile)
+                .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                    path: logfile_path.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
+
+        // Write to the context file
+        let context_file = Path::new(context_path);
+        ctx.workspace.write(context_file, &content).map_err(|err| {
+            ErrorEvent::WorkspaceWriteFailed {
+                path: context_path.to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            }
+        })?;
+
+        ctx.logger.success(&format!(
+            "Timeout context preserved ({} bytes)",
+            content.len()
+        ));
+
+        Ok(EffectResult::event(
+            PipelineEvent::agent_timeout_context_written(
+                role,
+                logfile_path.to_string(),
+                context_path.to_string(),
+            ),
+        ))
+    }
+
     pub(super) fn trigger_loop_recovery(
         ctx: &PhaseContext<'_>,
         detected_loop: &str,

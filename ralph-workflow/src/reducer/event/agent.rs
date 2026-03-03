@@ -136,6 +136,12 @@ pub enum AgentEvent {
         /// Whether the agent produced any output before timing out.
         #[serde(default = "default_timeout_output_kind")]
         output_kind: TimeoutOutputKind,
+        /// Path to the agent's logfile (for context extraction on `PartialOutput` retry).
+        ///
+        /// When `output_kind` is `PartialOutput` and the agent has no session ID,
+        /// this path is used to extract context for the retry prompt.
+        #[serde(default)]
+        logfile_path: Option<String>,
     },
 
     /// Session established with agent.
@@ -183,5 +189,19 @@ pub enum AgentEvent {
         missing_variables: Vec<String>,
         /// Placeholder patterns that remain unresolved in the rendered output.
         unresolved_placeholders: Vec<String>,
+    },
+
+    /// Timeout context written to temp file for session-less agent retry.
+    ///
+    /// Emitted when a timeout with meaningful output occurs but the agent doesn't
+    /// support session IDs. The prior context is extracted from the logfile and
+    /// written to a temp file for the retry prompt to reference.
+    TimeoutContextWritten {
+        /// The role this agent is fulfilling.
+        role: AgentRole,
+        /// Source logfile path the context was extracted from.
+        logfile_path: String,
+        /// Target temp file path where context was written.
+        context_path: String,
     },
 }

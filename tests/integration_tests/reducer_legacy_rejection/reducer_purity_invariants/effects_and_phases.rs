@@ -255,6 +255,7 @@ fn test_effects_are_single_task() {
                 Effect::RestorePromptPermissions => "restore-permissions",
                 Effect::WriteContinuationContext(_) => "write-continuation",
                 Effect::CleanupContinuationContext => "cleanup-continuation",
+                Effect::WriteTimeoutContext { .. } => "write-timeout-context",
                 Effect::TriggerDevFixFlow { .. } => "trigger-devfix",
                 Effect::TriggerLoopRecovery { .. } => "trigger-recovery",
                 Effect::EmitRecoveryReset { .. } => "emit-reset",

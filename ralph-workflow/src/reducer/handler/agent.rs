@@ -337,14 +337,21 @@ impl MainEffectHandler {
 
         // Normalize session ID policy based on retry mode:
         // - XSD retry: preserve session (session ID already set if available)
-        // - Same-agent retry: clear session to start fresh
+        // - TimeoutWithContext: preserve session to continue with prior context
+        // - Same-agent retry (other): clear session to start fresh
         // - Normal: session policy already set by reducer
         //
-        // Note: We don't modify last_session_id for XSD retry because it should already
-        // be set from the previous attempt (via xsd_retry_session_reuse_pending flag).
-        // We only clear it for same-agent retry to force a fresh conversation.
-        if self.state.continuation.same_agent_retry_pending {
-            // Same-agent retry: clear last session id to start fresh conversation
+        // Note: We don't modify last_session_id for XSD retry or TimeoutWithContext
+        // because they should already be set from the previous attempt.
+        // We only clear it for other same-agent retries to force a fresh conversation.
+        let is_timeout_with_context = self
+            .state
+            .continuation
+            .same_agent_retry_reason
+            .is_some_and(|r| r == super::super::state::SameAgentRetryReason::TimeoutWithContext);
+
+        if self.state.continuation.same_agent_retry_pending && !is_timeout_with_context {
+            // Same-agent retry (non-timeout-with-context): clear last session id to start fresh
             self.state.agent_chain.last_session_id = None;
         }
     }

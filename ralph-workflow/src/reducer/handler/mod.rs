@@ -441,6 +441,12 @@ impl MainEffectHandler {
 
             Effect::CleanupContinuationContext => Self::cleanup_continuation_context(ctx),
 
+            Effect::WriteTimeoutContext {
+                role,
+                logfile_path,
+                context_path,
+            } => Self::write_timeout_context(ctx, role, &logfile_path, &context_path),
+
             Effect::TriggerLoopRecovery {
                 detected_loop,
                 loop_count,

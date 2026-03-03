@@ -524,6 +524,24 @@ pub enum Effect {
     /// flow when the reducer determines cleanup is needed.
     CleanupContinuationContext,
 
+    /// Write timeout context to temp file for session-less agent retry.
+    ///
+    /// When a timeout occurs with meaningful partial output (`TimeoutWithContext`),
+    /// but the agent doesn't support session IDs, the prior context must be
+    /// preserved manually. This effect extracts the context from the logfile
+    /// and writes it to a temp file that the retry prompt can reference.
+    ///
+    /// This ensures no context is lost on timeout-with-output, regardless of
+    /// agent capabilities.
+    WriteTimeoutContext {
+        /// The role this agent is fulfilling.
+        role: AgentRole,
+        /// Source logfile path to extract context from.
+        logfile_path: String,
+        /// Target temp file path for context (e.g., `.agent/tmp/timeout_context_1.txt`).
+        context_path: String,
+    },
+
     /// Trigger development agent to fix pipeline failure.
     ///
     /// Invoked when the pipeline reaches `AwaitingDevFix` phase after agent chain

@@ -9,6 +9,14 @@ use crate::reducer::event::TimeoutOutputKind;
 #[test]
 fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
     let pass = 0;
+    let mut agent_chain = PipelineState::initial(5, 2).agent_chain.with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    // Set a session ID so session reuse is used instead of WriteTimeoutContext
+    agent_chain.last_session_id = Some("session-123".to_string());
+
     let mut state = PipelineState {
         phase: PipelinePhase::Planning,
         gitignore_entries_ensured: true,
@@ -16,11 +24,7 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
         iteration: pass,
         planning_prompt_prepared_iteration: Some(pass),
         planning_xml_cleaned_iteration: Some(pass),
-        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
-            vec!["claude".to_string()],
-            vec![vec![]],
-            AgentRole::Developer,
-        ),
+        agent_chain,
         ..create_test_state()
     };
 
@@ -30,6 +34,7 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
             AgentRole::Developer,
             "claude".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/planning_0.log".to_string()),
         ),
     );
     assert!(
@@ -54,6 +59,14 @@ fn test_planning_timeout_retry_recleans_plan_xml_before_reinvoke() {
 #[test]
 fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
     let iteration = 0;
+    let mut agent_chain = PipelineState::initial(5, 2).agent_chain.with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    // Set a session ID so session reuse is used instead of WriteTimeoutContext
+    agent_chain.last_session_id = Some("session-123".to_string());
+
     let mut state = PipelineState {
         phase: PipelinePhase::Development,
         iteration,
@@ -61,11 +74,7 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
         development_context_prepared_iteration: Some(iteration),
         development_prompt_prepared_iteration: Some(iteration),
         development_xml_cleaned_iteration: Some(iteration),
-        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
-            vec!["claude".to_string()],
-            vec![vec![]],
-            AgentRole::Developer,
-        ),
+        agent_chain,
         ..create_test_state()
     };
 
@@ -75,6 +84,7 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
             AgentRole::Developer,
             "claude".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/developer_0.log".to_string()),
         ),
     );
     assert!(
@@ -99,6 +109,14 @@ fn test_development_timeout_retry_recleans_dev_xml_before_reinvoke() {
 #[test]
 fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
     let pass = 0;
+    let mut agent_chain = PipelineState::initial(5, 2).agent_chain.with_agents(
+        vec!["codex".to_string()],
+        vec![vec![]],
+        AgentRole::Reviewer,
+    );
+    // Set a session ID so session reuse is used instead of WriteTimeoutContext
+    agent_chain.last_session_id = Some("session-123".to_string());
+
     let mut state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: pass,
@@ -106,11 +124,7 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
         review_context_prepared_pass: Some(pass),
         review_prompt_prepared_pass: Some(pass),
         review_issues_xml_cleaned_pass: Some(pass),
-        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
-            vec!["codex".to_string()],
-            vec![vec![]],
-            AgentRole::Reviewer,
-        ),
+        agent_chain,
         ..create_test_state()
     };
 
@@ -120,6 +134,7 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
             AgentRole::Reviewer,
             "codex".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/reviewer_0.log".to_string()),
         ),
     );
     assert!(
@@ -144,6 +159,14 @@ fn test_review_timeout_retry_recleans_issues_xml_before_reinvoke() {
 #[test]
 fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
     let pass = 0;
+    let mut agent_chain = PipelineState::initial(5, 2).agent_chain.with_agents(
+        vec!["codex".to_string()],
+        vec![vec![]],
+        AgentRole::Reviewer,
+    );
+    // Set a session ID so session reuse is used instead of WriteTimeoutContext
+    agent_chain.last_session_id = Some("session-123".to_string());
+
     let mut state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: pass,
@@ -151,11 +174,7 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
         review_issues_found: true,
         fix_prompt_prepared_pass: Some(pass),
         fix_result_xml_cleaned_pass: Some(pass),
-        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
-            vec!["codex".to_string()],
-            vec![vec![]],
-            AgentRole::Reviewer,
-        ),
+        agent_chain,
         ..create_test_state()
     };
 
@@ -165,6 +184,7 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
             AgentRole::Reviewer,
             "codex".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/reviewer_0.log".to_string()),
         ),
     );
     assert!(
@@ -188,6 +208,14 @@ fn test_fix_timeout_retry_recleans_fix_xml_before_reinvoke() {
 
 #[test]
 fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
+    let mut agent_chain = PipelineState::initial(5, 2).agent_chain.with_agents(
+        vec!["commit-agent".to_string()],
+        vec![vec![]],
+        AgentRole::Commit,
+    );
+    // Set a session ID so session reuse is used instead of WriteTimeoutContext
+    agent_chain.last_session_id = Some("session-123".to_string());
+
     let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: CommitState::Generating {
@@ -198,11 +226,7 @@ fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
         commit_prompt_prepared: true,
         commit_xml_cleaned: true,
         commit_agent_invoked: false,
-        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
-            vec!["commit-agent".to_string()],
-            vec![vec![]],
-            AgentRole::Commit,
-        ),
+        agent_chain,
         ..create_test_state()
     };
 
@@ -212,6 +236,7 @@ fn test_commit_timeout_retry_recleans_commit_xml_before_reinvoke() {
             AgentRole::Commit,
             "commit-agent".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/commit_1.log".to_string()),
         ),
     );
     assert!(

@@ -259,6 +259,7 @@ fn try_agent_execution(
                         config.role,
                         config.agent_name.to_string(),
                         output_kind,
+                        Some(config.logfile.to_string()),
                     ),
                     session_id: None,
                 };
@@ -294,6 +295,7 @@ fn try_agent_execution(
                         config.role,
                         config.agent_name.to_string(),
                         TimeoutOutputKind::NoOutput,
+                        Some(config.logfile.to_string()),
                     ),
                     session_id: None,
                 };
@@ -318,25 +320,41 @@ fn build_error_preview(message: &str, max_chars: usize) -> String {
     message.chars().take(max_chars).collect()
 }
 
-/// Determine whether a timed-out agent produced any output by reading the logfile.
+/// Minimum non-whitespace characters to classify as meaningful output.
+///
+/// This threshold distinguishes between:
+/// - **`NoOutput`**: Agent produced nothing useful (empty, whitespace-only, or trivial fragments)
+/// - **`PartialOutput`**: Agent was doing real work before being cut off
+///
+/// The value of 10 is chosen to exclude noise (a few stray characters, partial words)
+/// while being low enough to recognize any substantive work.
+const MEANINGFUL_OUTPUT_THRESHOLD: usize = 10;
+
+/// Determine whether a timed-out agent produced meaningful output by reading the logfile.
 ///
 /// This is pure I/O observation - no policy is encoded here.
 /// The reducer decides what to do with this information.
 ///
-/// # Returns
+/// # Classification Logic
 ///
-/// - `TimeoutOutputKind::PartialOutput` if the logfile exists and has content
-/// - `TimeoutOutputKind::NoOutput` if the logfile is missing or empty
+/// - `NoOutput`: Logfile is missing, empty, or contains fewer than ~10 non-whitespace characters
+/// - `PartialOutput`: Logfile contains at least 10 non-whitespace characters (indicates real work)
+///
+/// # Fail-Safe Behavior
+///
+/// If the logfile cannot be read, the function returns `NoOutput` to trigger
+/// immediate agent switching rather than retrying a potentially broken agent.
 fn determine_timeout_output_kind(
     logfile_path: &str,
     workspace: &dyn Workspace,
 ) -> TimeoutOutputKind {
-    let logfile_has_output = workspace
-        .read(std::path::Path::new(logfile_path))
-        .ok()
-        .is_some_and(|s| !s.is_empty());
+    let Some(content) = workspace.read(std::path::Path::new(logfile_path)).ok() else {
+        return TimeoutOutputKind::NoOutput;
+    };
 
-    if logfile_has_output {
+    let non_whitespace_count = content.chars().filter(|c| !c.is_whitespace()).count();
+
+    if non_whitespace_count >= MEANINGFUL_OUTPUT_THRESHOLD {
         TimeoutOutputKind::PartialOutput
     } else {
         TimeoutOutputKind::NoOutput

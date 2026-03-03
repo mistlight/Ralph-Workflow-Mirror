@@ -26,14 +26,30 @@ pub fn same_agent_retry_preamble(continuation: &ContinuationState) -> String {
     let reason = continuation.same_agent_retry_reason;
 
     let reason_line = match reason {
-        Some(SameAgentRetryReason::Timeout) => "Previous attempt timed out.",
+        Some(SameAgentRetryReason::Timeout) => "Previous attempt timed out.".to_string(),
+        Some(SameAgentRetryReason::TimeoutWithContext) => {
+            // If a context file was written (session-less agent), include the path
+            continuation.timeout_context_file_path.as_ref().map_or_else(
+                || {
+                    "Previous attempt timed out with partial progress. Your context has been preserved via session continuation.".to_string()
+                },
+                |context_path| {
+                    format!(
+                        "Previous attempt timed out with partial progress.\n\
+                         Your prior context has been preserved at: {context_path}\n\
+                         Read that file first to continue from where you left off."
+                    )
+                },
+            )
+        }
         Some(SameAgentRetryReason::InternalError) => {
-            "Previous attempt failed with an internal/unknown error."
+            "Previous attempt failed with an internal/unknown error.".to_string()
         }
         Some(SameAgentRetryReason::Other) => {
             "Previous attempt failed with a non-retriable error (non-auth, non-rate-limit)."
+                .to_string()
         }
-        None => "Retrying after a transient invocation failure.",
+        None => "Retrying after a transient invocation failure.".to_string(),
     };
 
     format!(
@@ -126,6 +142,54 @@ mod tests_retry_preamble {
         assert!(
             !stripped.contains("internal/unknown error"),
             "Stripped prompt should not contain internal error message"
+        );
+        assert!(
+            stripped.starts_with("Task instructions"),
+            "Stripped prompt should start with original task"
+        );
+    }
+
+    #[test]
+    fn test_timeout_with_context_preamble_indicates_preserved_context() {
+        // AC-1: TimeoutWithContext should indicate context preservation
+        let continuation = ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_reason: Some(SameAgentRetryReason::TimeoutWithContext),
+            ..ContinuationState::default()
+        };
+
+        let preamble = same_agent_retry_preamble(&continuation);
+        assert!(
+            preamble.contains("partial progress"),
+            "TimeoutWithContext preamble should mention partial progress"
+        );
+        assert!(
+            preamble.contains("context has been preserved"),
+            "TimeoutWithContext preamble should indicate context preservation"
+        );
+        // Should NOT contain the plain timeout message
+        assert!(
+            !preamble.contains("Previous attempt timed out.\n"),
+            "TimeoutWithContext preamble should not use plain timeout message"
+        );
+    }
+
+    #[test]
+    fn test_strip_existing_retry_preamble_handles_timeout_with_context() {
+        let continuation = ContinuationState {
+            same_agent_retry_count: 2,
+            same_agent_retry_reason: Some(SameAgentRetryReason::TimeoutWithContext),
+            ..ContinuationState::default()
+        };
+
+        let preamble = same_agent_retry_preamble(&continuation);
+        let original_prompt = "Task instructions";
+        let retry_prompt = format!("{preamble}\n\n{original_prompt}");
+
+        let stripped = strip_existing_same_agent_retry_preamble(&retry_prompt);
+        assert!(
+            !stripped.contains("partial progress"),
+            "Stripped prompt should not contain TimeoutWithContext message"
         );
         assert!(
             stripped.starts_with("Task instructions"),

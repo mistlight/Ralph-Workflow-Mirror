@@ -39,8 +39,16 @@ pub enum PromptMode {
 /// Reason a same-agent retry is pending.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SameAgentRetryReason {
-    /// The agent invocation timed out.
+    /// The agent invocation timed out with no meaningful output.
+    ///
+    /// This is the legacy timeout behavior - treated like other same-agent retries.
     Timeout,
+    /// The agent invocation timed out with meaningful partial output.
+    ///
+    /// Context should be preserved for the retry. If the agent supports session IDs,
+    /// the session is reused. If not, the prior context is extracted from the logfile
+    /// and written to a temp file for the retry prompt.
+    TimeoutWithContext,
     /// The agent invocation failed with an internal/unknown error.
     InternalError,
     /// The agent invocation failed with a non-auth, non-rate-limit, non-timeout error.

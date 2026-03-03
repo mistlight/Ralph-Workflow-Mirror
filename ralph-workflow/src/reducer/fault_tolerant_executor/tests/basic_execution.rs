@@ -561,6 +561,278 @@ fn test_timeout_with_missing_logfile_defaults_to_no_output() {
 }
 
 // ========================================================================
+// Non-whitespace threshold classification tests (AC-4)
+// ========================================================================
+
+#[test]
+fn test_timeout_with_9_non_whitespace_chars_emits_no_output() {
+    // AC-4: 9 non-whitespace chars is below threshold → NoOutput
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // "123456789" = exactly 9 non-whitespace characters
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        "123456789".to_string(),
+    ));
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::NoOutput,
+                "9 non-whitespace chars should emit NoOutput (below threshold of 10)"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+#[test]
+fn test_timeout_with_10_non_whitespace_chars_emits_partial_output() {
+    // AC-4: 10 non-whitespace chars meets threshold → PartialOutput
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // "1234567890" = exactly 10 non-whitespace characters
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        "1234567890".to_string(),
+    ));
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::PartialOutput,
+                "10 non-whitespace chars should emit PartialOutput (meets threshold)"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+#[test]
+fn test_timeout_with_whitespace_only_logfile_emits_no_output() {
+    // AC-4: Whitespace-only content → NoOutput
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // Whitespace only (spaces, tabs, newlines)
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        "   \n\t\n   ".to_string(),
+    ));
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::NoOutput,
+                "Whitespace-only logfile should emit NoOutput"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+#[test]
+fn test_timeout_with_meaningful_output_surrounded_by_whitespace() {
+    // AC-4: Content with meaningful chars surrounded by whitespace should count only non-whitespace
+    use crate::reducer::event::TimeoutOutputKind;
+
+    let colors = Colors { enabled: false };
+    // "  hello world  \n\n" = 10 non-whitespace characters (helloworld)
+    let workspace = Arc::new(ReadHijackWorkspace::new(
+        MemoryWorkspace::new_test(),
+        PathBuf::from(".agent/logs/test.log"),
+        "  hello world  \n\n".to_string(),
+    ));
+
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config::default();
+
+    let executor = Arc::new(
+        crate::executor::MockProcessExecutor::new().with_agent_result(
+            "claude",
+            Ok(crate::executor::AgentCommandResult::failure(143, "")),
+        ),
+    );
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+    let workspace_arc = Arc::clone(&workspace) as Arc<dyn crate::workspace::Workspace>;
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: Arc::clone(&executor_arc),
+        workspace: workspace.as_ref(),
+        workspace_arc: Arc::clone(&workspace_arc),
+    };
+
+    let env_vars: HashMap<String, String> = HashMap::new();
+    let exec_config = AgentExecutionConfig {
+        role: AgentRole::Developer,
+        agent_name: "claude",
+        cmd_str: "claude -p",
+        parser_type: JsonParserType::Claude,
+        env_vars: &env_vars,
+        prompt: "hello",
+        display_name: "claude",
+        log_prefix: ".agent/logs/test",
+        model_index: 0,
+        attempt: 0,
+        logfile: ".agent/logs/test.log",
+    };
+
+    let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+        .expect("executor should never return Err");
+
+    match result.event {
+        PipelineEvent::Agent(AgentEvent::TimedOut { output_kind, .. }) => {
+            assert_eq!(
+                output_kind,
+                TimeoutOutputKind::PartialOutput,
+                "10 non-whitespace chars with surrounding whitespace should emit PartialOutput"
+            );
+        }
+        _ => panic!("Expected TimedOut event, got {:?}", result.event),
+    }
+}
+
+// ========================================================================
 // Step 2: Quota exceeded pattern alignment tests
 // ========================================================================
 

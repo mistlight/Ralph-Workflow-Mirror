@@ -520,6 +520,107 @@ fn test_resume_iteration_0_total_1_should_run_development() {
 }
 
 #[test]
+fn test_timeout_context_write_derived_before_same_agent_retry() {
+    // AC-1b: When a timeout with partial output occurs but the agent has no session ID,
+    // orchestration must derive WriteTimeoutContext BEFORE the same-agent retry prompt.
+    //
+    // This test verifies the priority order:
+    // 1. timeout_context_write_pending=true -> WriteTimeoutContext
+    // 2. same_agent_retry_pending=true -> SameAgentRetry effect
+    //
+    // Without this ordering, the retry prompt would be prepared without the context file path,
+    // and the agent would lose its partial progress.
+
+    let mut chain = AgentChainState::initial().with_agents(
+        vec!["agent-a".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    chain = chain.with_max_cycles(3);
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 0,
+        total_iterations: 1,
+        agent_chain: chain,
+        continuation: crate::reducer::state::ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_pending: true,
+            // CRITICAL: This flag must trigger WriteTimeoutContext, NOT SameAgentRetry
+            timeout_context_write_pending: true,
+            timeout_context_file_path: Some(".agent/logs/developer_1.log".to_string()),
+            ..crate::reducer::state::ContinuationState::new()
+        },
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    // MUST derive WriteTimeoutContext, NOT PrepareDevelopmentPrompt with SameAgentRetry mode
+    assert!(
+        matches!(
+            effect,
+            Effect::WriteTimeoutContext {
+                role: AgentRole::Developer,
+                logfile_path: _,
+                context_path: _,
+            }
+        ),
+        "Expected WriteTimeoutContext when timeout_context_write_pending=true, got {effect:?}"
+    );
+}
+
+#[test]
+fn test_timeout_context_write_uses_correct_paths() {
+    // Verify that WriteTimeoutContext effect uses:
+    // - logfile_path from continuation.timeout_context_file_path (set by reducer)
+    // - context_path generated based on retry attempt number
+
+    let mut chain = AgentChainState::initial().with_agents(
+        vec!["agent-a".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    chain = chain.with_max_cycles(3);
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 0,
+        total_iterations: 1,
+        agent_chain: chain,
+        continuation: crate::reducer::state::ContinuationState {
+            same_agent_retry_count: 2,
+            timeout_context_write_pending: true,
+            timeout_context_file_path: Some(".agent/logs/developer_1_a1.log".to_string()),
+            ..crate::reducer::state::ContinuationState::new()
+        },
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+
+    if let Effect::WriteTimeoutContext {
+        logfile_path,
+        context_path,
+        ..
+    } = effect
+    {
+        // logfile_path must match what reducer stored
+        assert_eq!(
+            logfile_path, ".agent/logs/developer_1_a1.log",
+            "logfile_path should match timeout_context_file_path from continuation state"
+        );
+        // context_path should be generated based on retry count
+        assert!(
+            context_path.contains("timeout_context_2"),
+            "context_path should contain retry count, got: {context_path}"
+        );
+    } else {
+        panic!("Expected WriteTimeoutContext effect, got {effect:?}");
+    }
+}
+
+#[test]
 fn test_completed_final_iteration_should_transition_not_rerun() {
     // Verify: When iteration=total AND work is actually done
     // (development_xml_archived_iteration is Some),
