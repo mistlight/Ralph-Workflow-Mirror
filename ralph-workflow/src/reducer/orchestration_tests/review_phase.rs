@@ -173,8 +173,10 @@ fn test_review_triggers_fix_when_issues_found() {
     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
 
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::CleanupCommitXml));
-    state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+    assert!(
+        matches!(effect, Effect::CleanupRequiredFiles { ref files } if files.iter().any(|f| f.contains("commit_message.xml")))
+    );
+    state = reduce(state, PipelineEvent::commit_required_files_cleaned(1));
 
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::InvokeCommitAgent));

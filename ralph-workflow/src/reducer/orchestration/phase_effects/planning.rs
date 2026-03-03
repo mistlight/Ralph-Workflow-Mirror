@@ -22,6 +22,12 @@ use crate::reducer::effect::Effect;
 use crate::reducer::event::CheckpointTrigger;
 use crate::reducer::state::{PipelineState, PromptMode, RebaseState};
 
+/// Files that the planning agent writes.
+///
+/// These files are cleaned up before each planning agent invocation to ensure
+/// fresh output. The planning agent writes to `.agent/tmp/plan.xml`.
+pub const REQUIRED_FILES: &[&str] = &[".agent/tmp/plan.xml"];
+
 pub(super) fn determine_planning_effect(state: &PipelineState) -> Effect {
     if state.iteration == 0
         && state.checkpoint_saved_count == 0
@@ -71,9 +77,9 @@ pub(super) fn determine_planning_effect(state: &PipelineState) -> Effect {
         };
     }
 
-    if state.planning_xml_cleaned_iteration != Some(state.iteration) {
-        return Effect::CleanupPlanningXml {
-            iteration: state.iteration,
+    if state.planning_required_files_cleaned_iteration != Some(state.iteration) {
+        return Effect::CleanupRequiredFiles {
+            files: REQUIRED_FILES.iter().map(ToString::to_string).collect(),
         };
     }
 

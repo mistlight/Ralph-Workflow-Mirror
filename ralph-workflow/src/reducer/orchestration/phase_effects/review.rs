@@ -41,6 +41,18 @@ use crate::reducer::effect::Effect;
 use crate::reducer::event::CheckpointTrigger;
 use crate::reducer::state::{PipelineState, PromptMode};
 
+/// Files that the review agent writes.
+///
+/// These files are cleaned up before each review agent invocation to ensure
+/// fresh output. The review agent writes to `.agent/tmp/issues.xml`.
+pub const REQUIRED_FILES_ISSUES: &[&str] = &[".agent/tmp/issues.xml"];
+
+/// Files that the fix agent writes.
+///
+/// These files are cleaned up before each fix agent invocation to ensure
+/// fresh output. The fix agent writes to `.agent/tmp/fix_result.xml`.
+pub const REQUIRED_FILES_FIX: &[&str] = &[".agent/tmp/fix_result.xml"];
+
 pub(super) fn determine_review_effect(state: &PipelineState) -> Effect {
     // If review found issues, run fix attempt
     if state.review_issues_found {
@@ -59,9 +71,9 @@ pub(super) fn determine_review_effect(state: &PipelineState) -> Effect {
             };
         }
 
-        if state.fix_result_xml_cleaned_pass != Some(state.reviewer_pass) {
-            return Effect::CleanupFixResultXml {
-                pass: state.reviewer_pass,
+        if state.fix_required_files_cleaned_pass != Some(state.reviewer_pass) {
+            return Effect::CleanupRequiredFiles {
+                files: REQUIRED_FILES_FIX.iter().map(ToString::to_string).collect(),
             };
         }
 
@@ -155,9 +167,12 @@ pub(super) fn determine_review_effect(state: &PipelineState) -> Effect {
             };
         }
 
-        if state.review_issues_xml_cleaned_pass != Some(state.reviewer_pass) {
-            return Effect::CleanupReviewIssuesXml {
-                pass: state.reviewer_pass,
+        if state.review_required_files_cleaned_pass != Some(state.reviewer_pass) {
+            return Effect::CleanupRequiredFiles {
+                files: REQUIRED_FILES_ISSUES
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
             };
         }
 

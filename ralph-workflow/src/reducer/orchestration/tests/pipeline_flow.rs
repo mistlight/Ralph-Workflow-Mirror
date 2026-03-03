@@ -86,7 +86,10 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                     ),
                 );
             }
-            Effect::CleanupPlanningXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("plan.xml")) =>
+            {
+                let iteration = state.iteration;
                 state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
             }
             Effect::PreparePlanningPrompt { iteration, .. } => {
@@ -155,7 +158,10 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                     PipelineEvent::development_inputs_materialized(iteration, prompt, plan),
                 );
             }
-            Effect::CleanupDevelopmentXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("development_result.xml")) =>
+            {
+                let iteration = state.iteration;
                 state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
             }
             Effect::PrepareDevelopmentPrompt { iteration, .. } => {
@@ -233,7 +239,10 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
             Effect::PrepareReviewPrompt { pass, .. } => {
                 state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
             }
-            Effect::CleanupReviewIssuesXml { pass } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("issues.xml")) =>
+            {
+                let pass = state.reviewer_pass;
                 state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
             }
             Effect::InvokeReviewAgent { pass } => {
@@ -279,7 +288,10 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                 );
             }
 
-            Effect::CleanupFixResultXml { pass } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("fix_result.xml")) =>
+            {
+                let pass = state.reviewer_pass;
                 state = reduce(state, PipelineEvent::fix_result_xml_cleaned(pass));
             }
             Effect::PrepareFixPrompt { pass, .. } => {
@@ -339,8 +351,10 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
             }
-            Effect::CleanupCommitXml => {
-                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("commit_message.xml")) =>
+            {
+                state = reduce(state, PipelineEvent::commit_required_files_cleaned(1));
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -521,8 +535,10 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
             }
-            Effect::CleanupCommitXml => {
-                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("commit_message.xml")) =>
+            {
+                state = reduce(state, PipelineEvent::commit_required_files_cleaned(1));
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));

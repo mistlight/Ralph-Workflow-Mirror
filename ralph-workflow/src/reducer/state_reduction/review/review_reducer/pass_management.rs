@@ -33,7 +33,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
             review_issues_found: issues_found,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
@@ -45,7 +45,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
             commit_diff_prepared: false,
             commit_diff_empty: false,
             commit_agent_invoked: false,
-            commit_xml_cleaned: false,
+            commit_required_files_cleaned: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,
@@ -58,7 +58,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
                 last_review_xsd_error: None,
                 ..state.continuation
             },
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             metrics: if issues_found {
                 state.metrics
             } else {
@@ -73,7 +73,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
             review_issues_found: issues_found,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
@@ -87,7 +87,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_completed(
                 xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             metrics: if issues_found {
                 state.metrics
             } else {
@@ -112,7 +112,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_phase_completed(
         commit_diff_prepared: false,
         commit_diff_empty: false,
         commit_agent_invoked: false,
-        commit_xml_cleaned: false,
+        commit_required_files_cleaned: false,
         commit_xml_extracted: false,
         commit_validated_outcome: None,
         commit_xml_archived: false,
@@ -120,8 +120,8 @@ pub(in crate::reducer::state_reduction::review) fn reduce_phase_completed(
             invalid_output_attempts: 0,
             ..state.continuation
         },
-        review_issues_xml_cleaned_pass: None,
-        fix_result_xml_cleaned_pass: None,
+        review_required_files_cleaned_pass: None,
+        fix_required_files_cleaned_pass: None,
         ..state
     }
 }
@@ -152,7 +152,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
             review_issues_found: false,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
@@ -164,7 +164,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
             commit_diff_prepared: false,
             commit_diff_empty: false,
             commit_agent_invoked: false,
-            commit_xml_cleaned: false,
+            commit_required_files_cleaned: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,
@@ -175,7 +175,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
                 xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             metrics: state.metrics.increment_review_passes_completed(),
             ..state
         }
@@ -186,7 +186,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
             review_issues_found: false,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
@@ -200,7 +200,7 @@ pub(in crate::reducer::state_reduction::review) fn reduce_pass_completed_clean(
                 xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             metrics: state.metrics.increment_review_passes_completed(),
             ..state
         }

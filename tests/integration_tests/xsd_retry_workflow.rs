@@ -39,7 +39,7 @@ fn test_planning_xsd_retry_triggers_reinvocation() {
             phase: PipelinePhase::Planning,
             iteration: 0,
             planning_prompt_prepared_iteration: Some(0),
-            planning_xml_cleaned_iteration: Some(0),
+            planning_required_files_cleaned_iteration: Some(0),
             planning_agent_invoked_iteration: Some(0),
             agent_chain: AgentChainState::initial()
                 .with_agents(
@@ -104,7 +104,7 @@ fn test_planning_xsd_exhausted_triggers_fallback() {
             phase: PipelinePhase::Planning,
             iteration: 0,
             planning_prompt_prepared_iteration: Some(0),
-            planning_xml_cleaned_iteration: Some(0),
+            planning_required_files_cleaned_iteration: Some(0),
             planning_agent_invoked_iteration: Some(0),
             continuation: ContinuationState {
                 xsd_retry_count: 9,
@@ -185,7 +185,7 @@ fn test_review_xsd_retry_triggers_reinvocation() {
             total_reviewer_passes: 2,
             review_context_prepared_pass: Some(0),
             review_prompt_prepared_pass: Some(0),
-            review_issues_xml_cleaned_pass: Some(0),
+            review_required_files_cleaned_pass: Some(0),
             review_agent_invoked_pass: Some(0),
             agent_chain: AgentChainState::initial()
                 .with_agents(
@@ -291,7 +291,7 @@ fn test_fix_xsd_retry_triggers_reinvocation() {
             reviewer_pass: 0,
             review_issues_found: true, // In fix mode
             fix_prompt_prepared_pass: Some(0),
-            fix_result_xml_cleaned_pass: Some(0),
+            fix_required_files_cleaned_pass: Some(0),
             fix_agent_invoked_pass: Some(0),
             agent_chain: AgentChainState::initial()
                 .with_agents(vec!["fixer".to_string()], vec![vec![]], AgentRole::Reviewer)
@@ -382,7 +382,7 @@ fn test_development_xsd_retry_preserves_developer_progress() {
             total_iterations: 5,
             development_context_prepared_iteration: Some(1),
             development_prompt_prepared_iteration: Some(1),
-            development_xml_cleaned_iteration: Some(1),
+            development_required_files_cleaned_iteration: Some(1),
             development_agent_invoked_iteration: Some(1), // Developer done
             analysis_agent_invoked_iteration: Some(1),    // Analysis done but failed
             agent_chain: AgentChainState::initial()
@@ -481,7 +481,7 @@ fn test_commit_xsd_retry_triggers_reinvocation() {
                 max_attempts: 3,
             },
             commit_prompt_prepared: true,
-            commit_xml_cleaned: true,
+            commit_required_files_cleaned: true,
             commit_agent_invoked: true,
             agent_chain: AgentChainState::initial()
                 .with_agents(
@@ -581,7 +581,7 @@ fn test_full_xsd_retry_workflow_planning() {
             phase: PipelinePhase::Planning,
             iteration: 0,
             planning_prompt_prepared_iteration: Some(0),
-            planning_xml_cleaned_iteration: Some(0),
+            planning_required_files_cleaned_iteration: Some(0),
             planning_agent_invoked_iteration: Some(0),
             agent_chain: AgentChainState::initial()
                 .with_agents(
@@ -647,7 +647,7 @@ fn test_full_xsd_exhaustion_to_fallback_success() {
             reviewer_pass: 0,
             total_reviewer_passes: 2,
             review_prompt_prepared_pass: Some(0),
-            review_issues_xml_cleaned_pass: Some(0),
+            review_required_files_cleaned_pass: Some(0),
             review_agent_invoked_pass: Some(0),
             continuation: ContinuationState {
                 xsd_retry_count: 2,

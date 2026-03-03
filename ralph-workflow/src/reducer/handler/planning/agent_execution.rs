@@ -4,7 +4,6 @@
 
 use super::super::MainEffectHandler;
 use crate::agents::AgentRole;
-use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
@@ -53,14 +52,5 @@ impl MainEffectHandler {
             result = result.with_additional_event(PipelineEvent::planning_agent_invoked(iteration));
         }
         Ok(result)
-    }
-
-    pub(in crate::reducer::handler) fn cleanup_planning_xml(
-        ctx: &PhaseContext<'_>,
-        iteration: u32,
-    ) -> EffectResult {
-        let plan_xml = Path::new(xml_paths::PLAN_XML);
-        let _ = ctx.workspace.remove_if_exists(plan_xml);
-        EffectResult::event(PipelineEvent::planning_xml_cleaned(iteration))
     }
 }

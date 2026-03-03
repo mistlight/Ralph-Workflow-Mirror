@@ -8,7 +8,7 @@
 //! 1. **`InitializeAgentChain`** - Set up the agent chain for planning
 //! 2. **`PreparePlanningPrompt`** - Generate the planning prompt
 //! 3. **`MaterializePlanningInputs`** - Prepare inputs for the planning agent
-//! 4. **`CleanupPlanningXml`** - Clean any existing XML from previous attempts
+//! 4. **`CleanupRequiredFiles`** - Clean any existing XML (handled in `lifecycle_effects`)
 //! 5. **`InvokePlanningAgent`** - Execute the planning agent
 //! 6. **`ExtractPlanningXml`** - Extract XML from agent output
 //! 7. **`ValidatePlanningXml`** - Validate XML against XSD schema
@@ -67,10 +67,6 @@ impl MockEffectHandler {
                 ),
                 vec![],
             )),
-
-            Effect::CleanupPlanningXml { iteration } => {
-                Some((PipelineEvent::planning_xml_cleaned(iteration), vec![]))
-            }
 
             Effect::InvokePlanningAgent { iteration } => {
                 Some((PipelineEvent::planning_agent_invoked(iteration), vec![]))

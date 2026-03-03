@@ -33,7 +33,7 @@ fn test_pipeline_advances_after_prompt_preparation() {
             ),
             context_cleaned: true,
             gitignore_entries_ensured: true,
-            planning_xml_cleaned_iteration: Some(0),
+            planning_required_files_cleaned_iteration: Some(0),
             ..with_locked_prompt_permissions(with_locked_prompt_permissions(
                 PipelineState::initial(1, 0),
             ))
@@ -90,7 +90,7 @@ fn test_development_advances_after_prompt_preparation() {
             ),
             context_cleaned: true,
             development_context_prepared_iteration: Some(0),
-            development_xml_cleaned_iteration: Some(0),
+            development_required_files_cleaned_iteration: Some(0),
             ..with_locked_prompt_permissions(with_locked_prompt_permissions(
                 PipelineState::initial(1, 0),
             ))
@@ -128,7 +128,7 @@ fn test_review_advances_after_prompt_preparation() {
             ),
             context_cleaned: true,
             review_context_prepared_pass: Some(0),
-            review_issues_xml_cleaned_pass: Some(0),
+            review_required_files_cleaned_pass: Some(0),
             ..with_locked_prompt_permissions(with_locked_prompt_permissions(
                 PipelineState::initial(0, 1),
             ))

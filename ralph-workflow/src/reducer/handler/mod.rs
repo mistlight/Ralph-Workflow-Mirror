@@ -233,9 +233,7 @@ impl MainEffectHandler {
                 self.materialize_planning_inputs(ctx, iteration)
             }
 
-            Effect::CleanupPlanningXml { iteration } => {
-                Ok(Self::cleanup_planning_xml(ctx, iteration))
-            }
+            Effect::CleanupRequiredFiles { files } => Ok(self.cleanup_required_files(ctx, &files)),
 
             Effect::InvokePlanningAgent { iteration } => self.invoke_planning_agent(ctx, iteration),
 
@@ -270,10 +268,6 @@ impl MainEffectHandler {
                 prompt_mode,
             } => self.prepare_development_prompt(ctx, iteration, prompt_mode),
 
-            Effect::CleanupDevelopmentXml { iteration } => {
-                Ok(Self::cleanup_development_xml(ctx, iteration))
-            }
-
             Effect::InvokeDevelopmentAgent { iteration } => {
                 self.invoke_development_agent(ctx, iteration)
             }
@@ -302,10 +296,6 @@ impl MainEffectHandler {
 
             Effect::PrepareReviewPrompt { pass, prompt_mode } => {
                 self.prepare_review_prompt(ctx, pass, prompt_mode)
-            }
-
-            Effect::CleanupReviewIssuesXml { pass } => {
-                Ok(Self::cleanup_review_issues_xml(ctx, pass))
             }
 
             Effect::InvokeReviewAgent { pass } => self.invoke_review_agent(ctx, pass),
@@ -343,8 +333,6 @@ impl MainEffectHandler {
                 self.prepare_fix_prompt(ctx, pass, prompt_mode)
             }
 
-            Effect::CleanupFixResultXml { pass } => Ok(Self::cleanup_fix_result_xml(ctx, pass)),
-
             Effect::InvokeFixAgent { pass } => self.invoke_fix_agent(ctx, pass),
 
             Effect::ExtractFixResultXml { pass } => Ok(self.extract_fix_result_xml(ctx, pass)),
@@ -375,8 +363,6 @@ impl MainEffectHandler {
             }
 
             Effect::InvokeCommitAgent => self.invoke_commit_agent(ctx),
-
-            Effect::CleanupCommitXml => Ok(self.cleanup_commit_xml(ctx)),
 
             Effect::ExtractCommitXml => Ok(self.extract_commit_xml(ctx)),
 

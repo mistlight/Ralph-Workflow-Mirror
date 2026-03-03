@@ -273,7 +273,7 @@ fn test_planning_xsd_exhausted_resets_all_orchestration_flags() {
         phase: PipelinePhase::Planning,
         iteration: 0,
         planning_prompt_prepared_iteration: Some(0),
-        planning_xml_cleaned_iteration: Some(0),
+        planning_required_files_cleaned_iteration: Some(0),
         planning_agent_invoked_iteration: Some(0),
         planning_xml_extracted_iteration: Some(0),
         planning_validated_outcome: Some(PlanningValidatedOutcome {
@@ -307,8 +307,10 @@ fn test_planning_xsd_exhausted_resets_all_orchestration_flags() {
         "planning_prompt_prepared_iteration should be reset"
     );
     assert!(
-        new_state.planning_xml_cleaned_iteration.is_none(),
-        "planning_xml_cleaned_iteration should be reset"
+        new_state
+            .planning_required_files_cleaned_iteration
+            .is_none(),
+        "planning_required_files_cleaned_iteration should be reset"
     );
     assert!(
         new_state.planning_agent_invoked_iteration.is_none(),
@@ -354,7 +356,7 @@ fn test_commit_xsd_exhausted_resets_all_orchestration_flags() {
         },
         commit_prompt_prepared: true,
         commit_agent_invoked: true,
-        commit_xml_cleaned: true,
+        commit_required_files_cleaned: true,
         commit_xml_extracted: true,
         commit_validated_outcome: Some(CommitValidatedOutcome {
             attempt: 1,
@@ -389,8 +391,8 @@ fn test_commit_xsd_exhausted_resets_all_orchestration_flags() {
         "commit_agent_invoked should be reset"
     );
     assert!(
-        !new_state.commit_xml_cleaned,
-        "commit_xml_cleaned should be reset"
+        !new_state.commit_required_files_cleaned,
+        "commit_required_files_cleaned should be reset"
     );
     assert!(
         !new_state.commit_xml_extracted,

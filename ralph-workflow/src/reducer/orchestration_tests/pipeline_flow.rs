@@ -86,7 +86,10 @@ fn test_complete_pipeline_flow() {
             Effect::PreparePlanningPrompt { iteration, .. } => {
                 state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
             }
-            Effect::CleanupPlanningXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("plan.xml")) =>
+            {
+                let iteration = state.iteration;
                 state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
             }
             Effect::InvokePlanningAgent { iteration } => {
@@ -155,7 +158,10 @@ fn test_complete_pipeline_flow() {
             Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                 state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
             }
-            Effect::CleanupDevelopmentXml { iteration } => {
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("development_result.xml")) =>
+            {
+                let iteration = state.iteration;
                 state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
             }
             Effect::InvokeDevelopmentAgent { iteration } => {
@@ -285,8 +291,10 @@ fn test_complete_pipeline_flow() {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
             }
-            Effect::CleanupCommitXml => {
-                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("commit_message.xml")) =>
+            {
+                state = reduce(state, PipelineEvent::commit_required_files_cleaned(1));
             }
             Effect::CheckCommitDiff => {
                 state = reduce(
@@ -438,8 +446,10 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
             }
-            Effect::CleanupCommitXml => {
-                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            Effect::CleanupRequiredFiles { files }
+                if files.iter().any(|f| f.contains("commit_message.xml")) =>
+            {
+                state = reduce(state, PipelineEvent::commit_required_files_cleaned(1));
             }
             Effect::CheckCommitDiff => {
                 state = reduce(

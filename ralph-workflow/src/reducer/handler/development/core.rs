@@ -96,28 +96,6 @@ impl MainEffectHandler {
         Ok(result)
     }
 
-    /// Cleanup development XML.
-    ///
-    /// Removes `.agent/tmp/development_result.xml` from workspace. This is called
-    /// before agent invocation to ensure a clean slate for new output.
-    ///
-    /// # Arguments
-    ///
-    /// * `ctx` - Phase context with workspace access
-    /// * `iteration` - Current development iteration number
-    ///
-    /// # Returns
-    ///
-    /// `EffectResult` with `DevelopmentXmlCleaned` event.
-    pub(in crate::reducer::handler) fn cleanup_development_xml(
-        ctx: &PhaseContext<'_>,
-        iteration: u32,
-    ) -> EffectResult {
-        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
-        let _ = ctx.workspace.remove_if_exists(result_xml);
-        EffectResult::event(PipelineEvent::development_xml_cleaned(iteration))
-    }
-
     /// Archive development XML.
     ///
     /// Moves `.agent/tmp/development_result.xml` to `.agent/tmp/development_result.xml.processed`.

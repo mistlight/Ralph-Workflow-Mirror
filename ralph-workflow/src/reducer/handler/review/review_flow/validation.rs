@@ -5,7 +5,6 @@
 //
 // ## Responsibilities
 //
-// - Removing stale `.agent/tmp/issues.xml` before agent invocation
 // - Checking if `.agent/tmp/issues.xml` exists after agent runs
 // - Parsing and validating XML against schema
 // - Extracting `<issue>` and `<no_issues_found>` elements
@@ -15,11 +14,10 @@
 //
 // ## Validation Flow
 //
-// 1. `cleanup_review_issues_xml` - Remove stale XML before invocation
-// 2. Agent runs and writes `.agent/tmp/issues.xml`
-// 3. `extract_review_issues_xml` - Check file exists
-// 4. `validate_review_issues_xml` - Parse and validate XML structure
-// 5. If validation fails, XSD retry is triggered
+// 1. Agent runs and writes `.agent/tmp/issues.xml`
+// 2. `extract_review_issues_xml` - Check file exists
+// 3. `validate_review_issues_xml` - Parse and validate XML structure
+// 4. If validation fails, XSD retry is triggered
 //
 // ## See Also
 //
@@ -27,17 +25,6 @@
 // - `output_rendering.rs` - Converting validated XML to markdown
 
 impl MainEffectHandler {
-    pub(in crate::reducer::handler) fn cleanup_review_issues_xml(
-        ctx: &PhaseContext<'_>,
-        pass: u32,
-    ) -> EffectResult {
-        let issues_xml = Path::new(xml_paths::ISSUES_XML);
-        let _ = ctx.workspace.remove_if_exists(issues_xml);
-        EffectResult::event(
-            PipelineEvent::review_issues_xml_cleaned(pass),
-        )
-    }
-
     pub(in crate::reducer::handler) fn extract_review_issues_xml(
         &self,
         ctx: &PhaseContext<'_>,

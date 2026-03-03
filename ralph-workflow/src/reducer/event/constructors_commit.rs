@@ -117,7 +117,7 @@ impl PipelineEvent {
     }
 
     #[must_use] 
-    pub const fn commit_xml_cleaned(attempt: u32) -> Self {
+    pub const fn commit_required_files_cleaned(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlCleaned { attempt })
     }
 

@@ -322,28 +322,28 @@ fn reduce_same_agent_retryable_failure(
 fn reset_phase_xml_cleanup_for_retry(state: PipelineState) -> PipelineState {
     match state.phase {
         PipelinePhase::Planning => PipelineState {
-            planning_xml_cleaned_iteration: None,
+            planning_required_files_cleaned_iteration: None,
             ..state
         },
         PipelinePhase::Development => PipelineState {
-            development_xml_cleaned_iteration: None,
+            development_required_files_cleaned_iteration: None,
             ..state
         },
         PipelinePhase::Review => {
             if state.review_issues_found || state.continuation.fix_continue_pending {
                 PipelineState {
-                    fix_result_xml_cleaned_pass: None,
+                    fix_required_files_cleaned_pass: None,
                     ..state
                 }
             } else {
                 PipelineState {
-                    review_issues_xml_cleaned_pass: None,
+                    review_required_files_cleaned_pass: None,
                     ..state
                 }
             }
         }
         PipelinePhase::CommitMessage => PipelineState {
-            commit_xml_cleaned: false,
+            commit_required_files_cleaned: false,
             ..state
         },
         _ => state,

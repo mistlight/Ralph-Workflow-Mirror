@@ -427,6 +427,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_state_machine.rs"),
     },
     SourceFile {
+        path: "required_files_cleanup.rs",
+        contents: include_str!("required_files_cleanup.rs"),
+    },
+    SourceFile {
         path: "review_output_validation.rs",
         contents: include_str!("review_output_validation.rs"),
     },

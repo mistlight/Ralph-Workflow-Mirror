@@ -52,7 +52,7 @@
 //!
 //!     let effect = determine_next_effect(&state);
 //!
-//!     assert!(matches!(effect, Effect::CleanupDevelopmentXml { .. }));
+//!     assert!(matches!(effect, Effect::CleanupRequiredFiles { files } if files.iter().any(|f| f.contains("development_result.xml")));
 //! }
 //! ```
 //!

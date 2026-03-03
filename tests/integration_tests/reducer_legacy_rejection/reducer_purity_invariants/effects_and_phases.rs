@@ -38,7 +38,9 @@ fn test_effects_are_single_task() {
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
             Effect::MaterializePlanningInputs { iteration: 0 },
-            Effect::CleanupPlanningXml { iteration: 0 },
+            Effect::CleanupRequiredFiles {
+                files: vec!["plan.xml".to_string()].into_boxed_slice(),
+            },
             Effect::InvokePlanningAgent { iteration: 0 },
             Effect::ExtractPlanningXml { iteration: 0 },
             Effect::ValidatePlanningXml { iteration: 0 },
@@ -54,7 +56,9 @@ fn test_effects_are_single_task() {
                 iteration: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
-            Effect::CleanupDevelopmentXml { iteration: 0 },
+            Effect::CleanupRequiredFiles {
+                files: vec!["development_result.xml".to_string()].into_boxed_slice(),
+            },
             Effect::InvokeDevelopmentAgent { iteration: 0 },
             Effect::InvokeAnalysisAgent { iteration: 0 },
             Effect::ExtractDevelopmentXml { iteration: 0 },
@@ -67,7 +71,9 @@ fn test_effects_are_single_task() {
                 pass: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
-            Effect::CleanupReviewIssuesXml { pass: 0 },
+            Effect::CleanupRequiredFiles {
+                files: vec!["issues.xml".to_string()].into_boxed_slice(),
+            },
             Effect::InvokeReviewAgent { pass: 0 },
             Effect::ExtractReviewIssuesXml { pass: 0 },
             Effect::ValidateReviewIssuesXml { pass: 0 },
@@ -83,7 +89,9 @@ fn test_effects_are_single_task() {
                 pass: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
-            Effect::CleanupFixResultXml { pass: 0 },
+            Effect::CleanupRequiredFiles {
+                files: vec!["fix_result.xml".to_string()].into_boxed_slice(),
+            },
             Effect::InvokeFixAgent { pass: 0 },
             Effect::ExtractFixResultXml { pass: 0 },
             Effect::ValidateFixResultXml { pass: 0 },
@@ -101,7 +109,9 @@ fn test_effects_are_single_task() {
             Effect::PrepareCommitPrompt {
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
-            Effect::CleanupCommitXml,
+            Effect::CleanupRequiredFiles {
+                files: vec!["commit_message.xml".to_string()].into_boxed_slice(),
+            },
             Effect::InvokeCommitAgent,
             Effect::ExtractCommitXml,
             Effect::ValidateCommitXml,
@@ -225,11 +235,7 @@ fn test_effects_are_single_task() {
                 | Effect::ArchiveReviewIssuesXml { .. }
                 | Effect::ArchiveFixResultXml { .. }
                 | Effect::ArchiveCommitXml => "archive-file",
-                Effect::CleanupPlanningXml { .. }
-                | Effect::CleanupDevelopmentXml { .. }
-                | Effect::CleanupReviewIssuesXml { .. }
-                | Effect::CleanupFixResultXml { .. }
-                | Effect::CleanupCommitXml => "cleanup-xml",
+                Effect::CleanupRequiredFiles { .. } => "cleanup-files",
                 Effect::PrepareDevelopmentContext { .. } | Effect::PrepareReviewContext { .. } => {
                     "prepare-context"
                 }

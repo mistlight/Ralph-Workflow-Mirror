@@ -92,7 +92,7 @@ impl PipelineState {
     fn clear_planning_flags(&self) -> Self {
         Self {
             planning_prompt_prepared_iteration: None,
-            planning_xml_cleaned_iteration: None,
+            planning_required_files_cleaned_iteration: None,
             planning_agent_invoked_iteration: None,
             planning_xml_extracted_iteration: None,
             planning_validated_outcome: None,
@@ -107,7 +107,7 @@ impl PipelineState {
         Self {
             development_context_prepared_iteration: None,
             development_prompt_prepared_iteration: None,
-            development_xml_cleaned_iteration: None,
+            development_required_files_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
             analysis_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
@@ -122,7 +122,7 @@ impl PipelineState {
         Self {
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
-            review_issues_xml_cleaned_pass: None,
+            review_required_files_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
@@ -131,7 +131,7 @@ impl PipelineState {
             review_issues_xml_archived_pass: None,
             review_issues_found: false,
             fix_prompt_prepared_pass: None,
-            fix_result_xml_cleaned_pass: None,
+            fix_required_files_cleaned_pass: None,
             fix_agent_invoked_pass: None,
             fix_result_xml_extracted_pass: None,
             fix_validated_outcome: None,
@@ -148,7 +148,7 @@ impl PipelineState {
             commit_diff_empty: false,
             commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
-            commit_xml_cleaned: false,
+            commit_required_files_cleaned: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,

@@ -1,7 +1,6 @@
 //! Commit XML lifecycle management.
 //!
 //! This module handles XML file operations for commit message generation:
-//! - Cleanup - Remove stale XML before agent invocation
 //! - Extraction - Check if agent wrote XML output
 //! - Archiving - Move XML to archive after processing
 //!
@@ -20,24 +19,6 @@ use crate::reducer::event::PipelineEvent;
 use std::path::Path;
 
 impl MainEffectHandler {
-    /// Cleanup commit XML before agent invocation.
-    ///
-    /// Removes `.agent/tmp/commit_message.xml` if it exists to ensure
-    /// fresh output from the agent.
-    ///
-    /// # Events Emitted
-    ///
-    /// - `commit_xml_cleaned` - XML file removed (or was already absent)
-    pub(in crate::reducer::handler) fn cleanup_commit_xml(
-        &self,
-        ctx: &PhaseContext<'_>,
-    ) -> EffectResult {
-        let attempt = current_commit_attempt(&self.state.commit);
-        let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
-        let _ = ctx.workspace.remove_if_exists(commit_xml);
-        EffectResult::event(PipelineEvent::commit_xml_cleaned(attempt))
-    }
-
     /// Extract commit XML output.
     ///
     /// Checks if `.agent/tmp/commit_message.xml` exists after agent invocation.
