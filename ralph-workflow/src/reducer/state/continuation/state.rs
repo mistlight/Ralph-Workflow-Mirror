@@ -170,6 +170,24 @@ pub struct ContinuationState {
     /// Maximum consecutive identical effects before triggering recovery.
     #[serde(default = "default_max_consecutive_same_effect")]
     pub max_consecutive_same_effect: u32,
+
+    // =========================================================================
+    // Timeout context preservation fields (for session-less agent retry)
+    // =========================================================================
+    /// Whether a timeout context file write is pending.
+    ///
+    /// Set when a timeout with `PartialOutput` occurs but the agent has no session ID.
+    /// The context must be extracted from the logfile and written to a temp file
+    /// before the retry prompt is prepared.
+    #[serde(default)]
+    pub timeout_context_write_pending: bool,
+
+    /// Path to the timeout context file (if written).
+    ///
+    /// After `WriteTimeoutContext` effect completes, this stores the path to the
+    /// context file so the retry prompt can reference it.
+    #[serde(default)]
+    pub timeout_context_file_path: Option<String>,
 }
 
 const fn default_max_xsd_retry_count() -> u32 {
@@ -230,6 +248,9 @@ impl Default for ContinuationState {
             last_effect_kind: None,
             consecutive_same_effect_count: 0,
             max_consecutive_same_effect: DEFAULT_LOOP_DETECTION_THRESHOLD,
+            // Timeout context preservation fields
+            timeout_context_write_pending: false,
+            timeout_context_file_path: None,
         }
     }
 }

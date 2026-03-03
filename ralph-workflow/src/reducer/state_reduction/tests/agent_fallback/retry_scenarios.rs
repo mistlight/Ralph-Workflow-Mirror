@@ -414,6 +414,7 @@ fn test_timeout_preserves_rate_limit_continuation_prompt_during_same_agent_retry
             AgentRole::Developer,
             "agent1".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/developer_0.log".to_string()),
         ),
     );
     assert_eq!(
@@ -433,6 +434,7 @@ fn test_timeout_preserves_rate_limit_continuation_prompt_during_same_agent_retry
             AgentRole::Developer,
             "agent1".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/developer_0.log".to_string()),
         ),
     );
     assert_eq!(
@@ -531,6 +533,7 @@ fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
             AgentRole::Developer,
             "agent1".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/developer_0.log".to_string()),
         ),
     );
 
@@ -560,7 +563,7 @@ fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
     );
     assert_eq!(
         after_first_timeout.continuation.same_agent_retry_reason,
-        Some(SameAgentRetryReason::Timeout)
+        Some(SameAgentRetryReason::TimeoutWithContext)
     );
 
     let after_second_timeout = reduce(
@@ -569,6 +572,7 @@ fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
             AgentRole::Developer,
             "agent1".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/developer_0.log".to_string()),
         ),
     );
 
@@ -821,6 +825,7 @@ fn test_no_output_timeout_triggers_immediate_agent_switch() {
             AgentRole::Developer,
             "agent1".to_string(),
             TimeoutOutputKind::NoOutput,
+            None,
         ),
     );
 
@@ -882,6 +887,7 @@ fn test_no_output_timeout_does_not_consume_retry_budget() {
             AgentRole::Developer,
             "agent1".to_string(),
             TimeoutOutputKind::NoOutput,
+            None,
         ),
     );
 

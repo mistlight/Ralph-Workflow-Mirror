@@ -170,6 +170,15 @@ This escalating recovery design ensures:
 - **Deterministic behavior**: Recovery decisions are pure functions of attempt count and escalation level
 - **Observable progress**: Recovery events provide visibility into escalation decisions
 
+## Timeout Handling
+
+Timeouts are classified into two sub-types based on whether the agent produced meaningful output:
+
+- **NoOutput**: Agent produced no meaningful content (empty, whitespace-only, or fewer than ~10 non-whitespace characters). Triggers immediate agent switch without consuming same-agent retry budget.
+- **PartialOutput**: Agent produced meaningful partial content before being cut off. Retries the same agent with context preservation (session reuse for session-capable agents, context file extraction for session-less agents).
+
+Context preservation for session-less agents uses the `WriteTimeoutContext` effect, which extracts the logfile content and writes it to a temp file before the retry prompt is prepared. This ensures no context is lost regardless of agent capabilities.
+
 ## Orchestration: Priority Order
 
 Orchestration is a pure function from state to the next effect (`determine_next_effect(&PipelineState) -> Effect`). It intentionally encodes a priority order so that recovery/cleanup always preempts phase work.
@@ -177,12 +186,13 @@ Orchestration is a pure function from state to the next effect (`determine_next_
 The current priority ordering is documented in code (see `ralph-workflow/src/reducer/orchestration/xsd_retry.rs`) and includes, roughly:
 
 1. Continuation context cleanup
-2. Same-agent retry pending (transient invocation failures)
-3. XSD retry pending (invalid XML output)
-4. Continuation pending (valid output but incomplete work)
-5. Rebase in progress
-6. Agent-chain exhaustion / backoff waiting
-7. Phase-specific effects (the normal single-task sequence)
+2. Timeout context write pending (session-less agent retry context extraction)
+3. Same-agent retry pending (transient invocation failures)
+4. XSD retry pending (invalid XML output)
+5. Continuation pending (valid output but incomplete work)
+6. Rebase in progress
+7. Agent-chain exhaustion / backoff waiting
+8. Phase-specific effects (the normal single-task sequence)
 
 Do not implement hidden retries or fallback loops inside handlers; retries/fallback must be reducer-visible state so the orchestrator can remain pure and deterministic.
 

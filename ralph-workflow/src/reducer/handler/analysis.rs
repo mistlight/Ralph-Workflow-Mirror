@@ -98,6 +98,15 @@ Then produce a corrected development_result.xml that conforms to the schema.\n\n
             );
         }
 
+        // Same-agent retry context: include retry guidance for analysis retries too.
+        // This is especially critical for TimeoutWithContext retries without session support,
+        // where the preamble points the agent to the persisted timeout context file.
+        if self.state.continuation.same_agent_retry_pending {
+            let retry_preamble =
+                super::retry_guidance::same_agent_retry_preamble(&self.state.continuation);
+            prompt = format!("{retry_preamble}\n{prompt}");
+        }
+
         // Normalize agent chain state before invocation for determinism
         self.normalize_agent_chain_for_invocation(ctx, AgentRole::Analysis);
 

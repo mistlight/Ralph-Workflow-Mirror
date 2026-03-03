@@ -303,6 +303,7 @@ fn test_timeout_retries_same_agent_then_agent_fallback_not_model_fallback() {
                 AgentRole::Developer,
                 "agent1".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
 
@@ -332,6 +333,7 @@ fn test_timeout_retries_same_agent_then_agent_fallback_not_model_fallback() {
                 AgentRole::Developer,
                 "agent1".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
 
@@ -345,12 +347,14 @@ fn test_timeout_retries_same_agent_then_agent_fallback_not_model_fallback() {
     });
 }
 
-/// Test that timeout fallback clears session ID.
+/// Test that `NoOutput` timeout clears session ID for immediate agent switch.
 ///
-/// When we switch agents due to timeout, we must clear the session ID
-/// because the new agent will have its own session context.
+/// When timeout produces no meaningful output (`NoOutput`), we switch agents
+/// immediately and clear the session ID because the new agent will have its
+/// own session context. This is distinct from `PartialOutput` timeout which
+/// preserves the session for context reuse with the same agent.
 #[test]
-fn test_timeout_fallback_clears_session_id() {
+fn test_timeout_no_output_clears_session_id() {
     with_default_timeout(|| {
         use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
 
@@ -379,20 +383,21 @@ fn test_timeout_fallback_clears_session_id() {
             ..PipelineState::initial(5, 2)
         };
 
-        // Simulate timed out
+        // Simulate NoOutput timeout - should switch agents immediately
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
             PipelineEvent::agent_timed_out(
                 AgentRole::Developer,
                 "agent1".to_string(),
-                TimeoutOutputKind::PartialOutput,
+                TimeoutOutputKind::NoOutput,
+                None,
             ),
         );
 
-        // Session ID should be cleared
+        // Session ID should be cleared for NoOutput (immediate agent switch)
         assert!(
             new_state.agent_chain.last_session_id.is_none(),
-            "TimedOut should clear session ID"
+            "NoOutput timeout should clear session ID for immediate agent switch"
         );
     });
 }
@@ -423,6 +428,7 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
                 AgentRole::Developer,
                 "agent1".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
 
@@ -439,6 +445,7 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
                 AgentRole::Developer,
                 "agent1".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
 
@@ -489,6 +496,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
                 AgentRole::Developer,
                 "agent1".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
         state = ralph_workflow::reducer::state_reduction::reduce(
@@ -497,6 +505,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
                 AgentRole::Developer,
                 "agent1".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
         assert_eq!(
@@ -511,6 +520,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
                 AgentRole::Developer,
                 "agent2".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
         state = ralph_workflow::reducer::state_reduction::reduce(
@@ -519,6 +529,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
                 AgentRole::Developer,
                 "agent2".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
         assert_eq!(
@@ -533,6 +544,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
                 AgentRole::Developer,
                 "agent3".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
         state = ralph_workflow::reducer::state_reduction::reduce(
@@ -541,6 +553,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
                 AgentRole::Developer,
                 "agent3".to_string(),
                 TimeoutOutputKind::PartialOutput,
+                Some(".agent/logs/developer_0.log".to_string()),
             ),
         );
         assert_eq!(

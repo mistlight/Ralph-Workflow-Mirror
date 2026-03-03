@@ -116,8 +116,9 @@ impl PipelineEvent {
         role: AgentRole,
         agent: String,
         output_kind: TimeoutOutputKind,
+        logfile_path: Option<String>,
     ) -> Self {
-        Self::Agent(AgentEvent::TimedOut { role, agent, output_kind })
+        Self::Agent(AgentEvent::TimedOut { role, agent, output_kind, logfile_path })
     }
 
     /// Create an `AgentSessionEstablished` event.
@@ -147,7 +148,7 @@ impl PipelineEvent {
     }
 
     /// Create an `AgentTemplateVariablesInvalid` event.
-    #[must_use] 
+    #[must_use]
     pub const fn agent_template_variables_invalid(
         role: AgentRole,
         template_name: String,
@@ -159,6 +160,20 @@ impl PipelineEvent {
             template_name,
             missing_variables,
             unresolved_placeholders,
+        })
+    }
+
+    /// Create an `AgentTimeoutContextWritten` event.
+    #[must_use]
+    pub const fn agent_timeout_context_written(
+        role: AgentRole,
+        logfile_path: String,
+        context_path: String,
+    ) -> Self {
+        Self::Agent(AgentEvent::TimeoutContextWritten {
+            role,
+            logfile_path,
+            context_path,
         })
     }
 }

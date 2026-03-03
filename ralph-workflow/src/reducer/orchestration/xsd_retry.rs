@@ -96,6 +96,36 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
     }
 }
 
+/// Derive the effect for writing timeout context to a temp file.
+///
+/// When a timeout with partial output occurs but the agent has no session ID,
+/// we must extract the context from the logfile and write it to a temp file
+/// before the same-agent retry prompt is prepared.
+///
+/// This function creates a `WriteTimeoutContext` effect that:
+/// 1. Reads the logfile content
+/// 2. Writes it to a temp file (e.g., `.agent/tmp/timeout_context_1.txt`)
+fn derive_timeout_context_write_effect(state: &PipelineState) -> Effect {
+    // Get the logfile path from continuation state (set by reducer during TimedOut processing)
+    let logfile_path = state
+        .continuation
+        .timeout_context_file_path
+        .clone()
+        .unwrap_or_else(|| ".agent/logs/unknown.log".to_string());
+
+    // Generate a context file path based on the retry attempt
+    let context_path = format!(
+        ".agent/tmp/timeout_context_{}.txt",
+        state.continuation.same_agent_retry_count
+    );
+
+    Effect::WriteTimeoutContext {
+        role: state.agent_chain.current_role,
+        logfile_path,
+        context_path,
+    }
+}
+
 /// Derive the effect for same-agent retry based on current phase.
 ///
 /// Same-agent retry starts a new invocation with the same agent (no session reuse),
@@ -257,6 +287,13 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
     if state.continuation.context_cleanup_pending {
         return Effect::CleanupContinuationContext;
+    }
+
+    // Timeout context write: when a timeout with partial output occurs but the agent has no
+    // session ID, we must extract the context from the logfile and write it to a temp file
+    // BEFORE the same-agent retry prompt is prepared.
+    if state.continuation.timeout_context_write_pending {
+        return derive_timeout_context_write_effect(state);
     }
 
     // Same-agent retry: invocation failed (timeout/internal error), retry same agent with

@@ -368,6 +368,8 @@ fn test_development_timeout_retry_does_not_use_xsd_retry_prompt_mode() {
         vec![vec![], vec![]],
         AgentRole::Developer,
     );
+    // Set a session ID so session reuse is used instead of WriteTimeoutContext
+    state.agent_chain.last_session_id = Some("session-123".to_string());
 
     state = reduce(
         state,
@@ -375,6 +377,7 @@ fn test_development_timeout_retry_does_not_use_xsd_retry_prompt_mode() {
             AgentRole::Developer,
             "agent-a".to_string(),
             TimeoutOutputKind::PartialOutput,
+            Some(".agent/logs/developer_0.log".to_string()),
         ),
     );
 

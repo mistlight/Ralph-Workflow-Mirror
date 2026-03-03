@@ -1,6 +1,6 @@
 use super::common::TestFixture;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
+use crate::reducer::state::{ContinuationState, PipelineState, SameAgentRetryReason};
 use crate::workspace::{MemoryWorkspace, Workspace};
 
 #[test]
@@ -40,6 +40,58 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
     assert!(
         prompt.contains("[DIFF unavailable") || prompt.contains("diff --git"),
         "expected diff placeholder or an actual git diff in prompt, got: {prompt}"
+    );
+}
+
+#[test]
+fn test_invoke_analysis_agent_same_agent_retry_timeout_with_context_includes_context_file_guidance()
+{
+    let timeout_context_file_path = ".agent/tmp/timeout-context-analysis_1.md";
+    let workspace = MemoryWorkspace::new_test()
+        .with_dir(".agent/tmp")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/DIFF.backup", "DIFF_BACKUP_MARKER")
+        .with_file(timeout_context_file_path, "TIMEOUT_CONTEXT_MARKER");
+
+    let mut fixture = TestFixture::with_workspace(workspace);
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        phase: crate::reducer::event::PipelinePhase::Development,
+        iteration: 0,
+        continuation: ContinuationState {
+            same_agent_retry_pending: true,
+            same_agent_retry_reason: Some(SameAgentRetryReason::TimeoutWithContext),
+            timeout_context_file_path: Some(timeout_context_file_path.to_string()),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(1, 0)
+    });
+
+    handler
+        .invoke_analysis_agent(&mut ctx, 0)
+        .expect("invoke_analysis_agent should succeed");
+
+    let calls = fixture.executor.agent_calls();
+    assert_eq!(calls.len(), 1);
+    let prompt = &calls[0].prompt;
+
+    assert!(
+        prompt.contains("## Retry Note"),
+        "expected same-agent retry preamble in analysis prompt, got: {prompt}"
+    );
+    assert!(
+        prompt.contains("timed out with partial progress"),
+        "expected timeout-with-context retry guidance in analysis prompt, got: {prompt}"
+    );
+    assert!(
+        prompt.contains(timeout_context_file_path),
+        "expected analysis prompt to reference timeout context file path, got: {prompt}"
+    );
+    assert!(
+        prompt.contains("Read that file first to continue from where you left off."),
+        "expected analysis prompt to instruct reading timeout context file, got: {prompt}"
     );
 }
 

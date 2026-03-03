@@ -99,13 +99,19 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 ..state
             }
         }
-        // Timeout with partial output: existing retry semantics (unchanged)
+        // Timeout with partial output: retry same agent with context preservation
         // The agent produced partial output before timing out — likely a connectivity issue.
         // Retry the same agent first; fall back only after retry budget exhaustion.
+        // Context should be preserved (session reuse or context file extraction).
         AgentEvent::TimedOut {
             output_kind: TimeoutOutputKind::PartialOutput,
+            logfile_path,
             ..
-        } => reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout),
+        } => reduce_same_agent_retryable_failure(
+            state,
+            SameAgentRetryableFailure::TimeoutWithContext,
+            logfile_path,
+        ),
         // Other retriable errors (Network, ModelUnavailable): try next model
         AgentEvent::InvocationFailed {
             retriable: true, ..
@@ -175,15 +181,19 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 AgentErrorKind::InternalError => reduce_same_agent_retryable_failure(
                     state,
                     SameAgentRetryableFailure::InternalError,
+                    None,
                 ),
                 // Defensive: treat explicit Timeout similarly if it arrives here.
-                AgentErrorKind::Timeout => {
-                    reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout)
-                }
+                AgentErrorKind::Timeout => reduce_same_agent_retryable_failure(
+                    state,
+                    SameAgentRetryableFailure::Timeout,
+                    None,
+                ),
                 // Other non-retriable errors: retry same agent first; only fall back after budget.
                 _ => reduce_same_agent_retryable_failure(
                     state,
                     SameAgentRetryableFailure::OtherNonRetriable,
+                    None,
                 ),
             }
         }
@@ -277,15 +287,30 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         }
 
         // Template variables invalid: retry same agent first; only fall back after budget.
-        AgentEvent::TemplateVariablesInvalid { .. } => {
-            reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::OtherNonRetriable)
-        }
+        AgentEvent::TemplateVariablesInvalid { .. } => reduce_same_agent_retryable_failure(
+            state,
+            SameAgentRetryableFailure::OtherNonRetriable,
+            None,
+        ),
+
+        // Timeout context written: store the context file path and clear the pending flag.
+        // The context file is written by the handler for session-less agent retry.
+        // The retry prompt will reference this file via the retry guidance preamble.
+        AgentEvent::TimeoutContextWritten { context_path, .. } => PipelineState {
+            continuation: ContinuationState {
+                timeout_context_write_pending: false,
+                timeout_context_file_path: Some(context_path),
+                ..state.continuation
+            },
+            ..state
+        },
     }
 }
 
 #[derive(Clone, Copy)]
 enum SameAgentRetryableFailure {
     Timeout,
+    TimeoutWithContext,
     InternalError,
     OtherNonRetriable,
 }
@@ -293,6 +318,7 @@ enum SameAgentRetryableFailure {
 fn reduce_same_agent_retryable_failure(
     state: PipelineState,
     failure: SameAgentRetryableFailure,
+    logfile_path: Option<String>,
 ) -> PipelineState {
     let state = reset_phase_xml_cleanup_for_retry(state);
     // Keep agent selection reducer-driven and deterministic:
@@ -313,6 +339,8 @@ fn reduce_same_agent_retryable_failure(
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
+                timeout_context_write_pending: false,
+                timeout_context_file_path: None,
                 ..state.continuation
             },
             metrics: if will_retry {
@@ -325,16 +353,45 @@ fn reduce_same_agent_retryable_failure(
     } else {
         let reason = match failure {
             SameAgentRetryableFailure::Timeout => SameAgentRetryReason::Timeout,
+            SameAgentRetryableFailure::TimeoutWithContext => {
+                SameAgentRetryReason::TimeoutWithContext
+            }
             SameAgentRetryableFailure::InternalError => SameAgentRetryReason::InternalError,
             SameAgentRetryableFailure::OtherNonRetriable => SameAgentRetryReason::Other,
         };
+
+        // For TimeoutWithContext, preserve session ID to maintain context.
+        // For all other retry reasons, clear the session ID.
+        let agent_chain = match failure {
+            SameAgentRetryableFailure::TimeoutWithContext => state.agent_chain,
+            _ => state.agent_chain.clear_session_id(),
+        };
+
+        // For TimeoutWithContext:
+        // - If session ID exists: set xsd_retry_session_reuse_pending to reuse session
+        // - If no session ID: set timeout_context_write_pending to extract context to file
+        let (session_reuse_pending, timeout_context_write_pending, timeout_context_file_path) =
+            match failure {
+                SameAgentRetryableFailure::TimeoutWithContext => {
+                    if agent_chain.last_session_id.is_some() {
+                        (true, false, None)
+                    } else {
+                        // Store the logfile path so orchestration can use it for WriteTimeoutContext
+                        (false, true, logfile_path)
+                    }
+                }
+                _ => (false, false, None),
+            };
+
         PipelineState {
-            agent_chain: state.agent_chain.clear_session_id(),
+            agent_chain,
             continuation: ContinuationState {
                 same_agent_retry_count: new_retry_count,
                 same_agent_retry_pending: true,
                 same_agent_retry_reason: Some(reason),
-                xsd_retry_session_reuse_pending: false,
+                xsd_retry_session_reuse_pending: session_reuse_pending,
+                timeout_context_write_pending,
+                timeout_context_file_path,
                 ..state.continuation
             },
             metrics: if will_retry {
