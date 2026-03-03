@@ -85,6 +85,30 @@ fn mock_effect_handler_review_validation_emits_no_issues_outcome() {
 }
 
 #[test]
+fn mock_effect_handler_write_timeout_context_emits_timeout_context_written_event() {
+    let state = PipelineState::initial(1, 0);
+    let mut handler = MockEffectHandler::new(state);
+
+    let result = handler.execute_mock(&Effect::WriteTimeoutContext {
+        role: crate::agents::AgentRole::Developer,
+        logfile_path: ".agent/logs/development.log".to_string(),
+        context_path: ".agent/tmp/timeout_context_1.txt".to_string(),
+    });
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Agent(crate::reducer::event::AgentEvent::TimeoutContextWritten {
+            role: crate::agents::AgentRole::Developer,
+            ref logfile_path,
+            ref context_path,
+        }) if logfile_path == ".agent/logs/development.log"
+            && context_path == ".agent/tmp/timeout_context_1.txt"
+    ));
+    assert!(result.ui_events.is_empty());
+    assert!(result.additional_events.is_empty());
+}
+
+#[test]
 fn mock_effect_handler_trigger_dev_fix_flow_does_not_write_completion_marker() {
     use crate::agents::{AgentRegistry, AgentRole};
     use crate::checkpoint::{ExecutionHistory, RunContext};

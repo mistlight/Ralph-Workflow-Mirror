@@ -199,6 +199,16 @@ impl MockEffectHandler {
                 vec![],
             )),
 
+            Effect::WriteTimeoutContext {
+                role,
+                logfile_path,
+                context_path,
+            } => Some((
+                PipelineEvent::agent_timeout_context_written(role, logfile_path, context_path),
+                vec![],
+                vec![],
+            )),
+
             Effect::CleanupContinuationContext => Some((
                 PipelineEvent::development_continuation_context_cleaned(),
                 vec![],
