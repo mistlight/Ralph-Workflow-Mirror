@@ -14,7 +14,7 @@
 /// # Arguments
 ///
 /// * `plan_content` - The implementation plan (PLAN.md content)
-/// * `diff_content` - The git diff since pipeline start (may be empty)
+/// * `diff_content` - The git diff since HEAD (working-tree vs. last commit; may be empty)
 /// * `workspace` - Workspace for resolving absolute paths
 ///
 /// # Returns
