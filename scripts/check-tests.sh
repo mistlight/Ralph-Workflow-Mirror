@@ -78,7 +78,7 @@ for file in $STAGED_TEST_FILES; do
     if git diff --cached "$file" | grep "^\+" | grep -v "^+\s*//" | grep -q "#\[serial\]\|use serial_test"; then
         echo "❌ $file: Uses #[serial] - this is BANNED in integration tests"
         echo "   Fix: use dependency injection (env-injection pattern) to eliminate global state coupling"
-        echo "   See tests/INTEGRATION_TESTS.md for the env-injection pattern"
+        echo "   See docs/agents/testing-guide.md for the env-injection pattern"
         ERROR_COUNT=$((ERROR_COUNT + 1))
     fi
 
@@ -86,7 +86,7 @@ for file in $STAGED_TEST_FILES; do
     if git diff --cached "$file" | grep "^\+" | grep -v "^+\s*//" | grep -q "env::set_var\|env::remove_var"; then
         echo "❌ $file: Uses env::set_var/remove_var - use env-injection pattern instead"
         echo "   Direct env mutation races with parallel tests."
-        echo "   See tests/INTEGRATION_TESTS.md 'Env-Injection Pattern'"
+        echo "   See docs/agents/testing-guide.md 'Env-Injection Pattern'"
         ERROR_COUNT=$((ERROR_COUNT + 1))
     fi
 
@@ -103,7 +103,7 @@ echo ""
 if [ $ERROR_COUNT -gt 0 ]; then
     echo "❌ Found $ERROR_COUNT test anti-pattern(s)"
     echo ""
-    echo "Integration tests must follow guidelines in tests/INTEGRATION_TESTS.md"
+    echo "Integration tests must follow guidelines in docs/agents/testing-guide.md"
     echo "Run 'bash scripts/audit_tests.sh' for full audit"
     exit 1
 else

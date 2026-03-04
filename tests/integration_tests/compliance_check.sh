@@ -163,7 +163,7 @@ if [ -n "$PROCESS_SPAWN_VIOLATIONS" ]; then
     echo -e "${YELLOW}Process spawning is FORBIDDEN in integration tests.${NC}"
     echo "Use git2 library or MockGit/GitOps trait instead."
     echo "For CLI testing, use run_ralph_cli() which calls app::run() directly."
-    echo "See tests/INTEGRATION_TESTS.md 'Rule 1.5: NO Process Spawning'"
+    echo "See docs/agents/testing-guide.md 'Common Anti-Patterns' section"
     exit 1
 else
     log -e "${GREEN}No process spawning violations found${NC}"
@@ -198,7 +198,7 @@ if [ -n "$SERIAL_VIOLATIONS" ]; then
     echo "  AFTER:  fn from_env_fn(get: impl Fn(&str) -> Option<String>) -> Self { /* injectable */ }"
     echo "          fn from_env() -> Self { Self::from_env_fn(|k| std::env::var(k).ok()) }"
     echo
-    echo "See tests/INTEGRATION_TESTS.md 'Parallelism and Performance' and 'Env-Injection Pattern'"
+    echo "See docs/agents/testing-guide.md 'Parallelism Rules' and 'Env-Injection Pattern' sections"
     exit 1
 else
     log -e "${GREEN}No #[serial] usage in integration tests${NC}"

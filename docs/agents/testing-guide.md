@@ -245,3 +245,75 @@ See `docs/agents/verification.md` for the complete pre-PR command list.
 - No `#[serial]` in `process_system_tests/`
 - No `git2::` imports in `process_system_tests/`
 - No `#[ignore]` without a `https://` issue URL
+
+---
+
+## TDD Discipline
+
+**Write the failing test first.** No production code without a red test.
+
+1. **Red** — write a test that describes the new behavior and watch it fail.
+2. **Green** — implement the minimal production change to make the test pass.
+3. **Refactor** — clean up duplication and structure, keeping tests green.
+
+```rust
+// Step 1 (Red): write test first — it will not compile / will fail
+#[test]
+fn test_pipeline_rejects_empty_agent_chain() {
+    let state = PipelineState::initial_with_agents(vec![]);
+    let result = reduce(state, PipelineEvent::start());
+    assert_eq!(result.phase, PipelinePhase::Failure);
+}
+
+// Step 2 (Green): add the minimal production logic
+// Step 3 (Refactor): simplify / extract helpers
+```
+
+If a behavior is hard to test first, that is a design signal: simplify coupling, add a seam, or separate I/O from decision logic.
+
+---
+
+## Architecture Driven by Tests
+
+Tests are first-class architecture components. When a test is hard to write, simplify the production design — do not add brittle workarounds.
+
+### Ralph's testable architecture
+
+| Layer | What lives here | How to test |
+|-------|----------------|-------------|
+| Pure reducers (`reducer/`) | All decision logic, phase transitions, counters | Unit-test with value-type inputs and outputs — no mocks needed |
+| Effect handlers (`app/`, `effects/`) | I/O, process spawning, filesystem writes | Integration-test with `MemoryWorkspace` + `MockProcessExecutor` |
+| OS / libgit2 | Real git operations | System-test only (serial binary) |
+
+### Principles
+
+- **Separate decision from I/O.** Keep reducers pure; keep side effects in handlers.
+- **Depend on interfaces, not implementations.** Use `Workspace`, `ProcessExecutor`, and `AppEffectHandler` traits so collaborators can be replaced in tests.
+- **Keep boundaries explicit.** Each seam (`AppEffect` before repo root is known, `Effect` after) can be validated independently.
+- **Treat untestable code as a design defect.** If you must add a `cfg!(test)` branch, a skip flag, or a test-only boolean parameter, refactor the production code instead.
+- **Use test failures as design feedback.** A test that requires elaborate setup usually means the unit under test has too many responsibilities.
+
+---
+
+## Definition of Done for Testing
+
+A change is complete only when **all** of the following hold:
+
+- [ ] New behavior is covered by a test that was **red before** the production change.
+- [ ] Existing behavior regressions are prevented by focused, targeted tests.
+- [ ] All tests pass in **parallel mode** (no new `#[serial]` outside `git2-system-tests`).
+- [ ] No new flaky tests introduced; quarantined tests include issue URLs.
+- [ ] Test names describe observable behavior, not implementation details.
+- [ ] AAA structure is clear; setup does not exceed ~10 lines without a named helper.
+- [ ] Required refactors for testability are done; no `cfg!(test)`, skip flags, or test-mode booleans remain.
+- [ ] `bash scripts/audit_tests.sh` and all verification commands in `docs/agents/verification.md` produce **no output**.
+
+---
+
+## Documentation Quality
+
+- **Single source of truth:** all test strategy lives in `docs/agents/testing-guide.md`. Other files (`tests/INTEGRATION_TESTS.md`, `docs/agents/integration-tests.md`) are redirect stubs.
+- **Update docs in the same commit** as the behavior or architecture change.
+- **Keep examples runnable.** Remove stale patterns immediately when the production API changes.
+- **Prefer concise, decision-oriented wording.** Contributors should be able to find the rule they need in under a minute.
+- **Every `#[ignore]` requires an issue URL** (enforced by `scripts/audit_tests.sh`).

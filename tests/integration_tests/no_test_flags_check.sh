@@ -19,7 +19,7 @@
 # This script validates that production code does NOT contain test-only
 # conditional logic that violates the integration test style guide.
 #
-# See INTEGRATION_TESTS.md "Rule 2: No Test-Only Flags in Production Code"
+# See docs/agents/testing-guide.md "Common Anti-Patterns" section
 #
 # Forbidden patterns in production code:
 #   1. cfg!(test) - Runtime test detection branches
@@ -208,7 +208,7 @@ if [ -s "$TEMP_VIOLATIONS" ]; then
     done < "$TEMP_VIOLATIONS"
     echo
     echo -e "${YELLOW}To fix: Use dependency injection instead of test flags.${NC}"
-    echo "See tests/INTEGRATION_TESTS.md \"Rule 2: No Test-Only Flags in Production Code\""
+    echo "See docs/agents/testing-guide.md \"Common Anti-Patterns\" section"
     echo
     echo "Examples of proper patterns:"
     echo "  - Accept trait objects for external dependencies"
