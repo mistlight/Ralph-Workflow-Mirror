@@ -215,3 +215,125 @@ fn test_invoke_analysis_agent_uses_repo_root_for_diff_not_start_commit_baseline(
         "expected diff generation to succeed; got: {prompt}"
     );
 }
+
+#[test]
+fn test_invoke_analysis_agent_uses_head_baseline_not_start_commit() {
+    // TDD regression: invoke_analysis_agent must generate its diff from HEAD
+    // (working-tree vs last commit), NOT from .agent/start_commit (pipeline-start baseline).
+    //
+    // Proof strategy (A/B/C):
+    //   Commit A: initial commit (baseline)
+    //   Commit B: committed change (already in history — must NOT appear in analysis diff)
+    //   Change C: uncommitted modification with unique marker (MUST appear in analysis diff)
+    //
+    // If HEAD baseline is used: diff shows only C. ✓
+    // If start_commit baseline is used: diff shows both B and C. ✗
+    //
+    // IMPORTANT: Use an isolated tempdir repo; never mutate process CWD (test parallelism).
+    use std::path::Path;
+
+    let repo_dir = tempfile::TempDir::new().expect("create temp git repo");
+    let repo = git2::Repository::init(repo_dir.path()).expect("init git repo");
+    let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+
+    // Commit A: create two tracked files.
+    // file_committed: will hold the "already committed" change (commit B).
+    // file_working:   will hold the uncommitted working-tree change (C).
+    let file_committed = "analysis_committed_change.txt";
+    let file_working = "analysis_working_change.txt";
+    let abs_committed = repo_dir.path().join(file_committed);
+    let abs_working = repo_dir.path().join(file_working);
+    std::fs::write(&abs_committed, "base content\n").expect("write committed file A");
+    std::fs::write(&abs_working, "base content\n").expect("write working file A");
+    let mut index = repo.index().expect("open index A");
+    index
+        .add_path(Path::new(file_committed))
+        .expect("stage committed file A");
+    index
+        .add_path(Path::new(file_working))
+        .expect("stage working file A");
+    index.write().expect("write index A");
+    let tree_a = repo
+        .find_tree(index.write_tree().expect("write tree A"))
+        .expect("find tree A");
+    repo.commit(Some("HEAD"), &sig, &sig, "commit A: initial", &tree_a, &[])
+        .expect("create commit A");
+
+    // Commit B: modify file_committed — becomes part of history.
+    // HEAD baseline: file_committed has NO working-tree changes (HEAD == workdir for this file).
+    // start_commit baseline: file_committed would show committed_marker as added.
+    let committed_marker = "ANALYSIS_COMMITTED_CHANGE_MUST_NOT_APPEAR_IN_DIFF";
+    std::fs::write(
+        &abs_committed,
+        format!("base content\n{committed_marker}\n"),
+    )
+    .expect("write committed file for commit B");
+    let mut index = repo.index().expect("open index B");
+    index
+        .add_path(Path::new(file_committed))
+        .expect("stage committed file B");
+    index.write().expect("write index B");
+    let tree_b = repo
+        .find_tree(index.write_tree().expect("write tree B"))
+        .expect("find tree B");
+    let parent_a = repo
+        .head()
+        .expect("head after A")
+        .peel_to_commit()
+        .expect("commit A");
+    repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        "commit B: committed change",
+        &tree_b,
+        &[&parent_a],
+    )
+    .expect("create commit B");
+
+    // Change C: modify file_working without staging (MUST appear in HEAD diff).
+    // file_working is tracked (in A) but untouched in B, so HEAD has base content.
+    let uncommitted_marker = "ANALYSIS_UNCOMMITTED_CHANGE_MUST_APPEAR_IN_DIFF";
+    std::fs::write(
+        &abs_working,
+        format!("base content\n{uncommitted_marker}\n"),
+    )
+    .expect("write uncommitted change to working file");
+
+    // Set up fixture with isolated repo root. Workspace has no .agent/start_commit file,
+    // so any start_commit-based code path would either error or use a wrong baseline.
+    let workspace = MemoryWorkspace::new_test()
+        .with_dir(".agent/tmp")
+        .with_file(".agent/PLAN.md", "# Plan\n");
+
+    let mut fixture = TestFixture::with_workspace(workspace);
+    fixture.repo_root = repo_dir.path().to_path_buf();
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        phase: crate::reducer::event::PipelinePhase::Development,
+        iteration: 0,
+        ..PipelineState::initial(1, 0)
+    });
+
+    handler
+        .invoke_analysis_agent(&mut ctx, 0)
+        .expect("invoke_analysis_agent should succeed with isolated repo");
+
+    let calls = fixture.executor.agent_calls();
+    assert_eq!(calls.len(), 1, "expected exactly one agent invocation");
+    let prompt = &calls[0].prompt;
+
+    // C (uncommitted) must appear — proves HEAD diff captures working tree changes.
+    assert!(
+        prompt.contains(uncommitted_marker),
+        "expected uncommitted change marker in analysis prompt; got: {prompt}"
+    );
+
+    // B (committed) must NOT appear — proves HEAD baseline is used, not start_commit.
+    assert!(
+        !prompt.contains(committed_marker),
+        "expected already-committed change to be ABSENT from analysis prompt (HEAD baseline); got: {prompt}"
+    );
+}
