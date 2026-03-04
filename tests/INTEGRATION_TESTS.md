@@ -46,6 +46,42 @@ Concurrent `git2::Repository` drops from multiple threads trigger thread-unsafe 
 resulting in SIGABRT. This is an inherent limitation of the libgit2 C library, not a design problem
 in the tests.
 
+## Quick Reference Checklist
+
+Use this to self-audit any test change before committing.
+
+### Test Design
+- [ ] Asserts externally observable outcomes, not internal calls or private state
+- [ ] Tests through public interfaces only (black-box)
+- [ ] AAA structure: Arrange / Act / Assert — one behavior per test
+- [ ] Deterministic: no hidden time, randomness, or global-state dependency
+- [ ] Parallel-safe: no shared mutable state across tests
+
+### Architecture
+- [ ] Pure logic → unit test with no mocks (reducer, parser, domain functions)
+- [ ] Effect boundaries → integration test with `MemoryWorkspace` + `MockProcessExecutor`
+- [ ] Real I/O (git, filesystem, signals) → system test only
+- [ ] Hard to test? Refactor the implementation — do not add test-only hacks
+
+### Parallelism & Performance
+- [ ] No `#[serial]` — banned everywhere except system tests (libgit2 global state)
+- [ ] No `std::env::set_var` / `remove_var` — use env-injection pattern instead
+- [ ] Integration suite target: < 60 seconds total wall-clock in parallel
+
+### Doubles (see [Integration Tests docs](../docs/agents/integration-tests.md#test-double-taxonomy))
+- [ ] Used the right double: Fake / Stub / Spy / Mock / Dummy
+- [ ] No mock of domain logic — only mock at architectural boundaries
+
+### Flaky Tests
+- [ ] No non-determinism introduced
+- [ ] If genuinely flaky: quarantine with `#[ignore]` + GitHub issue comment before merging
+
+### Documentation
+- [ ] Test name describes observable behavior, not implementation
+- [ ] File stays under 1000 lines; if over, split into modules
+
+---
+
 ## Env-Injection Pattern
 
 When tests need to control environment variables, **never** use `std::env::set_var` /
@@ -109,6 +145,21 @@ fn test_environment_snapshot_filters_sensitive_vars() {
 **Rule:** If your test uses `std::env::set_var`, `std::env::remove_var`, or
 `std::env::var` on mutable global state, it belongs in system tests or needs
 to use the env-injection pattern above.
+
+**`#[serial]` ban applies to src/ unit tests too.** Not just integration tests.
+Use `MemoryConfigEnvironment::with_env_var()` to inject values without touching the real process env:
+
+```rust
+// In unit tests (ralph-workflow/src/...): no #[serial] needed
+#[test]
+fn test_env_override_takes_precedence() {
+    let env = MemoryConfigEnvironment::new()
+        .with_env_var("RALPH_DEVELOPER_ITERS", "42");
+    let mut warnings = Vec::new();
+    let config = apply_env_overrides(default_config(), &mut warnings, &env);
+    assert_eq!(config.developer_iters, 42);
+}
+```
 
 ## Architecture Context
 

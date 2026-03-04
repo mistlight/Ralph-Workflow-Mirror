@@ -71,6 +71,30 @@ else
     echo "No #[serial] in integration tests ✓"
 fi
 
+printf "\n=== Checking for #[serial] in src/ unit tests (BANNED) ===\n"
+# #[serial] is also BANNED in src/ unit tests. Use the env-injection pattern
+# (MemoryConfigEnvironment::with_env_var, or injectable Fn(&str)->Option<String>)
+# instead of serializing tests around process environment mutation.
+# System tests (tests/system_tests/) are excluded: their #[serial] usage is
+# justified by libgit2 global state and documented in SYSTEM_TESTS.md.
+VIOLATIONS=0
+serial_src_violations=$(rg "#\[serial\]" ralph-workflow/src/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$serial_src_violations" ]; then
+    echo "ERROR: #[serial] found in src/ unit tests (use env-injection pattern instead):"
+    echo "$serial_src_violations"
+    VIOLATIONS=$((VIOLATIONS + 1))
+else
+    echo "No #[serial] in src/ unit tests ✓"
+fi
+if [ "$VIOLATIONS" -gt 0 ]; then
+    echo ""
+    echo "Fix: refactor production code to accept injectable env accessor"
+    echo "(MemoryConfigEnvironment::with_env_var or Fn(&str)->Option<String>)"
+    echo "instead of calling std::env::var() directly."
+    exit 1
+fi
+
 printf "\n=== Checking for std::env::set_var/remove_var in integration tests (BANNED) ===\n"
 # Direct env mutation is BANNED in integration tests. It requires #[serial] to avoid
 # races. Fix: refactor production code to accept an injectable env accessor

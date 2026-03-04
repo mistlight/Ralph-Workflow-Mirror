@@ -8,7 +8,29 @@ set -e
 echo "=== Checking for test anti-patterns in staged changes ==="
 echo ""
 
-# Get staged test files
+# Check staged src/ unit test files for #[serial] (also BANNED there)
+STAGED_SRC_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "^ralph-workflow/src/.*\.rs$" || true)
+if [ -n "$STAGED_SRC_FILES" ]; then
+    SRC_SERIAL_COUNT=0
+    for file in $STAGED_SRC_FILES; do
+        if [ ! -f "$file" ]; then
+            continue
+        fi
+        if git diff --cached "$file" | grep "^\+" | grep -v "^+\s*//" | grep -q "#\[serial\]"; then
+            echo "❌ $file: Uses #[serial] in src/ unit tests - this is BANNED"
+            echo "   Fix: use MemoryConfigEnvironment::with_env_var() or an injectable Fn(&str)->Option<String>"
+            echo "   instead of mutating the real process environment."
+            SRC_SERIAL_COUNT=$((SRC_SERIAL_COUNT + 1))
+        fi
+    done
+    if [ "$SRC_SERIAL_COUNT" -gt 0 ]; then
+        echo ""
+        echo "❌ Found $SRC_SERIAL_COUNT #[serial] violation(s) in src/ unit tests"
+        exit 1
+    fi
+fi
+
+# Get staged integration test files
 STAGED_TEST_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "^tests/integration_tests/.*\.rs$" || true)
 
 if [ -z "$STAGED_TEST_FILES" ]; then

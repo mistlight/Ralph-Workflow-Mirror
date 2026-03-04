@@ -436,6 +436,89 @@ assert_eq!(logger.get_logs().len(), 2);  // What's in the logs? No verification!
 
 See `tests/INTEGRATION_TESTS.md` for detailed before/after examples from the actual fixes.
 
+## AAA Structure (Arrange-Act-Assert)
+
+Every test MUST follow Arrange-Act-Assert with a **single behavior focus** per test.
+No test should assert on two distinct features in the same function.
+
+```rust
+// Arrange
+let state = PipelineState::initial(5, 2);
+let event = PipelineEvent::developer_exhausted();
+
+// Act
+let new_state = reduce(state, event);
+
+// Assert
+assert_eq!(new_state.phase, PipelinePhase::Review);
+```
+
+Keep Arrange short. If setup exceeds 10 lines, extract a named builder helper.
+
+---
+
+## Test Double Taxonomy
+
+Use the right double type. Over-mocking domain logic couples tests to implementation.
+
+| Type | When to Use | Codebase Example |
+|------|-------------|-----------------|
+| **Fake** | Lightweight working implementation | `MemoryWorkspace` (real logic, in-memory storage) |
+| **Stub** | Returns canned values, no assertions | `MockProcessExecutor` returning a preconfigured `AgentResult` |
+| **Spy** | Records calls for post-hoc assertion | `TestPrinter` capturing output lines |
+| **Mock** | Pre-programmed with expectations | `MockAppEffectHandler` with expected call sequences |
+| **Dummy** | Placeholder, never used in the path under test | Empty `MemoryWorkspace` when only reducer logic is tested |
+
+**Rule:** Never use a Mock where a Fake suffices.
+Mock only at **architectural boundaries**: filesystem, network, processes, external services.
+Never mock domain logic (reducers, pure functions, data transformations).
+
+---
+
+## Flaky Test Policy
+
+A test is **flaky** if it fails non-deterministically without code changes.
+
+**Flaky tests MUST NOT remain in gating paths.**
+
+Policy:
+1. **Reproduce** — identify the root cause (usually hidden global state or timing dependency).
+2. **Fix** — eliminate the non-determinism (inject state, remove global coupling, use deterministic clocks).
+3. **Quarantine** — if the fix is non-trivial, annotate with `#[ignore]` and a comment citing the GitHub issue number. File the issue before merging.
+4. **Resolve** — the quarantine issue must be resolved within one sprint. Do not let `#[ignore]` accumulate.
+
+Never commit a known-flaky test without quarantine. Never leave a quarantined test open indefinitely.
+
+**Common causes:** `std::env::var` races (→ env-injection pattern), real filesystem (→ `MemoryWorkspace`), real time (→ injectable clock), process-global singletons (→ dependency injection).
+
+---
+
+## Test Pyramid Targets
+
+Follow the test pyramid: fast feedback at the bottom, expensive integration at the top.
+
+```
+         ▲ System tests (tests/system_tests/)
+         │ Real git, real filesystem, real processes
+         │ NOT in CI — run manually only
+         │
+        ███ Integration tests (cargo test -p ralph-workflow-tests)
+        │   MemoryWorkspace + MockProcessExecutor, no real I/O
+        │   Target: < 60 seconds wall-clock in parallel
+        │
+    ████████ Unit tests (cargo test -p ralph-workflow --lib)
+             Pure reducers, domain logic, parsers
+             Target: subsecond per test, total < 10 seconds
+```
+
+If integration tests exceed 60 seconds: profile with `cargo nextest` and split large test modules.
+If a unit test requires > 1 second: extract heavy setup into a shared fixture.
+
+**`#[serial]` is banned at ALL levels** except system tests (libgit2 global state).
+No test should be serialized. If serialization seems necessary, refactor the implementation.
+
+---
+
 ## Compliance Verification
 
 Run `bash scripts/audit_tests.sh` to verify tests follow these guidelines.
