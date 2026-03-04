@@ -50,3 +50,27 @@ fn test_get_git_diff_from_start_returns_result() {
     let result = get_git_diff_from_start();
     assert!(result.is_ok() || result.is_err());
 }
+
+#[test]
+fn test_get_git_diff_from_start_with_workspace_returns_not_found_for_non_git_workspace() {
+    // Arrange: MemoryWorkspace has no real .git file on disk, so the function must
+    // return Err without touching the process CWD git repository.
+    let workspace = crate::workspace::MemoryWorkspace::new_test();
+
+    // Act
+    let result = get_git_diff_from_start_with_workspace(&workspace);
+
+    // Assert: early return with a clear error — not a git2 error about the CWD.
+    assert!(result.is_err(), "expected Err for non-git workspace");
+    let err = result.unwrap_err();
+    assert_eq!(
+        err.kind(),
+        std::io::ErrorKind::NotFound,
+        "expected NotFound error kind"
+    );
+    assert!(
+        err.to_string()
+            .contains("Workspace has no on-disk git repository"),
+        "expected descriptive error message, got: {err}"
+    );
+}

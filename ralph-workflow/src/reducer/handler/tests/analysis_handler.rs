@@ -24,11 +24,9 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
 
     // Validate that the agent was invoked and the prompt has the analysis task structure.
     //
-    // This test is intentionally resilient to environments where a real git repository is
-    // discoverable from the process CWD (e.g., when running unit tests from a checkout).
-    // In those cases, diff generation can succeed even if the in-memory workspace is missing
-    // `.agent/start_commit`, so the prompt will contain an actual diff instead of a
-    // "[DIFF unavailable" placeholder.
+    // MemoryWorkspace has no on-disk .git, so get_git_diff_from_start_with_workspace
+    // returns Err immediately — the diff section always contains the placeholder.
+    // This assertion verifies the graceful fallback without relying on real git state.
     let calls = fixture.executor.agent_calls();
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
@@ -36,10 +34,9 @@ fn test_invoke_analysis_agent_gracefully_handles_missing_plan_and_diff() {
         prompt.contains("Your task is to VERIFY whether the code changes satisfy the PLAN"),
         "expected analysis prompt header in prompt, got: {prompt}"
     );
-    // Validate that the DIFF section contains either a placeholder or an actual diff.
     assert!(
-        prompt.contains("[DIFF unavailable") || prompt.contains("diff --git"),
-        "expected diff placeholder or an actual git diff in prompt, got: {prompt}"
+        prompt.contains("[DIFF unavailable"),
+        "expected diff placeholder in prompt for MemoryWorkspace (no .git on disk), got: {prompt}"
     );
 }
 

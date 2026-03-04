@@ -187,20 +187,6 @@ mod tests {
 
     #[test]
     fn wait_loop_exits_promptly_when_user_interrupt_is_requested() {
-        // RAII guard: ensures the interrupt flag is cleared after the test
-        // so other tests in the same process are not affected.
-        struct InterruptGuard;
-        impl Drop for InterruptGuard {
-            fn drop(&mut self) {
-                let _ = crate::interrupt::take_user_interrupt_request();
-            }
-        }
-
-        // Set the interrupt flag BEFORE calling wait_for_completion_and_collect_stderr.
-        // A running child process that never exits should NOT block the wait loop.
-        crate::interrupt::request_user_interrupt();
-        let _guard = InterruptGuard;
-
         let (child, controller) = MockAgentChild::new_running(0);
         let child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>> =
             Arc::new(std::sync::Mutex::new(Box::new(child)));
@@ -227,6 +213,11 @@ mod tests {
             workspace_arc: std::sync::Arc::new(workspace.clone()),
         };
 
+        // Set the interrupt flag immediately before calling the function under test,
+        // and clear it immediately after. Holding the flag only for the duration of
+        // wait_for_completion_and_collect_stderr minimises the interference window for
+        // parallel tests whose production watcher also checks the global flag.
+        crate::interrupt::request_user_interrupt();
         let start = Instant::now();
         let result = wait_for_completion_and_collect_stderr(
             &child_arc,
@@ -235,6 +226,8 @@ mod tests {
             &runtime,
         );
         let elapsed = start.elapsed();
+        // Clear the interrupt flag as soon as the function returns.
+        let _ = crate::interrupt::take_user_interrupt_request();
 
         // Clean up the child so it doesn't leak.
         controller.store(false, Ordering::Release);
@@ -263,6 +256,17 @@ mod tests {
         let mut stderr_join_handle: Option<std::thread::JoinHandle<io::Result<String>>> = None;
         let mut monitor_handle: Option<std::thread::JoinHandle<MonitorResult>> =
             Some(std::thread::spawn(|| panic!("monitor blew up")));
+
+        // Wait for the panicking thread to become finished so the wait loop's
+        // monitor-check fires on the first iteration, before the interrupt-check.
+        // This prevents interference from parallel tests that hold the global
+        // interrupt flag (which would cause the interrupt branch to fire instead).
+        while !monitor_handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished)
+        {
+            std::thread::yield_now();
+        }
 
         let workspace = MemoryWorkspace::new_test();
         let logger = Logger::new(Colors::new());
