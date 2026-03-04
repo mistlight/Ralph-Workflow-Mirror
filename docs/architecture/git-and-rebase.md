@@ -16,7 +16,7 @@ Ralph tracks a few baselines to keep prompts and reviews scoped:
 
 - **Start commit baseline**: the commit OID at the start of a run.
   - Stored/loaded by: `ralph-workflow/src/git_helpers/start_commit.rs`
-  - Used for: development-iteration diffs and "what did we change overall".
+  - Used for: cumulative diffs for reviewer context (and "what did we change overall").
 
 - **Review baseline**: a baseline per review pass.
   - Stored/loaded by: `ralph-workflow/src/git_helpers/review_baseline.rs`
@@ -24,7 +24,7 @@ Ralph tracks a few baselines to keep prompts and reviews scoped:
 
 Diff helpers:
 
-- `get_git_diff_from_start_with_workspace`: `ralph-workflow/src/git_helpers/repo.rs`
+- `get_git_diff_from_start`: `ralph-workflow/src/git_helpers/repo.rs`
 - `get_git_diff_for_review_with_workspace`: `ralph-workflow/src/git_helpers/repo.rs`
 
 ## Commit Creation

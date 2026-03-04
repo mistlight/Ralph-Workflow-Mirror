@@ -103,7 +103,9 @@ pub fn get_git_diff_for_review_with_workspace(
         load_start_point_with_workspace, save_start_commit_with_workspace, StartPoint,
     };
 
-    // NOTE: See comment in get_git_diff_from_start_with_workspace.
+    // NOTE: We discover the repo from CWD here because the `ReviewBaseline` and `start_commit`
+    // files live in the injected Workspace, but the diff itself must be generated from the real
+    // on-disk git repository.
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     let baseline = load_review_baseline_with_workspace(workspace).unwrap_or(ReviewBaseline::NotSet);

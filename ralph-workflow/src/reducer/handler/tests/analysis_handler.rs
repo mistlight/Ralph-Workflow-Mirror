@@ -142,43 +142,47 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
 
 #[test]
 fn test_invoke_analysis_agent_uses_repo_root_for_diff_not_start_commit_baseline() {
-    // TDD regression: analysis should use ctx.repo_root (HEAD-based diff via
-    // git_diff_in_repo) instead of get_git_diff_from_start_with_workspace
-    // (start_commit baseline). The start_commit baseline includes already-committed
-    // changes from prior iterations, so it is wrong for analysis context.
+    // TDD regression: analysis must generate its diff from `ctx.repo_root` via
+    // `git_diff_in_repo`, not via workspace-based `.agent/start_commit` baseline logic.
     //
-    // Setup: MemoryWorkspace has no .git, so workspace-based discovery fails.
-    //        repo_root is pointed at CARGO_MANIFEST_DIR (a real git repo).
-    //        CWD is moved to temp dir so CWD-based git discovery also fails.
+    // This test is deterministic: it creates an isolated on-disk git repo with a
+    // known working-tree change, then asserts that the analysis prompt contains a
+    // diff for that repo (including a unique marker).
     //
-    // Before fix: get_git_diff_from_start_with_workspace uses workspace -> returns
-    //             Err (no .git in MemoryWorkspace) -> prompt contains "[DIFF unavailable".
-    // After fix:  git_diff_in_repo(ctx.repo_root) uses the real git repo at
-    //             CARGO_MANIFEST_DIR -> succeeds -> prompt contains "diff --git".
-    use std::path::PathBuf;
+    // IMPORTANT: Avoid mutating the process CWD here. CWD is process-global and Rust
+    // tests run in parallel by default.
+    use std::path::Path;
 
-    struct RestoreCwd {
-        original: PathBuf,
-    }
-    impl Drop for RestoreCwd {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.original);
-        }
-    }
+    let repo_dir = tempfile::TempDir::new().expect("create temp git repo");
+    let repo = git2::Repository::init(repo_dir.path()).expect("init git repo");
+
+    // Create an initial commit so the diff baseline is HEAD.
+    let marker_file = "ralph_test_repo_root_diff_marker.txt";
+    let marker_abs = repo_dir.path().join(marker_file);
+    std::fs::write(&marker_abs, "initial\n").expect("write marker file");
+
+    let mut index = repo.index().expect("open index");
+    index
+        .add_path(Path::new(marker_file))
+        .expect("add marker file");
+    index.write().expect("write index");
+    let tree_oid = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_oid).expect("find tree");
+    let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+    repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+        .expect("create initial commit");
+
+    // Modify the tracked file to create a deterministic patch.
+    let unique_marker = "UNIQUE_REPO_ROOT_MARKER";
+    std::fs::write(&marker_abs, format!("initial\nmodified\n{unique_marker}\n"))
+        .expect("modify marker file");
 
     let workspace = MemoryWorkspace::new_test()
         .with_dir(".agent/tmp")
         .with_file(".agent/PLAN.md", "# Plan\n");
 
     let mut fixture = TestFixture::with_workspace(workspace);
-    // Point repo_root at the real crate root (a valid git repository).
-    fixture.repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-
-    let _restore = RestoreCwd {
-        original: std::env::current_dir().unwrap(),
-    };
-    // Move CWD away so any accidental CWD-based git discovery fails.
-    std::env::set_current_dir(std::env::temp_dir()).unwrap();
+    fixture.repo_root = repo_dir.path().to_path_buf();
 
     let mut ctx = fixture.ctx();
     ctx.developer_agent = "claude";
@@ -197,13 +201,17 @@ fn test_invoke_analysis_agent_uses_repo_root_for_diff_not_start_commit_baseline(
     assert_eq!(calls.len(), 1);
     let prompt = &calls[0].prompt;
 
-    // The key assertion: when repo_root is a real git repo, the analysis handler
-    // must produce an actual diff (not "[DIFF unavailable"), proving it uses
-    // git_diff_in_repo(ctx.repo_root) rather than the workspace-based start_commit path.
+    // The key assertion: the prompt must include a patch for the repo at repo_root.
     assert!(
-        prompt.contains("diff --git"),
-        "expected actual git diff in analysis prompt when repo_root is a real git repo \
-         (the handler must use git_diff_in_repo(ctx.repo_root), not the start_commit baseline); \
-         got: {prompt}"
+        prompt.contains("diff --git a/ralph_test_repo_root_diff_marker.txt b/ralph_test_repo_root_diff_marker.txt"),
+        "expected analysis prompt to include diff for marker file from ctx.repo_root; got: {prompt}"
+    );
+    assert!(
+        prompt.contains(unique_marker),
+        "expected analysis prompt to include unique marker from ctx.repo_root diff; got: {prompt}"
+    );
+    assert!(
+        !prompt.contains("[DIFF unavailable"),
+        "expected diff generation to succeed; got: {prompt}"
     );
 }
