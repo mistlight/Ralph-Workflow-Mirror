@@ -9,6 +9,88 @@
 - NEVER use `cfg!(test)` branches or test-only flags in production code
 - When tests fail, fix implementation (unless expected behavior changed)
 
+## Parallelization Principle
+
+Integration tests **must run in parallel**. `#[serial]` in integration tests is a design smell:
+it means the test or production code couples to global mutable state (process env vars, real
+filesystem, singletons). The correct fix is **dependency injection**, not test serialization.
+
+- **`#[serial]` is BANNED in integration tests.** Violations indicate a code design problem.
+- If you need `#[serial]`, your test belongs in `tests/system_tests/` (real I/O side effects).
+- A test that cannot run in parallel means production code is not testable — fix the design.
+
+**`#[serial]` is allowed ONLY in system tests** (due to libgit2 global state limitations).
+
+## Env-Injection Pattern
+
+The most common cause of `#[serial]` in integration and unit tests is production code that calls
+`std::env::var` directly instead of accepting an injectable env accessor. Fix this at the source:
+
+**BEFORE — couples test to global process environment, requires `#[serial]`:**
+```rust
+#[test]
+#[serial]
+fn test_cloud_disabled_by_default() {
+    std::env::remove_var("RALPH_CLOUD_MODE");
+    let cfg = CloudConfig::from_env();
+    assert!(!cfg.enabled);
+    // Race window if another parallel test sets RALPH_CLOUD_MODE=true
+}
+```
+
+**AFTER — fully isolated, no global state, no `#[serial]` needed:**
+```rust
+#[test]
+fn test_cloud_disabled_by_default() {
+    let cfg = CloudConfig::from_env_fn(|_| None);
+    assert!(!cfg.enabled);
+}
+```
+
+**AFTER — testing with specific values:**
+```rust
+#[test]
+fn test_cloud_enabled_with_full_env() {
+    let env = [
+        ("RALPH_CLOUD_MODE", "true"),
+        ("RALPH_CLOUD_API_URL", "https://api.example.com"),
+        ("RALPH_CLOUD_API_TOKEN", "tok-abc"),
+        ("RALPH_CLOUD_RUN_ID", "run-42"),
+    ];
+    let cfg = CloudConfig::from_env_fn(|k| {
+        env.iter().find(|(key, _)| *key == k).map(|(_, v)| (*v).to_string())
+    });
+    assert!(cfg.enabled);
+    assert_eq!(cfg.api_url.as_deref(), Some("https://api.example.com"));
+}
+```
+
+**For `EnvironmentSnapshot`, use `from_env_vars` instead of `capture_current` in tests:**
+```rust
+#[test]
+fn test_environment_snapshot_filters_sensitive_vars() {
+    let vars = vec![
+        ("RALPH_API_TOKEN".to_string(), "secret".to_string()),
+        ("RALPH_NORMAL_VAR".to_string(), "visible".to_string()),
+    ];
+    let snapshot = EnvironmentSnapshot::from_env_vars(vars);
+    assert!(snapshot.ralph_vars.get("RALPH_API_TOKEN").is_none());
+    assert_eq!(snapshot.ralph_vars.get("RALPH_NORMAL_VAR").map(String::as_str), Some("visible"));
+}
+```
+
+**Production code pattern** — always provide both `from_env_fn` (testable) and `from_env` (thin
+wrapper for production callers):
+```rust
+pub fn from_env_fn(get: impl Fn(&str) -> Option<String>) -> Self {
+    // full implementation here
+}
+
+pub fn from_env() -> Self {
+    Self::from_env_fn(|k| std::env::var(k).ok())
+}
+```
+
 ## Common mistakes
 
 - Mocking internal functions (only mock external dependencies)

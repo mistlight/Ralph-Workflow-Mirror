@@ -5,7 +5,6 @@ use std::path::Path;
 use test_helpers::with_temp_cwd;
 
 #[test]
-#[serial]
 fn test_load_config_with_env_from_custom_path() {
     let toml_str = r#"
 [general]
@@ -31,7 +30,6 @@ review_depth = "standard"
 }
 
 #[test]
-#[serial]
 fn test_load_config_with_env_missing_file() {
     let env =
         MemoryConfigEnvironment::new().with_unified_config_path("/test/config/ralph-workflow.toml");
@@ -50,7 +48,6 @@ fn test_load_config_with_env_missing_file() {
 }
 
 #[test]
-#[serial]
 fn test_load_config_with_env_from_default_path() {
     let toml_str = r#"
 [general]
@@ -146,7 +143,6 @@ fn test_unified_config_exists_with_env_returns_true_when_file_exists() {
 }
 
 #[test]
-#[serial]
 fn test_max_dev_continuations_zero_is_valid() {
     let toml_str = r#"
 [general]
@@ -175,7 +171,6 @@ max_dev_continuations = 0
 }
 
 #[test]
-#[serial]
 fn test_max_xsd_retries_zero_is_valid() {
     // max_xsd_retries=0 is valid and means "disable XSD retries" (immediate agent fallback)
     let toml_str = r#"
@@ -205,7 +200,6 @@ max_xsd_retries = 0
 }
 
 #[test]
-#[serial]
 fn test_max_same_agent_retries_zero_is_valid() {
     // max_same_agent_retries=0 is valid and means "disable same-agent retries"
     let toml_str = r#"
@@ -251,7 +245,6 @@ fn test_load_config_returns_defaults_without_file() {
 }
 
 #[test]
-#[serial]
 fn test_load_config_with_local_override() {
     let global_toml = r"
 [general]
@@ -284,7 +277,6 @@ reviewer_reviews = 3
 }
 
 #[test]
-#[serial]
 fn test_load_config_with_explicit_path_does_not_merge_local_override() {
     let explicit_toml = r"
 [general]
@@ -332,7 +324,6 @@ reviewer_reviews = 3
 }
 
 #[test]
-#[serial]
 fn test_load_config_with_explicit_path_ignores_invalid_local_config() {
     let explicit_toml = r"
 [general]
@@ -360,7 +351,6 @@ developer_iters = 6
 }
 
 #[test]
-#[serial]
 fn test_load_config_local_only() {
     let local_toml = r"
 [general]
@@ -383,7 +373,6 @@ developer_iters = 8
 }
 
 #[test]
-#[serial]
 fn test_load_config_global_only_no_local() {
     let global_toml = r"
 [general]
@@ -406,7 +395,6 @@ developer_iters = 7
 }
 
 #[test]
-#[serial]
 fn test_load_config_global_only_partial_agent_chain_uses_built_in_missing_roles() {
     let global_toml = r#"
 [general]
@@ -442,7 +430,6 @@ developer = ["codex"]
 }
 
 #[test]
-#[serial]
 fn test_load_config_global_partial_agent_chain_with_local_config_but_no_local_agent_chain_uses_built_in_missing_roles(
 ) {
     let global_toml = r#"
@@ -558,7 +545,6 @@ fn test_default_config_sets_continuation_limits() {
 /// When the key is missing, `UnifiedConfig` should apply `default_max_dev_continuations()` = 2,
 /// which then gets wrapped in `Some()` when converting to Config.
 #[test]
-#[serial]
 fn test_missing_max_dev_continuations_key_applies_serde_default() {
     // Config file with max_dev_continuations omitted
     let toml_str = r#"

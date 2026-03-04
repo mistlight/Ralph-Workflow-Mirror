@@ -16,19 +16,22 @@ use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::event::{CommitEvent, PipelineEvent};
 use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::PipelineState;
-use serial_test::serial;
 
 use crate::common::IntegrationFixture;
 use crate::test_timeout::with_default_timeout;
 
 #[test]
-#[serial]
 fn test_git_remote_config_ssh_auth() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_GIT_AUTH_METHOD", "ssh");
-        std::env::set_var("RALPH_GIT_SSH_KEY_PATH", "/root/.ssh/id_rsa");
-
-        let config = GitRemoteConfig::from_env();
+        let env = [
+            ("RALPH_GIT_AUTH_METHOD", "ssh"),
+            ("RALPH_GIT_SSH_KEY_PATH", "/root/.ssh/id_rsa"),
+        ];
+        let config = GitRemoteConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         match config.auth_method {
             GitAuthMethod::SshKey { key_path } => {
@@ -40,21 +43,22 @@ fn test_git_remote_config_ssh_auth() {
             }
             _ => panic!("Expected SshKey auth method"),
         }
-
-        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
-        std::env::remove_var("RALPH_GIT_SSH_KEY_PATH");
     });
 }
 
 #[test]
-#[serial]
 fn test_git_remote_config_token_auth() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_GIT_AUTH_METHOD", "token");
-        std::env::set_var("RALPH_GIT_TOKEN", "ghp_test_token_123");
-        std::env::set_var("RALPH_GIT_TOKEN_USERNAME", "oauth2");
-
-        let config = GitRemoteConfig::from_env();
+        let env = [
+            ("RALPH_GIT_AUTH_METHOD", "token"),
+            ("RALPH_GIT_TOKEN", "ghp_test_token_123"),
+            ("RALPH_GIT_TOKEN_USERNAME", "oauth2"),
+        ];
+        let config = GitRemoteConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         match config.auth_method {
             GitAuthMethod::Token { token, username } => {
@@ -63,21 +67,21 @@ fn test_git_remote_config_token_auth() {
             }
             _ => panic!("Expected Token auth method"),
         }
-
-        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
-        std::env::remove_var("RALPH_GIT_TOKEN");
-        std::env::remove_var("RALPH_GIT_TOKEN_USERNAME");
     });
 }
 
 #[test]
-#[serial]
 fn test_git_remote_config_credential_helper() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_GIT_AUTH_METHOD", "credential-helper");
-        std::env::set_var("RALPH_GIT_CREDENTIAL_HELPER", "gcloud");
-
-        let config = GitRemoteConfig::from_env();
+        let env = [
+            ("RALPH_GIT_AUTH_METHOD", "credential-helper"),
+            ("RALPH_GIT_CREDENTIAL_HELPER", "gcloud"),
+        ];
+        let config = GitRemoteConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         match config.auth_method {
             GitAuthMethod::CredentialHelper { helper } => {
@@ -85,23 +89,14 @@ fn test_git_remote_config_credential_helper() {
             }
             _ => panic!("Expected CredentialHelper auth method"),
         }
-
-        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
-        std::env::remove_var("RALPH_GIT_CREDENTIAL_HELPER");
     });
 }
 
 #[test]
-#[serial]
 fn test_git_remote_config_defaults() {
     with_default_timeout(|| {
-        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
-        std::env::remove_var("RALPH_GIT_REMOTE");
-        std::env::remove_var("RALPH_GIT_PUSH_BRANCH");
-        std::env::remove_var("RALPH_GIT_CREATE_PR");
-        std::env::remove_var("RALPH_GIT_FORCE_PUSH");
-
-        let config = GitRemoteConfig::from_env();
+        // Empty env — verify defaults
+        let config = GitRemoteConfig::from_env_fn(|_| None);
 
         assert_eq!(
             config.remote_name, "origin",
@@ -123,14 +118,18 @@ fn test_git_remote_config_defaults() {
 }
 
 #[test]
-#[serial]
 fn test_git_remote_config_pr_creation() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_GIT_CREATE_PR", "true");
-        std::env::set_var("RALPH_GIT_PR_BASE_BRANCH", "main");
-        std::env::set_var("RALPH_GIT_PR_TITLE", "Ralph changes for {run_id}");
-
-        let config = GitRemoteConfig::from_env();
+        let env = [
+            ("RALPH_GIT_CREATE_PR", "true"),
+            ("RALPH_GIT_PR_BASE_BRANCH", "main"),
+            ("RALPH_GIT_PR_TITLE", "Ralph changes for {run_id}"),
+        ];
+        let config = GitRemoteConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         assert!(config.create_pr, "PR creation should be enabled");
         assert_eq!(
@@ -143,21 +142,21 @@ fn test_git_remote_config_pr_creation() {
             Some("Ralph changes for {run_id}"),
             "PR title template should be loaded"
         );
-
-        std::env::remove_var("RALPH_GIT_CREATE_PR");
-        std::env::remove_var("RALPH_GIT_PR_BASE_BRANCH");
-        std::env::remove_var("RALPH_GIT_PR_TITLE");
     });
 }
 
 #[test]
-#[serial]
 fn test_git_remote_config_custom_remote() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_GIT_REMOTE", "upstream");
-        std::env::set_var("RALPH_GIT_PUSH_BRANCH", "feature/cloud-changes");
-
-        let config = GitRemoteConfig::from_env();
+        let env = [
+            ("RALPH_GIT_REMOTE", "upstream"),
+            ("RALPH_GIT_PUSH_BRANCH", "feature/cloud-changes"),
+        ];
+        let config = GitRemoteConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         assert_eq!(
             config.remote_name, "upstream",
@@ -168,19 +167,14 @@ fn test_git_remote_config_custom_remote() {
             Some("feature/cloud-changes"),
             "Custom push branch should be loaded"
         );
-
-        std::env::remove_var("RALPH_GIT_REMOTE");
-        std::env::remove_var("RALPH_GIT_PUSH_BRANCH");
     });
 }
 
 #[test]
-#[serial]
 fn test_force_push_disabled_by_default() {
     with_default_timeout(|| {
-        std::env::remove_var("RALPH_GIT_FORCE_PUSH");
-
-        let config = GitRemoteConfig::from_env();
+        // Empty env — force push should be disabled
+        let config = GitRemoteConfig::from_env_fn(|_| None);
 
         assert!(
             !config.force_push,
@@ -190,19 +184,17 @@ fn test_force_push_disabled_by_default() {
 }
 
 #[test]
-#[serial]
 fn test_force_push_can_be_enabled() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_GIT_FORCE_PUSH", "true");
-
-        let config = GitRemoteConfig::from_env();
+        let config = GitRemoteConfig::from_env_fn(|k| match k {
+            "RALPH_GIT_FORCE_PUSH" => Some("true".to_string()),
+            _ => None,
+        });
 
         assert!(
             config.force_push,
             "Force push should be enabled when explicitly set"
         );
-
-        std::env::remove_var("RALPH_GIT_FORCE_PUSH");
     });
 }
 

@@ -348,11 +348,18 @@ pub fn load_config_from_path_with_env(
     };
 
     // Step 4: Convert to Config
-    let config = merged_unified
-        .as_ref()
-        .map_or_else(default_config, |unified_cfg| {
-            config_from_unified(unified_cfg, &mut warnings)
-        });
+    // Build cloud config from the injected env (not the real process env) so that
+    // callers using MemoryConfigEnvironment get a deterministic, isolated cloud config.
+    let cloud = super::types::CloudConfig::from_env_fn(|k| env.get_env_var(k));
+    let config = {
+        let mut cfg = merged_unified
+            .as_ref()
+            .map_or_else(default_config, |unified_cfg| {
+                config_from_unified(unified_cfg, &mut warnings)
+            });
+        cfg.cloud = cloud;
+        cfg
+    };
 
     // Step 5: Apply environment variable overrides
     let config = apply_env_overrides(config, &mut warnings);

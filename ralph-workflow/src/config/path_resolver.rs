@@ -108,6 +108,18 @@ pub trait ConfigEnvironment: Send + Sync {
     fn worktree_root(&self) -> Option<PathBuf> {
         None // Default implementation for backwards compatibility
     }
+
+    /// Get a single environment variable by name.
+    ///
+    /// In production (`RealConfigEnvironment`), reads from the real process environment.
+    /// In tests (`MemoryConfigEnvironment`), returns `None` by default (no env vars set),
+    /// providing complete isolation from the real process environment.
+    ///
+    /// Used to thread env-var access through config loading so production code is
+    /// fully testable without `#[serial]` or global env mutation.
+    fn get_env_var(&self, _key: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Production implementation of [`ConfigEnvironment`].
@@ -121,6 +133,10 @@ pub struct RealConfigEnvironment;
 impl ConfigEnvironment for RealConfigEnvironment {
     fn unified_config_path(&self) -> Option<PathBuf> {
         super::unified::unified_config_path()
+    }
+
+    fn get_env_var(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
     }
 
     fn file_exists(&self, path: &Path) -> bool {

@@ -34,6 +34,10 @@ Integration tests run **in parallel by default** (standard Rust test runner beha
 - If a test needs `#[serial]`, it belongs in system tests (it has real I/O side effects)
 - A test that cannot run in parallel indicates a design problem: extract real I/O to a system test
 
+**`#[serial]` in integration tests is a design smell.** It means the test or the production code
+couples to global mutable state (process env vars, real filesystem, singletons). The correct fix
+is to make the production API accept an injectable env source, not to serialize the tests.
+
 **Performance target:** Integration tests (771+) should complete in under 60 seconds when run in parallel.
 
 **System tests use `#[serial]`:** System tests that use real git2 repositories require
@@ -41,6 +45,70 @@ Integration tests run **in parallel by default** (standard Rust test runner beha
 Concurrent `git2::Repository` drops from multiple threads trigger thread-unsafe concurrent shutdown
 resulting in SIGABRT. This is an inherent limitation of the libgit2 C library, not a design problem
 in the tests.
+
+## Env-Injection Pattern
+
+When tests need to control environment variables, **never** use `std::env::set_var` /
+`std::env::remove_var` with `#[serial]`. Instead, use the injectable env-fn pattern:
+
+**BEFORE — couples test to global process environment, requires `#[serial]`:**
+```rust
+#[test]
+#[serial]
+fn test_cloud_disabled_by_default() {
+    std::env::remove_var("RALPH_CLOUD_MODE");
+    let cfg = CloudConfig::from_env();
+    assert!(!cfg.enabled);
+    // Race window: another test running concurrently could set RALPH_CLOUD_MODE=true
+}
+```
+
+**AFTER — fully isolated, no global state, no `#[serial]` needed:**
+```rust
+#[test]
+fn test_cloud_disabled_by_default() {
+    // Empty env — no vars set — no global state mutation
+    let cfg = CloudConfig::from_env_fn(|_| None);
+    assert!(!cfg.enabled);
+}
+```
+
+**AFTER — testing with specific values:**
+```rust
+#[test]
+fn test_cloud_enabled_with_full_env() {
+    let env = [
+        ("RALPH_CLOUD_MODE", "true"),
+        ("RALPH_CLOUD_API_URL", "https://api.example.com"),
+        ("RALPH_CLOUD_API_TOKEN", "tok-abc"),
+        ("RALPH_CLOUD_RUN_ID", "run-42"),
+    ];
+    let cfg = CloudConfig::from_env_fn(|k| {
+        env.iter().find(|(key, _)| *key == k).map(|(_, v)| (*v).to_string())
+    });
+    assert!(cfg.enabled);
+    assert_eq!(cfg.api_url.as_deref(), Some("https://api.example.com"));
+}
+```
+
+**For `EnvironmentSnapshot`, use `from_env_vars` instead of `capture_current` in tests:**
+```rust
+#[test]
+fn test_environment_snapshot_filters_sensitive_vars() {
+    // Build snapshot from test-local data — no process env mutation
+    let vars = vec![
+        ("RALPH_API_TOKEN".to_string(), "secret".to_string()),
+        ("RALPH_NORMAL_VAR".to_string(), "visible".to_string()),
+    ];
+    let snapshot = EnvironmentSnapshot::from_env_vars(vars);
+    assert!(snapshot.ralph_vars.get("RALPH_API_TOKEN").is_none());
+    assert_eq!(snapshot.ralph_vars.get("RALPH_NORMAL_VAR").map(String::as_str), Some("visible"));
+}
+```
+
+**Rule:** If your test uses `std::env::set_var`, `std::env::remove_var`, or
+`std::env::var` on mutable global state, it belongs in system tests or needs
+to use the env-injection pattern above.
 
 ## Architecture Context
 
