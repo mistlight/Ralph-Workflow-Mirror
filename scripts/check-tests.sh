@@ -52,6 +52,22 @@ for file in $STAGED_TEST_FILES; do
         ERROR_COUNT=$((ERROR_COUNT + 1))
     fi
     
+    # Check for #[serial] in integration tests (BANNED - design smell)
+    if git diff --cached "$file" | grep "^\+" | grep -v "^+\s*//" | grep -q "#\[serial\]\|use serial_test"; then
+        echo "❌ $file: Uses #[serial] - this is BANNED in integration tests"
+        echo "   Fix: use dependency injection (env-injection pattern) to eliminate global state coupling"
+        echo "   See tests/INTEGRATION_TESTS.md for the env-injection pattern"
+        ERROR_COUNT=$((ERROR_COUNT + 1))
+    fi
+
+    # Check for std::env::set_var/remove_var (requires serialization, banned)
+    if git diff --cached "$file" | grep "^\+" | grep -v "^+\s*//" | grep -q "env::set_var\|env::remove_var"; then
+        echo "❌ $file: Uses env::set_var/remove_var - use env-injection pattern instead"
+        echo "   Direct env mutation races with parallel tests."
+        echo "   See tests/INTEGRATION_TESTS.md 'Env-Injection Pattern'"
+        ERROR_COUNT=$((ERROR_COUNT + 1))
+    fi
+
     # Check file size (after commit)
     LINE_COUNT=$(wc -l < "$file" 2>/dev/null || echo 0)
     if [ "$LINE_COUNT" -gt 1000 ]; then

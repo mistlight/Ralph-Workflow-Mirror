@@ -51,6 +51,45 @@ else
     echo "None found ✓"
 fi
 
+printf "\n=== Checking for #[serial] in integration tests (BANNED) ===\n"
+# #[serial] is BANNED in integration tests. It indicates a design problem:
+# the test or production code couples to global mutable state. Fix by using
+# dependency injection (env-injection pattern) instead of serializing tests.
+# See tests/INTEGRATION_TESTS.md for details.
+serial_violations=$(rg "#\[serial\]|use serial_test" tests/integration_tests/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$serial_violations" ]; then
+    echo "ERROR: #[serial] or serial_test detected in integration tests"
+    echo "This is BANNED. #[serial] in integration tests indicates a design problem:"
+    echo "the test or production code couples to global mutable state."
+    echo "Fix: use the env-injection pattern (see tests/INTEGRATION_TESTS.md)"
+    echo "instead of serializing tests."
+    echo "Violations found:"
+    echo "$serial_violations"
+    exit 1
+else
+    echo "No #[serial] in integration tests ✓"
+fi
+
+printf "\n=== Checking for std::env::set_var/remove_var in integration tests (BANNED) ===\n"
+# Direct env mutation is BANNED in integration tests. It requires #[serial] to avoid
+# races. Fix: refactor production code to accept an injectable env accessor
+# (from_env_fn pattern). See tests/INTEGRATION_TESTS.md Env-Injection Pattern.
+env_mutations=$(rg "std::env::set_var|std::env::remove_var|env::set_var|env::remove_var" \
+  tests/integration_tests/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$env_mutations" ]; then
+    echo "ERROR: std::env::set_var/remove_var detected in integration tests"
+    echo "Direct env mutation races with parallel tests and requires #[serial]."
+    echo "Fix: use the env-injection pattern instead of mutating process environment."
+    echo "See tests/INTEGRATION_TESTS.md 'Env-Injection Pattern' section."
+    echo "Violations found:"
+    echo "$env_mutations"
+    exit 1
+else
+    echo "No env mutations in integration tests ✓"
+fi
+
 printf "\n=== Checking for MemoryWorkspace usage (should be present) ===\n"
 workspace_count=$(rg "MemoryWorkspace" tests/integration_tests/ --type rust --count-matches | awk -F: '{sum+=$2} END {print sum}')
 echo "MemoryWorkspace usage count: $workspace_count"
