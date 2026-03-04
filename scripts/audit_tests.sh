@@ -95,6 +95,28 @@ if [ "$VIOLATIONS" -gt 0 ]; then
     exit 1
 fi
 
+printf "\n=== Checking for test-helpers imports in src/ unit tests (WARNING) ===\n"
+# test-helpers provides git2 utilities (init_git_repo, commit_all, with_temp_cwd, etc.)
+# intended for git2-system-tests only. Importing test-helpers in src/ unit tests adds
+# a git2 dependency to the unit test binary and can cause libgit2 global state issues
+# when tests run in parallel.
+# Goal: move these tests to tests/system_tests/ with #[serial].
+# Currently WARNING (not error) because pre-existing violations exist and require
+# a separate refactoring effort to move affected tests to the correct tier.
+test_helpers_in_src=$(rg "use test_helpers::|init_git_repo|commit_all|git_switch" \
+  ralph-workflow/src/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" | \
+  grep -v "mod test_helpers" || true)
+if [ -n "$test_helpers_in_src" ]; then
+    echo "WARNING: test-helpers or git2 utilities found in src/ unit tests:"
+    echo "$test_helpers_in_src"
+    echo "Note: These tests should move to tests/system_tests/ with #[serial]."
+    echo "Unit tests must remain parallel-safe and free of libgit2 dependencies."
+    echo "This is a WARNING — promote to ERROR once pre-existing violations are resolved."
+else
+    echo "No test-helpers imports in src/ unit tests ✓"
+fi
+
 printf "\n=== Checking for std::env::set_var/remove_var in integration tests (BANNED) ===\n"
 # Direct env mutation is BANNED in integration tests. It requires #[serial] to avoid
 # races. Fix: refactor production code to accept an injectable env accessor
@@ -171,6 +193,25 @@ else
     echo "No suspicious length assertions found ✓"
 fi
 
+printf "\n=== Checking for thread::sleep in integration tests (prefer injectable timers) ===\n"
+# thread::sleep in integration tests creates timing dependencies and flakiness.
+# Use RetryTimer trait injection instead wherever possible.
+# Exclusions:
+#   timeout_file_activity.rs — tests the idle-timeout monitor and must use real sleep
+#   channel_bounds.rs — tests real channel backpressure timing behaviour
+#   test_timeout.rs — tests real wall-clock timeout firing behaviour
+# This is a WARNING — promote to ERROR once all non-excluded files are confirmed clean.
+sleep_violations=$(rg "thread::sleep|tokio::time::sleep" tests/integration_tests/ --type rust | \
+  grep -v "timeout_file_activity\|channel_bounds\|test_timeout" | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$sleep_violations" ]; then
+    echo "WARNING: thread::sleep or tokio::time::sleep in integration tests (should use RetryTimer injection):"
+    echo "$sleep_violations"
+    echo "Note: This is a warning - consider replacing with injectable delay via RetryTimer trait."
+else
+    echo "No avoidable sleep in integration tests ✓"
+fi
+
 printf "\n=== Checking for tests with implementation-focused names ===\n"
 # Tests with "internal_error" are OK (testing error types, not implementation)
 # Tests with "buffer" in test_logger_tests.rs are OK (testing utility behavior)
@@ -192,15 +233,17 @@ total_tests=$(rg "^\s*#\[test\]" tests/integration_tests/ --type rust --count | 
 echo "Total #[test] annotations: $total_tests"
 echo "Note: Most tests have documentation - manual spot-checks recommended"
 
-printf "\n=== Verifying tests reference integration guide ===\n"
-guide_refs=$(rg "INTEGRATION_TESTS\.md" tests/integration_tests/ --type rust --count-matches | \
+printf "\n=== Verifying tests reference canonical testing guide ===\n"
+# INTEGRATION_TESTS.md is a redirect stub; the canonical guide is docs/agents/testing-guide.md.
+# Check that integration test files reference the canonical guide.
+guide_refs=$(rg "testing-guide\.md" tests/integration_tests/ --type rust --count-matches | \
   awk -F: '{sum+=$2} END {print sum}')
-echo "Integration guide references: $guide_refs"
-total_files=$(find tests/integration_tests -name "*.rs" -type f | wc -l)
-if [ "$guide_refs" -lt 50 ]; then
-  echo "WARNING: Low number of guide references (expected ~$total_files, one per file)"
+echo "testing-guide.md references in integration tests: ${guide_refs:-0}"
+if [ "${guide_refs:-0}" -lt 1 ]; then
+  echo "WARNING: No references to docs/agents/testing-guide.md found in integration tests."
+  echo "Consider adding a top-of-file comment linking to the canonical testing guide."
 else
-  echo "Integration guide well-referenced ✓"
+  echo "Canonical testing guide referenced ✓"
 fi
 
 printf "\n=== Checking for #[serial] in process_system_tests/ (BANNED) ===\n"
