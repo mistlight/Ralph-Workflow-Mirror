@@ -16,6 +16,7 @@ use test_helpers::{commit_all, with_temp_cwd, write_file};
 
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
+use serial_test::serial;
 
 use super::{get_default_branch_name, init_repo_with_initial_commit};
 
@@ -24,6 +25,7 @@ use super::{get_default_branch_name, init_repo_with_initial_commit};
 /// This verifies that when a pre-rebase hook rejects the rebase operation,
 /// the system can detect and report the rejection properly.
 #[test]
+#[serial]
 fn rebase_detects_pre_rebase_hook_rejection() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -90,6 +92,7 @@ fn rebase_detects_pre_rebase_hook_rejection() {
 /// This verifies that when a pre-commit or commit-msg hook rejects a commit
 /// during the rebase process, the system can detect it properly.
 #[test]
+#[serial]
 fn rebase_detects_commit_hook_rejection_mid_rebase() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};

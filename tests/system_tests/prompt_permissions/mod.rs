@@ -2,11 +2,13 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::workspace::{Workspace, WorkspaceFs, PROMPT_MD};
+use serial_test::serial;
 use std::path::Path;
 use tempfile::TempDir;
 use test_helpers::init_git_repo;
 
 #[test]
+#[serial]
 fn test_prompt_md_permission_toggle() {
     with_default_timeout(|| {
         let temp_dir = TempDir::new().expect("create temp dir");

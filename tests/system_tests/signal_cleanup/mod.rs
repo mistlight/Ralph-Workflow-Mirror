@@ -32,6 +32,7 @@
 #![cfg(unix)]
 
 use crate::test_timeout::{register_timeout_cleanup, with_timeout};
+use serial_test::serial;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -320,6 +321,7 @@ macro_rules! require_ralph_binary {
 /// 5. Wait for process exit
 /// 6. Assert PROMPT.md has write permission
 #[test]
+#[serial]
 fn test_ctrl_c_restores_prompt_md_writable() {
     with_timeout(
         || {
@@ -379,6 +381,7 @@ fn test_ctrl_c_restores_prompt_md_writable() {
 /// 4. Wait for process exit
 /// 5. Assert PROMPT.md has write permission
 #[test]
+#[serial]
 fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
     with_timeout(
         || {
@@ -474,6 +477,7 @@ fn test_ctrl_c_before_lock_restores_prompt_md_writable() {
 /// 6. Wait for process exit
 /// 7. Assert marker does not exist
 #[test]
+#[serial]
 fn test_ctrl_c_removes_no_agent_commit() {
     with_timeout(
         || {
@@ -523,6 +527,7 @@ fn test_ctrl_c_removes_no_agent_commit() {
 /// 6. Wait for process exit
 /// 7. Assert hook content matches original
 #[test]
+#[serial]
 fn test_ctrl_c_restores_git_hooks() {
     with_timeout(
         || {
@@ -581,6 +586,7 @@ fn test_ctrl_c_restores_git_hooks() {
 /// 6. Wait for process exit
 /// 7. Assert hooks don't exist or don't have Ralph marker
 #[test]
+#[serial]
 fn test_ctrl_c_removes_hook_when_no_prior_hook_existed() {
     with_timeout(
         || {
@@ -640,6 +646,7 @@ fn test_ctrl_c_removes_hook_when_no_prior_hook_existed() {
 /// 7. Assert PROMPT.md is writable
 /// 8. Assert marker is cleaned up
 #[test]
+#[serial]
 fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
     with_timeout(
         || {
@@ -699,9 +706,11 @@ fn test_startup_cleanup_restores_prompt_md_from_prior_run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     /// Verify helper functions work correctly.
     #[test]
+    #[serial]
     fn test_set_readonly() {
         let temp_dir = TempDir::new().expect("create temp dir");
         let file_path = temp_dir.path().join("test.txt");
@@ -731,6 +740,7 @@ mod tests {
 
     /// Verify `contains_ralph_marker` detection.
     #[test]
+    #[serial]
     fn test_contains_ralph_marker() {
         let temp_dir = TempDir::new().expect("create temp dir");
 

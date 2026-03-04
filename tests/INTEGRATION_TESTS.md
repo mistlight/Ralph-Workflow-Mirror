@@ -18,6 +18,30 @@ If you see significantly fewer tests (e.g., ~130), you may be running
 system tests instead. Check your command and ensure you're targeting
 `ralph-workflow-tests`.
 
+## Parallelism and Performance
+
+Integration tests run **in parallel by default** (standard Rust test runner behavior).
+
+**Why integration tests can run in parallel:**
+- `MemoryWorkspace` is thread-safe and isolated per test
+- `MockProcessExecutor` is thread-safe and isolated per test
+- No global shared state (no real filesystem, no real git repos, no real processes)
+- Tests are fully deterministic and do not interfere with each other
+
+**What this means for test design:**
+- Do NOT use `#[serial]` in integration tests — it kills performance
+- Do NOT use global mutable state (static `Mutex`, `OnceCell`, etc.) in integration tests
+- If a test needs `#[serial]`, it belongs in system tests (it has real I/O side effects)
+- A test that cannot run in parallel indicates a design problem: extract real I/O to a system test
+
+**Performance target:** Integration tests (771+) should complete in under 60 seconds when run in parallel.
+
+**System tests use `#[serial]`:** System tests that use real git2 repositories require
+`#[serial]` due to libgit2 global reference counting (`git_libgit2_init`/`git_libgit2_shutdown`).
+Concurrent `git2::Repository` drops from multiple threads trigger thread-unsafe concurrent shutdown
+resulting in SIGABRT. This is an inherent limitation of the libgit2 C library, not a design problem
+in the tests.
+
 ## Architecture Context
 
 Ralph uses a **reducer architecture** with two effect layers:

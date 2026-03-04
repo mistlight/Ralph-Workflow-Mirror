@@ -95,6 +95,50 @@ tests/system_tests/
     └── mod.rs
 ```
 
+## Parallelism: Why `#[serial]` Is Required
+
+**All system test functions MUST be annotated with `#[serial]`** from the `serial_test` crate.
+
+**Reason:** System tests create real `git2::Repository` objects. The `git2` crate wraps libgit2,
+a C library that maintains a **global reference counter** via `git_libgit2_init` and
+`git_libgit2_shutdown`. When multiple threads concurrently drop `git2::Repository` objects,
+the global shutdown runs concurrently, which is thread-unsafe and causes **SIGABRT**.
+
+`#[serial]` serializes test execution within the system test binary, preventing concurrent
+`git2::Repository` drops and eliminating the SIGABRT crash.
+
+**This is NOT a design problem** — it is an inherent constraint of the libgit2 C library. All
+system tests that touch real git repositories require `#[serial]`.
+
+**Usage:**
+```rust
+use serial_test::serial;
+
+#[test]
+#[serial]
+fn my_system_test() {
+    // real git2::Repository usage here
+}
+```
+
+For inner modules (`mod tests {}`), also import `serial_test` within the module:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_helper_function() { ... }
+}
+```
+
+The `serial_test` crate is already a dependency in `tests/Cargo.toml`.
+
+**Integration tests do NOT use `#[serial]`:** Integration tests use `MemoryWorkspace` and
+`MockProcessExecutor` which are thread-safe, so they run in parallel for performance.
+
 ## Timeout Requirement
 
 All system tests MUST use `with_default_timeout()` or `with_timeout()` wrapper

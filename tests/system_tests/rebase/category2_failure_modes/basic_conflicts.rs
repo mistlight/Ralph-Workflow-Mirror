@@ -22,6 +22,7 @@ use test_helpers::{commit_all, with_temp_cwd, write_file};
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::RebaseResult;
+use serial_test::serial;
 
 use super::{get_default_branch_name, init_repo_with_initial_commit};
 
@@ -30,6 +31,7 @@ use super::{get_default_branch_name, init_repo_with_initial_commit};
 /// This verifies that when the same file has conflicting changes on both branches,
 /// the system detects the conflict and returns a Conflicts result with affected files.
 #[test]
+#[serial]
 fn rebase_handles_content_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto};
@@ -97,6 +99,7 @@ fn rebase_handles_content_conflicts() {
 /// This verifies that when a patch cannot be cleanly applied during rebase,
 /// the system returns a Conflicts result or Failed result with error details.
 #[test]
+#[serial]
 fn rebase_handles_patch_application_failure() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -172,6 +175,7 @@ fn rebase_handles_patch_application_failure() {
 /// This verifies that when a commit becomes empty after rebase (same changes upstream),
 /// the system skips it with `NoOp` reason or handles it automatically.
 #[test]
+#[serial]
 fn rebase_handles_empty_commits() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -247,6 +251,7 @@ fn rebase_handles_empty_commits() {
 /// This verifies that when the same file is added on both branches with different content,
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_add_add_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto};
@@ -315,6 +320,7 @@ fn rebase_handles_add_add_conflicts() {
 /// This verifies that when a file is modified on one branch and deleted on another,
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_modify_delete_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -388,6 +394,7 @@ fn rebase_handles_modify_delete_conflicts() {
 /// This verifies that when binary files are modified differently on both branches,
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_binary_file_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -464,6 +471,7 @@ fn rebase_handles_binary_file_conflicts() {
 /// This verifies that when a file contains git conflict markers (<<<<<<<, =======, >>>>>>>),
 /// the system can extract and return the marker content.
 #[test]
+#[serial]
 fn rebase_detects_conflict_markers_in_file() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::get_conflict_markers_for_file;
@@ -501,6 +509,7 @@ some code after";
 /// This verifies that when a file has no conflict markers, the system
 /// returns empty content or handles it appropriately.
 #[test]
+#[serial]
 fn rebase_detects_no_conflicts_in_clean_file() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::get_conflict_markers_for_file;
@@ -530,6 +539,7 @@ fn rebase_detects_no_conflicts_in_clean_file() {
 /// This verifies that when --autostash is used and stashed changes conflict on reapply,
 /// the system handles the situation without crashing.
 #[test]
+#[serial]
 fn rebase_handles_autostash_with_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::abort_rebase;

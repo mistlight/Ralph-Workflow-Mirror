@@ -5,6 +5,7 @@ use ralph_workflow::agents::ccs::{
     build_ccs_agent_config, ccs_env_var_debug_summary, resolve_ccs_command,
 };
 use ralph_workflow::config::{CcsAliasConfig, CcsConfig};
+use serial_test::serial;
 use std::sync::Mutex;
 
 // NOTE: Some tests in this file need to temporarily modify process-wide env vars
@@ -83,6 +84,7 @@ fn default_ccs() -> CcsConfig {
 }
 
 #[test]
+#[serial]
 fn test_non_glm_never_bypasses_ccs_wrapper_even_if_env_vars_loaded() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (_claude_path, _path_guard) = install_fake_claude_on_path();
@@ -99,6 +101,7 @@ fn test_non_glm_never_bypasses_ccs_wrapper_even_if_env_vars_loaded() {
 }
 
 #[test]
+#[serial]
 fn test_glm_can_bypass_ccs_wrapper_when_env_vars_loaded() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (claude_path, _path_guard) = install_fake_claude_on_path();
@@ -113,6 +116,7 @@ fn test_glm_can_bypass_ccs_wrapper_when_env_vars_loaded() {
 }
 
 #[test]
+#[serial]
 fn test_build_ccs_agent_config_skips_env_var_loading_for_non_glm() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (_claude_path, _path_guard) = install_fake_claude_on_path();
@@ -150,6 +154,7 @@ fn test_build_ccs_agent_config_skips_env_var_loading_for_non_glm() {
 }
 
 #[test]
+#[serial]
 fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (claude_path, _path_guard) = install_fake_claude_on_path();

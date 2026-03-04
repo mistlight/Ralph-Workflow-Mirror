@@ -21,6 +21,7 @@ use test_helpers::{commit_all, git_commit_all, git_switch_force, with_temp_cwd, 
 
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
+use serial_test::serial;
 
 use super::{get_default_branch_name, init_repo_with_initial_commit};
 
@@ -29,6 +30,7 @@ use super::{get_default_branch_name, init_repo_with_initial_commit};
 /// This verifies that when the same file is renamed to different names on both branches,
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_rename_rename_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -111,6 +113,7 @@ fn rebase_handles_rename_rename_conflicts() {
 /// This verifies that when a path is a file on one branch and a directory on another,
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_directory_file_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -179,6 +182,7 @@ fn rebase_handles_directory_file_conflicts() {
 /// This verifies that when a file is renamed on one branch and deleted on another,
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_rename_delete_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -257,6 +261,7 @@ fn rebase_handles_rename_delete_conflicts() {
 /// This verifies that when a file is converted to a symlink on one branch
 /// and modified on another, the system detects the conflict appropriately.
 #[test]
+#[serial]
 fn rebase_handles_symlink_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -338,6 +343,7 @@ fn rebase_handles_symlink_conflicts() {
 /// This verifies that when files have conflicting line endings (CRLF vs LF),
 /// the system detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_line_ending_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
@@ -421,6 +427,7 @@ fn rebase_handles_line_ending_conflicts() {
 /// This verifies that when files differ only in whitespace, the system
 /// detects the conflict and returns a Conflicts result.
 #[test]
+#[serial]
 fn rebase_handles_whitespace_only_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseResult};
