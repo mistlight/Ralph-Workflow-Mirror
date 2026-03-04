@@ -256,6 +256,11 @@ mod tests {
 
     #[test]
     fn monitor_thread_panic_is_treated_as_timeout_to_avoid_hanging_wait_loop() {
+        // Drain any pre-existing interrupt requests from parallel tests: if another test set
+        // the interrupt flag, the wait loop would short-circuit to UserInterrupted (returning
+        // None for monitor_result) instead of detecting the monitor panic as TimedOut.
+        while crate::interrupt::take_user_interrupt_request() {}
+
         let (child, controller) = MockAgentChild::new_running(0);
         let child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>> =
             Arc::new(std::sync::Mutex::new(Box::new(child)));
