@@ -79,56 +79,6 @@ pub fn get_git_diff_from_start() -> io::Result<String> {
     }
 }
 
-/// Get the git diff from the starting commit (workspace-aware).
-///
-/// This uses `.agent/start_commit` as the baseline and generates a diff between that baseline
-/// and the current state on disk, including staged + unstaged changes and untracked files.
-///
-/// Unlike [`get_git_diff_from_start`], this does not rely on the process CWD.
-///
-/// # Errors
-///
-/// Returns error if the operation fails.
-pub fn get_git_diff_from_start_with_workspace(workspace: &dyn Workspace) -> io::Result<String> {
-    use crate::git_helpers::start_commit::{
-        load_start_point_with_workspace, save_start_commit_with_workspace, StartPoint,
-    };
-
-    // NOTE: We intentionally discover the repository from the process CWD.
-    // The pipeline sets CWD to the repo root early, and many test harnesses use a
-    // mock workspace root that doesn't exist on disk.
-    //
-    // Prefer the *actual* repo root (workdir) when it exists on disk so tests remain
-    // deterministic even when the process CWD happens to be a real git checkout.
-    //
-    // We still fall back to discovering from CWD when `.git` exists there.
-    let repo_root =
-        crate::git_helpers::get_repo_root().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let repo = if workspace.exists(std::path::Path::new(".git")) {
-        git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?
-    } else {
-        git2::Repository::discover(&repo_root).map_err(|e| git2_to_io_error(&e))?
-    };
-
-    if !workspace.exists(std::path::Path::new(".git")) {
-        // If the caller's workspace doesn't correspond to a real on-disk repo root (e.g.
-        // MemoryWorkspace tests), don't attempt to discover/emit a diff from the process CWD.
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Workspace has no on-disk git repository",
-        ));
-    }
-
-    // Ensure a valid start point exists. This is expected to persist across runs, but we also
-    // repair missing/corrupt files opportunistically for robustness.
-    save_start_commit_with_workspace(workspace, &repo)?;
-
-    match load_start_point_with_workspace(workspace, &repo)? {
-        StartPoint::Commit(oid) => git_diff_from_oid(&repo, oid),
-        StartPoint::EmptyRepo => git_diff_from_empty_tree(&repo),
-    }
-}
-
 /// Get the diff content that should be shown to reviewers.
 ///
 /// Baseline selection:
