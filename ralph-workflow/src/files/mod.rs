@@ -52,6 +52,6 @@ pub use io::{
     write_file_atomic_with_workspace,
 };
 
-#[cfg(test)]
-pub use protection::restore_prompt_if_needed;
-pub use protection::{validate_prompt_md, validate_prompt_md_with_workspace};
+pub use protection::{
+    restore_prompt_if_needed, validate_prompt_md, validate_prompt_md_with_workspace,
+};

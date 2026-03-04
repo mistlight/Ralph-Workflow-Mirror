@@ -3,8 +3,6 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::executor::MockProcessExecutor;
-    use std::sync::Arc;
 
     #[test]
     fn test_rebase_result_variants_exist() {
@@ -179,90 +177,4 @@ mod tests {
         assert!(matches!(error, RebaseErrorKind::Unknown { .. }));
     }
 
-    #[test]
-    fn test_rebase_onto_returns_result() {
-        use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
-
-        // Test that rebase_onto returns a Result
-        with_temp_cwd(|dir| {
-            // Initialize a git repo with an initial commit
-            let repo = init_git_repo(dir);
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
-
-            // Use MockProcessExecutor to avoid spawning real processes
-            // The mock will return failure for the nonexistent branch
-            let executor =
-                Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
-            let result = rebase_onto("nonexistent_branch_that_does_not_exist", executor.as_ref());
-            // Should return Ok (either with Failed result or other outcome)
-            assert!(result.is_ok());
-        });
-    }
-
-    #[test]
-    fn test_get_conflicted_files_returns_result() {
-        use test_helpers::{init_git_repo, with_temp_cwd};
-
-        // Test that get_conflicted_files returns a Result
-        with_temp_cwd(|dir| {
-            // Initialize a git repo first
-            let _repo = init_git_repo(dir);
-
-            let result = get_conflicted_files();
-            // Should succeed (returns Vec, not error)
-            assert!(result.is_ok());
-        });
-    }
-
-    #[test]
-    fn test_rebase_in_progress_cli_returns_result() {
-        use test_helpers::{init_git_repo, with_temp_cwd};
-
-        // Test that rebase_in_progress_cli returns a Result
-        with_temp_cwd(|dir| {
-            // Initialize a git repo first
-            let _repo = init_git_repo(dir);
-
-            // Use MockProcessExecutor to avoid spawning real processes
-            let executor =
-                Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
-            let result = rebase_in_progress_cli(executor.as_ref());
-            // Should succeed (returns bool)
-            assert!(result.is_ok());
-        });
-    }
-
-    #[test]
-    fn test_is_dirty_tree_cli_returns_result() {
-        use test_helpers::{init_git_repo, with_temp_cwd};
-
-        // Test that is_dirty_tree_cli returns a Result
-        with_temp_cwd(|dir| {
-            // Initialize a git repo first
-            let _repo = init_git_repo(dir);
-
-            // Use MockProcessExecutor to avoid spawning real processes
-            let executor =
-                Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
-            let result = is_dirty_tree_cli(executor.as_ref());
-            // Should succeed (returns bool)
-            assert!(result.is_ok());
-        });
-    }
-
-    #[test]
-    fn test_cleanup_stale_rebase_state_returns_result() {
-        use test_helpers::{init_git_repo, with_temp_cwd};
-
-        with_temp_cwd(|dir| {
-            // Initialize a git repo first
-            let _repo = init_git_repo(dir);
-
-            // Test that cleanup_stale_rebase_state returns a Result
-            let result = cleanup_stale_rebase_state();
-            // Should succeed even if there's nothing to clean
-            assert!(result.is_ok());
-        });
-    }
 }

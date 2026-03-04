@@ -276,7 +276,8 @@ impl PromptMonitor {
     ///
     /// Uses atomic open to avoid TOCTOU race conditions - opens and reads
     /// the file in one operation rather than checking existence separately.
-    fn restore_from_backup() -> bool {
+    #[must_use]
+    pub fn restore_from_backup() -> bool {
         let backup_paths = [
             Path::new(".agent/PROMPT.md.backup"),
             Path::new(".agent/PROMPT.md.backup.1"),
@@ -526,7 +527,6 @@ impl Drop for PromptMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_helpers::with_temp_cwd;
 
     #[test]
     fn test_is_prompt_md_path_matches_by_file_name() {
@@ -565,76 +565,6 @@ mod tests {
             matches!(tx.try_send(0), Err(std::sync::mpsc::TrySendError::Full(_))),
             "expected bounded queue to apply backpressure when full"
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_restore_from_backup_does_not_follow_prompt_symlink() {
-        use std::os::unix::fs as unix_fs;
-
-        with_temp_cwd(|_dir| {
-            std::fs::create_dir_all(".agent").expect("create .agent dir");
-            std::fs::write(".agent/PROMPT.md.backup", "SAFE\n").expect("write backup");
-
-            // If restore follows symlinks, this victim file gets overwritten.
-            std::fs::write("victim.txt", "SECRET\n").expect("write victim");
-            unix_fs::symlink("victim.txt", "PROMPT.md").expect("create PROMPT.md symlink");
-
-            assert!(std::fs::symlink_metadata("PROMPT.md").is_ok());
-            let before = std::fs::read_to_string("victim.txt").expect("read victim");
-            assert!(before.contains("SECRET"));
-
-            let restored = PromptMonitor::restore_from_backup();
-            assert!(restored, "expected restore to succeed from backup");
-
-            let after = std::fs::read_to_string("victim.txt").expect("read victim");
-            assert_eq!(after, before, "restore must not overwrite symlink target");
-
-            // PROMPT.md should end up as a regular file with backup content.
-            let meta = std::fs::symlink_metadata("PROMPT.md").expect("stat PROMPT.md");
-            assert!(meta.is_file(), "PROMPT.md should be a regular file");
-            let prompt = std::fs::read_to_string("PROMPT.md").expect("read PROMPT.md");
-            assert!(prompt.contains("SAFE"));
-        });
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_restore_from_backup_rejects_symlink_backup_file() {
-        use std::os::unix::fs as unix_fs;
-
-        with_temp_cwd(|_dir| {
-            std::fs::create_dir_all(".agent").expect("create .agent dir");
-            std::fs::write("source.txt", "MALICIOUS\n").expect("write source");
-            unix_fs::symlink("source.txt", ".agent/PROMPT.md.backup")
-                .expect("create backup symlink");
-
-            std::fs::write("PROMPT.md", "ORIGINAL\n").expect("write prompt");
-
-            let restored = PromptMonitor::restore_from_backup();
-            assert!(!restored, "expected restore to skip symlink backups");
-            let prompt = std::fs::read_to_string("PROMPT.md").expect("read PROMPT.md");
-            assert!(prompt.contains("ORIGINAL"));
-        });
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_restore_from_backup_rejects_hardlinked_backup_file() {
-        with_temp_cwd(|_dir| {
-            std::fs::create_dir_all(".agent").expect("create .agent dir");
-            std::fs::write("victim.txt", "SECRET\n").expect("write victim");
-            std::fs::hard_link("victim.txt", ".agent/PROMPT.md.backup")
-                .expect("create hardlink backup");
-
-            let restored = PromptMonitor::restore_from_backup();
-            assert!(!restored, "expected restore to skip hardlinked backups");
-
-            assert!(
-                !Path::new("PROMPT.md").exists(),
-                "PROMPT.md should not be created"
-            );
-        });
     }
 
     #[test]

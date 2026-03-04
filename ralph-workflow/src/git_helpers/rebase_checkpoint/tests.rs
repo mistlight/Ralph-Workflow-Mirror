@@ -1,7 +1,7 @@
 // Tests for rebase checkpoint functionality.
 //
-// Contains unit tests for checkpoint types, persistence operations,
-// and workspace-aware variants.
+// Contains pure unit tests for checkpoint types and workspace-aware variants.
+// Tests requiring CWD-relative filesystem I/O are in tests/system_tests/rebase_checkpoint/.
 
 #[cfg(test)]
 mod tests {
@@ -120,65 +120,6 @@ mod tests {
     }
 
     #[test]
-    fn test_save_load_rebase_checkpoint() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            let checkpoint = RebaseCheckpoint::new("main".to_string())
-                .with_phase(RebasePhase::ConflictDetected)
-                .with_conflicted_file("file1.rs".to_string())
-                .with_conflicted_file("file2.rs".to_string());
-
-            save_rebase_checkpoint(&checkpoint).unwrap();
-            assert!(rebase_checkpoint_exists());
-
-            let loaded = load_rebase_checkpoint()
-                .unwrap()
-                .expect("checkpoint should exist after save");
-            assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
-            assert_eq!(loaded.upstream_branch, "main");
-            assert_eq!(
-                loaded.conflicted_files.len(),
-                2,
-                "Should have two conflicted files"
-            );
-            assert!(
-                loaded.conflicted_files.contains(&"file1.rs".to_string()),
-                "Should contain file1.rs"
-            );
-            assert!(
-                loaded.conflicted_files.contains(&"file2.rs".to_string()),
-                "Should contain file2.rs"
-            );
-        });
-    }
-
-    #[test]
-    fn test_clear_rebase_checkpoint() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            let checkpoint = RebaseCheckpoint::new("main".to_string());
-            save_rebase_checkpoint(&checkpoint).unwrap();
-            assert!(rebase_checkpoint_exists());
-
-            clear_rebase_checkpoint().unwrap();
-            assert!(!rebase_checkpoint_exists());
-        });
-    }
-
-    #[test]
-    fn test_load_nonexistent_rebase_checkpoint() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            let result = load_rebase_checkpoint().unwrap();
-            assert!(result.is_none());
-            assert!(!rebase_checkpoint_exists());
-        });
-    }
-
-    #[test]
     fn test_rebase_checkpoint_serialization() {
         let checkpoint = RebaseCheckpoint::new("feature-branch".to_string())
             .with_phase(RebasePhase::ConflictResolutionInProgress)
@@ -193,44 +134,6 @@ mod tests {
         let deserialized: RebaseCheckpoint = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.phase, checkpoint.phase);
         assert_eq!(deserialized.upstream_branch, checkpoint.upstream_branch);
-    }
-
-    #[test]
-    fn test_atomic_checkpoint_write() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Create a checkpoint
-            let checkpoint1 =
-                RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseInProgress);
-
-            save_rebase_checkpoint(&checkpoint1).unwrap();
-
-            // Verify it was written
-            assert!(rebase_checkpoint_exists());
-
-            // Overwrite with a new checkpoint
-            let checkpoint2 = RebaseCheckpoint::new("main".to_string())
-                .with_phase(RebasePhase::RebaseComplete)
-                .with_conflicted_file("test.rs".to_string());
-
-            save_rebase_checkpoint(&checkpoint2).unwrap();
-
-            // Load and verify the new state
-            let loaded = load_rebase_checkpoint()
-                .unwrap()
-                .expect("checkpoint should exist");
-            assert_eq!(loaded.phase, RebasePhase::RebaseComplete);
-            assert_eq!(
-                loaded.conflicted_files.len(),
-                1,
-                "Should have one conflicted file"
-            );
-            assert!(
-                loaded.conflicted_files.contains(&"test.rs".to_string()),
-                "Should contain test.rs"
-            );
-        });
     }
 
     #[test]
@@ -270,120 +173,6 @@ mod tests {
 
         // Resolved file not in conflicted list should fail validation
         assert!(validate_checkpoint(&checkpoint).is_err());
-    }
-
-    #[test]
-    fn test_checkpoint_backup_and_restore() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Create and save a checkpoint
-            let checkpoint1 = RebaseCheckpoint::new("main".to_string())
-                .with_phase(RebasePhase::ConflictDetected)
-                .with_conflicted_file("file.rs".to_string());
-
-            save_rebase_checkpoint(&checkpoint1).unwrap();
-
-            // Verify checkpoint and backup exist
-            let checkpoint_path = rebase_checkpoint_path();
-            let backup_path = rebase_checkpoint_backup_path();
-            assert!(Path::new(&checkpoint_path).exists());
-            assert!(Path::new(&backup_path).exists());
-
-            // Corrupt the main checkpoint
-            fs::write(&checkpoint_path, "corrupted data {{{").unwrap();
-
-            // Loading should restore from backup
-            let loaded = load_rebase_checkpoint()
-                .unwrap()
-                .expect("should restore from backup");
-
-            assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
-            assert_eq!(
-                loaded.conflicted_files.len(),
-                1,
-                "Should have one conflicted file"
-            );
-            assert!(
-                loaded.conflicted_files.contains(&"file.rs".to_string()),
-                "Should contain file.rs"
-            );
-        });
-    }
-
-    #[test]
-    fn test_checkpoint_save_creates_backup() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Create initial checkpoint
-            let checkpoint1 =
-                RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseInProgress);
-            save_rebase_checkpoint(&checkpoint1).unwrap();
-
-            // Save another checkpoint (should create backup)
-            let checkpoint2 =
-                RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseComplete);
-            save_rebase_checkpoint(&checkpoint2).unwrap();
-
-            // Backup should exist
-            let backup_path = rebase_checkpoint_backup_path();
-            assert!(Path::new(&backup_path).exists());
-
-            // Verify backup has old data
-            let backup_content = fs::read_to_string(&backup_path).unwrap();
-            let backup_checkpoint: RebaseCheckpoint =
-                serde_json::from_str(&backup_content).unwrap();
-            assert_eq!(backup_checkpoint.phase, RebasePhase::RebaseInProgress);
-        });
-    }
-
-    #[test]
-    fn test_checkpoint_validation_failure_triggers_restore() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Create and save a valid checkpoint
-            let checkpoint1 = RebaseCheckpoint::new("main".to_string())
-                .with_phase(RebasePhase::RebaseInProgress)
-                .with_conflicted_file("file.rs".to_string());
-
-            save_rebase_checkpoint(&checkpoint1).unwrap();
-
-            // Manually corrupt the checkpoint with invalid JSON but valid structure
-            let checkpoint_path = rebase_checkpoint_path();
-            let corrupted_json = r#"{
-                "phase": "RebaseInProgress",
-                "upstream_branch": "main",
-                "conflicted_files": ["file.rs"],
-                "resolved_files": ["not_in_conflicted.rs"],
-                "error_count": 0,
-                "last_error": null,
-                "timestamp": "2024-01-01T00:00:00Z"
-            }"#;
-            fs::write(&checkpoint_path, corrupted_json).unwrap();
-
-            // Loading should detect validation failure and restore from backup
-            let loaded = load_rebase_checkpoint()
-                .unwrap()
-                .expect("should restore from backup");
-
-            assert_eq!(
-                loaded.conflicted_files.len(),
-                1,
-                "Should have one conflicted file"
-            );
-            assert!(
-                loaded.conflicted_files.contains(&"file.rs".to_string()),
-                "Should contain file.rs"
-            );
-            assert!(
-                !loaded
-                    .resolved_files
-                    .contains(&"not_in_conflicted.rs".to_string()),
-                "Should not have invalid resolved file"
-            );
-        });
     }
 }
 

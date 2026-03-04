@@ -59,7 +59,10 @@ mod test_timeout;
 
 // Test modules using real git2/libgit2 operations (require #[serial])
 // NOTE: agents and deduplication moved to process-system-tests binary (no libgit2 needed)
+mod file_protection;
 mod git;
 mod prompt_permissions;
 mod rebase;
+mod rebase_checkpoint;
+mod rebase_state_machine;
 mod signal_cleanup;

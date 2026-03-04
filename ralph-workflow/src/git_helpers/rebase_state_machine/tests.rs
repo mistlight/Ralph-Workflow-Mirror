@@ -1,6 +1,7 @@
 // Tests for rebase state machine.
 //
-// This file contains all test code for the rebase state machine module.
+// This file contains pure unit tests (no filesystem I/O, no test_helpers).
+// Tests requiring CWD-relative filesystem ops are in tests/system_tests/rebase_state_machine/.
 
 #[cfg(test)]
 mod tests {
@@ -13,19 +14,6 @@ mod tests {
         assert_eq!(machine.upstream_branch(), "main");
         assert!(machine.can_recover());
         assert!(!machine.should_abort());
-    }
-
-    #[test]
-    fn test_state_machine_transition() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            let mut machine = RebaseStateMachine::new("main".to_string());
-            machine
-                .transition_to(RebasePhase::RebaseInProgress)
-                .unwrap();
-            assert_eq!(machine.phase(), &RebasePhase::RebaseInProgress);
-        });
     }
 
     #[test]
@@ -77,176 +65,11 @@ mod tests {
     }
 
     #[test]
-    fn test_state_machine_save_load() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            use super::super::rebase_checkpoint::{
-                save_rebase_checkpoint, RebaseCheckpoint, RebasePhase,
-            };
-
-            let mut machine1 = RebaseStateMachine::new("feature-branch".to_string());
-            machine1
-                .transition_to(RebasePhase::ConflictDetected)
-                .unwrap();
-
-            // Note: record_conflict only updates in-memory state, need to save checkpoint
-            // For the test, let's create a checkpoint with conflicts and save it
-            let checkpoint = RebaseCheckpoint::new("feature-branch".to_string())
-                .with_phase(RebasePhase::ConflictDetected)
-                .with_conflicted_file("test.rs".to_string());
-            save_rebase_checkpoint(&checkpoint).unwrap();
-
-            // Load a new machine from the checkpoint
-            let machine2 = RebaseStateMachine::load_or_create("main".to_string()).unwrap();
-            assert_eq!(machine2.phase(), &RebasePhase::ConflictDetected);
-            assert_eq!(machine2.upstream_branch(), "feature-branch");
-            assert_eq!(machine2.unresolved_conflict_count(), 1);
-        });
-    }
-
-    #[test]
-    fn test_state_machine_clear_checkpoint() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            let mut machine = RebaseStateMachine::new("main".to_string());
-            machine
-                .transition_to(RebasePhase::RebaseInProgress)
-                .unwrap();
-            assert!(rebase_checkpoint_exists());
-
-            machine.clear_checkpoint().unwrap();
-            assert!(!rebase_checkpoint_exists());
-        });
-    }
-
-    #[test]
-    fn test_state_machine_abort() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            let mut machine = RebaseStateMachine::new("main".to_string());
-            machine
-                .transition_to(RebasePhase::ConflictDetected)
-                .unwrap();
-            machine.abort().unwrap();
-
-            let loaded = RebaseStateMachine::load_or_create("main".to_string()).unwrap();
-            assert_eq!(loaded.phase(), &RebasePhase::RebaseAborted);
-        });
-    }
-
-    #[test]
     fn test_recovery_action_variants_exist() {
         let _ = RecoveryAction::Continue;
         let _ = RecoveryAction::Retry;
         let _ = RecoveryAction::Abort;
         let _ = RecoveryAction::Skip;
-    }
-
-    #[test]
-    fn test_acquire_and_release_rebase_lock() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Acquire lock
-            acquire_rebase_lock().unwrap();
-
-            // Verify lock file exists
-            let lock_path = rebase_lock_path();
-            assert!(Path::new(&lock_path).exists());
-
-            // Release lock
-            release_rebase_lock().unwrap();
-
-            // Verify lock file is gone
-            assert!(!Path::new(&lock_path).exists());
-        });
-    }
-
-    #[test]
-    fn test_rebase_lock_prevents_duplicate() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Acquire first lock
-            acquire_rebase_lock().unwrap();
-
-            // Trying to acquire again should fail
-            let result = acquire_rebase_lock();
-            assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("already in progress"));
-        });
-    }
-
-    #[test]
-    fn test_rebase_lock_guard_auto_releases() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            {
-                // Create lock guard
-                let _lock = RebaseLock::new().unwrap();
-                let lock_path = rebase_lock_path();
-                assert!(Path::new(&lock_path).exists());
-            }
-            // Lock should be released when guard goes out of scope
-
-            let lock_path = rebase_lock_path();
-            assert!(!Path::new(&lock_path).exists());
-        });
-    }
-
-    #[test]
-    fn test_rebase_lock_guard_leak() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            {
-                let lock = RebaseLock::new().unwrap();
-                let lock_path = rebase_lock_path();
-                assert!(Path::new(&lock_path).exists());
-
-                // Leak the lock - it won't be released
-                let _ = lock.leak();
-            }
-
-            // Lock should still exist after guard is dropped
-            let lock_path = rebase_lock_path();
-            assert!(Path::new(&lock_path).exists());
-
-            // Clean up
-            let _ = release_rebase_lock();
-        });
-    }
-
-    #[test]
-    fn test_stale_lock_is_replaced() {
-        use test_helpers::with_temp_cwd;
-
-        with_temp_cwd(|_dir| {
-            // Create a lock file with an old timestamp
-            let lock_path = rebase_lock_path();
-            let old_timestamp = chrono::Utc::now()
-                - chrono::Duration::seconds(DEFAULT_LOCK_TIMEOUT_SECONDS.cast_signed() + 60);
-            let lock_content = format!("pid=12345\ntimestamp={}\n", old_timestamp.to_rfc3339());
-
-            fs::create_dir_all(".agent").unwrap();
-            fs::write(&lock_path, lock_content).unwrap();
-
-            // Acquire lock should succeed since old lock is stale
-            acquire_rebase_lock().unwrap();
-
-            // Verify new lock file exists
-            assert!(Path::new(&lock_path).exists());
-
-            // Clean up
-            release_rebase_lock().unwrap();
-        });
     }
 
     #[test]

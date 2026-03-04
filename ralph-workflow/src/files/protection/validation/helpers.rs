@@ -1,7 +1,6 @@
 // Imports and helper functions for PROMPT.md validation.
 
 use crate::workspace::{Workspace, WorkspaceFs};
-#[cfg(test)]
 use std::fs;
 use std::io::IsTerminal;
 use std::path::Path;
@@ -108,7 +107,6 @@ impl PromptValidationResult {
 /// # Errors
 ///
 /// Returns an error if the prompt file is missing/empty and no valid backup is available.
-#[cfg(test)]
 pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     let prompt_path = Path::new("PROMPT.md");
 

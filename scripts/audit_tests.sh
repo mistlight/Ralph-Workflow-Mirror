@@ -95,24 +95,22 @@ if [ "$VIOLATIONS" -gt 0 ]; then
     exit 1
 fi
 
-printf "\n=== Checking for test-helpers imports in src/ unit tests (WARNING) ===\n"
+printf "\n=== Checking for test-helpers imports in src/ unit tests (BANNED) ===\n"
 # test-helpers provides git2 utilities (init_git_repo, commit_all, with_temp_cwd, etc.)
 # intended for git2-system-tests only. Importing test-helpers in src/ unit tests adds
 # a git2 dependency to the unit test binary and can cause libgit2 global state issues
 # when tests run in parallel.
-# Goal: move these tests to tests/system_tests/ with #[serial].
-# Currently WARNING (not error) because pre-existing violations exist and require
-# a separate refactoring effort to move affected tests to the correct tier.
+# Move affected tests to tests/system_tests/ with #[serial].
 test_helpers_in_src=$(rg "use test_helpers::|init_git_repo|commit_all|git_switch" \
   ralph-workflow/src/ --type rust | \
   grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" | \
   grep -v "mod test_helpers" || true)
 if [ -n "$test_helpers_in_src" ]; then
-    echo "WARNING: test-helpers or git2 utilities found in src/ unit tests:"
+    echo "ERROR: test-helpers or git2 utilities found in src/ unit tests:"
     echo "$test_helpers_in_src"
-    echo "Note: These tests should move to tests/system_tests/ with #[serial]."
+    echo "Fix: move affected tests to tests/system_tests/ with #[serial]."
     echo "Unit tests must remain parallel-safe and free of libgit2 dependencies."
-    echo "This is a WARNING — promote to ERROR once pre-existing violations are resolved."
+    FAIL=1
 else
     echo "No test-helpers imports in src/ unit tests ✓"
 fi
