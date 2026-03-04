@@ -24,6 +24,7 @@ use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 
 use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
+use serial_test::serial;
 
 use super::{get_default_branch_name, init_repo_with_initial_commit};
 
@@ -32,6 +33,7 @@ use super::{get_default_branch_name, init_repo_with_initial_commit};
 /// This verifies that when files have conflicting line endings (CRLF vs LF),
 /// the system handles the conflicts through Git's auto-resolution or conflict detection.
 #[test]
+#[serial]
 fn rebase_with_line_ending_conflict_resolves() {
     with_default_timeout(|| {
         // Test line ending conflicts (CRLF vs LF) during rebase
@@ -97,6 +99,7 @@ fn rebase_with_line_ending_conflict_resolves() {
 /// This verifies that when binary files are modified differently on each branch,
 /// the system detects conflicts or handles the merge appropriately.
 #[test]
+#[serial]
 fn rebase_with_binary_file_conflict() {
     with_default_timeout(|| {
         // Test binary file conflicts during rebase
@@ -144,6 +147,7 @@ fn rebase_with_binary_file_conflict() {
 /// This verifies that when a file is replaced with a symlink on one branch,
 /// the system detects the conflict or handles the merge appropriately.
 #[test]
+#[serial]
 fn rebase_with_symlink_conflict() {
     with_default_timeout(|| {
         // Test symlink vs file conflicts during rebase
@@ -199,6 +203,7 @@ fn rebase_with_symlink_conflict() {
 /// This verifies that when deeply nested directory structures approach
 /// path length limits, the system handles the situation gracefully.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_detects_path_length() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -253,6 +258,7 @@ fn validate_rebase_preconditions_detects_path_length() {
 /// This verifies that when the same filename differs only in case on different
 /// branches, the system handles the conflict based on filesystem sensitivity.
 #[test]
+#[serial]
 fn rebase_with_case_sensitivity_collision() {
     with_default_timeout(|| {
         // Test case sensitivity conflicts on case-insensitive filesystems
@@ -297,6 +303,7 @@ fn rebase_with_case_sensitivity_collision() {
 /// This verifies that when a rebase lock is held, the system's locking
 /// mechanism prevents concurrent rebase operations from conflicting.
 #[test]
+#[serial]
 fn detect_concurrent_rebase_locking() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{is_main_or_master_branch, rebase_onto, RebaseLock};
@@ -338,6 +345,7 @@ fn detect_concurrent_rebase_locking() {
 /// This verifies that when large files (>100MB) are modified during rebase,
 /// the system handles them appropriately or fails with clear error messages.
 #[test]
+#[serial]
 fn rebase_with_large_file_handling() {
     with_default_timeout(|| {
         // Test that large files (>100MB) are handled during rebase
@@ -409,6 +417,7 @@ fn rebase_with_large_file_handling() {
 /// This verifies that when both branches rename the same file to different
 /// names, the system detects the conflict or handles the merge appropriately.
 #[test]
+#[serial]
 fn rebase_handles_rename_rename_conflict() {
     with_default_timeout(|| {
         // Test rename/rename conflicts - both branches rename the same file
@@ -465,6 +474,7 @@ fn rebase_handles_rename_rename_conflict() {
 /// This verifies that when one branch creates a directory and another creates
 /// a file with the same name, the system detects the conflict appropriately.
 #[test]
+#[serial]
 fn rebase_handles_directory_file_conflict() {
     with_default_timeout(|| {
         // Test directory/file conflicts - one side creates a directory,
@@ -526,6 +536,7 @@ fn rebase_handles_directory_file_conflict() {
 /// This verifies that when branches contain nested directories with files,
 /// the system handles the rebase without crashing or producing unclear errors.
 #[test]
+#[serial]
 fn rebase_handles_nested_repository() {
     with_default_timeout(|| {
         // Test behavior with nested directories

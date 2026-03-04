@@ -7,7 +7,7 @@ ALWAYS USE test-driven-development!
 - **TDD is required for all code changes.** No production code without a failing test first.
 - **Verification is required for ANY code change** (prod code or tests): run `docs/agents/verification.md` before PR/completion.
 - **Architecture reading is REQUIRED** before any pipeline/reducer/behavioral change: `CODE_STYLE.md` (Architecture), `docs/architecture/event-loop-and-reducers.md`, `docs/architecture/effect-system.md`.
-- **Integration test guide is REQUIRED reading** before writing/changing tests: `docs/agents/integration-tests.md` and `tests/INTEGRATION_TESTS.md`.
+- **Testing guide is REQUIRED reading** before writing/changing tests: `docs/agents/testing-guide.md`.
 - **Do not introduce tech debt.** If the alternative is adding/keeping tech debt, **prefer refactor** even when it makes the diff larger; do not leave deprecated/unused code behind.
 
 This repository welcomes automated code assistants ("agents") and human contributors.
@@ -29,7 +29,7 @@ If you change **pipeline behavior** (phases, retries/fallback, effect sequencing
 ## Where The Details Live
 
 - Filesystem I/O rules (Workspace vs `std::fs`, exceptions): `docs/agents/workspace-trait.md`
-- Integration test rules and patterns: `docs/agents/integration-tests.md` and `tests/INTEGRATION_TESTS.md`
+- Testing strategy, rules, and patterns (all tiers): `docs/agents/testing-guide.md`
 - Required verification commands (must produce **NO OUTPUT**): `docs/agents/verification.md`
 - Custom lints (dylint), env vars, troubleshooting: `docs/tooling/dylint.md`
 
@@ -66,9 +66,9 @@ All agents MUST run with YOLO mode enabled to allow automated file operations.
 
 ---
 
-## Integration Tests (CRITICAL)
+## Testing (CRITICAL)
 
-Read `tests/INTEGRATION_TESTS.md` (and `docs/agents/integration-tests.md`) before touching integration tests.
+Read `docs/agents/testing-guide.md` before writing or touching any test.
 
 ---
 

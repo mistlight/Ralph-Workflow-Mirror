@@ -51,6 +51,69 @@ else
     echo "None found ✓"
 fi
 
+printf "\n=== Checking for #[serial] in integration tests (BANNED) ===\n"
+# #[serial] is BANNED in integration tests. It indicates a design problem:
+# the test or production code couples to global mutable state. Fix by using
+# dependency injection (env-injection pattern) instead of serializing tests.
+# See docs/agents/testing-guide.md for details.
+serial_violations=$(rg "#\[serial\]|use serial_test" tests/integration_tests/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$serial_violations" ]; then
+    echo "ERROR: #[serial] or serial_test detected in integration tests"
+    echo "This is BANNED. #[serial] in integration tests indicates a design problem:"
+    echo "the test or production code couples to global mutable state."
+    echo "Fix: use the env-injection pattern (see docs/agents/testing-guide.md)"
+    echo "instead of serializing tests."
+    echo "Violations found:"
+    echo "$serial_violations"
+    exit 1
+else
+    echo "No #[serial] in integration tests ✓"
+fi
+
+printf "\n=== Checking for #[serial] in src/ unit tests (BANNED) ===\n"
+# #[serial] is also BANNED in src/ unit tests. Use the env-injection pattern
+# (MemoryConfigEnvironment::with_env_var, or injectable Fn(&str)->Option<String>)
+# instead of serializing tests around process environment mutation.
+# System tests (tests/system_tests/) are excluded: their #[serial] usage is
+# justified by libgit2 global state and documented in SYSTEM_TESTS.md.
+VIOLATIONS=0
+serial_src_violations=$(rg "#\[serial\]" ralph-workflow/src/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$serial_src_violations" ]; then
+    echo "ERROR: #[serial] found in src/ unit tests (use env-injection pattern instead):"
+    echo "$serial_src_violations"
+    VIOLATIONS=$((VIOLATIONS + 1))
+else
+    echo "No #[serial] in src/ unit tests ✓"
+fi
+if [ "$VIOLATIONS" -gt 0 ]; then
+    echo ""
+    echo "Fix: refactor production code to accept injectable env accessor"
+    echo "(MemoryConfigEnvironment::with_env_var or Fn(&str)->Option<String>)"
+    echo "instead of calling std::env::var() directly."
+    exit 1
+fi
+
+printf "\n=== Checking for std::env::set_var/remove_var in integration tests (BANNED) ===\n"
+# Direct env mutation is BANNED in integration tests. It requires #[serial] to avoid
+# races. Fix: refactor production code to accept an injectable env accessor
+# (from_env_fn pattern). See docs/agents/testing-guide.md 'Env-Injection Pattern'.
+env_mutations=$(rg "std::env::set_var|std::env::remove_var|env::set_var|env::remove_var" \
+  tests/integration_tests/ --type rust | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$env_mutations" ]; then
+    echo "ERROR: std::env::set_var/remove_var detected in integration tests"
+    echo "Direct env mutation races with parallel tests and requires #[serial]."
+    echo "Fix: use the env-injection pattern instead of mutating process environment."
+    echo "See docs/agents/testing-guide.md 'Env-Injection Pattern' section."
+    echo "Violations found:"
+    echo "$env_mutations"
+    exit 1
+else
+    echo "No env mutations in integration tests ✓"
+fi
+
 printf "\n=== Checking for MemoryWorkspace usage (should be present) ===\n"
 workspace_count=$(rg "MemoryWorkspace" tests/integration_tests/ --type rust --count-matches | awk -F: '{sum+=$2} END {print sum}')
 echo "MemoryWorkspace usage count: $workspace_count"
@@ -138,6 +201,52 @@ if [ "$guide_refs" -lt 50 ]; then
   echo "WARNING: Low number of guide references (expected ~$total_files, one per file)"
 else
   echo "Integration guide well-referenced ✓"
+fi
+
+printf "\n=== Checking for #[serial] in process_system_tests/ (BANNED) ===\n"
+# process-system-tests runs in parallel; #[serial] is not allowed there.
+# Tests that need intra-module serialization must use a module-local Mutex instead.
+# git2-dependent tests must stay in system_tests/ (the serial binary).
+serial_in_process_system=$(rg '#\[serial\]' tests/process_system_tests/ 2>/dev/null | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$serial_in_process_system" ]; then
+    echo "ERROR: #[serial] found in process_system_tests/ (not allowed):"
+    echo "$serial_in_process_system"
+    echo "Fix: use a module-local Mutex guard for env mutations, or move libgit2 tests to system_tests/"
+    FAIL=1
+else
+    echo "No #[serial] in process_system_tests/ ✓"
+fi
+
+printf "\n=== Checking for libgit2 usage in process_system_tests/ (BANNED) ===\n"
+# process-system-tests must not use git2 or init_git_repo — those tests belong in system_tests/
+git2_in_process_system=$(rg -n 'git2::|init_git_repo' tests/process_system_tests/ 2>/dev/null || true)
+if [ -n "$git2_in_process_system" ]; then
+    echo "ERROR: git2:: or init_git_repo usage found in process_system_tests/ (use system_tests/ for libgit2 tests):"
+    echo "$git2_in_process_system"
+    FAIL=1
+else
+    echo "No libgit2 usage in process_system_tests/ ✓"
+fi
+
+printf "\n=== Checking #[ignore] attributes have issue URLs (flaky quarantine rule) ===\n"
+# Every #[ignore] must include an issue URL so quarantined tests are tracked.
+# Enforce: #[ignore = "flaky: https://github.com/.../issues/N"]
+ignore_without_url=$(rg -n '#\[ignore\b' tests/ ralph-workflow/src/ \
+  | grep -v 'https://' || true)
+if [ -n "$ignore_without_url" ]; then
+    echo "ERROR: #[ignore] without issue URL found (flaky quarantine requires a link):"
+    echo "$ignore_without_url"
+    echo "Fix: add an issue URL — e.g. #[ignore = \"flaky: https://github.com/org/repo/issues/N\"]"
+    FAIL=1
+else
+    echo "All #[ignore] attributes include issue URLs ✓"
+fi
+
+if [ "${FAIL:-0}" -gt 0 ]; then
+    echo ""
+    echo "Audit FAILED. Fix all errors above before merging."
+    exit 1
 fi
 
 printf "\n=== Audit complete ===\n"

@@ -20,6 +20,7 @@ use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::RebaseErrorKind;
+use serial_test::serial;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
@@ -41,6 +42,7 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 /// This verifies that when a `ValidationFailed` error is constructed,
 /// the error description contains details about the validation failure.
 #[test]
+#[serial]
 fn rebase_detects_validation_failure() {
     with_default_timeout(|| {
         // Test that ValidationFailed error kind exists and can be created
@@ -58,6 +60,7 @@ fn rebase_detects_validation_failure() {
 /// This verifies that when a `ValidationFailed` error occurs, the system
 /// correctly categorizes it as a post-rebase failure.
 #[test]
+#[serial]
 fn rebase_validation_error_has_correct_category() {
     with_default_timeout(|| {
         // Test that ValidationFailed is in category 3
@@ -74,6 +77,7 @@ fn rebase_validation_error_has_correct_category() {
 /// This verifies that when tests fail after rebase completes, the system
 /// can represent this scenario with a `ValidationFailed` error.
 #[test]
+#[serial]
 fn rebase_detects_test_failures() {
     with_default_timeout(|| {
         // Document expected behavior for test failures
@@ -97,6 +101,7 @@ fn rebase_detects_test_failures() {
 /// This verifies that when build fails after rebase completes, the system
 /// can represent this scenario with a `ValidationFailed` error.
 #[test]
+#[serial]
 fn rebase_detects_build_failures() {
     with_default_timeout(|| {
         // Document expected behavior for build failures
@@ -118,6 +123,7 @@ fn rebase_detects_build_failures() {
 /// This verifies that when clippy/fmt fails after rebase completes,
 /// the system can represent this scenario with a `ValidationFailed` error.
 #[test]
+#[serial]
 fn rebase_detects_lint_violations() {
     with_default_timeout(|| {
         // Document expected behavior for lint violations
@@ -139,6 +145,7 @@ fn rebase_detects_lint_violations() {
 /// This verifies that when lockfile drift occurs after rebase, the system
 /// can represent this scenario with a `ValidationFailed` error.
 #[test]
+#[serial]
 fn rebase_detects_lockfile_changes() {
     with_default_timeout(|| {
         // Document expected behavior for lockfile changes
@@ -160,6 +167,7 @@ fn rebase_detects_lockfile_changes() {
 /// This verifies that when `ValidationFailed` errors occur, the system
 /// marks them as not recoverable without manual intervention.
 #[test]
+#[serial]
 fn rebase_validation_failure_not_recoverable() {
     with_default_timeout(|| {
         // Test that validation failures are not considered automatically recoverable
@@ -177,6 +185,7 @@ fn rebase_validation_failure_not_recoverable() {
 /// This verifies that when a rebase completes successfully with all
 /// validation checks passing, the system returns Success or `NoOp` result.
 #[test]
+#[serial]
 fn rebase_successful_rebase_has_no_validation_error() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -213,6 +222,7 @@ fn rebase_successful_rebase_has_no_validation_error() {
 /// This verifies that when submodule pointers diverge after rebase,
 /// the system can represent this scenario with a `ValidationFailed` error.
 #[test]
+#[serial]
 fn rebase_handles_submodule_pointer_changes() {
     with_default_timeout(|| {
         // Document expected behavior for submodule changes
@@ -230,6 +240,7 @@ fn rebase_handles_submodule_pointer_changes() {
 }
 
 #[test]
+#[serial]
 fn rebase_detects_generated_file_divergence() {
     with_default_timeout(|| {
         // Document expected behavior for generated file divergence

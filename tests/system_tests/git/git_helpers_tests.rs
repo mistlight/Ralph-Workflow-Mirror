@@ -10,12 +10,11 @@ use ralph_workflow::git_helpers::{
     git_snapshot_in_repo, hooks, start_agent_phase, uninstall_hooks, GitHelpers,
 };
 use ralph_workflow::logger::Logger;
+use serial_test::serial;
 use std::fs::{self, File};
 
-// Note: Tests that change working directory need to run serially.
-// Run with: cargo test -- --test-threads=1
-
 #[test]
+#[serial]
 fn test_agent_phase_cleanup_removes_git_wrapper_track_file() {
     use test_helpers::with_temp_cwd;
 
@@ -45,6 +44,7 @@ fn test_agent_phase_cleanup_removes_git_wrapper_track_file() {
 }
 
 #[test]
+#[serial]
 fn test_disable_git_wrapper_removes_track_file_even_when_cwd_changes() {
     use test_helpers::with_temp_cwd;
 
@@ -72,6 +72,7 @@ fn test_disable_git_wrapper_removes_track_file_even_when_cwd_changes() {
 }
 
 #[test]
+#[serial]
 fn test_git_snapshot() {
     use test_helpers::with_temp_cwd;
 
@@ -87,6 +88,7 @@ fn test_git_snapshot() {
 }
 
 #[test]
+#[serial]
 fn test_install_hook() {
     use test_helpers::with_temp_cwd;
 
@@ -106,6 +108,7 @@ fn test_install_hook() {
 }
 
 #[test]
+#[serial]
 fn test_install_hook_creates_missing_hooks_dir() {
     use test_helpers::with_temp_cwd;
 
@@ -127,6 +130,7 @@ fn test_install_hook_creates_missing_hooks_dir() {
 }
 
 #[test]
+#[serial]
 fn test_uninstall_hooks_in_repo_does_not_depend_on_cwd() {
     use test_helpers::with_temp_cwd;
 
@@ -162,6 +166,7 @@ fn test_uninstall_hooks_in_repo_does_not_depend_on_cwd() {
 }
 
 #[test]
+#[serial]
 fn test_uninstall_hook_restores_original() {
     use test_helpers::with_temp_cwd;
     let logger = Logger::new(ralph_workflow::logger::Colors::with_enabled(false));
@@ -194,6 +199,7 @@ fn test_uninstall_hook_restores_original() {
 }
 
 #[test]
+#[serial]
 fn test_install_hook_uses_absolute_path() {
     use test_helpers::with_temp_cwd;
 
@@ -220,6 +226,7 @@ fn test_install_hook_uses_absolute_path() {
 }
 
 #[test]
+#[serial]
 fn test_cleanup_orphaned_marker() {
     use test_helpers::with_temp_cwd;
 
@@ -240,6 +247,7 @@ fn test_cleanup_orphaned_marker() {
 }
 
 #[test]
+#[serial]
 fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
     let missing =
         std::env::temp_dir().join(format!("ralph-nonexistent-repo-{}", std::process::id()));
@@ -256,6 +264,7 @@ fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
 }
 
 #[test]
+#[serial]
 fn test_git_snapshot_excludes_gitignored_files() {
     let dir = tempfile::tempdir().unwrap();
     let repo = git2::Repository::init(dir.path()).unwrap();

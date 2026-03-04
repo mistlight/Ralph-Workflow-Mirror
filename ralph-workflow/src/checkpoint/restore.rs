@@ -149,6 +149,20 @@ pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineChec
 /// Restore safe environment variables from the checkpoint snapshot.
 #[must_use]
 pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> usize {
+    restore_environment_impl(checkpoint, |key, value| {
+        std::env::set_var(key, value);
+    })
+}
+
+/// Inner implementation for restoring environment variables from a checkpoint.
+///
+/// Accepts an injectable `set_var` callback so tests can verify which variables
+/// would be set without mutating the real process environment (eliminating the
+/// need for `#[serial]`).
+fn restore_environment_impl(
+    checkpoint: &PipelineCheckpoint,
+    mut set_var: impl FnMut(&str, &str),
+) -> usize {
     let Some(ref env_snap) = checkpoint.env_snapshot else {
         return 0;
     };
@@ -160,7 +174,7 @@ pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> u
         if crate::checkpoint::state::is_sensitive_env_key(key) {
             continue;
         }
-        std::env::set_var(key, value);
+        set_var(key, value);
         restored += 1;
     }
 
@@ -169,7 +183,7 @@ pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> u
         if crate::checkpoint::state::is_sensitive_env_key(key) {
             continue;
         }
-        std::env::set_var(key, value);
+        set_var(key, value);
         restored += 1;
     }
 
@@ -309,29 +323,6 @@ mod tests {
     use crate::checkpoint::state::{
         AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, EnvironmentSnapshot, RebaseState,
     };
-    use serial_test::serial;
-
-    struct EnvVarGuard {
-        name: &'static str,
-        prior: Option<std::ffi::OsString>,
-    }
-
-    impl EnvVarGuard {
-        fn remove(name: &'static str) -> Self {
-            let prior = std::env::var_os(name);
-            std::env::remove_var(name);
-            Self { name, prior }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            match self.prior.take() {
-                Some(v) => std::env::set_var(self.name, v),
-                None => std::env::remove_var(self.name),
-            }
-        }
-    }
 
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32, pass: u32) -> PipelineCheckpoint {
         let cli_args = CliArgsSnapshot::new(5, 3, None, true, 2, false, None);
@@ -484,8 +475,8 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_restore_environment_skips_sensitive_vars() {
+        // Arrange: checkpoint snapshot with safe and sensitive vars
         let mut checkpoint = make_test_checkpoint(PipelinePhase::Development, 1, 0);
         let mut snapshot = EnvironmentSnapshot::default();
         snapshot
@@ -502,19 +493,31 @@ mod tests {
             .insert("GIT_PASSWORD".to_string(), "nope".to_string());
         checkpoint.env_snapshot = Some(snapshot);
 
-        let _safe = EnvVarGuard::remove("RALPH_SAFE_SETTING");
-        let _token = EnvVarGuard::remove("RALPH_API_TOKEN");
-        let _editor = EnvVarGuard::remove("EDITOR");
-        let _git_password = EnvVarGuard::remove("GIT_PASSWORD");
+        // Act: use injectable impl to spy on what would be set (no real env mutation)
+        let mut set_calls: Vec<(String, String)> = Vec::new();
+        let restored = restore_environment_impl(&checkpoint, |k, v| {
+            set_calls.push((k.to_string(), v.to_string()));
+        });
 
-        let restored = restore_environment_from_checkpoint(&checkpoint);
+        // Assert: safe vars set, sensitive vars skipped
         assert_eq!(restored, 2);
-        assert_eq!(
-            std::env::var("RALPH_SAFE_SETTING").ok().as_deref(),
-            Some("ok")
+        assert!(
+            set_calls
+                .iter()
+                .any(|(k, v)| k == "RALPH_SAFE_SETTING" && v == "ok"),
+            "RALPH_SAFE_SETTING should be restored; got: {set_calls:?}"
         );
-        assert!(std::env::var("RALPH_API_TOKEN").is_err());
-        assert_eq!(std::env::var("EDITOR").ok().as_deref(), Some("vim"));
-        assert!(std::env::var("GIT_PASSWORD").is_err());
+        assert!(
+            set_calls.iter().any(|(k, v)| k == "EDITOR" && v == "vim"),
+            "EDITOR should be restored; got: {set_calls:?}"
+        );
+        assert!(
+            !set_calls.iter().any(|(k, _)| k == "RALPH_API_TOKEN"),
+            "RALPH_API_TOKEN is sensitive and must be skipped; got: {set_calls:?}"
+        );
+        assert!(
+            !set_calls.iter().any(|(k, _)| k == "GIT_PASSWORD"),
+            "GIT_PASSWORD is sensitive and must be skipped; got: {set_calls:?}"
+        );
     }
 }

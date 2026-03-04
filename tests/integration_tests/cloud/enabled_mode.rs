@@ -14,7 +14,6 @@ use ralph_workflow::reducer::effect::{Effect, EffectHandler, EffectResult};
 use ralph_workflow::reducer::event::{LifecycleEvent, PipelineEvent, PipelinePhase};
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::ui_event::UIEvent;
-use serial_test::serial;
 
 use crate::common::IntegrationFixture;
 use crate::test_timeout::with_default_timeout;
@@ -158,17 +157,21 @@ fn test_mock_cloud_reporter_graceful_degradation() {
 }
 
 #[test]
-#[serial]
 fn test_cloud_config_enabled_loads_all_fields() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_CLOUD_MODE", "true");
-        std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com/v1");
-        std::env::set_var("RALPH_CLOUD_API_TOKEN", "secret_token_123");
-        std::env::set_var("RALPH_CLOUD_RUN_ID", "run_abc123");
-        std::env::set_var("RALPH_CLOUD_HEARTBEAT_INTERVAL", "60");
-        std::env::set_var("RALPH_CLOUD_GRACEFUL_DEGRADATION", "true");
-
-        let config = CloudConfig::from_env();
+        let env = [
+            ("RALPH_CLOUD_MODE", "true"),
+            ("RALPH_CLOUD_API_URL", "https://api.example.com/v1"),
+            ("RALPH_CLOUD_API_TOKEN", "secret_token_123"),
+            ("RALPH_CLOUD_RUN_ID", "run_abc123"),
+            ("RALPH_CLOUD_HEARTBEAT_INTERVAL", "60"),
+            ("RALPH_CLOUD_GRACEFUL_DEGRADATION", "true"),
+        ];
+        let config = CloudConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         assert!(config.enabled, "Cloud mode should be enabled");
         assert_eq!(
@@ -194,28 +197,17 @@ fn test_cloud_config_enabled_loads_all_fields() {
             config.graceful_degradation,
             "Graceful degradation should be enabled"
         );
-
-        // Clean up
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
-        std::env::remove_var("RALPH_CLOUD_HEARTBEAT_INTERVAL");
-        std::env::remove_var("RALPH_CLOUD_GRACEFUL_DEGRADATION");
     });
 }
 
 #[test]
-#[serial]
 fn test_cloud_config_validation_requires_fields() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_CLOUD_MODE", "true");
-        // Don't set required fields
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
-
-        let config = CloudConfig::from_env();
+        // RALPH_CLOUD_MODE=true but no other required fields
+        let config = CloudConfig::from_env_fn(|k| match k {
+            "RALPH_CLOUD_MODE" => Some("true".to_string()),
+            _ => None,
+        });
 
         assert!(config.enabled, "Cloud mode should be enabled");
         let validation_result = config.validate();
@@ -223,73 +215,69 @@ fn test_cloud_config_validation_requires_fields() {
             validation_result.is_err(),
             "Validation should fail when required fields are missing"
         );
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
     });
 }
 
 #[test]
-#[serial]
 fn test_cloud_mode_boolean_parsing() {
     with_default_timeout(|| {
         for value in &["true", "TRUE", "True", "1"] {
-            std::env::set_var("RALPH_CLOUD_MODE", value);
-            let config = CloudConfig::from_env();
+            let v = *value;
+            let config = CloudConfig::from_env_fn(|k| match k {
+                "RALPH_CLOUD_MODE" => Some(v.to_string()),
+                _ => None,
+            });
             assert!(
                 config.enabled,
-                "Cloud mode should be enabled for value: {value}"
+                "Cloud mode should be enabled for value: {v}"
             );
         }
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
     });
 }
 
 #[test]
-#[serial]
 fn test_graceful_degradation_default() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_CLOUD_MODE", "true");
-        std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com");
-        std::env::set_var("RALPH_CLOUD_API_TOKEN", "token");
-        std::env::set_var("RALPH_CLOUD_RUN_ID", "run123");
-        std::env::remove_var("RALPH_CLOUD_GRACEFUL_DEGRADATION");
-
-        let config = CloudConfig::from_env();
+        let env = [
+            ("RALPH_CLOUD_MODE", "true"),
+            ("RALPH_CLOUD_API_URL", "https://api.example.com"),
+            ("RALPH_CLOUD_API_TOKEN", "token"),
+            ("RALPH_CLOUD_RUN_ID", "run123"),
+            // RALPH_CLOUD_GRACEFUL_DEGRADATION intentionally absent
+        ];
+        let config = CloudConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         assert!(
             config.graceful_degradation,
             "Graceful degradation should be enabled by default"
         );
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
     });
 }
 
 #[test]
-#[serial]
 fn test_heartbeat_interval_default() {
     with_default_timeout(|| {
-        std::env::set_var("RALPH_CLOUD_MODE", "true");
-        std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com");
-        std::env::set_var("RALPH_CLOUD_API_TOKEN", "token");
-        std::env::set_var("RALPH_CLOUD_RUN_ID", "run123");
-        std::env::remove_var("RALPH_CLOUD_HEARTBEAT_INTERVAL");
-
-        let config = CloudConfig::from_env();
+        let env = [
+            ("RALPH_CLOUD_MODE", "true"),
+            ("RALPH_CLOUD_API_URL", "https://api.example.com"),
+            ("RALPH_CLOUD_API_TOKEN", "token"),
+            ("RALPH_CLOUD_RUN_ID", "run123"),
+            // RALPH_CLOUD_HEARTBEAT_INTERVAL intentionally absent
+        ];
+        let config = CloudConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         assert_eq!(
             config.heartbeat_interval_secs, 30,
             "Heartbeat interval should default to 30 seconds"
         );
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
     });
 }
 

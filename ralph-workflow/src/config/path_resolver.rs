@@ -108,6 +108,18 @@ pub trait ConfigEnvironment: Send + Sync {
     fn worktree_root(&self) -> Option<PathBuf> {
         None // Default implementation for backwards compatibility
     }
+
+    /// Get a single environment variable by name.
+    ///
+    /// In production (`RealConfigEnvironment`), reads from the real process environment.
+    /// In tests (`MemoryConfigEnvironment`), returns `None` by default (no env vars set),
+    /// providing complete isolation from the real process environment.
+    ///
+    /// Used to thread env-var access through config loading so production code is
+    /// fully testable without `#[serial]` or global env mutation.
+    fn get_env_var(&self, _key: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Production implementation of [`ConfigEnvironment`].
@@ -121,6 +133,10 @@ pub struct RealConfigEnvironment;
 impl ConfigEnvironment for RealConfigEnvironment {
     fn unified_config_path(&self) -> Option<PathBuf> {
         super::unified::unified_config_path()
+    }
+
+    fn get_env_var(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
     }
 
     fn file_exists(&self, path: &Path) -> bool {
@@ -175,6 +191,7 @@ impl ConfigEnvironment for RealConfigEnvironment {
 /// Provides complete isolation from the real environment:
 /// - Injected paths instead of environment variables
 /// - In-memory file storage instead of real filesystem
+/// - Injectable environment variables via `with_env_var()` (default: no vars set)
 ///
 /// # Example
 ///
@@ -184,7 +201,8 @@ impl ConfigEnvironment for RealConfigEnvironment {
 /// let env = MemoryConfigEnvironment::new()
 ///     .with_unified_config_path("/test/config/ralph-workflow.toml")
 ///     .with_prompt_path("/test/repo/PROMPT.md")
-///     .with_file("/test/repo/existing.txt", "content");
+///     .with_file("/test/repo/existing.txt", "content")
+///     .with_env_var("RALPH_DEVELOPER_ITERS", "10");
 ///
 /// // Write a file
 /// env.write_file(Path::new("/test/new.txt"), "new content")?;
@@ -203,6 +221,11 @@ pub struct MemoryConfigEnvironment {
     files: Arc<RwLock<HashMap<PathBuf, String>>>,
     /// Directories that have been created.
     dirs: Arc<RwLock<std::collections::HashSet<PathBuf>>>,
+    /// Injectable environment variables for testing.
+    ///
+    /// By default (empty map), `get_env_var()` returns `None` for all keys,
+    /// providing complete isolation from the real process environment.
+    env_vars: HashMap<String, String>,
 }
 
 impl MemoryConfigEnvironment {
@@ -254,6 +277,24 @@ impl MemoryConfigEnvironment {
         self
     }
 
+    /// Inject an environment variable for testing.
+    ///
+    /// Provides per-test env isolation without mutating the real process environment.
+    /// Use this instead of `std::env::set_var` to avoid `#[serial]` requirements.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let env = MemoryConfigEnvironment::new()
+    ///     .with_env_var("RALPH_DEVELOPER_ITERS", "42")
+    ///     .with_env_var("RALPH_ISOLATION_MODE", "false");
+    /// ```
+    #[must_use]
+    pub fn with_env_var(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env_vars.insert(key.into(), value.into());
+        self
+    }
+
     /// Get the contents of a file (for test assertions).
     ///
     /// # Panics
@@ -282,6 +323,14 @@ impl MemoryConfigEnvironment {
 impl ConfigEnvironment for MemoryConfigEnvironment {
     fn unified_config_path(&self) -> Option<PathBuf> {
         self.unified_config_path.clone()
+    }
+
+    /// Returns an injected env var from the in-memory map.
+    ///
+    /// Returns `None` for any key not explicitly set via `with_env_var()`,
+    /// providing complete isolation from the real process environment.
+    fn get_env_var(&self, key: &str) -> Option<String> {
+        self.env_vars.get(key).cloned()
     }
 
     fn local_config_path(&self) -> Option<PathBuf> {

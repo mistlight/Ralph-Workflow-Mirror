@@ -22,6 +22,7 @@ use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 
 use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
+use serial_test::serial;
 
 use super::{get_default_branch_name, init_repo_with_initial_commit};
 
@@ -30,6 +31,7 @@ use super::{get_default_branch_name, init_repo_with_initial_commit};
 /// This verifies that when the current branch is main or master, the system
 /// skips rebase and returns `NoOp` with a clear reason message.
 #[test]
+#[serial]
 fn rebase_on_main_branch_returns_noop() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::is_main_or_master_branch;
@@ -67,6 +69,7 @@ fn rebase_on_main_branch_returns_noop() {
 /// This verifies that when the current branch has no unique commits,
 /// the system skips rebase and returns `NoOp` or immediate Success.
 #[test]
+#[serial]
 fn rebase_already_uptodate_returns_noop() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -105,6 +108,7 @@ fn rebase_already_uptodate_returns_noop() {
 /// This verifies that when a repository has no commits (unborn HEAD),
 /// the system cannot rebase and returns an appropriate error result.
 #[test]
+#[serial]
 fn rebase_empty_repo_returns_noop() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -145,6 +149,7 @@ fn rebase_empty_repo_returns_noop() {
 /// This verifies that when HEAD is unborn (no commits yet), the system
 /// detects the empty repository state and returns an appropriate result.
 #[test]
+#[serial]
 fn rebase_unborn_head_returns_noop() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -187,6 +192,7 @@ fn rebase_unborn_head_returns_noop() {
 /// This verifies that when a feature branch points to the same commit as
 /// the target branch, the system recognizes there are no commits to rebase.
 #[test]
+#[serial]
 fn rebase_with_no_changes_returns_noop() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -225,6 +231,7 @@ fn rebase_with_no_changes_returns_noop() {
 /// This verifies that when the current branch is detected as main or master,
 /// the system bypasses the rebase entirely and returns a `NoOp` result.
 #[test]
+#[serial]
 fn rebase_skipped_when_branch_is_main() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::is_main_or_master_branch;
@@ -264,6 +271,7 @@ fn rebase_skipped_when_branch_is_main() {
 /// This verifies that when the target branch does not exist in the repository,
 /// the system returns a Failed result with an `InvalidRevision` error.
 #[test]
+#[serial]
 fn rebase_with_nonexistent_upstream_fails() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -293,6 +301,7 @@ fn rebase_with_nonexistent_upstream_fails() {
 /// This verifies that the `RebaseErrorKind` enum can represent errors that
 /// occur when a shallow clone lacks the required history for rebasing.
 #[test]
+#[serial]
 fn rebase_detects_shallow_clone_limitations() {
     with_default_timeout(|| {
         // Test that rebase handles shallow clone limitations
@@ -319,6 +328,7 @@ fn rebase_detects_shallow_clone_limitations() {
 /// This verifies that when HEAD is detached from any branch, the system
 /// handles the state gracefully without crashing or producing unclear errors.
 #[test]
+#[serial]
 fn rebase_handles_detached_head() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -358,6 +368,7 @@ fn rebase_handles_detached_head() {
 /// This verifies that when the upstream revision is ambiguous or invalid,
 /// the system returns a Failed result with a clear error description.
 #[test]
+#[serial]
 fn rebase_with_ambiguous_revision_fails() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -388,6 +399,7 @@ fn rebase_with_ambiguous_revision_fails() {
 /// This verifies that when the branch name contains invalid characters or
 /// patterns, the system returns a Failed result with a clear error message.
 #[test]
+#[serial]
 fn rebase_validates_branch_name() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -416,6 +428,7 @@ fn rebase_validates_branch_name() {
 /// This verifies that when branches have no common ancestor, the system
 /// detects the unrelated histories and returns an appropriate result.
 #[test]
+#[serial]
 fn rebase_with_unrelated_branches_returns_noop() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -487,6 +500,7 @@ fn rebase_with_unrelated_branches_returns_noop() {
 /// This verifies that when HEAD is detached, the system returns `NoOp` with
 /// a reason message that mentions the detached HEAD state.
 #[test]
+#[serial]
 fn rebase_on_detached_head_returns_noop_with_clear_reason() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -533,6 +547,7 @@ fn rebase_on_detached_head_returns_noop_with_clear_reason() {
 /// This verifies that when a rebase completes successfully, the system
 /// can verify that the current branch is now descendant of the upstream.
 #[test]
+#[serial]
 fn verify_rebase_completed_detects_incomplete_rebase() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::verify_rebase_completed;
@@ -583,6 +598,7 @@ fn verify_rebase_completed_detects_incomplete_rebase() {
 /// This verifies that when branches have diverged but not yet been rebased,
 /// the system correctly identifies that rebase is not yet complete.
 #[test]
+#[serial]
 fn verify_rebase_completed_returns_false_when_diverged() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::verify_rebase_completed;

@@ -28,6 +28,7 @@ use ralph_workflow::git_helpers::rebase_checkpoint::{
     RebasePhase,
 };
 use ralph_workflow::git_helpers::rebase_onto;
+use serial_test::serial;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
@@ -49,6 +50,7 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 /// This verifies that when a process termination error is constructed,
 /// the error description contains relevant termination information.
 #[test]
+#[serial]
 fn rebase_detects_process_termination_error_kind() {
     with_default_timeout(|| {
         // Test that ProcessTerminated error kind exists
@@ -68,6 +70,7 @@ fn rebase_detects_process_termination_error_kind() {
 /// This verifies that when a `ProcessTerminated` error occurs, the system
 /// correctly categorizes it as an interrupted/corrupted state failure.
 #[test]
+#[serial]
 fn rebase_process_terminated_has_correct_category() {
     with_default_timeout(|| {
         // Test that ProcessTerminated is in category 4
@@ -86,6 +89,7 @@ fn rebase_process_terminated_has_correct_category() {
 /// This verifies that when an inconsistent state error is constructed,
 /// the error description contains details about the corruption.
 #[test]
+#[serial]
 fn rebase_detects_inconsistent_state_error_kind() {
     with_default_timeout(|| {
         // Test that InconsistentState error kind exists
@@ -105,6 +109,7 @@ fn rebase_detects_inconsistent_state_error_kind() {
 /// This verifies that when an `InconsistentState` error occurs, the system
 /// correctly categorizes it as an interrupted/corrupted state failure.
 #[test]
+#[serial]
 fn rebase_inconsistent_state_has_correct_category() {
     with_default_timeout(|| {
         // Test that InconsistentState is in category 4
@@ -123,6 +128,7 @@ fn rebase_inconsistent_state_has_correct_category() {
 /// This verifies that when a checkpoint is saved and the process terminates,
 /// the checkpoint persists and can be loaded after restart.
 #[test]
+#[serial]
 fn rebase_checkpoint_survives_process_termination() {
     with_default_timeout(|| {
         with_temp_cwd(|_dir| {
@@ -152,6 +158,7 @@ fn rebase_checkpoint_survives_process_termination() {
 /// This verifies that when stale .git/index.lock files exist,
 /// the system cleans them up without error.
 #[test]
+#[serial]
 fn rebase_detects_stale_lock_files() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -174,6 +181,7 @@ fn rebase_detects_stale_lock_files() {
 /// This verifies that when .git/rebase-apply directory contains corrupted state,
 /// the system handles cleanup gracefully.
 #[test]
+#[serial]
 fn rebase_detects_corrupted_reapplydirectory() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -198,6 +206,7 @@ fn rebase_detects_corrupted_reapplydirectory() {
 /// This verifies that when .git/rebase-merge directory contains corrupted state,
 /// the system handles cleanup gracefully.
 #[test]
+#[serial]
 fn rebase_detects_corrupted_rebase_mergedirectory() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -223,6 +232,7 @@ fn rebase_detects_corrupted_rebase_mergedirectory() {
 /// This verifies that when .git/rebase-apply exists without `ORIG_HEAD` file,
 /// the system handles the situation without crashing.
 #[test]
+#[serial]
 fn rebase_handles_missing_orig_head() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -251,6 +261,7 @@ fn rebase_handles_missing_orig_head() {
 /// This verifies that when .git/HEAD file is missing (corrupted repository),
 /// the system returns an appropriate error or succeeds if recoverable.
 #[test]
+#[serial]
 fn rebase_handles_missing_head_ref() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -278,6 +289,7 @@ fn rebase_handles_missing_head_ref() {
 /// This verifies that when a checkpoint file is corrupted, the system
 /// attempts to load from backup or handles the failure gracefully.
 #[test]
+#[serial]
 fn rebase_checkpoint_corruption_recovery() {
     with_default_timeout(|| {
         with_temp_cwd(|_dir| {
@@ -309,6 +321,7 @@ fn rebase_checkpoint_corruption_recovery() {
 /// This verifies that when `MERGE_HEAD`, `MERGE_MSG`, and similar files
 /// exist without an active merge, the system cleans them up.
 #[test]
+#[serial]
 fn rebase_handles_orphaned_temp_files() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -332,6 +345,7 @@ fn rebase_handles_orphaned_temp_files() {
 /// This verifies that when reflog is not available for recovery,
 /// the system falls back to checkpoint mechanism.
 #[test]
+#[serial]
 fn rebase_handles_reflog_disabled() {
     with_default_timeout(|| {
         // Document expected behavior when reflog is disabled
@@ -361,6 +375,7 @@ fn rebase_handles_reflog_disabled() {
 /// This verifies that when sparse checkout is enabled, the system
 /// handles rebase operations without causing conflicts.
 #[test]
+#[serial]
 fn rebase_detects_sparse_checkout_conflicts() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -392,6 +407,7 @@ fn rebase_detects_sparse_checkout_conflicts() {
 /// This verifies that when HEAD is detached and rebase state exists,
 /// the system handles the situation gracefully.
 #[test]
+#[serial]
 fn rebase_detects_detached_head_after_interruption() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -433,6 +449,7 @@ fn rebase_detects_detached_head_after_interruption() {
 /// This verifies that when git gc has removed objects needed for recovery,
 /// the system returns `RepositoryCorrupt` error with appropriate message.
 #[test]
+#[serial]
 fn rebase_handles_git_gc_removed_objects() {
     with_default_timeout(|| {
         // Document expected behavior when git gc removes recovery objects
@@ -456,6 +473,7 @@ fn rebase_handles_git_gc_removed_objects() {
 /// This verifies that when a process termination occurs, the system
 /// considers the error recoverable via checkpoint mechanism.
 #[test]
+#[serial]
 fn rebase_process_terminated_is_recoverable() {
     with_default_timeout(|| {
         // Test that ProcessTerminated errors are considered recoverable
@@ -475,6 +493,7 @@ fn rebase_process_terminated_is_recoverable() {
 /// This verifies that when inconsistent state is detected, the system
 /// considers the error recoverable via cleanup operations.
 #[test]
+#[serial]
 fn rebase_inconsistent_state_is_recoverable() {
     with_default_timeout(|| {
         // Test that InconsistentState errors are considered recoverable

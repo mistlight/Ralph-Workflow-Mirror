@@ -163,10 +163,45 @@ if [ -n "$PROCESS_SPAWN_VIOLATIONS" ]; then
     echo -e "${YELLOW}Process spawning is FORBIDDEN in integration tests.${NC}"
     echo "Use git2 library or MockGit/GitOps trait instead."
     echo "For CLI testing, use run_ralph_cli() which calls app::run() directly."
-    echo "See tests/INTEGRATION_TESTS.md 'Rule 1.5: NO Process Spawning'"
+    echo "See docs/agents/testing-guide.md 'Common Anti-Patterns' section"
     exit 1
 else
     log -e "${GREEN}No process spawning violations found${NC}"
+    log
+fi
+
+# ============================================================================
+# Check for #[serial] usage in integration tests (BANNED)
+# ============================================================================
+
+log "Checking for #[serial] usage in integration tests..."
+
+SERIAL_VIOLATIONS=$(rg -n --no-heading \
+    '#\[serial\]|use serial_test' \
+    "$TEST_DIR" --glob '*.rs' \
+    -g '!_TEMPLATE.rs' \
+    | grep -v '^\s*//' | grep -v '^\s*\*' || true)
+
+if [ -n "$SERIAL_VIOLATIONS" ]; then
+    violation_count=$(echo "$SERIAL_VIOLATIONS" | wc -l | tr -d ' ')
+    echo -e "${RED}Found $violation_count #[serial] violation(s) in integration tests${NC}"
+    echo
+    echo "Violations:"
+    echo "$SERIAL_VIOLATIONS"
+    echo
+    echo -e "${YELLOW}#[serial] is BANNED in integration tests.${NC}"
+    echo "It indicates a design problem: the test or production code couples to global"
+    echo "mutable state (process env vars, real filesystem, singletons)."
+    echo
+    echo "Fix: use the env-injection pattern so tests can run in parallel:"
+    echo "  BEFORE: fn from_env() -> Self { /* reads std::env directly */ }"
+    echo "  AFTER:  fn from_env_fn(get: impl Fn(&str) -> Option<String>) -> Self { /* injectable */ }"
+    echo "          fn from_env() -> Self { Self::from_env_fn(|k| std::env::var(k).ok()) }"
+    echo
+    echo "See docs/agents/testing-guide.md 'Parallelism Rules' and 'Env-Injection Pattern' sections"
+    exit 1
+else
+    log -e "${GREEN}No #[serial] usage in integration tests${NC}"
     log
 fi
 

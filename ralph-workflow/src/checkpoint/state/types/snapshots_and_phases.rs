@@ -277,34 +277,30 @@ pub(crate) fn is_sensitive_env_key(key: &str) -> bool {
         .any(|pattern| upper.contains(pattern))
 }
 
+const RELEVANT_OTHER_KEYS: &[&str] = &[
+    "EDITOR",
+    "VISUAL",
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+];
+
 impl EnvironmentSnapshot {
-    /// Capture the current environment variables relevant to Ralph.
-    #[must_use] 
-    pub fn capture_current() -> Self {
+    /// Build an environment snapshot from an arbitrary iterator of key-value pairs.
+    ///
+    /// Applies the same sensitive-variable filtering and partitioning as `capture_current`.
+    /// Use this in tests to build snapshots without touching the process environment.
+    #[must_use]
+    pub fn from_env_vars(vars: impl IntoIterator<Item = (String, String)>) -> Self {
         let mut ralph_vars = HashMap::new();
         let mut other_vars = HashMap::new();
 
-        // Capture all RALPH_* environment variables
-        for (key, value) in std::env::vars() {
+        for (key, value) in vars {
             if key.starts_with("RALPH_") && !is_sensitive_env_key(&key) {
                 ralph_vars.insert(key, value);
-            }
-        }
-
-        // Capture other relevant variables
-        let relevant_keys = [
-            "EDITOR",
-            "VISUAL",
-            "GIT_AUTHOR_NAME",
-            "GIT_AUTHOR_EMAIL",
-            "GIT_COMMITTER_NAME",
-            "GIT_COMMITTER_EMAIL",
-        ];
-        for key in &relevant_keys {
-            if let Ok(value) = std::env::var(key) {
-                if !is_sensitive_env_key(key) {
-                    other_vars.insert(key.to_string(), value);
-                }
+            } else if RELEVANT_OTHER_KEYS.contains(&key.as_str()) && !is_sensitive_env_key(&key) {
+                other_vars.insert(key, value);
             }
         }
 
@@ -312,6 +308,12 @@ impl EnvironmentSnapshot {
             ralph_vars,
             other_vars,
         }
+    }
+
+    /// Capture the current environment variables relevant to Ralph.
+    #[must_use]
+    pub fn capture_current() -> Self {
+        Self::from_env_vars(std::env::vars())
     }
 }
 

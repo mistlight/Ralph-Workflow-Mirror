@@ -7,7 +7,15 @@
 // (e.g., bitflags 1.3.2 from inotify vs 2.10.0 from other crates) which are ecosystem-level
 // issues outside our control and don't reflect code quality problems.
 #![deny(warnings, clippy::all, clippy::pedantic, clippy::nursery)]
-//! System tests - real filesystem and git operations.
+//! git2-system-tests: real git repository operations.
+//!
+//! ALL tests in this binary use `git2::Repository` or `init_git_repo()`, which
+//! wraps libgit2 — a C library with a global reference counter. Concurrent drops
+//! of `Repository` objects across threads cause SIGABRT. For this reason ALL
+//! tests in this binary carry `#[serial]`.
+//!
+//! This is NOT a design smell in Ralph's code; it is an inherent libgit2
+//! constraint. Tests that do not touch libgit2 belong in `process-system-tests`.
 //!
 //! # WARNING: DO NOT ADD NEW SYSTEM TESTS WITHOUT APPROVAL
 //!
@@ -18,18 +26,18 @@
 //!
 //! If testing CLI/pipeline behavior, use integration tests with proper mocking.
 //!
-//! NOTE: The `signal_cleanup` module is an exception: it validates Ctrl+C/SIGINT cleanup
-//! semantics end-to-end (real signal delivery, file permission bits, hook restoration) which
-//! cannot be exercised via `MockProcessExecutor` or `MemoryWorkspace` because the interrupt
-//! handler and exit code are process-global OS interactions.
+//! NOTE: The `signal_cleanup` module validates Ctrl+C/SIGINT cleanup semantics
+//! end-to-end (real signal delivery, file permission bits, hook restoration). It
+//! uses `init_git_repo()` for setup and therefore remains in this serial binary.
 //!
 //! These tests are **NOT** part of CI. Run manually as sanity checks.
-//! See `SYSTEM_TESTS.md` for full guidelines.
+//! See `SYSTEM_TESTS.md` for full guidelines and `docs/agents/testing-guide.md`
+//! for the canonical testing strategy.
 //!
 //! # Running System Tests
 //!
 //! ```bash
-//! cargo test -p ralph-workflow-system-tests
+//! cargo test -p ralph-workflow-tests --test git2-system-tests
 //! ```
 //!
 //! # When to Use System Tests
@@ -44,13 +52,13 @@
 //! - CLI behavior (use integration tests)
 //! - Pipeline logic (use integration tests)
 //! - Anything testable with `MemoryWorkspace` + `MockProcessExecutor`
+//! - Tests that do not use libgit2 (use `process-system-tests` instead)
 
 mod common;
 mod test_timeout;
 
-// Test modules using real filesystem/git operations
-mod agents;
-mod deduplication;
+// Test modules using real git2/libgit2 operations (require #[serial])
+// NOTE: agents and deduplication moved to process-system-tests binary (no libgit2 needed)
 mod git;
 mod prompt_permissions;
 mod rebase;

@@ -272,7 +272,7 @@ Three tiers with strict boundaries:
 |------|---------|------|--------|
 | Unit | `cargo test -p ralph-workflow --lib` | Pure logic | None needed |
 | Integration | `cargo test -p ralph-workflow-tests` | Component interactions | `MemoryWorkspace`, `MockProcessExecutor` |
-| System | `cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests` | Real filesystem/git | None (real I/O) |
+| System | `cargo test -p ralph-workflow-tests --test git2-system-tests` | Real filesystem/git | None (real I/O) |
 
 See [INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md), [SYSTEM_TESTS.md](tests/system_tests/SYSTEM_TESTS.md).
 
@@ -282,6 +282,23 @@ See [INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md), [SYSTEM_TESTS.md](tests/
 - **Behavior over implementation**: Tests survive internal refactors
 - **Mock at boundaries only**: Filesystem, network, processes - never domain logic
 - **Fix implementation, not tests**: Unless expected behavior intentionally changed
+
+### Parallelism (Mandatory)
+
+Integration tests **must run in parallel** (standard Rust test harness default). System tests
+serialize via `#[serial]` only due to libgit2's global reference counter — not a design choice.
+
+| Test tier | Threading | Why |
+|-----------|-----------|-----|
+| Unit | Parallel (default) | Pure functions, no shared state |
+| Integration | Parallel (default) | `MemoryWorkspace` and `MockProcessExecutor` are isolated per test |
+| System | Serial (`#[serial]`) | libgit2 C library has thread-unsafe global shutdown |
+
+**`#[serial]` in integration tests is a design smell.** It means production code calls
+`std::env::var`, touches real filesystem, or uses singletons instead of accepting injectable
+dependencies. The fix is always dependency injection, never test serialization.
+
+See [INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md) for the env-injection pattern.
 
 ### Workspace Abstraction
 

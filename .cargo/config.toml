@@ -1,15 +1,5 @@
 # Cargo configuration for ralph-workflow project
 
-# Integration tests now support parallel execution. Each test uses its own
-# working directory passed via the `working_dir` parameter to `run_ralph_cli()`,
-# avoiding global CWD changes and mutex contention.
-#
-# However, there's a pre-existing SIGABRT during parallel test cleanup (likely
-# in libgit2 cleanup code). Tests pass but the process aborts during teardown.
-# Using RUST_TEST_THREADS=1 works around this until the root cause is fixed.
-[env]
-RUST_TEST_THREADS = "1"
-
 [build]
 # Use default build settings.
 #

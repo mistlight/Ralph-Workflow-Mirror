@@ -9,8 +9,12 @@ name = "integration_tests"
 path = "integration_tests/main.rs"
 
 [[test]]
-name = "ralph-workflow-system-tests"
+name = "git2-system-tests"
 path = "system_tests/main.rs"
+
+[[test]]
+name = "process-system-tests"
+path = "process_system_tests/main.rs"
 
 [dependencies]
 anyhow = "1"

@@ -1,5 +1,13 @@
-// System tests for CCS binary discovery that require real filesystem operations
+// Process system tests for CCS binary discovery that require real filesystem operations
 // These tests cannot use MemoryWorkspace as they need to interact with PATH and real executables
+//
+// IMPORTANT: `#[serial]` is NOT used here. Each test that modifies process-global
+// state (PATH, CCS_HOME) must acquire the module-local `ENV_LOCK` Mutex for the
+// duration of the mutation. This provides fine-grained intra-module serialization
+// without forcing the entire test binary to run serially.
+//
+// If you need to add a test that modifies process-global state, acquire `ENV_LOCK`
+// before mutating — do NOT introduce `#[serial]`.
 
 use ralph_workflow::agents::ccs::{
     build_ccs_agent_config, ccs_env_var_debug_summary, resolve_ccs_command,

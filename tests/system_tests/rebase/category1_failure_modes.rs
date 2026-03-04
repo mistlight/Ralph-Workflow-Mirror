@@ -25,6 +25,7 @@ use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::RebaseResult;
+use serial_test::serial;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
@@ -46,6 +47,7 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 /// This verifies that when the target branch does not exist, the system
 /// returns a Failed result with `InvalidRevision` error details.
 #[test]
+#[serial]
 fn rebase_with_invalid_revision_returns_error() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_onto;
@@ -80,6 +82,7 @@ fn rebase_with_invalid_revision_returns_error() {
 /// handles the situation gracefully (either fails with `DirtyWorkingTree`
 /// error or uses autostash if available).
 #[test]
+#[serial]
 fn rebase_with_dirty_working_tree_fails() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
@@ -132,6 +135,7 @@ fn rebase_with_dirty_working_tree_fails() {
 /// handles the situation gracefully (either fails with `DirtyWorkingTree`
 /// error or uses autostash if available).
 #[test]
+#[serial]
 fn rebase_with_staged_changes_fails() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
@@ -187,6 +191,7 @@ fn rebase_with_staged_changes_fails() {
 /// This verifies that when a rebase is already in progress, the system
 /// can detect the rebase state files without crashing.
 #[test]
+#[serial]
 fn rebase_detects_existing_rebase_in_progress() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -217,6 +222,7 @@ fn rebase_detects_existing_rebase_in_progress() {
 /// This verifies that when a merge is in progress, the system
 /// detects the state and handles rebase appropriately.
 #[test]
+#[serial]
 fn rebase_detects_merge_in_progress() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_onto;
@@ -247,6 +253,7 @@ fn rebase_detects_merge_in_progress() {
 /// This verifies that when git identity config is missing, the system
 /// handles the situation without crashing.
 #[test]
+#[serial]
 fn rebase_handles_missing_git_config() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -271,6 +278,7 @@ fn rebase_handles_missing_git_config() {
 /// This verifies that when the repository object database is corrupted,
 /// the system has an error kind to represent this failure.
 #[test]
+#[serial]
 fn rebase_handles_corrupt_object_database() {
     with_default_timeout(|| {
         // Test that rebase handles corrupt object database
@@ -300,6 +308,7 @@ fn rebase_handles_corrupt_object_database() {
 /// This verifies that when a cherry-pick is in progress, the system
 /// detects the state and handles rebase appropriately.
 #[test]
+#[serial]
 fn rebase_detects_cherry_pick_in_progress() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_onto;
@@ -327,6 +336,7 @@ fn rebase_detects_cherry_pick_in_progress() {
 /// This verifies that when a stale index.lock file exists, the system
 /// can clean it up and proceed with rebase operations.
 #[test]
+#[serial]
 fn rebase_handles_locked_index() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{cleanup_stale_rebase_state, rebase_onto};
@@ -365,6 +375,7 @@ fn rebase_handles_locked_index() {
 /// This verifies that when a revert is in progress, the system
 /// detects the state and handles rebase appropriately.
 #[test]
+#[serial]
 fn rebase_detects_revert_in_progress() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_onto;
@@ -392,6 +403,7 @@ fn rebase_detects_revert_in_progress() {
 /// This verifies that when a bisect is in progress, the system
 /// detects the state and handles rebase appropriately.
 #[test]
+#[serial]
 fn rebase_detects_bisect_in_progress() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_onto;
@@ -419,6 +431,7 @@ fn rebase_detects_bisect_in_progress() {
 /// This verifies that when a branch is checked out in another worktree,
 /// the system has an error kind to represent this concurrent operation.
 #[test]
+#[serial]
 fn rebase_handles_worktree_conflicts() {
     with_default_timeout(|| {
         // Test that rebase handles worktree conflicts

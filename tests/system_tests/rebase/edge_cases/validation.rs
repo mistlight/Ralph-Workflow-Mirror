@@ -18,6 +18,7 @@ use test_helpers::{commit_all, with_temp_cwd};
 
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
+use serial_test::serial;
 
 use super::init_repo_with_initial_commit;
 
@@ -26,6 +27,7 @@ use super::init_repo_with_initial_commit;
 /// This verifies that a normal repository with no special configurations
 /// passes all validation checks.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_succeeds_on_clean_repo() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -50,6 +52,7 @@ fn validate_rebase_preconditions_succeeds_on_clean_repo() {
 /// This verifies that when a repository is a shallow clone with incomplete
 /// history, the system fails precondition validation with an appropriate error.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_detects_shallow_clone() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -96,6 +99,7 @@ fn validate_rebase_preconditions_detects_shallow_clone() {
 /// This verifies that when .gitmodules exists but submodules are not
 /// initialized, the system fails precondition validation appropriately.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_detects_uninitialized_submodules() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -142,6 +146,7 @@ fn validate_rebase_preconditions_detects_uninitialized_submodules() {
 /// This verifies that when .gitmodules exists and submodules are properly
 /// initialized, the system passes precondition validation successfully.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_succeeds_with_initialized_submodules() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -186,6 +191,7 @@ fn validate_rebase_preconditions_succeeds_with_initialized_submodules() {
 /// This verifies that when no .gitmodules file exists (no submodules),
 /// the system passes precondition validation successfully.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_succeeds_without_submodules() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -213,6 +219,7 @@ fn validate_rebase_preconditions_succeeds_without_submodules() {
 /// This verifies that when sparse checkout is enabled but the sparse-checkout
 /// file is missing, the system fails precondition validation appropriately.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_detects_misconfigured_sparse_checkout() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -259,6 +266,7 @@ fn validate_rebase_preconditions_detects_misconfigured_sparse_checkout() {
 /// This verifies that when sparse checkout is enabled and properly configured
 /// with a valid sparse-checkout file, the system passes precondition validation.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_succeeds_with_proper_sparse_checkout() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
@@ -297,6 +305,7 @@ fn validate_rebase_preconditions_succeeds_with_proper_sparse_checkout() {
 /// This verifies that when the sparse-checkout file exists but is empty,
 /// the system fails precondition validation with an appropriate error.
 #[test]
+#[serial]
 fn validate_rebase_preconditions_detects_empty_sparse_checkout_config() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;

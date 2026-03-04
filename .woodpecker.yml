@@ -18,5 +18,5 @@ steps:
       - bash scripts/verify_memory_safety.sh
       # Performance regression verification (long-running tests, checkpoint size, etc.)
       - bash scripts/ci_performance_regression.sh
-      # Note: System tests (ralph-workflow-system-tests) are NOT run in CI
+      # Note: System tests (git2-system-tests, process-system-tests) are NOT run in CI
       # They require real git/filesystem and are run manually as needed

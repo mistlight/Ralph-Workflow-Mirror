@@ -487,13 +487,12 @@ impl Default for GitRemoteConfig {
 }
 
 impl CloudConfig {
-    /// Load cloud config from environment variables ONLY.
-    /// Returns disabled config when cloud mode is not enabled.
+    /// Load cloud configuration from a caller-supplied env-var accessor.
+    /// This is the canonical implementation; `from_env` is a thin wrapper.
     #[must_use]
-    pub fn from_env() -> Self {
-        let enabled = std::env::var("RALPH_CLOUD_MODE")
-            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-            .unwrap_or(false);
+    pub fn from_env_fn(get: impl Fn(&str) -> Option<String>) -> Self {
+        let enabled =
+            get("RALPH_CLOUD_MODE").is_some_and(|v| v.eq_ignore_ascii_case("true") || v == "1");
 
         if !enabled {
             return Self::disabled();
@@ -501,18 +500,23 @@ impl CloudConfig {
 
         Self {
             enabled: true,
-            api_url: std::env::var("RALPH_CLOUD_API_URL").ok(),
-            api_token: std::env::var("RALPH_CLOUD_API_TOKEN").ok(),
-            run_id: std::env::var("RALPH_CLOUD_RUN_ID").ok(),
-            heartbeat_interval_secs: std::env::var("RALPH_CLOUD_HEARTBEAT_INTERVAL")
-                .ok()
+            api_url: get("RALPH_CLOUD_API_URL"),
+            api_token: get("RALPH_CLOUD_API_TOKEN"),
+            run_id: get("RALPH_CLOUD_RUN_ID"),
+            heartbeat_interval_secs: get("RALPH_CLOUD_HEARTBEAT_INTERVAL")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
-            graceful_degradation: std::env::var("RALPH_CLOUD_GRACEFUL_DEGRADATION")
-                .map(|v| !v.eq_ignore_ascii_case("false") && v != "0")
-                .unwrap_or(true),
-            git_remote: GitRemoteConfig::from_env(),
+            graceful_degradation: get("RALPH_CLOUD_GRACEFUL_DEGRADATION")
+                .is_none_or(|v| !v.eq_ignore_ascii_case("false") && v != "0"),
+            git_remote: GitRemoteConfig::from_env_fn(|k| get(k)),
         }
+    }
+
+    /// Load cloud config from environment variables ONLY.
+    /// Returns disabled config when cloud mode is not enabled.
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::from_env_fn(|k| std::env::var(k).ok())
     }
 
     #[must_use]
@@ -626,44 +630,50 @@ impl GitRemoteConfig {
 }
 
 impl GitRemoteConfig {
+    /// Load git-remote configuration from a caller-supplied env-var accessor.
+    /// This is the canonical implementation; `from_env` is a thin wrapper.
     #[must_use]
-    pub fn from_env() -> Self {
-        let auth_method = match std::env::var("RALPH_GIT_AUTH_METHOD")
-            .unwrap_or_else(|_| "ssh".to_string())
+    pub fn from_env_fn(get: impl Fn(&str) -> Option<String>) -> Self {
+        let auth_method = match get("RALPH_GIT_AUTH_METHOD")
+            .unwrap_or_else(|| "ssh".to_string())
             .to_lowercase()
             .as_str()
         {
             "token" => {
-                let token = std::env::var("RALPH_GIT_TOKEN").unwrap_or_default();
-                let username = std::env::var("RALPH_GIT_TOKEN_USERNAME")
-                    .unwrap_or_else(|_| "x-access-token".to_string());
+                let token = get("RALPH_GIT_TOKEN").unwrap_or_default();
+                let username =
+                    get("RALPH_GIT_TOKEN_USERNAME").unwrap_or_else(|| "x-access-token".to_string());
                 GitAuthMethod::Token { token, username }
             }
             "credential-helper" => {
-                let helper = std::env::var("RALPH_GIT_CREDENTIAL_HELPER")
-                    .unwrap_or_else(|_| "gcloud".to_string());
+                let helper =
+                    get("RALPH_GIT_CREDENTIAL_HELPER").unwrap_or_else(|| "gcloud".to_string());
                 GitAuthMethod::CredentialHelper { helper }
             }
             _ => {
-                let key_path = std::env::var("RALPH_GIT_SSH_KEY_PATH").ok();
+                let key_path = get("RALPH_GIT_SSH_KEY_PATH");
                 GitAuthMethod::SshKey { key_path }
             }
         };
 
         Self {
             auth_method,
-            push_branch: std::env::var("RALPH_GIT_PUSH_BRANCH").ok(),
-            create_pr: std::env::var("RALPH_GIT_CREATE_PR")
-                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-                .unwrap_or(false),
-            pr_title_template: std::env::var("RALPH_GIT_PR_TITLE").ok(),
-            pr_body_template: std::env::var("RALPH_GIT_PR_BODY").ok(),
-            pr_base_branch: std::env::var("RALPH_GIT_PR_BASE_BRANCH").ok(),
-            force_push: std::env::var("RALPH_GIT_FORCE_PUSH")
-                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-                .unwrap_or(false),
-            remote_name: std::env::var("RALPH_GIT_REMOTE").unwrap_or_else(|_| "origin".to_string()),
+            push_branch: get("RALPH_GIT_PUSH_BRANCH"),
+            create_pr: get("RALPH_GIT_CREATE_PR")
+                .is_some_and(|v| v.eq_ignore_ascii_case("true") || v == "1"),
+            pr_title_template: get("RALPH_GIT_PR_TITLE"),
+            pr_body_template: get("RALPH_GIT_PR_BODY"),
+            pr_base_branch: get("RALPH_GIT_PR_BASE_BRANCH"),
+            force_push: get("RALPH_GIT_FORCE_PUSH")
+                .is_some_and(|v| v.eq_ignore_ascii_case("true") || v == "1"),
+            remote_name: get("RALPH_GIT_REMOTE").unwrap_or_else(|| "origin".to_string()),
         }
+    }
+
+    /// Load git-remote configuration from the process environment.
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::from_env_fn(|k| std::env::var(k).ok())
     }
 }
 
@@ -790,37 +800,32 @@ impl Default for Config {
 #[cfg(test)]
 mod cloud_tests {
     use super::*;
-    use serial_test::serial;
 
     #[test]
-    #[serial]
     fn test_cloud_disabled_by_default() {
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        let config = CloudConfig::from_env();
+        let config = CloudConfig::from_env_fn(|_| None);
         assert!(!config.enabled);
     }
 
     #[test]
-    #[serial]
     fn test_cloud_enabled_with_env_var() {
-        std::env::set_var("RALPH_CLOUD_MODE", "true");
-        std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com");
-        std::env::set_var("RALPH_CLOUD_API_TOKEN", "secret");
-        std::env::set_var("RALPH_CLOUD_RUN_ID", "run123");
-
-        let config = CloudConfig::from_env();
+        let env = [
+            ("RALPH_CLOUD_MODE", "true"),
+            ("RALPH_CLOUD_API_URL", "https://api.example.com"),
+            ("RALPH_CLOUD_API_TOKEN", "secret"),
+            ("RALPH_CLOUD_RUN_ID", "run123"),
+        ];
+        let config = CloudConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
         assert!(config.enabled);
         assert_eq!(config.api_url, Some("https://api.example.com".to_string()));
         assert_eq!(config.run_id, Some("run123".to_string()));
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
     }
 
     #[test]
-    #[serial]
     fn test_cloud_validation_requires_fields() {
         let config = CloudConfig {
             enabled: true,
@@ -836,21 +841,22 @@ mod cloud_tests {
     }
 
     #[test]
-    #[serial]
     fn test_git_auth_method_from_env() {
-        std::env::set_var("RALPH_GIT_AUTH_METHOD", "token");
-        std::env::set_var("RALPH_GIT_TOKEN", "ghp_test");
-
-        let config = GitRemoteConfig::from_env();
+        let env = [
+            ("RALPH_GIT_AUTH_METHOD", "token"),
+            ("RALPH_GIT_TOKEN", "ghp_test"),
+        ];
+        let config = GitRemoteConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
         match config.auth_method {
             GitAuthMethod::Token { token, .. } => {
                 assert_eq!(token, "ghp_test");
             }
             _ => panic!("Expected Token auth method"),
         }
-
-        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
-        std::env::remove_var("RALPH_GIT_TOKEN");
     }
 
     #[test]

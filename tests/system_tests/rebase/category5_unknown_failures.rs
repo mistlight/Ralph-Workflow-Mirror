@@ -25,6 +25,7 @@ use test_helpers::{commit_all, git_switch, init_git_repo, with_temp_cwd, write_f
 use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult};
+use serial_test::serial;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
@@ -46,6 +47,7 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 /// This verifies that when an Unknown error is constructed, it provides
 /// a description indicating the unknown or unexpected nature of the error.
 #[test]
+#[serial]
 fn unknown_error_kind_exists_with_description() {
     with_default_timeout(|| {
         // Verify the Unknown error kind exists and provides a description
@@ -70,6 +72,7 @@ fn unknown_error_kind_exists_with_description() {
 /// This verifies that when git returns an unexpected exit code, the system
 /// classifies the error appropriately without crashing.
 #[test]
+#[serial]
 fn rebase_handles_unexpected_exit_code() {
     with_default_timeout(|| {
         // Test behavior when git returns an unexpected exit code
@@ -108,6 +111,7 @@ fn rebase_handles_unexpected_exit_code() {
 /// This verifies that when git produces unexpected stderr output, the system
 /// handles the error classification without crashing.
 #[test]
+#[serial]
 fn rebase_handles_unexpected_stderr_format() {
     with_default_timeout(|| {
         // Test that rebase handles unexpected stderr formats from git
@@ -152,6 +156,7 @@ fn rebase_handles_unexpected_stderr_format() {
 /// This verifies that when filesystem case sensitivity causes collisions,
 /// the system handles the situation without crashing.
 #[test]
+#[serial]
 fn rebase_handles_case_sensitivity_collision() {
     with_default_timeout(|| {
         // Test platform-specific case sensitivity issues
@@ -191,6 +196,7 @@ fn rebase_handles_case_sensitivity_collision() {
 /// This verifies that when deeply nested directory structures are used,
 /// the system handles rebase operations without path length errors.
 #[test]
+#[serial]
 fn rebase_handles_long_path_names() {
     with_default_timeout(|| {
         // Test that rebase handles very long path names
@@ -244,6 +250,7 @@ fn rebase_handles_long_path_names() {
 /// This verifies that when files with special characters (spaces, dashes, dots)
 /// are modified, the system handles rebase operations without crashing.
 #[test]
+#[serial]
 fn rebase_handles_special_characters_in_filenames() {
     with_default_timeout(|| {
         // Test that rebase handles special characters in filenames
@@ -289,6 +296,7 @@ fn rebase_handles_special_characters_in_filenames() {
 /// This verifies that when git produces output that cannot be classified,
 /// the system falls back to Unknown error kind with descriptive details.
 #[test]
+#[serial]
 fn unknown_error_classification_for_unexpected_output() {
     with_default_timeout(|| {
         // Test that unexpected git output is classified as Unknown error
@@ -317,6 +325,7 @@ fn unknown_error_classification_for_unexpected_output() {
 /// This verifies that when rebase-merge directory exists from another operation,
 /// the system detects the concurrent operation without crashing.
 #[test]
+#[serial]
 fn rebase_handles_simultaneous_git_operations() {
     with_default_timeout(|| {
         // Test race conditions from concurrent git operations
@@ -348,6 +357,7 @@ fn rebase_handles_simultaneous_git_operations() {
 /// This verifies that when HEAD file is corrupted or empty, the system
 /// handles rebase operations without crashing.
 #[test]
+#[serial]
 fn rebase_handles_zero_length_ref_updates() {
     with_default_timeout(|| {
         // Test handling of zero-length or empty ref updates
@@ -385,6 +395,7 @@ fn rebase_handles_zero_length_ref_updates() {
 /// This verifies that when files with Unicode names are modified,
 /// the system handles rebase operations without encoding errors.
 #[test]
+#[serial]
 fn rebase_handles_unicode_in_filenames_and_content() {
     with_default_timeout(|| {
         // Test handling of Unicode characters in filenames and content

@@ -30,6 +30,7 @@ use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 
 use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult, RecoveryAction};
+use serial_test::serial;
 
 /// Helper to create a file with conflict markers
 fn create_conflict_file(path: &std::path::Path, content: &str) {
@@ -94,6 +95,7 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 /// This verifies that when a file contains git conflict markers, the system
 /// detects them correctly and reports the conflict state.
 #[test]
+#[serial]
 fn test_detect_single_file_conflict() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -119,6 +121,7 @@ fn test_detect_single_file_conflict() {
 /// This verifies that when multiple files contain conflict markers, the system
 /// detects all of them and reports the complete conflict state.
 #[test]
+#[serial]
 fn test_detect_multiple_file_conflicts() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -151,6 +154,7 @@ fn test_detect_multiple_file_conflicts() {
 /// This verifies that when some files are resolved and others are not, the system
 /// correctly identifies which files still contain conflict markers.
 #[test]
+#[serial]
 fn test_distinct_resolved_unresolved_conflicts() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -184,6 +188,7 @@ fn test_distinct_resolved_unresolved_conflicts() {
 /// This verifies that when braces, brackets, and parentheses are balanced,
 /// the validation passes, and when unbalanced, it fails appropriately.
 #[test]
+#[serial]
 fn test_validate_balanced_delimiters() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -219,6 +224,7 @@ fn test_validate_balanced_delimiters() {
 /// This verifies that when an AI "resolution" still contains conflict markers,
 /// the system detects the incomplete resolution and reports it.
 #[test]
+#[serial]
 fn test_ai_leaves_conflict_markers_is_detected() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -244,6 +250,7 @@ fn test_ai_leaves_conflict_markers_is_detected() {
 /// This verifies that when some conflicts are resolved and others are not,
 /// the system identifies the partial resolution state accurately.
 #[test]
+#[serial]
 fn test_detect_partial_conflict_resolution() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -274,6 +281,7 @@ fn test_detect_partial_conflict_resolution() {
 /// This verifies that when all conflicts are resolved with no markers remaining,
 /// the system validates the complete resolution state successfully.
 #[test]
+#[serial]
 fn test_validate_complete_conflict_resolution() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -300,6 +308,7 @@ fn test_validate_complete_conflict_resolution() {
 /// Testing actual git conflict behavior requires real git execution which
 /// is not possible with mocked executors in integration tests.
 #[test]
+#[serial]
 fn test_rebase_with_conflicts_is_detected() {
     with_default_timeout(|| {
         // Test that the Conflicts result variant exists and can be constructed
@@ -328,6 +337,7 @@ fn test_rebase_with_conflicts_is_detected() {
 /// This verifies that when different error types occur, the system
 /// chooses the appropriate recovery action (Continue, Retry, Abort, or Skip).
 #[test]
+#[serial]
 fn test_recovery_action_decision_logic() {
     with_default_timeout(|| {
         // Content conflict should Continue to AI resolution
@@ -376,6 +386,7 @@ fn test_recovery_action_decision_logic() {
 /// This verifies that when a feature branch has no unique commits,
 /// the system skips rebase and returns `NoOp` or immediate Success.
 #[test]
+#[serial]
 fn test_rebase_already_up_to_date() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -414,6 +425,7 @@ fn test_rebase_already_up_to_date() {
 /// This verifies that when branches have no common ancestor or the target
 /// branch doesn't exist, the system returns Failed or `NoOp` result.
 #[test]
+#[serial]
 fn test_rebase_no_common_ancestor() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
@@ -441,6 +453,7 @@ fn test_rebase_no_common_ancestor() {
 /// This verifies that when conflicts are recorded and resolved, the system
 /// tracks the resolution state and reports when all conflicts are resolved.
 #[test]
+#[serial]
 fn test_state_machine_tracks_conflict_resolution() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::RebaseStateMachine;
@@ -474,6 +487,7 @@ fn test_state_machine_tracks_conflict_resolution() {
 /// This verifies that when a checkpoint is saved, it can be loaded
 /// later with all state preserved for recovery operations.
 #[test]
+#[serial]
 fn test_checkpoint_save_and_load() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_checkpoint::{
@@ -517,6 +531,7 @@ fn test_checkpoint_save_and_load() {
 /// This verifies that when a rebase is interrupted and later resumed,
 /// the system restores state from the checkpoint and can continue recovery.
 #[test]
+#[serial]
 fn test_recovery_from_checkpoint() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_checkpoint::save_rebase_checkpoint;
@@ -552,6 +567,7 @@ fn test_recovery_from_checkpoint() {
 /// This verifies that when a rebase lock is held, concurrent rebase
 /// operations cannot proceed until the lock is released.
 #[test]
+#[serial]
 fn test_rebase_lock_prevents_concurrent() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_state_machine::{
@@ -583,6 +599,7 @@ fn test_rebase_lock_prevents_concurrent() {
 /// This verifies that when a stale lock file exists, the system
 /// cleans it up and allows new operations to proceed.
 #[test]
+#[serial]
 fn test_stale_lock_is_cleaned_up() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::rebase_state_machine::{
@@ -616,6 +633,7 @@ fn test_stale_lock_is_cleaned_up() {
 /// state rather than failing. `LibGit2` is the authoritative source for
 /// conflict verification, not JSON parsing.
 #[test]
+#[serial]
 fn test_conflict_resolution_continues_without_json() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::{abort_rebase, get_conflicted_files, git_add_all};

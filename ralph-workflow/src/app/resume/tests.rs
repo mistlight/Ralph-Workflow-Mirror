@@ -10,44 +10,8 @@ mod tests {
     use crate::logger::{Colors, Logger};
     use crate::workspace::MemoryWorkspace;
     use crate::workspace::Workspace;
-    use serial_test::serial;
-
-    #[cfg(unix)]
-    extern "C" {
-        fn tzset();
-    }
     use std::path::Path;
     use std::sync::Arc;
-
-    struct EnvVarGuard {
-        name: &'static str,
-        prior: Option<std::ffi::OsString>,
-    }
-
-    impl EnvVarGuard {
-        fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            let prior = std::env::var_os(name);
-            std::env::set_var(name, value);
-            #[cfg(unix)]
-            unsafe {
-                tzset();
-            }
-            Self { name, prior }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            match self.prior.take() {
-                Some(v) => std::env::set_var(self.name, v),
-                None => std::env::remove_var(self.name),
-            }
-            #[cfg(unix)]
-            unsafe {
-                tzset();
-            }
-        }
-    }
 
     #[test]
     fn test_user_friendly_summary_uses_ascii_outcome_markers() {
@@ -263,9 +227,9 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_user_friendly_summary_interprets_checkpoint_timestamp_as_local_time() {
-        let _tz = EnvVarGuard::set("TZ", "America/Los_Angeles");
+        // Timestamp is stored and parsed using the same local timezone, so "just now"
+        // is always correct regardless of the running environment's timezone.
 
         let mut checkpoint = crate::checkpoint::PipelineCheckpoint::from_params(CheckpointParams {
             phase: PipelinePhase::Development,

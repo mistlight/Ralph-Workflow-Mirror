@@ -62,5 +62,5 @@ bash scripts/check-tests.sh && git commit
 
 ## Related Documentation
 
-- [tests/INTEGRATION_TESTS.md](../tests/INTEGRATION_TESTS.md) - Integration test rules
-- [docs/agents/integration-tests.md](../docs/agents/integration-tests.md) - Detailed integration test guide
+- [docs/agents/testing-guide.md](../docs/agents/testing-guide.md) - Canonical test strategy, rules, and patterns
+- [docs/agents/verification.md](../docs/agents/verification.md) - Required pre-PR verification commands

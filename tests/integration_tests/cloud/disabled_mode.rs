@@ -16,22 +16,15 @@ use ralph_workflow::reducer::effect::{Effect, EffectHandler, EffectResult};
 use ralph_workflow::reducer::event::{LifecycleEvent, PipelineEvent};
 use ralph_workflow::reducer::state::PipelineState;
 use ralph_workflow::reducer::ui_event::UIEvent;
-use serial_test::serial;
 
 use crate::common::IntegrationFixture;
 use crate::test_timeout::with_default_timeout;
 
 #[test]
-#[serial]
 fn test_cloud_mode_disabled_by_default() {
     with_default_timeout(|| {
-        // Ensure no cloud env vars are set
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
-
-        let config = CloudConfig::from_env();
+        // Empty env — no vars set — fully isolated, no process env mutation
+        let config = CloudConfig::from_env_fn(|_| None);
 
         assert!(
             !config.enabled,
@@ -53,34 +46,35 @@ fn test_cloud_mode_disabled_by_default() {
 }
 
 #[test]
-#[serial]
 fn test_cloud_mode_explicitly_disabled() {
     with_default_timeout(|| {
         // Explicitly set RALPH_CLOUD_MODE to false
-        std::env::set_var("RALPH_CLOUD_MODE", "false");
-
-        let config = CloudConfig::from_env();
+        let config = CloudConfig::from_env_fn(|k| match k {
+            "RALPH_CLOUD_MODE" => Some("false".to_string()),
+            _ => None,
+        });
 
         assert!(
             !config.enabled,
             "Cloud mode should be disabled when RALPH_CLOUD_MODE=false"
         );
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
     });
 }
 
 #[test]
-#[serial]
 fn test_cloud_mode_disabled_ignores_other_vars() {
     with_default_timeout(|| {
         // Set other cloud vars but leave RALPH_CLOUD_MODE unset
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::set_var("RALPH_CLOUD_API_URL", "https://api.example.com");
-        std::env::set_var("RALPH_CLOUD_API_TOKEN", "secret");
-        std::env::set_var("RALPH_CLOUD_RUN_ID", "run123");
-
-        let config = CloudConfig::from_env();
+        let env = [
+            ("RALPH_CLOUD_API_URL", "https://api.example.com"),
+            ("RALPH_CLOUD_API_TOKEN", "secret"),
+            ("RALPH_CLOUD_RUN_ID", "run123"),
+        ];
+        let config = CloudConfig::from_env_fn(|k| {
+            env.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| (*v).to_string())
+        });
 
         assert!(
             !config.enabled,
@@ -90,10 +84,6 @@ fn test_cloud_mode_disabled_ignores_other_vars() {
         assert!(config.api_url.is_none());
         assert!(config.api_token.is_none());
         assert!(config.run_id.is_none());
-
-        std::env::remove_var("RALPH_CLOUD_API_URL");
-        std::env::remove_var("RALPH_CLOUD_API_TOKEN");
-        std::env::remove_var("RALPH_CLOUD_RUN_ID");
     });
 }
 
@@ -110,20 +100,20 @@ fn test_cloud_config_disabled_validation_passes() {
 }
 
 #[test]
-#[serial]
 fn test_cloud_mode_case_insensitive() {
     with_default_timeout(|| {
-        // Test various capitalizations
+        // Test various capitalizations that should disable cloud mode
         for value in &["FALSE", "False", "false", "0"] {
-            std::env::set_var("RALPH_CLOUD_MODE", value);
-            let config = CloudConfig::from_env();
+            let v = *value;
+            let config = CloudConfig::from_env_fn(|k| match k {
+                "RALPH_CLOUD_MODE" => Some(v.to_string()),
+                _ => None,
+            });
             assert!(
                 !config.enabled,
-                "Cloud mode should be disabled for value: {value}"
+                "Cloud mode should be disabled for value: {v}"
             );
         }
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
     });
 }
 
@@ -142,16 +132,10 @@ fn test_disabled_config_has_safe_defaults() {
 }
 
 #[test]
-#[serial]
 fn test_git_remote_config_defaults_when_disabled() {
     with_default_timeout(|| {
-        std::env::remove_var("RALPH_CLOUD_MODE");
-        std::env::remove_var("RALPH_GIT_AUTH_METHOD");
-        std::env::remove_var("RALPH_GIT_TOKEN");
-        std::env::remove_var("RALPH_GIT_CREATE_PR");
-        std::env::remove_var("RALPH_GIT_REMOTE");
-
-        let config = CloudConfig::from_env();
+        // Empty env — no vars set
+        let config = CloudConfig::from_env_fn(|_| None);
 
         // Git remote config should have safe defaults even when cloud disabled
         assert!(!config.git_remote.create_pr);
@@ -161,23 +145,24 @@ fn test_git_remote_config_defaults_when_disabled() {
 }
 
 #[test]
-#[serial]
 fn test_cloud_env_var_variations_respected() {
     with_default_timeout(|| {
         // Test that empty string counts as disabled
-        std::env::set_var("RALPH_CLOUD_MODE", "");
-        let config = CloudConfig::from_env();
+        let config = CloudConfig::from_env_fn(|k| match k {
+            "RALPH_CLOUD_MODE" => Some(String::new()),
+            _ => None,
+        });
         assert!(!config.enabled, "Empty string should disable cloud mode");
 
         // Test that random values count as disabled
-        std::env::set_var("RALPH_CLOUD_MODE", "maybe");
-        let config = CloudConfig::from_env();
+        let config = CloudConfig::from_env_fn(|k| match k {
+            "RALPH_CLOUD_MODE" => Some("maybe".to_string()),
+            _ => None,
+        });
         assert!(
             !config.enabled,
             "Non-true/1 values should disable cloud mode"
         );
-
-        std::env::remove_var("RALPH_CLOUD_MODE");
     });
 }
 
