@@ -2,7 +2,6 @@
 
 use crate::agents::AgentRole;
 use crate::files::write_diff_backup_with_workspace;
-use crate::git_helpers::get_git_diff_from_start_with_workspace;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, DevelopmentEvent, PipelineEvent};
@@ -18,7 +17,7 @@ impl MainEffectHandler {
     ///
     /// This handler:
     /// 1. Reads PLAN.md content
-    /// 2. Generates git diff since pipeline start
+    /// 2. Generates git diff since HEAD (working-tree vs. last commit)
     /// 3. Builds analysis prompt with both inputs
     /// 4. Invokes agent to produce `development_result.xml`
     /// 5. Emits `AnalysisAgentInvoked` event
@@ -54,14 +53,18 @@ impl MainEffectHandler {
             }
         };
 
-        // Generate git diff since pipeline start (non-fatal if it fails).
+        // Generate git diff since HEAD (working-tree vs. last commit), non-fatal if it fails.
+        //
+        // Use the HEAD baseline (same as commit phase) so that already-committed changes from
+        // prior iterations are not included in the analysis context. The start_commit baseline
+        // is intentionally sticky and would accumulate all changes since pipeline start.
         //
         // For analysis, we must remain context-free: do NOT instruct git commands, and do NOT
         // silently reuse a potentially stale `.agent/DIFF.backup`.
         //
         // Instead, if diff generation fails, emit an explicit placeholder and also refresh
         // `.agent/DIFF.backup` with that placeholder as best-effort diagnostic state.
-        let diff_content = match get_git_diff_from_start_with_workspace(ctx.workspace) {
+        let diff_content = match crate::git_helpers::git_diff_in_repo(ctx.repo_root) {
             Ok(diff) => {
                 // Best-effort: persist diff for prompt materialization fallbacks.
                 // Missing `.agent/DIFF.backup` must not be fatal.

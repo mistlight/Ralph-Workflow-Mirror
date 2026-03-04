@@ -139,3 +139,71 @@ fn test_invoke_analysis_agent_writes_diff_backup_when_git_diff_succeeds() {
         "expected .agent/DIFF.backup to be refreshed"
     );
 }
+
+#[test]
+fn test_invoke_analysis_agent_uses_repo_root_for_diff_not_start_commit_baseline() {
+    // TDD regression: analysis should use ctx.repo_root (HEAD-based diff via
+    // git_diff_in_repo) instead of get_git_diff_from_start_with_workspace
+    // (start_commit baseline). The start_commit baseline includes already-committed
+    // changes from prior iterations, so it is wrong for analysis context.
+    //
+    // Setup: MemoryWorkspace has no .git, so workspace-based discovery fails.
+    //        repo_root is pointed at CARGO_MANIFEST_DIR (a real git repo).
+    //        CWD is moved to temp dir so CWD-based git discovery also fails.
+    //
+    // Before fix: get_git_diff_from_start_with_workspace uses workspace -> returns
+    //             Err (no .git in MemoryWorkspace) -> prompt contains "[DIFF unavailable".
+    // After fix:  git_diff_in_repo(ctx.repo_root) uses the real git repo at
+    //             CARGO_MANIFEST_DIR -> succeeds -> prompt contains "diff --git".
+    use std::path::PathBuf;
+
+    struct RestoreCwd {
+        original: PathBuf,
+    }
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_dir(".agent/tmp")
+        .with_file(".agent/PLAN.md", "# Plan\n");
+
+    let mut fixture = TestFixture::with_workspace(workspace);
+    // Point repo_root at the real crate root (a valid git repository).
+    fixture.repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    let _restore = RestoreCwd {
+        original: std::env::current_dir().unwrap(),
+    };
+    // Move CWD away so any accidental CWD-based git discovery fails.
+    std::env::set_current_dir(std::env::temp_dir()).unwrap();
+
+    let mut ctx = fixture.ctx();
+    ctx.developer_agent = "claude";
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        phase: crate::reducer::event::PipelinePhase::Development,
+        iteration: 0,
+        ..PipelineState::initial(1, 0)
+    });
+
+    handler
+        .invoke_analysis_agent(&mut ctx, 0)
+        .expect("invoke_analysis_agent should succeed");
+
+    let calls = fixture.executor.agent_calls();
+    assert_eq!(calls.len(), 1);
+    let prompt = &calls[0].prompt;
+
+    // The key assertion: when repo_root is a real git repo, the analysis handler
+    // must produce an actual diff (not "[DIFF unavailable"), proving it uses
+    // git_diff_in_repo(ctx.repo_root) rather than the workspace-based start_commit path.
+    assert!(
+        prompt.contains("diff --git"),
+        "expected actual git diff in analysis prompt when repo_root is a real git repo \
+         (the handler must use git_diff_in_repo(ctx.repo_root), not the start_commit baseline); \
+         got: {prompt}"
+    );
+}
