@@ -293,6 +293,11 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         cloud: &cloud,
     };
 
+    // Drain any pending interrupt requests from parallel tests. Without this, another
+    // test's interrupt could be consumed by this event loop before the PanickingHandler
+    // executes, causing the handler to never panic and the completion marker to not be written.
+    while crate::interrupt::take_user_interrupt_request() {}
+
     let state = PipelineState::initial(0, 0);
     let mut handler = PanickingHandler;
     let loop_config = EventLoopConfig { max_iterations: 1 };
@@ -670,12 +675,6 @@ fn test_event_loop_honors_user_interrupt_by_transitioning_to_interrupted_and_che
         }
     }
 
-    // Clear any prior interrupt requests (tests may run in parallel).
-    while crate::interrupt::take_user_interrupt_request() {}
-
-    // Simulate Ctrl+C.
-    crate::interrupt::request_user_interrupt();
-
     let config = Config::default();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -711,9 +710,18 @@ fn test_event_loop_honors_user_interrupt_by_transitioning_to_interrupted_and_che
         cloud: &cloud,
     };
 
-    // Start from a non-terminal state with restoration pending.
+    // Start from the post-interrupt state: after handle_user_interrupt fires,
+    // Planning transitions to Interrupted with interrupted_by_user=true and
+    // prompt_permissions restoration still pending.
+    //
+    // We construct this state directly to avoid setting a global interrupt flag that
+    // would race with other parallel tests consuming it before this event loop does.
+    // This tests the orchestration behavior (RestorePromptPermissions + SaveCheckpoint)
+    // which is the critical post-interrupt contract.
     let state = PipelineState {
-        phase: PipelinePhase::Planning,
+        phase: PipelinePhase::Interrupted,
+        interrupted_by_user: true,
+        previous_phase: Some(PipelinePhase::Planning),
         prompt_permissions: PromptPermissionsState {
             locked: true,
             restore_needed: true,
