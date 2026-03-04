@@ -272,7 +272,7 @@ Three tiers with strict boundaries:
 |------|---------|------|--------|
 | Unit | `cargo test -p ralph-workflow --lib` | Pure logic | None needed |
 | Integration | `cargo test -p ralph-workflow-tests` | Component interactions | `MemoryWorkspace`, `MockProcessExecutor` |
-| System | `cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests` | Real filesystem/git | None (real I/O) |
+| System | `cargo test -p ralph-workflow-tests --test git2-system-tests` | Real filesystem/git | None (real I/O) |
 
 See [INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md), [SYSTEM_TESTS.md](tests/system_tests/SYSTEM_TESTS.md).
 

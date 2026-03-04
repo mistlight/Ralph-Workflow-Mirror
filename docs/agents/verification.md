@@ -36,7 +36,18 @@ cargo clippy -p test-helpers --all-targets -- -D warnings
 cargo test -p ralph-workflow --lib --all-features
 
 # Integration tests
-cargo test -p ralph-workflow-tests
+cargo test -p ralph-workflow-tests --test integration_tests
+
+# Process system tests (parallel, manual only — not in CI)
+cargo test -p ralph-workflow-tests --test process-system-tests
+
+# Every #[ignore] must include an issue URL (flaky quarantine rule)
+rg -n '#\[ignore\b' tests/ ralph-workflow/src/ \
+  | grep -v 'https://' \
+  && echo "FAIL: #[ignore] without issue URL found" || true
+
+# Audit tests for design compliance
+bash scripts/audit_tests.sh
 
 # Memory safety verification (bounded growth, thread cleanup, Arc patterns)
 bash scripts/verify_memory_safety.sh

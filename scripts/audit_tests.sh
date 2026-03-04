@@ -203,4 +203,50 @@ else
   echo "Integration guide well-referenced ✓"
 fi
 
+printf "\n=== Checking for #[serial] in process_system_tests/ (BANNED) ===\n"
+# process-system-tests runs in parallel; #[serial] is not allowed there.
+# Tests that need intra-module serialization must use a module-local Mutex instead.
+# git2-dependent tests must stay in system_tests/ (the serial binary).
+serial_in_process_system=$(rg '#\[serial\]' tests/process_system_tests/ 2>/dev/null | \
+  grep -v "^[^:]*:[[:space:]]*//\|^[^:]*:[[:space:]]*/\*\|^[^:]*:[[:space:]]*\*" || true)
+if [ -n "$serial_in_process_system" ]; then
+    echo "ERROR: #[serial] found in process_system_tests/ (not allowed):"
+    echo "$serial_in_process_system"
+    echo "Fix: use a module-local Mutex guard for env mutations, or move libgit2 tests to system_tests/"
+    FAIL=1
+else
+    echo "No #[serial] in process_system_tests/ ✓"
+fi
+
+printf "\n=== Checking for libgit2 usage in process_system_tests/ (BANNED) ===\n"
+# process-system-tests must not use git2 or init_git_repo — those tests belong in system_tests/
+git2_in_process_system=$(rg -n 'git2::|init_git_repo' tests/process_system_tests/ 2>/dev/null || true)
+if [ -n "$git2_in_process_system" ]; then
+    echo "ERROR: git2:: or init_git_repo usage found in process_system_tests/ (use system_tests/ for libgit2 tests):"
+    echo "$git2_in_process_system"
+    FAIL=1
+else
+    echo "No libgit2 usage in process_system_tests/ ✓"
+fi
+
+printf "\n=== Checking #[ignore] attributes have issue URLs (flaky quarantine rule) ===\n"
+# Every #[ignore] must include an issue URL so quarantined tests are tracked.
+# Enforce: #[ignore = "flaky: https://github.com/.../issues/N"]
+ignore_without_url=$(rg -n '#\[ignore\b' tests/ ralph-workflow/src/ \
+  | grep -v 'https://' || true)
+if [ -n "$ignore_without_url" ]; then
+    echo "ERROR: #[ignore] without issue URL found (flaky quarantine requires a link):"
+    echo "$ignore_without_url"
+    echo "Fix: add an issue URL — e.g. #[ignore = \"flaky: https://github.com/org/repo/issues/N\"]"
+    FAIL=1
+else
+    echo "All #[ignore] attributes include issue URLs ✓"
+fi
+
+if [ "${FAIL:-0}" -gt 0 ]; then
+    echo ""
+    echo "Audit FAILED. Fix all errors above before merging."
+    exit 1
+fi
+
 printf "\n=== Audit complete ===\n"

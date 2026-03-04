@@ -1,11 +1,18 @@
-// System tests for CCS binary discovery that require real filesystem operations
+// Process system tests for CCS binary discovery that require real filesystem operations
 // These tests cannot use MemoryWorkspace as they need to interact with PATH and real executables
+//
+// IMPORTANT: `#[serial]` is NOT used here. Each test that modifies process-global
+// state (PATH, CCS_HOME) must acquire the module-local `ENV_LOCK` Mutex for the
+// duration of the mutation. This provides fine-grained intra-module serialization
+// without forcing the entire test binary to run serially.
+//
+// If you need to add a test that modifies process-global state, acquire `ENV_LOCK`
+// before mutating — do NOT introduce `#[serial]`.
 
 use ralph_workflow::agents::ccs::{
     build_ccs_agent_config, ccs_env_var_debug_summary, resolve_ccs_command,
 };
 use ralph_workflow::config::{CcsAliasConfig, CcsConfig};
-use serial_test::serial;
 use std::sync::Mutex;
 
 // NOTE: Some tests in this file need to temporarily modify process-wide env vars
@@ -84,7 +91,6 @@ fn default_ccs() -> CcsConfig {
 }
 
 #[test]
-#[serial]
 fn test_non_glm_never_bypasses_ccs_wrapper_even_if_env_vars_loaded() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (_claude_path, _path_guard) = install_fake_claude_on_path();
@@ -101,7 +107,6 @@ fn test_non_glm_never_bypasses_ccs_wrapper_even_if_env_vars_loaded() {
 }
 
 #[test]
-#[serial]
 fn test_glm_can_bypass_ccs_wrapper_when_env_vars_loaded() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (claude_path, _path_guard) = install_fake_claude_on_path();
@@ -116,7 +121,6 @@ fn test_glm_can_bypass_ccs_wrapper_when_env_vars_loaded() {
 }
 
 #[test]
-#[serial]
 fn test_build_ccs_agent_config_skips_env_var_loading_for_non_glm() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (_claude_path, _path_guard) = install_fake_claude_on_path();
@@ -154,7 +158,6 @@ fn test_build_ccs_agent_config_skips_env_var_loading_for_non_glm() {
 }
 
 #[test]
-#[serial]
 fn test_build_ccs_agent_config_loads_env_vars_for_glm() {
     let _lock = ENV_LOCK.lock().unwrap();
     let (claude_path, _path_guard) = install_fake_claude_on_path();
