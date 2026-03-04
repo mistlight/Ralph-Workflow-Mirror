@@ -399,6 +399,11 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         cloud: &cloud,
     };
 
+    // Drain any pending interrupt requests: a parallel test (e.g., the stdout_cancel_watcher
+    // test) may hold the global interrupt flag set. Without this drain, the event loop would
+    // short-circuit to Interrupted instead of testing the max-iterations AwaitingDevFix path.
+    while crate::interrupt::take_user_interrupt_request() {}
+
     let mut state = PipelineState::initial(1, 1);
     state.phase = PipelinePhase::AwaitingDevFix;
     state.previous_phase = Some(PipelinePhase::Development);
@@ -532,6 +537,10 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         cloud_reporter: None,
         cloud: &cloud,
     };
+
+    // Drain any pending interrupt requests from parallel tests before starting the event loop
+    // so that the AwaitingDevFix→Interrupted transition under test is not short-circuited.
+    while crate::interrupt::take_user_interrupt_request() {}
 
     let state = PipelineState {
         phase: PipelinePhase::AwaitingDevFix,

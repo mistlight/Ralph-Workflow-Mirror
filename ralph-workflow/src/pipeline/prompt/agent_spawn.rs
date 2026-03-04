@@ -366,19 +366,30 @@ mod tests {
 
     #[test]
     fn stdout_cancel_watcher_sets_cancel_flag_promptly_on_user_interrupt() {
+        // Drain any pre-existing interrupt requests from parallel tests to ensure
+        // the initial assertion (cancel flag not set before interrupt) is not
+        // contaminated by a stale interrupt left by another test.
+        while crate::interrupt::take_user_interrupt_request() {}
+
         // The stdout_cancel_watcher thread should detect the interrupt flag and
-        // set stdout_cancel = true within its poll interval (~50ms).
+        // set stdout_cancel = true within its poll interval.
         let stdout_cancel = Arc::new(AtomicBool::new(false));
         let monitor_should_stop = Arc::new(AtomicBool::new(false));
         let activity_timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
 
-        // Spawn the watcher thread (same code as in run_with_agent_spawn).
+        // Spawn the watcher thread (same code as in run_with_agent_spawn, except using
+        // a tighter poll interval so the test does not rely on the 50ms production interval
+        // remaining uncontested for 300ms in a parallel-test environment).
         {
             let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
             let should_stop_for_thread = Arc::clone(&monitor_should_stop);
             let activity_for_thread = activity_timestamp;
             std::thread::spawn(move || {
-                let poll = Duration::from_millis(50);
+                // Use a 5ms poll instead of 50ms: reduces the race window during which a
+                // parallel test's start-of-test drain could consume the interrupt flag before
+                // this watcher detects it. The detection logic is identical to production;
+                // only the poll interval differs.
+                let poll = Duration::from_millis(5);
                 loop {
                     if should_stop_for_thread.load(Ordering::Acquire) {
                         return;
@@ -410,7 +421,7 @@ mod tests {
         crate::interrupt::request_user_interrupt();
         let _guard = InterruptGuard;
 
-        // The watcher polls at 50ms intervals; allow up to 300ms for detection.
+        // The watcher polls at 5ms intervals; allow up to 300ms for detection.
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
             if stdout_cancel.load(Ordering::Acquire) {
