@@ -106,7 +106,7 @@ fn test_execution_history_drops_oldest_entries_when_limit_reached() {
 }
 
 #[test]
-fn test_execution_history_ring_buffer_behavior() {
+fn test_execution_history_oldest_entries_replaced_at_exact_limit() {
     with_default_timeout(|| {
         let mut state = PipelineState::initial(1200, 5);
         let limit = 1000;
@@ -139,7 +139,7 @@ fn test_execution_history_ring_buffer_behavior() {
 
         assert_eq!(
             first_iteration, 200,
-            "First entry should be from iteration 200 after ring buffer wrap"
+            "First entry should be from iteration 200 after oldest entries replaced at limit"
         );
 
         // Last entry should be from iteration 1199

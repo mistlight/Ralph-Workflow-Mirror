@@ -54,6 +54,25 @@ If a test seems to require `#[serial]`, refactor the implementation first (depen
 
 ---
 
+## Deterministic Tests
+
+Every test must produce the same result on every run. Never let the following sources of
+non-determinism leak into tests:
+
+| Source | Isolation technique |
+|--------|-------------------|
+| Real time / wall clock | Injectable clock or frozen timestamp |
+| Randomness / RNG | Seed injection or deterministic inputs |
+| Network | Never in unit/integration tests; `MemoryWorkspace` / `MockProcessExecutor` instead |
+| Process-global env vars | Env-injection pattern (see below) |
+| Process-global singletons | Dependency injection; reset state in fixtures |
+| Filesystem | `MemoryWorkspace` (integration), `TempDir` (system tests only) |
+
+If a test is non-deterministic, treat it as a design defect: find the non-deterministic
+source and inject it rather than tolerating flakiness. See also: **Flaky Test Policy** below.
+
+---
+
 ## Env-Injection Pattern
 
 The most common `#[serial]` cause: production code calling `std::env::var` directly.
