@@ -181,6 +181,70 @@ fn test_prompt_plan_with_context() {
 }
 
 #[test]
+fn test_prompt_plan_with_context_is_timeboxed_and_anti_loop() {
+    use crate::workspace::MemoryWorkspace;
+
+    let context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
+    let result = prompt_plan_with_context(&context, None, &workspace);
+
+    assert!(
+        result.contains("TIMEBOX"),
+        "Planning prompt should include explicit timeboxing guidance"
+    );
+    assert!(
+        result.contains("MAX") && result.contains("read/search operations"),
+        "Planning prompt should include a clear hard cap on exploration operations"
+    );
+    assert!(
+        !result.contains("minutes"),
+        "Planning prompt should avoid minute-based caps that are not reliably enforceable"
+    );
+    assert!(
+        result.contains("Do NOT loop") || result.contains("do not loop"),
+        "Planning prompt should explicitly forbid repetitive analysis loops"
+    );
+    assert!(
+        result.contains("sufficient context") || result.contains("enough context"),
+        "Planning prompt should define when to stop exploring"
+    );
+    assert!(
+        result.contains("HARD CAP"),
+        "Planning prompt should include an explicit hard cap section"
+    );
+    assert!(
+        result.contains("read/search operations"),
+        "Planning prompt should hard-cap exploratory operations"
+    );
+    assert!(
+        result.contains("must write the plan") || result.contains("write the plan immediately"),
+        "Planning prompt should force plan completion once hard cap is reached"
+    );
+}
+
+#[test]
+fn test_prompt_plan_with_context_is_concise_and_non_redundant() {
+    use crate::workspace::MemoryWorkspace;
+
+    let context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
+    let result = prompt_plan_with_context(&context, None, &workspace);
+
+    assert!(
+        !result.contains("OPENCODE") && !result.contains("Claude"),
+        "Planning prompt should avoid external branding/style references"
+    );
+    assert!(
+        result.contains("READ-ONLY") && result.contains("STRICTLY PROHIBITED"),
+        "Planning prompt must keep explicit read-only constraints"
+    );
+    assert!(
+        result.contains("non-mutating") || result.contains("image"),
+        "Planning prompt should allow non-mutating tooling like file reading and image analysis"
+    );
+}
+
+#[test]
 fn test_prompt_plan_with_context_and_content() {
     use crate::workspace::MemoryWorkspace;
     let context = TemplateContext::default();

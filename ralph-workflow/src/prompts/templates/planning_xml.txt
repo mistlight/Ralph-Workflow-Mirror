@@ -58,20 +58,31 @@ CRITICAL: This is a READ-ONLY planning task EXCEPT FOR writing `{{PLAN_XML_PATH}
 
 ## AUTHORIZATION OVERRIDE (CRITICAL)
 
-You are explicitly authorized to write EXACTLY ONE file:
-- `{{PLAN_XML_PATH}}`
+You are explicitly authorized to write EXACTLY ONE file: `{{PLAN_XML_PATH}}`.
 
-Writing the XML file is MANDATORY.
-This OVERRIDES the safety mode restrictions only.
-It does NOT override the task requirements (you must still create a correct plan and follow the XSD).
+- Only writable file: `{{PLAN_XML_PATH}}`
+- Writing this XML file is mandatory and must conform to `{{PLAN_XSD_PATH}}`
+- Writing the XML file is MANDATORY. Not writing it is a FAILURE.
+- XML that does not conform to the XSD schema is a FAILURE.
+- No other files may be created/modified/deleted
+- Allowed operations: any non-mutating tools (for example file reads/search/listing and image analysis)
 
-This is a READ-ONLY task EXCEPT FOR writing `{{PLAN_XML_PATH}}`.
-You MUST NOT create, modify, or delete any other files.
+═══════════════════════════════════════════════════════════════════════════════
+PLANNING CONSTRAINTS (ANTI-LOOP)
+═══════════════════════════════════════════════════════════════════════════════
 
-Not writing the XML file is a FAILURE.
-Writing XML that does not conform to the XSD schema is a FAILURE.
+TIMEBOX:
+- MAX 20 read/search operations before writing the plan.
+- If you have sufficient context earlier, stop exploring and write immediately.
 
-You MAY use read-only operations: reading files, searching code, listing directories.
+HARD CAP:
+- This planning phase has a hard cap on exploration.
+- After MAX 20 read/search operations, you must write the plan immediately.
+- Do not run additional exploration after the cap is reached.
+- Do not continue reflective analysis loops after the cap is reached.
+
+Do NOT loop on repeated analysis. If searches return the same information twice,
+move to writing the plan.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 1: UNDERSTANDING
@@ -80,221 +91,72 @@ PHASE 1: UNDERSTANDING
 USER REQUIREMENTS:
 {{PROMPT}}
 
-Before you begin work, think carefully about what the code you'll be editing is
-supposed to do based on filenames, directory structure, and the requirements above.
+Extract only what is needed:
+- Goal
+- Acceptance criteria
+- Constraints
+- In-scope vs out-of-scope
 
-Understand thoroughly:
-- **The Goal**: What is the desired end state? What problem are we solving?
-- **Acceptance Criteria**: What specific conditions must be satisfied for success?
-- **Constraints**: Any requirements, limitations, quality standards, or boundaries?
-- **Scope**: What is in scope vs out of scope? Don't expand beyond what's asked.
-
-If requirements are ambiguous, note them explicitly in the plan. Do NOT guess or
-make assumptions - identify what needs clarification.
+If requirements are ambiguous, note the ambiguity explicitly in the plan.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 2: EXPLORATION
 ═══════════════════════════════════════════════════════════════════════════════
 
-You should use the available search tools extensively to understand the codebase.
-Use them both in parallel and sequentially as needed. Be thorough - quality
-exploration leads to better plans.
+Gather only sufficient context for implementation:
+- likely files to change
+- existing patterns to follow
+- key dependencies and tests
 
-Explore to understand:
-- **Current architecture**: How is the codebase organized? What patterns are used?
-- **Relevant existing code**: What files will need changes? What do they do?
-- **Dependencies and impacts**: What other code depends on what you'll change?
-- **Similar implementations**: Are there existing patterns you can follow as reference?
-- **Test patterns**: How are tests structured? What coverage is expected?
-- **Conventions**: What naming conventions, libraries, and frameworks are used?
-
-IMPORTANT: Never assume a library or framework is available. Check package.json,
-Cargo.toml, or equivalent to verify dependencies before planning to use them.
+Avoid exhaustive exploration. Favor signal over completeness.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 3: DESIGN
 ═══════════════════════════════════════════════════════════════════════════════
 
-Design your implementation approach with care:
+Design a practical implementation path:
+- ordered steps with dependencies
+- key trade-off notes (brief)
+- risks and mitigations (brief)
 
-- **Changes needed**: What specific changes need to be made and in what order?
-  Be precise about which files, functions, or modules will be affected.
-
-- **Trade-off analysis**: Are there multiple valid approaches? Evaluate them:
-  - What are the pros and cons of each?
-  - Which approach is most idiomatic for this codebase?
-  - Which minimizes risk and complexity?
-
-- **Risk identification**: What are the potential risks or challenges?
-  - What could go wrong?
-  - What edge cases need handling?
-  - What are the security implications?
-
-- **Integration strategy**: How does this integrate with existing code?
-  - Fix problems at the root cause, not with surface-level patches
-  - Avoid unnecessary complexity
-  - Keep changes minimal and focused on the task
+Prefer the simplest approach that satisfies all requirements.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 4: REVIEW
 ═══════════════════════════════════════════════════════════════════════════════
 
-Before finalizing, validate your plan against the requirements:
-
-- Does the approach satisfy ALL acceptance criteria from Phase 1?
-- Are there edge cases or error scenarios that need handling?
-- Is the plan specific enough to implement without ambiguity?
-- Have you identified the correct files to modify?
-- Are the steps in the right order (respecting dependencies)?
-- Is the scope appropriate - not too narrow, not too broad?
-
-If you discover gaps, return to earlier phases to address them.
+Quick validation before output:
+- all acceptance criteria covered
+- target files are specific
+- steps are actionable and sequenced
+- scope is not expanded
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 5: WRITE STRUCTURED PLAN
 ═══════════════════════════════════════════════════════════════════════════════
 
-Write your XML to: `{{PLAN_XML_PATH}}`
-XSD schema at: `{{PLAN_XSD_PATH}}`
+Write XML to: `{{PLAN_XML_PATH}}`
+XSD schema: `{{PLAN_XSD_PATH}}`
 
-CRITICAL XML ESCAPING RULES:
-1. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
-2. For code blocks, ALWAYS use CDATA to avoid escaping issues:
-   <code-block language="rust"><![CDATA[
-   if a < b && c > d {
-       vec.push(item);
-   }
-   ]]></code-block>
-3. CDATA sections preserve content exactly - no escaping needed inside them.
-4. If you see XML parsing errors about code-block, you forgot to use CDATA.
-
-ALL SECTIONS ARE REQUIRED:
+Required sections:
 - ralph-summary (with context and at least 3 scope-items)
-- ralph-implementation-steps (with numbered steps)
+- ralph-implementation-steps (numbered)
 - ralph-critical-files (with primary-files)
-- ralph-risks-mitigations (with at least 1 risk-pair)
-- ralph-verification-strategy (with at least 1 verification)
+- ralph-risks-mitigations (at least 1 risk-pair)
+- ralph-verification-strategy (at least 1 verification)
 
-───────────────────────────────────────────────────────────────────────────────
-XML STRUCTURE REFERENCE
-───────────────────────────────────────────────────────────────────────────────
-
-RICH CONTENT ELEMENTS (use inside <content>):
-- <paragraph>Text with optional <emphasis>bold</emphasis> and <code>inline</code></paragraph>
-- <code-block language="rust" filename="file.rs">code here</code-block>
-- <heading level="3">Section Title</heading>
-- <list type="ordered|unordered"><item>Item text</item></list>
-- <table>
-    <caption>Table title</caption>
-    <columns><column>Col1</column><column>Col2</column></columns>
-    <row><cell>Value1</cell><cell>Value2</cell></row>
-  </table>
-
-STEP TYPES:
-- type="file-change" (default): Modifies files. Requires <target-files> and <location>.
-- type="action": Setup/config tasks (e.g., "Set up test environment"). No file required.
-- type="research": Investigation tasks (e.g., "Research API requirements"). No file required.
-
-STEP PRIORITIES: critical, high, medium, low
-
-FILE ACTIONS: create, modify, delete
-
-───────────────────────────────────────────────────────────────────────────────
-EXAMPLE PLAN
-───────────────────────────────────────────────────────────────────────────────
-
+Minimum XML skeleton (must be valid per XSD):
 <ralph-plan>
-<ralph-summary>
-<context>
-Enhance the user authentication system by adding OAuth2 support for Google and GitHub
-providers, enabling users to sign in with their existing accounts.
-</context>
-<scope-items>
-<scope-item count="3" category="auth">OAuth2 provider integrations</scope-item>
-<scope-item count="5" category="api">new API endpoints for OAuth flow</scope-item>
-<scope-item count="2" category="ui">login button components</scope-item>
-<scope-item count="8" category="tests">integration and unit tests</scope-item>
-</scope-items>
-</ralph-summary>
-
-<ralph-implementation-steps>
-<step number="1" type="file-change" priority="high">
-<title>Add OAuth2 configuration types</title>
-<target-files>
-<file path="src/config/oauth.rs" action="create"/>
-<file path="src/config/mod.rs" action="modify"/>
-</target-files>
-<location>Create new file; add mod declaration to mod.rs</location>
-<rationale>Configuration must be in place before implementing providers</rationale>
-<content>
-<paragraph>Create OAuth2 configuration structures:</paragraph>
-<code-block language="rust" filename="src/config/oauth.rs"><![CDATA[
-#[derive(Debug, Clone, Deserialize)]
-pub struct OAuth2Config {
-    pub google: Option<ProviderConfig>,
-    pub github: Option<ProviderConfig>,
-}
-]]></code-block>
-</content>
-</step>
-
-<step number="2" type="research" priority="medium">
-<title>Research OAuth2 library options</title>
-<content>
-<paragraph>Evaluate available OAuth2 libraries for Rust:</paragraph>
-<table>
-<caption>OAuth2 Library Comparison</caption>
-<columns>
-<column>Library</column>
-<column>Pros</column>
-<column>Cons</column>
-</columns>
-<row>
-<cell>oauth2</cell>
-<cell>Official, well-maintained</cell>
-<cell>Verbose API</cell>
-</row>
-</table>
-</content>
-<depends-on step="1"/>
-</step>
-
-<step number="3" type="action" priority="high">
-<title>Configure test environment</title>
-<content>
-<paragraph>Set up test OAuth credentials:</paragraph>
-<list type="ordered">
-<item>Create Google Cloud project and OAuth credentials</item>
-<item>Create GitHub OAuth App in developer settings</item>
-<item>Add credentials to <code>.env.test</code></item>
-</list>
-</content>
-</step>
-</ralph-implementation-steps>
-
-<ralph-critical-files>
-<primary-files>
-<file path="src/config/oauth.rs" action="create" estimated-changes="~50 lines"/>
-<file path="src/auth/oauth2.rs" action="create" estimated-changes="~200 lines"/>
-</primary-files>
-<reference-files>
-<file path="src/auth/mod.rs" purpose="Existing auth patterns"/>
-</reference-files>
-</ralph-critical-files>
-
-<ralph-risks-mitigations>
-<risk-pair severity="high">
-<risk>OAuth tokens could be intercepted if not handled securely</risk>
-<mitigation>Use HTTPS only, store tokens encrypted, implement PKCE flow</mitigation>
-</risk-pair>
-</ralph-risks-mitigations>
-
-<ralph-verification-strategy>
-<verification>
-<method>Run integration tests against test OAuth credentials</method>
-<expected-outcome>All OAuth flows complete successfully with valid tokens</expected-outcome>
-</verification>
-</ralph-verification-strategy>
+  <ralph-summary>...</ralph-summary>
+  <ralph-implementation-steps>...</ralph-implementation-steps>
+  <ralph-critical-files>...</ralph-critical-files>
+  <ralph-risks-mitigations>...</ralph-risks-mitigations>
+  <ralph-verification-strategy>...</ralph-verification-strategy>
 </ralph-plan>
 
-Be as detailed as the task requires - complex tasks need comprehensive plans.
+XML rules:
+- Start with `<ralph-plan>` and end with `</ralph-plan>`
+- No markdown fences
+- Escape inline XML chars or use CDATA in code-blocks
+
+Output only valid XML content to `{{PLAN_XML_PATH}}`.
