@@ -221,24 +221,36 @@ fn test_prompt_plan_with_context_is_timeboxed_and_anti_loop() {
         "Planning prompt should force plan completion once hard cap is reached"
     );
     assert!(
-        result.contains("run out of budget") && result.contains("research"),
-        "Planning prompt should require unresolved unknowns to become research tasks when budget is exhausted"
+        result.contains("run out of budget") && result.contains("investigation"),
+        "Planning prompt should require unresolved unknowns to become investigation steps when budget is exhausted"
     );
     assert!(
-        result.contains("parallel") && result.contains("research"),
-        "Planning prompt should encourage parallel research tracks when unknowns are large"
+        result.contains("parallel") && result.contains("investigation"),
+        "Planning prompt should encourage parallel investigation tracks when unknowns are large"
     );
     assert!(
         result.contains("subagent"),
-        "Planning prompt should explicitly require subagents for large parallel research"
+        "Planning prompt should explicitly require subagents for large parallel investigation"
     );
     assert!(
         result.contains("leftover unknown") || result.contains("unresolved unknown"),
         "Planning prompt should ensure leftover unknowns are converted into explicit research items"
     );
     assert!(
+        result.contains("clear picture") && result.contains("actionable"),
+        "Planning prompt should require an actionable roadmap when research is conclusive"
+    );
+    assert!(
+        result.contains("during planning") || result.contains("before writing the final plan"),
+        "Planning prompt should require resolving unknowns now during planning, not handwaving to later"
+    );
+    assert!(
+        result.contains("only unresolved unknowns") || result.contains("only leftover unknowns"),
+        "Planning prompt should make research plan items a fallback only when budget is exhausted"
+    );
+    assert!(
         result.contains("consolidate") || result.contains("synthesize"),
-        "Planning prompt should require consolidating findings from parallel research"
+        "Planning prompt should require consolidating findings from parallel investigation"
     );
     assert!(
         result.contains("inconsisten") && result.contains("look further"),

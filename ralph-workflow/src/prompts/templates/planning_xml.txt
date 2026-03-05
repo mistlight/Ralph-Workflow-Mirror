@@ -80,12 +80,15 @@ HARD CAP:
 - After MAX 20 read/search operations, you must write the plan immediately.
 - Do not run additional exploration after the cap is reached.
 - Do not continue reflective analysis loops after the cap is reached.
-- If you run out of budget with unresolved unknowns, convert each unknown into an explicit `type="research"` plan step (question, blocker, expected outcome).
-- If research is large or spans independent areas, split it into parallel `type="research"` steps.
-- If research is large or spans independent areas, use parallel subagents and map each subagent output to a `type="research"` step.
-- Consolidate and synthesize findings from all parallel research before finalizing the plan.
-- If findings are inconsistent, look further with targeted follow-up research until the inconsistency is resolved or explicitly captured as an unresolved risk.
-- Any leftover unknown must appear as an explicit research item in the plan.
+- Resolve unknowns during planning (using available budget) before writing the final plan.
+- If investigation is large or spans independent areas, split it into parallel investigation steps.
+- If investigation is large or spans independent areas, use parallel subagents and map each subagent output to an explicit investigation step.
+- Consolidate and synthesize findings from all parallel investigation before finalizing the plan.
+- If findings are inconsistent, look further with targeted follow-up investigation until the inconsistency is resolved or explicitly captured as an unresolved risk.
+- If investigation produces a clear picture, convert it into an actionable implementation roadmap (sequenced file-change/action steps), not more investigation placeholders.
+- Known investigation work should be converted into actionable implementation tasks in the plan.
+- If you run out of budget, only unresolved unknowns should be converted into explicit investigation plan steps (question, blocker, expected outcome).
+- Any leftover unknown must appear as an explicit investigation item in the plan.
 
 Do NOT loop on repeated analysis. If searches return the same information twice,
 move to writing the plan.
