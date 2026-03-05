@@ -80,6 +80,12 @@ HARD CAP:
 - After MAX 20 read/search operations, you must write the plan immediately.
 - Do not run additional exploration after the cap is reached.
 - Do not continue reflective analysis loops after the cap is reached.
+- If you run out of budget with unresolved unknowns, convert each unknown into an explicit `type="research"` plan step (question, blocker, expected outcome).
+- If research is large or spans independent areas, split it into parallel `type="research"` steps.
+- If research is large or spans independent areas, use parallel subagents and map each subagent output to a `type="research"` step.
+- Consolidate and synthesize findings from all parallel research before finalizing the plan.
+- If findings are inconsistent, look further with targeted follow-up research until the inconsistency is resolved or explicitly captured as an unresolved risk.
+- Any leftover unknown must appear as an explicit research item in the plan.
 
 Do NOT loop on repeated analysis. If searches return the same information twice,
 move to writing the plan.

@@ -220,6 +220,30 @@ fn test_prompt_plan_with_context_is_timeboxed_and_anti_loop() {
         result.contains("must write the plan") || result.contains("write the plan immediately"),
         "Planning prompt should force plan completion once hard cap is reached"
     );
+    assert!(
+        result.contains("run out of budget") && result.contains("research"),
+        "Planning prompt should require unresolved unknowns to become research tasks when budget is exhausted"
+    );
+    assert!(
+        result.contains("parallel") && result.contains("research"),
+        "Planning prompt should encourage parallel research tracks when unknowns are large"
+    );
+    assert!(
+        result.contains("subagent"),
+        "Planning prompt should explicitly require subagents for large parallel research"
+    );
+    assert!(
+        result.contains("leftover unknown") || result.contains("unresolved unknown"),
+        "Planning prompt should ensure leftover unknowns are converted into explicit research items"
+    );
+    assert!(
+        result.contains("consolidate") || result.contains("synthesize"),
+        "Planning prompt should require consolidating findings from parallel research"
+    );
+    assert!(
+        result.contains("inconsisten") && result.contains("look further"),
+        "Planning prompt should require additional investigation when findings conflict"
+    );
 }
 
 #[test]
