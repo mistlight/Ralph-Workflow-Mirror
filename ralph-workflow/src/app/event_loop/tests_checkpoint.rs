@@ -293,6 +293,14 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
         cloud: &cloud,
     };
 
+    // The interrupt flags are process-global; coordinate all test access so
+    // parallel tests can't steal each other's pending interrupt requests.
+    let _lock = crate::interrupt::interrupt_test_lock();
+
+    // Guarantee clean state.
+    let _ = crate::interrupt::take_user_interrupt_request();
+    crate::interrupt::reset_user_interrupted_occurred();
+
     let state = PipelineState::initial(0, 0);
     let mut handler = PanickingHandler;
     let loop_config = EventLoopConfig { max_iterations: 1 };
@@ -393,6 +401,16 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
         cloud_reporter: None,
         cloud: &cloud,
     };
+
+    // The interrupt flags are process-global; coordinate all test access so
+    // parallel tests can't steal each other's pending interrupt requests.
+    let _lock = crate::interrupt::interrupt_test_lock();
+
+    // Guarantee clean state: a parallel test (e.g., the stdout_cancel_watcher test)
+    // may hold the global interrupt flag set. Without this drain, the event loop would
+    // short-circuit to Interrupted instead of testing the max-iterations AwaitingDevFix path.
+    let _ = crate::interrupt::take_user_interrupt_request();
+    crate::interrupt::reset_user_interrupted_occurred();
 
     let mut state = PipelineState::initial(1, 1);
     state.phase = PipelinePhase::AwaitingDevFix;
@@ -527,6 +545,15 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
         cloud_reporter: None,
         cloud: &cloud,
     };
+
+    // The interrupt flags are process-global; coordinate all test access so
+    // parallel tests can't steal each other's pending interrupt requests.
+    let _lock = crate::interrupt::interrupt_test_lock();
+
+    // Guarantee clean state so that the AwaitingDevFix→Interrupted transition under test
+    // is not short-circuited.
+    let _ = crate::interrupt::take_user_interrupt_request();
+    crate::interrupt::reset_user_interrupted_occurred();
 
     let state = PipelineState {
         phase: PipelinePhase::AwaitingDevFix,
@@ -705,11 +732,9 @@ fn test_event_loop_honors_user_interrupt_by_transitioning_to_interrupted_and_che
         cloud: &cloud,
     };
 
-    // Arrange: State already in Interrupted phase (as produced by the reducer when Ctrl+C
-    // is received). The transition from Planning → Interrupted via UserInterruptRequested
-    // is verified by reducer unit tests; here we verify the event loop behavior AFTER
-    // the interrupt is recorded — without touching the global USER_INTERRUPT_REQUESTED flag,
-    // which is process-wide and not parallel-safe.
+    // Start from a post-interrupt state produced by reducer handling of Ctrl+C.
+    // We construct it directly to avoid racing on the process-global interrupt flag.
+    // This test verifies post-interrupt orchestration (permissions restore + checkpoint).
     let state = PipelineState {
         phase: PipelinePhase::Interrupted,
         interrupted_by_user: true,

@@ -374,15 +374,20 @@ mod tests {
 
     #[test]
     fn stdout_cancel_watcher_sets_cancel_flag_promptly_on_user_interrupt() {
+        // The interrupt flags are process-global; coordinate all test access so
+        // parallel tests can't steal each other's pending interrupt requests.
+        let _lock = crate::interrupt::interrupt_test_lock();
+
+        // Guarantee clean state.
+        let _ = crate::interrupt::take_user_interrupt_request();
+        crate::interrupt::reset_user_interrupted_occurred();
+
         // The stdout_cancel_watcher thread should detect the interrupt flag and
         // set stdout_cancel = true within its poll interval (~50ms).
-        //
         // Use a local AtomicBool as the interrupt signal instead of the process-global
-        // USER_INTERRUPT_REQUESTED flag. This makes the test parallel-safe: other tests
-        // that call request_user_interrupt() concurrently cannot interfere.
+        // USER_INTERRUPT_REQUESTED flag. This keeps the test parallel-safe.
         let interrupt_flag = Arc::new(AtomicBool::new(false));
         let interrupt_flag_for_watcher = Arc::clone(&interrupt_flag);
-
         let stdout_cancel = Arc::new(AtomicBool::new(false));
         let monitor_should_stop = Arc::new(AtomicBool::new(false));
 
@@ -403,7 +408,7 @@ mod tests {
         // Now signal interrupt via the local flag.
         interrupt_flag.store(true, Ordering::Release);
 
-        // The watcher polls at 50ms intervals; allow up to 300ms for detection.
+        // The watcher polls at ~50ms intervals; allow up to 300ms for detection.
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
             if stdout_cancel.load(Ordering::Acquire) {
