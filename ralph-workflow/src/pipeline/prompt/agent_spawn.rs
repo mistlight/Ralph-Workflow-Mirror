@@ -28,6 +28,38 @@ const INTERRUPT_KILL_CONFIG: KillConfig = KillConfig::new(
     std::time::Duration::from_millis(500), // SIGKILL resend interval
 );
 
+/// Spawns the stdout-cancel watcher thread.
+///
+/// The watcher polls `is_interrupted()` every 50 ms and sets `stdout_cancel = true`
+/// when the check returns `true` (e.g. Ctrl+C), so the streaming loop returns
+/// promptly. The watcher exits when `monitor_should_stop` is set.
+///
+/// `is_interrupted` is injectable so tests can use a local `AtomicBool` instead
+/// of the process-global interrupt flag, making tests parallel-safe.
+fn spawn_stdout_cancel_watcher(
+    stdout_cancel: Arc<std::sync::atomic::AtomicBool>,
+    monitor_should_stop: Arc<std::sync::atomic::AtomicBool>,
+    is_interrupted: impl Fn() -> bool + Send + 'static,
+) {
+    use std::sync::atomic::Ordering;
+    std::thread::spawn(move || {
+        let poll = std::time::Duration::from_millis(50);
+        loop {
+            if monitor_should_stop.load(Ordering::Acquire) {
+                return;
+            }
+            // Cancel immediately on user interrupt (Ctrl+C) so the streaming
+            // loop returns and the main thread can check the interrupt flag.
+            // Do NOT consume the flag here — the event loop needs it.
+            if is_interrupted() {
+                stdout_cancel.store(true, Ordering::Release);
+                return;
+            }
+            std::thread::sleep(poll);
+        }
+    });
+}
+
 pub(super) fn run_with_agent_spawn(
     cmd: &PromptCommand<'_>,
     runtime: &PipelineRuntime<'_>,
@@ -140,27 +172,11 @@ pub(super) fn run_with_agent_spawn(
     // cancellation is set by the monitor only after timeout enforcement actually
     // begins (MonitorResult::TimedOut), so file-activity gating stays consistent
     // between timeout decisions and stdout draining behavior.
-    {
-        let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
-        let should_stop_for_thread = Arc::clone(&monitor_should_stop);
-        std::thread::spawn(move || {
-            use std::sync::atomic::Ordering;
-            let poll = std::time::Duration::from_millis(50);
-            loop {
-                if should_stop_for_thread.load(Ordering::Acquire) {
-                    return;
-                }
-                // Cancel immediately on user interrupt (Ctrl+C) so the streaming
-                // loop returns and the main thread can check the interrupt flag.
-                // Do NOT consume the flag here — the event loop needs it.
-                if crate::interrupt::is_user_interrupt_requested() {
-                    stdout_cancel_for_thread.store(true, Ordering::Release);
-                    return;
-                }
-                std::thread::sleep(poll);
-            }
-        });
-    }
+    spawn_stdout_cancel_watcher(
+        Arc::clone(&stdout_cancel),
+        Arc::clone(&monitor_should_stop),
+        crate::interrupt::is_user_interrupt_requested,
+    );
 
     let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
         std::sync::Arc::clone(&runtime.executor_arc);
@@ -356,48 +372,26 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    /// Helper: ensures the interrupt flag is cleared after the test.
-    struct InterruptGuard;
-    impl Drop for InterruptGuard {
-        fn drop(&mut self) {
-            let _ = crate::interrupt::take_user_interrupt_request();
-        }
-    }
-
     #[test]
     fn stdout_cancel_watcher_sets_cancel_flag_promptly_on_user_interrupt() {
         // The stdout_cancel_watcher thread should detect the interrupt flag and
         // set stdout_cancel = true within its poll interval (~50ms).
+        //
+        // Use a local AtomicBool as the interrupt signal instead of the process-global
+        // USER_INTERRUPT_REQUESTED flag. This makes the test parallel-safe: other tests
+        // that call request_user_interrupt() concurrently cannot interfere.
+        let interrupt_flag = Arc::new(AtomicBool::new(false));
+        let interrupt_flag_for_watcher = Arc::clone(&interrupt_flag);
+
         let stdout_cancel = Arc::new(AtomicBool::new(false));
         let monitor_should_stop = Arc::new(AtomicBool::new(false));
-        let activity_timestamp = crate::pipeline::idle_timeout::new_activity_timestamp();
 
-        // Spawn the watcher thread (same code as in run_with_agent_spawn).
-        {
-            let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
-            let should_stop_for_thread = Arc::clone(&monitor_should_stop);
-            let activity_for_thread = activity_timestamp;
-            std::thread::spawn(move || {
-                let poll = Duration::from_millis(50);
-                loop {
-                    if should_stop_for_thread.load(Ordering::Acquire) {
-                        return;
-                    }
-                    if crate::interrupt::is_user_interrupt_requested() {
-                        stdout_cancel_for_thread.store(true, Ordering::Release);
-                        return;
-                    }
-                    if crate::pipeline::idle_timeout::is_idle_timeout_exceeded(
-                        &activity_for_thread,
-                        crate::pipeline::idle_timeout::IDLE_TIMEOUT_SECS,
-                    ) {
-                        stdout_cancel_for_thread.store(true, Ordering::Release);
-                        return;
-                    }
-                    std::thread::sleep(poll);
-                }
-            });
-        }
+        // Spawn via the extracted function, injecting a local interrupt check.
+        super::spawn_stdout_cancel_watcher(
+            Arc::clone(&stdout_cancel),
+            Arc::clone(&monitor_should_stop),
+            move || interrupt_flag_for_watcher.load(Ordering::Acquire),
+        );
 
         // Verify that without interrupt, the cancel flag is NOT set immediately.
         std::thread::sleep(Duration::from_millis(20));
@@ -406,9 +400,8 @@ mod tests {
             "cancel flag should not be set before interrupt"
         );
 
-        // Now request interrupt.
-        crate::interrupt::request_user_interrupt();
-        let _guard = InterruptGuard;
+        // Now signal interrupt via the local flag.
+        interrupt_flag.store(true, Ordering::Release);
 
         // The watcher polls at 50ms intervals; allow up to 300ms for detection.
         let deadline = Instant::now() + Duration::from_millis(300);

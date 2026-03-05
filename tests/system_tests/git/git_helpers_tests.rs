@@ -265,6 +265,65 @@ fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
 
 #[test]
 #[serial]
+fn test_get_git_diff_from_start_with_workspace_returns_diff_from_start_commit() {
+    // TDD regression for get_git_diff_from_start_with_workspace:
+    // when the workspace has a real .git on disk, the function must generate a diff
+    // from the start_commit baseline (not HEAD-based), and include working-tree changes.
+    use ralph_workflow::git_helpers::get_git_diff_from_start_with_workspace;
+    use ralph_workflow::workspace::WorkspaceFs;
+    use test_helpers::with_temp_cwd;
+
+    with_temp_cwd(|dir| {
+        // Arrange: real git repo with an initial commit.
+        let repo = git2::Repository::init(".").expect("init git repo");
+
+        let tracked_file = "ralph_test_workspace_diff_marker.txt";
+        std::fs::write(tracked_file, "initial\n").expect("write initial file");
+
+        let mut index = repo.index().expect("open index");
+        index
+            .add_path(std::path::Path::new(tracked_file))
+            .expect("add file to index");
+        index.write().expect("write index");
+        let tree_oid = index.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+        let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("create initial commit");
+
+        // The workspace points to the same directory as the real repo.
+        let workspace = WorkspaceFs::new(dir.path().to_path_buf());
+
+        // Modify the tracked file to produce a deterministic diff.
+        let unique_marker = "UNIQUE_WORKSPACE_DIFF_MARKER";
+        std::fs::write(
+            tracked_file,
+            format!("initial\nmodified\n{unique_marker}\n"),
+        )
+        .expect("modify tracked file");
+
+        // Act: get diff from start_commit baseline (start_commit is auto-saved on first call).
+        let result = get_git_diff_from_start_with_workspace(&workspace);
+
+        // Assert: diff is returned and contains the unique modification.
+        assert!(
+            result.is_ok(),
+            "expected Ok diff from workspace with real git repo: {result:?}"
+        );
+        let diff = result.unwrap();
+        assert!(
+            diff.contains("diff --git"),
+            "expected standard git diff format; got: {diff}"
+        );
+        assert!(
+            diff.contains(unique_marker),
+            "expected diff to include unique marker from working-tree change; got: {diff}"
+        );
+    });
+}
+
+#[test]
+#[serial]
 fn test_git_snapshot_excludes_gitignored_files() {
     let dir = tempfile::tempdir().unwrap();
     let repo = git2::Repository::init(dir.path()).unwrap();

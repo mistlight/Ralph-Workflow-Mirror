@@ -54,6 +54,25 @@ If a test seems to require `#[serial]`, refactor the implementation first (depen
 
 ---
 
+## Deterministic Tests
+
+Every test must produce the same result on every run. Never let the following sources of
+non-determinism leak into tests:
+
+| Source | Isolation technique |
+|--------|-------------------|
+| Real time / wall clock | Injectable clock or frozen timestamp |
+| Randomness / RNG | Seed injection or deterministic inputs |
+| Network | Never in unit/integration tests; `MemoryWorkspace` / `MockProcessExecutor` instead |
+| Process-global env vars | Env-injection pattern (see below) |
+| Process-global singletons | Dependency injection; reset state in fixtures |
+| Filesystem | `MemoryWorkspace` (integration), `TempDir` (system tests only) |
+
+If a test is non-deterministic, treat it as a design defect: find the non-deterministic
+source and inject it rather than tolerating flakiness. See also: **Flaky Test Policy** below.
+
+---
+
 ## Env-Injection Pattern
 
 The most common `#[serial]` cause: production code calling `std::env::var` directly.
@@ -126,6 +145,59 @@ Ralph uses two effect layers:
 | `AppEffect` (CLI setup) | `MockAppEffectHandler` | integration tests |
 | `Effect` (pipeline) | `MemoryWorkspace` + `MockProcessExecutor` | integration tests |
 | Real OS / libgit2 | none (real implementations) | system tests only |
+
+---
+
+## Contract and Boundary Testing
+
+Validate the typed contracts that cross architectural seams explicitly. Ralph has three
+primary boundary types:
+
+### 1. Serialization contracts
+
+Checkpoint JSON format is a persistence contract. Test it with round-trip assertions:
+
+```rust
+// ✅ CORRECT — round-trip: serialize → deserialize → serialize produces identical output
+let original = PipelineState::initial(5, 2);
+let json = serde_json::to_string(&original).expect("serialize");
+let restored: PipelineState = serde_json::from_str(&json).expect("deserialize");
+assert_eq!(original, restored);
+
+// Any field rename or type change must break this test — that is the point.
+```
+
+Serialization tests live in the same module as the type. Never skip them when renaming
+or restructuring persisted fields.
+
+### 2. Effect/event contracts
+
+`Effect` and `AppEffect` enum variants are the typed API between reducers and handlers.
+Test that the reducer emits the **correct variant with the correct payload** — not that
+a specific internal function was called:
+
+```rust
+// ✅ CORRECT — validate the effect that crosses the boundary
+let (new_state, effects) = reduce(state, event);
+assert!(effects.iter().any(|e| matches!(e, Effect::WriteCheckpoint { .. })));
+
+// ❌ WRONG — asserting on an internal call, not the boundary
+mock.assert_called_once_with("write_checkpoint_internal");
+```
+
+### 3. Persistence boundary
+
+Integration-test checkpoint read/write using `MemoryWorkspace`. After a checkpoint is
+written and the pipeline resumes, observable state must match what was saved:
+
+```rust
+// ✅ CORRECT — test through the public persistence seam
+let ws = MemoryWorkspace::new();
+save_checkpoint(&ws, &state).expect("save");
+let restored = load_checkpoint(&ws).expect("load");
+assert_eq!(state.phase, restored.phase);
+assert_eq!(state.iteration_count, restored.iteration_count);
+```
 
 ---
 
@@ -292,6 +364,20 @@ Tests are first-class architecture components. When a test is hard to write, sim
 - **Keep boundaries explicit.** Each seam (`AppEffect` before repo root is known, `Effect` after) can be validated independently.
 - **Treat untestable code as a design defect.** If you must add a `cfg!(test)` branch, a skip flag, or a test-only boolean parameter, refactor the production code instead.
 - **Use test failures as design feedback.** A test that requires elaborate setup usually means the unit under test has too many responsibilities.
+- **Prefer stable seams over framework internals.** Test through the typed interfaces (`Workspace`, `ProcessExecutor`, `AppEffectHandler`) that are stable across refactors. Never test through async runtime internals, serializer internals, or framework routing internals — those couple tests to implementation, not behavior.
+
+```rust
+// ✅ Seam test — stable across internal refactors:
+let ws = MemoryWorkspace::new();
+let result = run_pipeline_phase(&ws, &config);
+assert_eq!(ws.files_written(), &["checkpoint.json"]);
+
+// ❌ Framework-coupled test — breaks on internal refactors:
+// (Do not assert on tokio task structure — it is not the contract)
+let handle = tokio::spawn(...);
+handle.await.unwrap();
+assert!(GLOBAL_SIDE_EFFECT_HAPPENED.load(Ordering::SeqCst));
+```
 
 ---
 

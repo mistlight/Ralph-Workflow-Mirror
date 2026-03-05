@@ -79,6 +79,43 @@ pub fn get_git_diff_from_start() -> io::Result<String> {
     }
 }
 
+/// Get the git diff from the starting commit (workspace-aware).
+///
+/// This uses `.agent/start_commit` as the baseline and generates a diff between that baseline
+/// and the current state on disk, including staged + unstaged changes and untracked files.
+///
+/// Unlike [`get_git_diff_from_start`], this does not rely on the process CWD.
+///
+/// # Errors
+///
+/// Returns error if the operation fails.
+pub fn get_git_diff_from_start_with_workspace(workspace: &dyn Workspace) -> io::Result<String> {
+    use crate::git_helpers::start_commit::{
+        load_start_point_with_workspace, save_start_commit_with_workspace, StartPoint,
+    };
+
+    // Fast path: if the workspace has no on-disk .git, refuse to emit a diff.
+    // This ensures MemoryWorkspace and other in-memory workspaces never accidentally
+    // leak into the process CWD's git repository.
+    if !workspace.exists(std::path::Path::new(".git")) {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Workspace has no on-disk git repository",
+        ));
+    }
+
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    // Ensure a valid start point exists. This is expected to persist across runs, but we also
+    // repair missing/corrupt files opportunistically for robustness.
+    save_start_commit_with_workspace(workspace, &repo)?;
+
+    match load_start_point_with_workspace(workspace, &repo)? {
+        StartPoint::Commit(oid) => git_diff_from_oid(&repo, oid),
+        StartPoint::EmptyRepo => git_diff_from_empty_tree(&repo),
+    }
+}
+
 /// Get the diff content that should be shown to reviewers.
 ///
 /// Baseline selection:

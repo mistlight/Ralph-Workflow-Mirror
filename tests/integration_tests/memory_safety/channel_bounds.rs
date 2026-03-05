@@ -218,26 +218,6 @@ fn test_bounded_channel_capacity_limits() {
 }
 
 #[test]
-fn test_bounded_event_queue_pattern_documented() {
-    with_default_timeout(|| {
-        // Document that BoundedEventQueue uses sync_channel (bounded)
-        // Production pattern: json_parser/event_queue/bounded_queue.rs:84
-        //
-        // The implementation uses sync_channel with explicit capacity:
-        //   let (sender, receiver) = mpsc::sync_channel(config.capacity);
-        //
-        // This ensures bounded behavior with backpressure.
-        // This test documents the pattern without accessing private internals.
-
-        // The pattern is already tested in the module's own tests
-        // Here we just document the expected behavior:
-        // - Bounded channel with explicit capacity
-        // - Backpressure when full
-        // - No unbounded growth
-    });
-}
-
-#[test]
 fn test_streaming_output_channel_pattern() {
     with_default_timeout(|| {
         // Verify the streaming output pattern used by the stdout pump.
