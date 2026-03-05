@@ -296,7 +296,7 @@ fn test_event_loop_routes_handler_panic_through_awaiting_dev_fix_and_completes()
     // Drain any pending interrupt requests from parallel tests. Without this, another
     // test's interrupt could be consumed by this event loop before the PanickingHandler
     // executes, causing the handler to never panic and the completion marker to not be written.
-    while crate::interrupt::take_user_interrupt_request() {}
+    let _ = crate::interrupt::take_user_interrupt_request();
 
     let state = PipelineState::initial(0, 0);
     let mut handler = PanickingHandler;
@@ -402,7 +402,7 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
     // Drain any pending interrupt requests: a parallel test (e.g., the stdout_cancel_watcher
     // test) may hold the global interrupt flag set. Without this drain, the event loop would
     // short-circuit to Interrupted instead of testing the max-iterations AwaitingDevFix path.
-    while crate::interrupt::take_user_interrupt_request() {}
+    let _ = crate::interrupt::take_user_interrupt_request();
 
     let mut state = PipelineState::initial(1, 1);
     state.phase = PipelinePhase::AwaitingDevFix;
@@ -540,7 +540,7 @@ fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
 
     // Drain any pending interrupt requests from parallel tests before starting the event loop
     // so that the AwaitingDevFix→Interrupted transition under test is not short-circuited.
-    while crate::interrupt::take_user_interrupt_request() {}
+    let _ = crate::interrupt::take_user_interrupt_request();
 
     let state = PipelineState {
         phase: PipelinePhase::AwaitingDevFix,

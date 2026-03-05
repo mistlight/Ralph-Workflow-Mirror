@@ -369,7 +369,7 @@ mod tests {
         // Drain any pre-existing interrupt requests from parallel tests to ensure
         // the initial assertion (cancel flag not set before interrupt) is not
         // contaminated by a stale interrupt left by another test.
-        while crate::interrupt::take_user_interrupt_request() {}
+        let _ = crate::interrupt::take_user_interrupt_request();
 
         // The stdout_cancel_watcher thread should detect the interrupt flag and
         // set stdout_cancel = true within its poll interval.
