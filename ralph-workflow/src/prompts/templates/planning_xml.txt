@@ -72,12 +72,12 @@ PLANNING CONSTRAINTS (ANTI-LOOP)
 ═══════════════════════════════════════════════════════════════════════════════
 
 TIMEBOX:
-- MAX 20 read/search operations before writing the plan.
+- MAX 50 read/search operations before writing the plan.
 - If you have sufficient context earlier, stop exploring and write immediately.
 
 HARD CAP:
 - This planning phase has a hard cap on exploration.
-- After MAX 20 read/search operations, you must write the plan immediately.
+- After MAX 50 read/search operations, you must write the plan immediately.
 - Do not run additional exploration after the cap is reached.
 - Do not continue reflective analysis loops after the cap is reached.
 - Resolve unknowns during planning (using available budget) before writing the final plan.

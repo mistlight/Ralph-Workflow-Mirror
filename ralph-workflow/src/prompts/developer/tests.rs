@@ -193,6 +193,10 @@ fn test_prompt_plan_with_context_is_timeboxed_and_anti_loop() {
         "Planning prompt should include explicit timeboxing guidance"
     );
     assert!(
+        result.contains("MAX 50 read/search operations"),
+        "Planning prompt should set the hard cap to 50 read/search operations"
+    );
+    assert!(
         result.contains("MAX") && result.contains("read/search operations"),
         "Planning prompt should include a clear hard cap on exploration operations"
     );
