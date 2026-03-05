@@ -185,16 +185,25 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
+    // RAII guard: ensures the interrupt flags are cleared after the test
+    // so other tests in the same process are not affected.
+    struct InterruptGuard;
+    impl Drop for InterruptGuard {
+        fn drop(&mut self) {
+            let _ = crate::interrupt::take_user_interrupt_request();
+            crate::interrupt::reset_user_interrupted_occurred();
+        }
+    }
+
     #[test]
     fn wait_loop_exits_promptly_when_user_interrupt_is_requested() {
-        // RAII guard: ensures the interrupt flag is cleared after the test
-        // so other tests in the same process are not affected.
-        struct InterruptGuard;
-        impl Drop for InterruptGuard {
-            fn drop(&mut self) {
-                let _ = crate::interrupt::take_user_interrupt_request();
-            }
-        }
+        // The interrupt flags are process-global; coordinate all test access so
+        // parallel tests can't steal each other's pending interrupt requests.
+        let _lock = crate::interrupt::interrupt_test_lock();
+
+        // Guarantee clean state.
+        let _ = crate::interrupt::take_user_interrupt_request();
+        crate::interrupt::reset_user_interrupted_occurred();
 
         // Set the interrupt flag BEFORE calling wait_for_completion_and_collect_stderr.
         // A running child process that never exits should NOT block the wait loop.
@@ -256,10 +265,15 @@ mod tests {
 
     #[test]
     fn monitor_thread_panic_is_treated_as_timeout_to_avoid_hanging_wait_loop() {
-        // Drain any pre-existing interrupt requests from parallel tests: if another test set
-        // the interrupt flag, the wait loop would short-circuit to UserInterrupted (returning
-        // None for monitor_result) instead of detecting the monitor panic as TimedOut.
+        // The interrupt flags are process-global; coordinate all test access so
+        // parallel tests can't steal each other's pending interrupt requests.
+        let _lock = crate::interrupt::interrupt_test_lock();
+
+        // Guarantee clean state: if another test set the interrupt flag, the wait loop
+        // would short-circuit to UserInterrupted (returning None for monitor_result)
+        // instead of detecting the monitor panic as TimedOut.
         let _ = crate::interrupt::take_user_interrupt_request();
+        crate::interrupt::reset_user_interrupted_occurred();
 
         let (child, controller) = MockAgentChild::new_running(0);
         let child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>> =

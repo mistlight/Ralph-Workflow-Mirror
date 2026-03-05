@@ -195,6 +195,28 @@ pub fn reset_user_interrupted_occurred() {
     USER_INTERRUPTED_OCCURRED.store(false, Ordering::SeqCst);
 }
 
+/// Global mutex used by tests to serialize access to the process-global interrupt flags.
+///
+/// The interrupt flags are process-global (`static` atomics). Rust unit tests run in
+/// parallel by default, so tests that call `request_user_interrupt()`,
+/// `take_user_interrupt_request()`, or `reset_user_interrupted_occurred()` can interfere
+/// with each other unless they coordinate.
+///
+/// This lock should be held for the full duration of any test that:
+/// - sets or consumes the interrupt request flag, or
+/// - requires the interrupt flags to remain in a known state while exercising behavior.
+///
+/// Production code must not use this.
+#[cfg(test)]
+static TEST_INTERRUPT_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn interrupt_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    TEST_INTERRUPT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Context needed to save a checkpoint when interrupted.
 ///
 /// This structure holds references to all the state needed to create

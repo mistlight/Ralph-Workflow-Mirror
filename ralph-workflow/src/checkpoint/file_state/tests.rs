@@ -128,8 +128,13 @@ mod tests {
         /// processes holding pipe write ends, or after git processes cannot acquire locks.
         #[test]
         fn capture_with_workspace_skips_git_state_when_interrupted() {
+            // The interrupt flags are process-global; coordinate all test access so
+            // parallel tests can't steal each other's pending interrupt requests.
+            let _lock = crate::interrupt::interrupt_test_lock();
+
             // Guarantee clean state: clear any interrupt flag left from other tests
             take_user_interrupt_request();
+            reset_user_interrupted_occurred();
 
             let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "# task");
             let executor = MockProcessExecutor::new();

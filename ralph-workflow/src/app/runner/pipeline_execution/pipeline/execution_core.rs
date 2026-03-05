@@ -626,6 +626,10 @@ mod cloud_completion_payload_tests {
             request_user_interrupt, reset_user_interrupted_occurred, take_user_interrupt_request,
         };
 
+        // The interrupt flags are process-global; coordinate all test access so
+        // parallel tests can't steal each other's pending interrupt requests.
+        let _lock = crate::interrupt::interrupt_test_lock();
+
         let _ = take_user_interrupt_request();
         reset_user_interrupted_occurred();
 

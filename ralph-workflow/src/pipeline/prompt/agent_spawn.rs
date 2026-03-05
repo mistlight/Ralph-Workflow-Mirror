@@ -356,20 +356,24 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    /// Helper: ensures the interrupt flag is cleared after the test.
+    /// Helper: ensures the interrupt flags are cleared after the test.
     struct InterruptGuard;
     impl Drop for InterruptGuard {
         fn drop(&mut self) {
             let _ = crate::interrupt::take_user_interrupt_request();
+            crate::interrupt::reset_user_interrupted_occurred();
         }
     }
 
     #[test]
     fn stdout_cancel_watcher_sets_cancel_flag_promptly_on_user_interrupt() {
-        // Drain any pre-existing interrupt requests from parallel tests to ensure
-        // the initial assertion (cancel flag not set before interrupt) is not
-        // contaminated by a stale interrupt left by another test.
+        // The interrupt flags are process-global; coordinate all test access so
+        // parallel tests can't steal each other's pending interrupt requests.
+        let _lock = crate::interrupt::interrupt_test_lock();
+
+        // Guarantee clean state.
         let _ = crate::interrupt::take_user_interrupt_request();
+        crate::interrupt::reset_user_interrupted_occurred();
 
         // The stdout_cancel_watcher thread should detect the interrupt flag and
         // set stdout_cancel = true within its poll interval.
