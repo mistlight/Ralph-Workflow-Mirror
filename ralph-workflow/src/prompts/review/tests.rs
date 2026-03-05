@@ -20,6 +20,18 @@ fn test_prompt_review_xml_with_context() {
     assert!(result.contains("test changes"));
     assert!(result.contains("REVIEW MODE"));
     assert!(result.contains("<ralph-issues>"));
+    assert!(
+        result.contains("Focus on high-signal, user-impacting issues"),
+        "review_xml should prioritize high-signal, user-impacting findings"
+    );
+    assert!(
+        result.contains("If no important issues are found, explicitly state why"),
+        "review_xml should require an explicit no-issues rationale"
+    );
+    assert!(
+        result.contains("Use parallel review agents only for independent review tracks"),
+        "review_xml should provide conditional guidance for parallel review agents"
+    );
 
     // Read-only modes: reviewer must still write exactly one XML file.
     assert!(
@@ -191,6 +203,42 @@ fn test_prompt_fix_xml_with_context() {
     assert!(result.contains("test issues"));
     assert!(result.contains("FIX MODE"));
     assert!(result.contains("<ralph-fix-result>"));
+    assert!(
+        result.contains("Run relevant unit/integration tests"),
+        "fix_mode_xml should require running relevant tests beyond listed issues"
+    );
+    assert!(
+        result.contains("If tests or investigation reveal additional real bugs"),
+        "fix_mode_xml should require fixing additional real bugs discovered incidentally"
+    );
+    assert!(
+        result.contains("DO NOT ONLY FIX the listed issues"),
+        "fix_mode_xml should explicitly forbid narrow fixing when other bugs are discovered"
+    );
+    assert!(
+        result.contains("Ensure your final changes are validated with relevant checks"),
+        "fix_mode_xml should require final validation/checklist discipline"
+    );
+    assert!(
+        result.contains("AGENTS.md") && result.contains("CLAUDE.md"),
+        "fix_mode_xml should reference project-specific agent instruction files for required checks"
+    );
+    assert!(
+        !result.contains("ISSUES TO FIX"),
+        "fix_mode_xml should avoid narrow-scope section labels"
+    );
+    assert!(
+        !result.contains("Fix the issues listed above. For each issue:"),
+        "fix_mode_xml should not frame work as only the listed issues"
+    );
+    assert!(
+        !result.contains("you may explore LIMITEDLY"),
+        "fix_mode_xml should not restrict investigation when additional concrete bugs are found"
+    );
+    assert!(
+        result.contains("Address the listed review findings and any additional concrete defects"),
+        "fix_mode_xml should explicitly broaden scope to concrete discovered defects"
+    );
 
     // Shared partials should be expanded
     assert!(

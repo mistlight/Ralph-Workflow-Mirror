@@ -41,7 +41,7 @@ IMPORTANT: EXECUTION CONTEXT
 - Focus on making COMPLETE progress. Fix all issues you can, don't leave work half-done.
 
 ═══════════════════════════════════════════════════════════════════════════════
-ISSUES TO FIX
+REVIEW FINDINGS AND RELATED DEFECTS
 ═══════════════════════════════════════════════════════════════════════════════
 
 {{ISSUES}}
@@ -66,7 +66,7 @@ IMPLEMENTATION PLAN:
 YOUR TASK
 ═══════════════════════════════════════════════════════════════════════════════
 
-Fix the issues listed above. For each issue:
+Address the listed review findings and any additional concrete defects discovered during investigation or validation. For each finding/defect you address:
 1. Read the relevant file(s) to understand the context
 2. Implement the fix following project patterns
 3. Verify your fix addresses the root cause, not just the symptom
@@ -77,9 +77,9 @@ CRITICAL CONSTRAINTS:
   you may have to edit a completely different file
 - You MUST NOT modify the ISSUES content - it is provided for reference only
 
-FAULT TOLERANCE:
-- If an issue description lacks file references, you may explore LIMITEDLY to
-  find the relevant code (use grep to find function/class names mentioned)
+INVESTIGATION GUIDANCE:
+- If a finding lacks file references, explore as needed (focused, evidence-driven)
+  to locate the relevant code (for example: grep for function/class names mentioned)
 
 FIX GUIDELINES:
 - Fix problems at the root cause, not with surface-level patches
@@ -87,6 +87,16 @@ FIX GUIDELINES:
 - Add tests if the issue was a missed test case
 - If getting rid of tech debt is necessary to fix a bug, you **MUST** do so. 
   Do **NOT** leave the code in a worse state from a bug fix.
+- Run relevant unit/integration tests for the areas you changed and for the reported issues.
+- If tests or investigation reveal additional real bugs, fix them in this pass.
+- Do not stay narrowly scoped to only the listed issue text when concrete related defects are discovered.
+- DO NOT ONLY FIX the listed issues if you discover other concrete bugs while validating your changes.
+
+VALIDATION AND COMPLETION DISCIPLINE:
+- Ensure your final changes are validated with relevant checks (tests/lint/build as applicable).
+- Before finishing, verify the fixed behavior and confirm no regressions in touched areas.
+- If validation uncovers more defects, continue fixing until the touched scope is stable.
+- Relevant checks may be defined in project instruction files (for example `AGENTS.md`, `CLAUDE.md`, or other agent docs); follow those required verification steps.
 
 ═══════════════════════════════════════════════════════════════════════════════
 OUTPUT FORMAT

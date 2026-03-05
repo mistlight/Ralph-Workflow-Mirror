@@ -72,6 +72,7 @@ STEP 1: Read the changed files for full context
 
 STEP 2: Identify real issues that would cause problems
 Your goal is to find actual bugs and problems - not to nitpick style preferences.
+Focus on high-signal, user-impacting issues.
 
 Focus on finding (in priority order):
 
@@ -117,6 +118,13 @@ Do NOT report:
 - Issues in code that wasn't changed (unless the changes broke it)
 - Hypothetical issues without concrete evidence in the diff
 - Nitpicks about naming, formatting, or documentation
+
+If no important issues are found, explicitly state why the implementation is correct.
+
+Parallel review guidance:
+- Use parallel review agents only for independent review tracks (for example: correctness, security, tests)
+- Avoid duplicate coverage across agents
+- Synthesize all findings into one final XML issue list
 
 ═══════════════════════════════════════════════════════════════════════════════
 OUTPUT FORMAT
